@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import logging
+import secrets
 from typing import Any
 
-from fastapi import BackgroundTasks, FastAPI, HTTPException
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -21,6 +22,7 @@ from .campaigns import (
 from .config import config
 from .models import Contact
 from .orchestrator import CampaignRunner, render_goal
+from .ratelimit import limiter
 from .store import store
 
 logging.basicConfig(level=logging.INFO)
@@ -69,6 +71,7 @@ def health() -> dict[str, Any]:
         "api_key_configured": bool(config.api_key),
         "max_calls_per_run": config.max_calls_per_run,
         "allowlist_active": bool(config.allowlist),
+        "limits": limiter.snapshot(),
     }
 
 
@@ -177,8 +180,27 @@ def _execute(run_id: str, campaign_id: str, contacts: list[Contact], dry_run: bo
         store.finish(run_id, error=f"{type(exc).__name__}: {exc}")
 
 
+def _client_ip(request: Request) -> str:
+    """Real client IP behind Render's proxy."""
+    forwarded = request.headers.get("x-forwarded-for", "")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+def _is_owner(request: Request) -> bool:
+    """True when the caller presents the owner key, lifting all rate limits."""
+    if not config.owner_key:
+        return False
+    presented = request.headers.get("x-callflow-owner-key", "")
+    # Constant-time compare so the key can't be guessed by timing.
+    return secrets.compare_digest(presented, config.owner_key)
+
+
 @app.post("/api/runs")
-def start_run(req: RunRequest, background: BackgroundTasks) -> dict[str, Any]:
+def start_run(
+    req: RunRequest, background: BackgroundTasks, request: Request
+) -> dict[str, Any]:
     try:
         get_campaign(req.campaign_id)
     except KeyError as exc:
@@ -198,6 +220,23 @@ def start_run(req: RunRequest, background: BackgroundTasks) -> dict[str, Any]:
             status_code=400,
             detail="CALLE_API_KEY is not configured — cannot place live calls.",
         )
+
+    # Live calls spend the owner's credits and ring real people, so the public
+    # demo is rate limited. Dry run stays unlimited.
+    if not dry_run:
+        verdict = limiter.check(
+            _client_ip(request), calls=len(contacts), is_owner=_is_owner(request)
+        )
+        if not verdict.allowed:
+            raise HTTPException(
+                status_code=429,
+                detail=verdict.reason,
+                headers=(
+                    {"Retry-After": str(verdict.retry_after_seconds)}
+                    if verdict.retry_after_seconds
+                    else None
+                ),
+            )
 
     run_id = store.create_run(req.campaign_id, len(contacts), dry_run)
     background.add_task(_execute, run_id, req.campaign_id, contacts, dry_run)

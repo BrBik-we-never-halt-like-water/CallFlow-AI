@@ -90,12 +90,20 @@ export interface Run {
   stats: RunStats;
 }
 
+export interface Limits {
+  used_today: number;
+  daily_budget: number;
+  per_window: number;
+  window_minutes: number;
+}
+
 export interface Health {
   ok: boolean;
   dry_run_default: boolean;
   api_key_configured: boolean;
   max_calls_per_run: number;
   allowlist_active: boolean;
+  limits?: Limits;
 }
 
 export interface ContactInput {

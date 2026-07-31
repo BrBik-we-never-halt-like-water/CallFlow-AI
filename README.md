@@ -11,7 +11,8 @@ extracts typed results, and escalates only what needs a person.
 [![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
 [![Next.js](https://img.shields.io/badge/Next.js%2016-000000?logo=nextdotjs&logoColor=white)](https://nextjs.org)
 [![CALL-E](https://img.shields.io/badge/built%20on-CALL--E-4f46e5)](https://heycall-e.com)
-[![Tests](https://img.shields.io/badge/tests-56%20passing-3fb950)](#tests)
+[![Tests](https://img.shields.io/badge/tests-71%20passing-3fb950)](#tests)
+[![Live demo](https://img.shields.io/badge/live-demo-4f46e5)](https://callflow-web.onrender.com)
 
 Built for the [CALL-E: Your Code Is Calling](https://call-e.devpost.com) hackathon.
 
@@ -48,28 +49,24 @@ the work that needs a human is visible immediately and the rest closes itself.
 ## Architecture
 
 ```
-┌─────────────────┐         ┌──────────────┐         ┌──────────────┐
-│  Next.js 16     │  HTTP   │   FastAPI    │  SDK    │    CALL-E    │
-│  dashboard      ├────────►│  orchestrator├────────►│  voice agent │
-└─────────────────┘         └──────┬───────┘         └──────────────┘
-                                   │                   dials · speaks
-                            ┌──────▼───────┐           adapts · listens
-                            │ safety gate  │
-                            │ E.164        │
-                            │ allowlist    │
-                            │ call ceiling │
-                            └──────┬───────┘
-                                   │
-                            ┌──────▼───────┐
-                            │ result_schema│  typed JSON back
-                            └──────┬───────┘
-                                   │
-                            ┌──────▼───────┐
-                            │    triage    │
-                            └──────┬───────┘
-                    ┌──────────────┼──────────────┐
-                    ▼              ▼              ▼
-              auto-close      retry later    needs human
+  Next.js dashboard              FastAPI orchestrator            CALL-E
+  -----------------   -- HTTP ->  --------------------  -- SDK ->  ------
+  campaigns                       safety gate                     dials
+  contact table                     E.164 validation              speaks
+  live results                      allowlist                     adapts
+                                    rate limit                    listens
+                                    call ceiling
+                                          |
+                                          v
+                                    result_schema   -- typed JSON back
+                                          |
+                                          v
+                                        triage
+                                          |
+                    +---------------------+---------------------+
+                    |                     |                     |
+                    v                     v                     v
+               auto-close            retry later           needs human
 ```
 
 **CALL-E is the calling agent.** It owns the phone number, dialer, speech
@@ -104,6 +101,30 @@ New accounts include free calls.
 
 ---
 
+## Try it live
+
+The hosted dashboard places **real phone calls**. Enter your own number, pick a
+campaign, switch to Live mode, and answer — the agent greets you by name and
+holds an actual conversation. When you hang up, the transcript, sentiment, and
+extracted fields appear in the results table.
+
+**→ [callflow-web.onrender.com](https://callflow-web.onrender.com)**
+
+Because the demo runs on a shared CALL-E account, live calls are rate limited:
+
+| Limit | Value |
+|---|---|
+| Per visitor | 2 live calls per hour |
+| Shared daily budget | 20 live calls |
+| Dry run | Unlimited, always available |
+
+Only call a number you own or have permission to call.
+
+> The free tier sleeps after inactivity, so the first load can take 30–60
+> seconds. The dashboard shows *"Waking the backend…"* while it starts.
+
+---
+
 ## Safety
 
 > **CallFlow AI places real phone calls.** Every guard below fails closed.
@@ -113,7 +134,18 @@ New accounts include free calls.
 | `CALLFLOW_DRY_RUN` | **Defaults to `true`.** Renders and validates everything; dials nothing. |
 | `CALLFLOW_ALLOWLIST` | When non-empty, only these E.164 numbers can be dialed. |
 | `CALLFLOW_MAX_CALLS_PER_RUN` | Hard ceiling per process run. Protects your credit balance. |
+| `CALLFLOW_RATE_LIMIT_CALLS` | Live calls allowed per IP per window (default 2/hour). |
+| `CALLFLOW_DAILY_BUDGET` | Shared daily live-call ceiling across all visitors. |
 | E.164 validation | Malformed numbers are rejected before reaching CALL-E. |
+
+The allowlist and the rate limiter solve different problems. **Use the
+allowlist for private development** — it makes dialing anyone but yourself
+impossible. **Use the rate limiter for a public deployment**, where visitors
+legitimately need to call their own numbers but no one should be able to drain
+the account or dial a stranger repeatedly.
+
+Set `CALLFLOW_OWNER_KEY` and send it as an `X-CallFlow-Owner-Key` header to
+lift the limits for your own testing.
 
 Phone numbers are masked (`+15******100`) in every log, API response, and UI
 surface. All sample data uses reserved fictional numbers (`+1 555 0100–0199`)
@@ -227,7 +259,7 @@ tests/                  56 tests
 ## Tests
 
 ```bash
-pytest -q     # 56 passed
+pytest -q     # 71 passed
 ```
 
 Coverage focuses on what can cause harm: the safety gate fails closed, masking

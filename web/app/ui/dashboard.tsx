@@ -125,6 +125,8 @@ export default function Dashboard() {
             stopPolling();
             setBusy(false);
             if (latest.outcomes.length === 1) setSelected(latest.outcomes[0]);
+            // Refresh the remaining live-call budget.
+            api.health().then(setHealth).catch(() => {});
           }
         } catch {
           stopPolling();
@@ -334,6 +336,17 @@ export default function Dashboard() {
           {!dryRun && noApiKey && (
             <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-[11px] text-amber-800 ring-1 ring-inset ring-amber-200">
               No <code className="font-mono">CALLE_API_KEY</code> on the backend.
+            </p>
+          )}
+
+          {!dryRun && health?.limits && (
+            <p className="mt-3 rounded-lg bg-[var(--color-subtle)] px-3 py-2 text-[11px] leading-relaxed text-[var(--color-ink-soft)]">
+              Shared demo: <strong>{health.limits.per_window} live calls</strong> per{" "}
+              {health.limits.window_minutes} minutes per visitor.{" "}
+              <span className="nums">
+                {Math.max(0, health.limits.daily_budget - health.limits.used_today)}
+              </span>{" "}
+              of {health.limits.daily_budget} left today. Dry run is unlimited.
             </p>
           )}
 

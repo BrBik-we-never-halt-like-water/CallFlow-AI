@@ -32,12 +32,28 @@ services:
           type: web
           property: host
 
-      # Judges and reviewers must not be able to spend credits by accident.
+      # Visitors may place live calls to their own number, so the allowlist is
+      # left unset in production. Rate limits below are what protect the
+      # credit balance — do not remove them.
       - key: CALLFLOW_DRY_RUN
-        value: "true"
+        value: "false"
 
       - key: CALLFLOW_MAX_CALLS_PER_RUN
         value: "3"
+
+      # Per-IP allowance, then a shared daily floor.
+      - key: CALLFLOW_RATE_LIMIT_CALLS
+        value: "2"
+
+      - key: CALLFLOW_RATE_LIMIT_WINDOW
+        value: "3600"
+
+      - key: CALLFLOW_DAILY_BUDGET
+        value: "20"
+
+      # Secret that lifts the limits for the owner. Set in the dashboard.
+      - key: CALLFLOW_OWNER_KEY
+        generateValue: true
 
       - key: CALLE_DEFAULT_REGION
         value: IN
