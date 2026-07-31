@@ -1,4 +1,17 @@
-const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000";
+/**
+ * Render's `fromService … property: host` yields a bare hostname with no
+ * scheme (e.g. "callflow-api.onrender.com"), which would make every fetch
+ * relative and 404. Add https:// when it's missing, and drop any trailing
+ * slash so paths don't end up doubled.
+ */
+function resolveBase(raw: string | undefined): string {
+  const value = raw?.trim();
+  if (!value) return "http://127.0.0.1:8000";
+  const withScheme = /^https?:\/\//i.test(value) ? value : `https://${value}`;
+  return withScheme.replace(/\/+$/, "");
+}
+
+const BASE = resolveBase(process.env.NEXT_PUBLIC_API_URL);
 
 export type Disposition =
   | "auto_closed"

@@ -28,6 +28,20 @@ def _list(name: str) -> list[str]:
     return [p.strip() for p in os.getenv(name, "").split(",") if p.strip()]
 
 
+def _origins(name: str) -> list[str]:
+    """Parse CORS origins, tolerating Render's bare-hostname form.
+
+    `fromService … property: host` yields "callflow-web.onrender.com" with no
+    scheme, but CORS matching is exact — a missing scheme silently blocks every
+    request. Add https:// when absent and strip any trailing slash.
+    """
+    out: list[str] = []
+    for raw in _list(name):
+        value = raw if raw.startswith(("http://", "https://")) else f"https://{raw}"
+        out.append(value.rstrip("/"))
+    return out
+
+
 @dataclass(frozen=True)
 class Config:
     api_key: str = field(default_factory=lambda: os.getenv("CALLE_API_KEY", ""))
@@ -40,7 +54,7 @@ class Config:
     allowlist: list[str] = field(default_factory=lambda: _list("CALLFLOW_ALLOWLIST"))
 
     # Extra browser origins allowed to call this API (deployed frontends).
-    cors_origins: list[str] = field(default_factory=lambda: _list("CALLFLOW_CORS_ORIGINS"))
+    cors_origins: list[str] = field(default_factory=lambda: _origins("CALLFLOW_CORS_ORIGINS"))
 
     poll_interval_seconds: float = 10.0
     poll_timeout_seconds: float = 900.0

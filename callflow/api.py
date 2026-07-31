@@ -38,8 +38,8 @@ _origins = [
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_origins,
-    # Vercel preview deployments get a new subdomain per push.
-    allow_origin_regex=r"https://.*\.vercel\.app",
+    # Render and Vercel preview deployments get a fresh subdomain per push.
+    allow_origin_regex=r"https://[a-z0-9-]+\.(onrender\.com|vercel\.app)",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

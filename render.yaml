@@ -1,13 +1,15 @@
-# Render blueprint for the CallFlow AI backend.
+# Render blueprint for CallFlow AI — backend API + Next.js dashboard.
 #
-# Secrets are NOT stored here — set CALLE_API_KEY in the Render dashboard
-# under Environment. Everything below is safe to commit.
+# Secrets are NOT stored here. Anything marked `sync: false` must be set in the
+# Render dashboard under each service's Environment tab.
 
 services:
+  # ---------------------------------------------------------------- backend --
   - type: web
     name: callflow-api
     runtime: python
     plan: free
+    region: singapore
     buildCommand: pip install -e .
     startCommand: uvicorn callflow.api:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /api/health
@@ -19,15 +21,18 @@ services:
       - key: CALLE_API_KEY
         sync: false
 
-      # Comma-separated frontend origins, e.g. https://callflow-ai.vercel.app
-      - key: CALLFLOW_CORS_ORIGINS
-        sync: false
-
       # Comma-separated E.164 numbers that may be dialed. Keep this set.
       - key: CALLFLOW_ALLOWLIST
         sync: false
 
-      # Judges and reviewers should never be able to spend credits by accident.
+      # The dashboard's public URL is wired in automatically once it deploys.
+      - key: CALLFLOW_CORS_ORIGINS
+        fromService:
+          name: callflow-web
+          type: web
+          property: host
+
+      # Judges and reviewers must not be able to spend credits by accident.
       - key: CALLFLOW_DRY_RUN
         value: "true"
 
@@ -39,3 +44,23 @@ services:
 
       - key: CALLE_DEFAULT_LANGUAGE
         value: en
+
+  # --------------------------------------------------------------- frontend --
+  - type: web
+    name: callflow-web
+    runtime: node
+    plan: free
+    region: singapore
+    rootDir: web
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_VERSION
+        value: "20.19.5"
+
+      # Points the dashboard at the API above. Resolved by Render at deploy time.
+      - key: NEXT_PUBLIC_API_URL
+        fromService:
+          name: callflow-api
+          type: web
+          property: host
