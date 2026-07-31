@@ -39,6 +39,9 @@ class Config:
     max_calls_per_run: int = field(default_factory=lambda: _int("CALLFLOW_MAX_CALLS_PER_RUN", 3))
     allowlist: list[str] = field(default_factory=lambda: _list("CALLFLOW_ALLOWLIST"))
 
+    # Extra browser origins allowed to call this API (deployed frontends).
+    cors_origins: list[str] = field(default_factory=lambda: _list("CALLFLOW_CORS_ORIGINS"))
+
     poll_interval_seconds: float = 10.0
     poll_timeout_seconds: float = 900.0
 

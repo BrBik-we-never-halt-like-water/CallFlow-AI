@@ -1,0 +1,41 @@
+# Render blueprint for the CallFlow AI backend.
+#
+# Secrets are NOT stored here — set CALLE_API_KEY in the Render dashboard
+# under Environment. Everything below is safe to commit.
+
+services:
+  - type: web
+    name: callflow-api
+    runtime: python
+    plan: free
+    buildCommand: pip install -e .
+    startCommand: uvicorn callflow.api:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.9"
+
+      # Set in the dashboard, never in this file.
+      - key: CALLE_API_KEY
+        sync: false
+
+      # Comma-separated frontend origins, e.g. https://callflow-ai.vercel.app
+      - key: CALLFLOW_CORS_ORIGINS
+        sync: false
+
+      # Comma-separated E.164 numbers that may be dialed. Keep this set.
+      - key: CALLFLOW_ALLOWLIST
+        sync: false
+
+      # Judges and reviewers should never be able to spend credits by accident.
+      - key: CALLFLOW_DRY_RUN
+        value: "true"
+
+      - key: CALLFLOW_MAX_CALLS_PER_RUN
+        value: "3"
+
+      - key: CALLE_DEFAULT_REGION
+        value: IN
+
+      - key: CALLE_DEFAULT_LANGUAGE
+        value: en

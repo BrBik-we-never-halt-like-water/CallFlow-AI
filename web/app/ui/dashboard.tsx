@@ -54,15 +54,42 @@ export default function Dashboard() {
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  const [waking, setWaking] = useState(false);
+
   useEffect(() => {
-    api.health().then(setHealth).catch(() => setHealth(null));
-    api
-      .campaigns()
-      .then((cs) => {
-        setCampaigns(cs);
-        if (cs.length && !cs.some((c) => c.id === campaignId)) setCampaignId(cs[0].id);
-      })
-      .catch(() => setCampaigns([]));
+    let cancelled = false;
+
+    // Free-tier hosting sleeps after inactivity, so the first request can take
+    // ~30-60s. Retry with backoff and say so, rather than showing "offline".
+    async function connect() {
+      for (let attempt = 0; attempt < 8 && !cancelled; attempt++) {
+        try {
+          const h = await api.health();
+          if (cancelled) return;
+          setHealth(h);
+          setWaking(false);
+          const cs = await api.campaigns();
+          if (cancelled) return;
+          setCampaigns(cs);
+          if (cs.length && !cs.some((c) => c.id === campaignId)) {
+            setCampaignId(cs[0].id);
+          }
+          return;
+        } catch {
+          if (attempt === 0 && !cancelled) setWaking(true);
+          await new Promise((r) => setTimeout(r, 4000));
+        }
+      }
+      if (!cancelled) {
+        setWaking(false);
+        setHealth(null);
+      }
+    }
+
+    void connect();
+    return () => {
+      cancelled = true;
+    };
     // Intentionally runs once — campaignId is managed after load.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -151,14 +178,22 @@ export default function Dashboard() {
           <span className="inline-flex items-center gap-2 text-[var(--color-muted)]">
             <span
               className={`relative inline-flex h-2 w-2 rounded-full ${
-                health?.ok ? "bg-emerald-500" : "bg-red-500"
+                health?.ok ? "bg-emerald-500" : waking ? "bg-amber-500" : "bg-red-500"
               }`}
             >
-              {health?.ok && (
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+              {(health?.ok || waking) && (
+                <span
+                  className={`absolute inline-flex h-full w-full animate-ping rounded-full opacity-75 ${
+                    health?.ok ? "bg-emerald-400" : "bg-amber-400"
+                  }`}
+                />
               )}
             </span>
-            {health?.ok ? "Backend connected" : "Backend offline"}
+            {health?.ok
+              ? "Backend connected"
+              : waking
+                ? "Waking the backend…"
+                : "Backend offline"}
           </span>
         </div>
       </div>

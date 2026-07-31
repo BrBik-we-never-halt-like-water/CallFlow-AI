@@ -27,9 +27,19 @@ logging.basicConfig(level=logging.INFO)
 
 app = FastAPI(title="CallFlow AI API", version="0.1.0")
 
+# Local dev origins always work; deployed frontends are added via
+# CALLFLOW_CORS_ORIGINS (comma-separated) so the API isn't open to the world.
+_origins = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    *config.cors_origins,
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=_origins,
+    # Vercel preview deployments get a new subdomain per push.
+    allow_origin_regex=r"https://.*\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
