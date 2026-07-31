@@ -258,8 +258,54 @@ difference is what CallFlow AI's campaign templates exist to manage.
 integration, typed extraction, sentiment triage, CSV import, dashboard with
 live polling, dry-run mode.
 
-**Not yet wired** — WhatsApp confirmation, booking tools, scheduled campaigns,
-persistent storage (runs are in-memory).
+---
+
+## Future enhancements
+
+### WhatsApp delivery
+
+Right now the call ends with the agent saying a consultant will follow up. The
+natural next step is to **send the contact everything that was agreed, in
+writing, on WhatsApp** — so they have a record and the team has a receipt.
+
+The structured result already contains everything the message needs:
+
+```json
+{
+  "destination": "Dubai",
+  "travel_date": "2026-12-18",
+  "party_size": 4,
+  "service_interest": "package",
+  "ready_for_quote": true
+}
+```
+
+A post-call step would render that into a template message and send it through
+the WhatsApp Cloud API, keyed off the contact who just spoke.
+
+Two constraints shape the design:
+
+- **Consent must come from the call.** The agent has to ask, and the answer has
+  to land in the schema as a typed field, before anything is sent. A silent
+  message to someone who didn't agree is worse than no message.
+- **Business-initiated messages need pre-approved templates.** WhatsApp only
+  allows free-form replies inside a 24-hour window the user opened. Outside it,
+  messages must use an approved template and are billed per conversation — so
+  this is a paid, approval-gated integration, not a free bolt-on.
+
+The config hooks (`WHATSAPP_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`) already exist
+and read as empty strings when unset.
+
+### Beyond WhatsApp
+
+| | |
+|---|---|
+| **Booking tools** | Let a campaign call MCP tools — flights, hotels, tours — driven by the extracted outcome, so a confirmed intent books itself. |
+| **Scheduled campaigns** | Recurring runs with time-zone-aware calling windows, so nobody is dialed at 3am local time. |
+| **Persistent storage** | Runs are in-memory today. Postgres would give history, per-campaign analytics, and sentiment trends over time. |
+| **Inbound calls** | Handle calls coming *in*, not just going out. |
+| **CRM write-back** | Push outcomes to HubSpot or Salesforce so results land where the team already works. |
+| **Retry orchestration** | Act on the `retry` disposition automatically instead of only surfacing it. |
 
 ---
 
