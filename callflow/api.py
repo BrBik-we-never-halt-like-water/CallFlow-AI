@@ -26,6 +26,7 @@ from .ratelimit import limiter
 from .store import store
 
 logging.basicConfig(level=logging.INFO)
+log = logging.getLogger("callflow.api")
 
 app = FastAPI(title="CallFlow AI API", version="0.1.0")
 
@@ -185,8 +186,8 @@ def _execute(run_id: str, campaign_id: str, contacts: list[Contact], dry_run: bo
             on_progress=lambda outcome: store.append_outcome(run_id, outcome),
         )
         store.finish(run_id)
-    except Exception as exc:  # noqa: BLE001 - surface any failure to the dashboard
-        logging.exception("run %s failed", run_id)
+    except Exception as exc:
+        log.exception("run %s failed", run_id)
         store.finish(run_id, error=f"{type(exc).__name__}: {exc}")
 
 

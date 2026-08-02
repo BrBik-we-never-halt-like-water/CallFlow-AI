@@ -14,7 +14,7 @@ not parse transcripts ourselves.
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, Self
 
 from calle import CalleClient
 from calle.errors import CalleAPIError, CalleTimeoutError
@@ -39,7 +39,7 @@ class CalleGateway:
     def close(self) -> None:
         self._client.close()
 
-    def __enter__(self) -> "CalleGateway":
+    def __enter__(self) -> Self:
         return self
 
     def __exit__(self, *_: object) -> None:
@@ -100,4 +100,4 @@ class CalleGateway:
         return self._client.calls.list_events(call_id, limit=limit)
 
 
-__all__ = ["CalleGateway", "CalleAPIError", "CalleTimeoutError", "TERMINAL"]
+__all__ = ["TERMINAL", "CalleAPIError", "CalleGateway", "CalleTimeoutError"]
