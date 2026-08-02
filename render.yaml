@@ -28,13 +28,11 @@ services:
         sync: false
 
       # The dashboard's public URL is wired in automatically once it deploys.
-      # `hostport`, not `host` — the latter is just the service name and would
-      # never match a browser Origin header.
+      # Must match the browser's Origin header exactly, so it has to be the
+      # public URL. `fromService` yields either a bare service name or an
+      # internal host:port, neither of which a browser ever sends.
       - key: CALLFLOW_CORS_ORIGINS
-        fromService:
-          name: callflow-web
-          type: web
-          property: hostport
+        value: https://callflow-web.onrender.com
 
       # Visitors may place live calls to their own number, so the allowlist is
       # left unset in production. Rate limits below are what protect the
@@ -82,21 +80,17 @@ services:
       - key: NODE_VERSION
         value: "20.19.5"
 
-      # `hostport` gives the full public host (service.onrender.com).
-      # `host` returns only the service name, which is not resolvable.
+      # These must be the PUBLIC URL. `fromService` is deliberately not used:
+      # `property: host` yields the bare service name and `hostport` yields the
+      # internal `service:10000` address — neither resolves from a browser, and
+      # the wake proxy needs the same public host the client uses.
       #
       # Browser-side: inlined into the client bundle at build time.
       - key: NEXT_PUBLIC_API_URL
-        fromService:
-          name: callflow-api
-          type: web
-          property: hostport
+        value: https://callflow-api.onrender.com
 
       # Server-side: read at runtime by the /api/wake route. NEXT_PUBLIC_* vars
       # are a build-time inline for the client and are not guaranteed to exist
       # in the server process, so the wake proxy needs its own variable.
       - key: API_URL
-        fromService:
-          name: callflow-api
-          type: web
-          property: hostport
+        value: https://callflow-api.onrender.com

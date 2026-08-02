@@ -11,14 +11,17 @@ function resolveBase(raw: string | undefined): string {
   const withScheme = /^https?:\/\//i.test(value) ? value : `https://${value}`;
   const cleaned = withScheme.replace(/\/+$/, "");
 
-  // A bare service name like "callflow-api" is not resolvable — Render's
-  // `property: host` returns that, while `hostport` returns the real domain.
-  // Warn rather than fail silently with an unreachable base URL.
-  const host = cleaned.replace(/^https?:\/\//i, "").split("/")[0];
-  if (!host.includes(".") && !host.startsWith("localhost") && !/^\d/.test(host)) {
+  // Render's `fromService` helpers are traps here: `property: host` yields a
+  // bare service name ("callflow-api") and `hostport` yields an internal
+  // address ("callflow-api:10000"). Neither resolves from a browser. Warn
+  // loudly rather than failing with an opaque "fetch failed".
+  const hostname = cleaned.replace(/^https?:\/\//i, "").split("/")[0].split(":")[0];
+  const looksInternal =
+    !hostname.includes(".") && hostname !== "localhost" && !/^\d/.test(hostname);
+  if (looksInternal) {
     console.warn(
-      `[callflow] API base "${cleaned}" has no dot in its hostname. ` +
-        "If this is Render, use `property: hostport`, not `host`.",
+      `[callflow] API base "${cleaned}" is not a public hostname. ` +
+        "Set NEXT_PUBLIC_API_URL to the full https://…onrender.com URL.",
     );
   }
 
