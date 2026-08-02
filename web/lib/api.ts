@@ -1,28 +1,44 @@
+/** Public API URL, used when the environment holds nothing reachable. */
+const PUBLIC_API = "https://callflow-api.onrender.com";
+
 /**
- * Render's `fromService … property: host` yields a bare hostname with no
- * scheme (e.g. "callflow-api.onrender.com"), which would make every fetch
- * relative and 404. Add https:// when it's missing, and drop any trailing
- * slash so paths don't end up doubled.
+ * Is this a hostname a browser can actually resolve?
+ *
+ * Render's `fromService` helpers are traps: `property: host` yields a bare
+ * service name ("callflow-api") and `hostport` yields an internal address
+ * ("callflow-api:10000"). Both look plausible in config and both fail with an
+ * opaque "fetch failed" at runtime.
  */
+function isPublicHost(url: string): boolean {
+  try {
+    const { hostname, port } = new URL(url);
+    if (hostname === "localhost" || /^\d+\.\d+\.\d+\.\d+$/.test(hostname)) return true;
+    if (!hostname.includes(".")) return false;
+    // Render's internal wiring appends :10000; public URLs use 80/443.
+    return port === "" || port === "80" || port === "443";
+  } catch {
+    return false;
+  }
+}
+
 function resolveBase(raw: string | undefined): string {
   const value = raw?.trim();
-  if (!value) return "http://127.0.0.1:8000";
+  if (!value) {
+    // No config at all: local dev.
+    return typeof window !== "undefined" && window.location.hostname !== "localhost"
+      ? PUBLIC_API
+      : "http://127.0.0.1:8000";
+  }
 
   const withScheme = /^https?:\/\//i.test(value) ? value : `https://${value}`;
   const cleaned = withScheme.replace(/\/+$/, "");
 
-  // Render's `fromService` helpers are traps here: `property: host` yields a
-  // bare service name ("callflow-api") and `hostport` yields an internal
-  // address ("callflow-api:10000"). Neither resolves from a browser. Warn
-  // loudly rather than failing with an opaque "fetch failed".
-  const hostname = cleaned.replace(/^https?:\/\//i, "").split("/")[0].split(":")[0];
-  const looksInternal =
-    !hostname.includes(".") && hostname !== "localhost" && !/^\d/.test(hostname);
-  if (looksInternal) {
+  if (!isPublicHost(cleaned)) {
     console.warn(
-      `[callflow] API base "${cleaned}" is not a public hostname. ` +
-        "Set NEXT_PUBLIC_API_URL to the full https://…onrender.com URL.",
+      `[callflow] NEXT_PUBLIC_API_URL is "${cleaned}", which is not reachable ` +
+        `from a browser. Falling back to ${PUBLIC_API}.`,
     );
+    return PUBLIC_API;
   }
 
   return cleaned;
