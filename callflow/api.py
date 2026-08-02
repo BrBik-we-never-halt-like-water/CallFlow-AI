@@ -63,6 +63,16 @@ class RunRequest(BaseModel):
     dry_run: bool | None = None
 
 
+@app.get("/")
+def root() -> dict[str, str]:
+    """Cheapest possible liveness probe.
+
+    Render's health check and any keep-alive pinger hit this. It touches no
+    locks and no config so it can never be the slow thing.
+    """
+    return {"service": "callflow-api", "status": "ok"}
+
+
 @app.get("/api/health")
 def health() -> dict[str, Any]:
     return {

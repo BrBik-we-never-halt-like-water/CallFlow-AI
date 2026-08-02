@@ -33,3 +33,6 @@ venv/
 # scaffolding notes
 web/CLAUDE.md
 web/AGENTS.md
+
+# next.js incremental build cache
+web/tsconfig.tsbuildinfo

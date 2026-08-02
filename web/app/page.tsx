@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Prewarm from "./ui/prewarm";
 import { SiteFooter, SiteHeader } from "./ui/site";
 import {
   ArrowRightIcon,
@@ -70,6 +71,9 @@ const STEPS = [
 export default function LandingPage() {
   return (
     <div className="min-h-screen bg-white">
+      {/* Start waking the API while the visitor reads, so the dashboard is
+          warm by the time they click through. */}
+      <Prewarm />
       <SiteHeader />
 
       {/* ---- Hero ---- */}

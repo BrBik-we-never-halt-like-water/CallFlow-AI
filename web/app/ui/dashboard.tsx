@@ -54,34 +54,73 @@ export default function Dashboard() {
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const [waking, setWaking] = useState(false);
+  // `health === null` is ambiguous on its own — it means both "not fetched
+  // yet" and "failed". Track the phase explicitly so the error banner cannot
+  // flash before the first request has even finished.
+  const [conn, setConn] = useState<"connecting" | "waking" | "up" | "down">(
+    "connecting",
+  );
+  const [wakeSeconds, setWakeSeconds] = useState(0);
+  const waking = conn === "waking";
 
   useEffect(() => {
     let cancelled = false;
 
-    // Free-tier hosting sleeps after inactivity, so the first request can take
-    // ~30-60s. Retry with backoff and say so, rather than showing "offline".
     async function connect() {
-      for (let attempt = 0; attempt < 8 && !cancelled; attempt++) {
+      // Try once directly — if the API is already warm this is instant.
+      try {
+        const h = await api.health();
+        if (cancelled) return;
+        setHealth(h);
+        const cs = await api.campaigns();
+        if (cancelled) return;
+        setCampaigns(cs);
+        if (cs.length && !cs.some((c) => c.id === campaignId)) {
+          setCampaignId(cs[0].id);
+        }
+        setConn("up");
+        return;
+      } catch {
+        /* asleep — fall through to the wake path */
+      }
+
+      if (cancelled) return;
+      setConn("waking");
+
+      // Count up so the wait is visibly progressing rather than just hanging.
+      const started = Date.now();
+      const ticker = setInterval(() => {
+        setWakeSeconds(Math.floor((Date.now() - started) / 1000));
+      }, 1000);
+
+      // Ask our own server to wake the API. No CORS preflight and no browser
+      // timeout, so this survives a multi-minute cold start.
+      void fetch("/api/wake", { cache: "no-store" }).catch(() => {});
+
+      // Free-tier cold starts can run past two minutes.
+      for (let attempt = 0; attempt < 40 && !cancelled; attempt++) {
+        await new Promise((r) => setTimeout(r, 4000));
         try {
           const h = await api.health();
-          if (cancelled) return;
+          if (cancelled) break;
           setHealth(h);
-          setWaking(false);
           const cs = await api.campaigns();
-          if (cancelled) return;
+          if (cancelled) break;
           setCampaigns(cs);
           if (cs.length && !cs.some((c) => c.id === campaignId)) {
             setCampaignId(cs[0].id);
           }
+          setConn("up");
+          clearInterval(ticker);
           return;
         } catch {
-          if (attempt === 0 && !cancelled) setWaking(true);
-          await new Promise((r) => setTimeout(r, 4000));
+          /* still starting */
         }
       }
+
+      clearInterval(ticker);
       if (!cancelled) {
-        setWaking(false);
+        setConn("down");
         setHealth(null);
       }
     }
@@ -180,25 +219,60 @@ export default function Dashboard() {
           <span className="inline-flex items-center gap-2 text-[var(--color-muted)]">
             <span
               className={`relative inline-flex h-2 w-2 rounded-full ${
-                health?.ok ? "bg-emerald-500" : waking ? "bg-amber-500" : "bg-red-500"
+                conn === "up"
+                  ? "bg-emerald-500"
+                  : conn === "down"
+                    ? "bg-red-500"
+                    : "bg-amber-500"
               }`}
             >
-              {(health?.ok || waking) && (
+              {conn !== "down" && (
                 <span
                   className={`absolute inline-flex h-full w-full animate-ping rounded-full opacity-75 ${
-                    health?.ok ? "bg-emerald-400" : "bg-amber-400"
+                    conn === "up" ? "bg-emerald-400" : "bg-amber-400"
                   }`}
                 />
               )}
             </span>
-            {health?.ok
+            {conn === "up"
               ? "Backend connected"
-              : waking
-                ? "Waking the backend…"
-                : "Backend offline"}
+              : conn === "waking"
+                ? `Waking the backend… ${wakeSeconds}s`
+                : conn === "connecting"
+                  ? "Connecting…"
+                  : "Backend offline"}
           </span>
         </div>
       </div>
+
+      {/* Free-tier cold start can take a couple of minutes. Say so plainly,
+          otherwise a first-time visitor assumes the app is broken. */}
+      {waking && (
+        <div className="mb-6 flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+          <Spinner dark />
+          <div className="text-xs leading-relaxed text-amber-900">
+            <strong>Starting the backend.</strong> This demo runs on a free tier
+            that sleeps after inactivity, so the first request wakes it — this
+            usually takes 30–90 seconds. Everything loads automatically once
+            it&apos;s up.
+          </div>
+        </div>
+      )}
+
+      {conn === "down" && (
+        <div className="mb-6 flex items-start justify-between gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3">
+          <div className="text-xs leading-relaxed text-red-900">
+            <strong>Could not reach the backend.</strong> It may still be
+            starting up.
+          </div>
+          <button
+            onClick={() => window.location.reload()}
+            className="shrink-0 cursor-pointer rounded-lg bg-red-600 px-3 py-1.5 text-xs font-medium text-white transition hover:brightness-110"
+          >
+            Retry
+          </button>
+        </div>
+      )}
 
       {/* ---- Campaign picker ---- */}
       <section className="mb-6">

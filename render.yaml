@@ -12,7 +12,9 @@ services:
     region: singapore
     buildCommand: pip install -e .
     startCommand: uvicorn callflow.api:app --host 0.0.0.0 --port $PORT
-    healthCheckPath: /api/health
+    # `/` is the cheapest route and never touches config or locks, so a slow
+    # health check can never take the service down.
+    healthCheckPath: /
     envVars:
       - key: PYTHON_VERSION
         value: "3.11.9"
@@ -35,8 +37,12 @@ services:
       # Visitors may place live calls to their own number, so the allowlist is
       # left unset in production. Rate limits below are what protect the
       # credit balance — do not remove them.
+      #
+      # This is only the DEFAULT for API calls that omit `dry_run`. The
+      # dashboard always sends it explicitly, and starts on Dry run, so a
+      # visitor has to deliberately switch to Live before anything dials.
       - key: CALLFLOW_DRY_RUN
-        value: "false"
+        value: "true"
 
       - key: CALLFLOW_MAX_CALLS_PER_RUN
         value: "3"
