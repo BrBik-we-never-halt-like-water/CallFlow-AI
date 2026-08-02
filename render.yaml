@@ -80,8 +80,17 @@ services:
       - key: NODE_VERSION
         value: "20.19.5"
 
-      # Points the dashboard at the API above. Resolved by Render at deploy time.
+      # Browser-side: inlined into the client bundle at build time.
       - key: NEXT_PUBLIC_API_URL
+        fromService:
+          name: callflow-api
+          type: web
+          property: host
+
+      # Server-side: read at runtime by the /api/wake route. NEXT_PUBLIC_* vars
+      # are a build-time inline for the client and are not guaranteed to exist
+      # in the server process, so the wake proxy needs its own variable.
+      - key: API_URL
         fromService:
           name: callflow-api
           type: web
