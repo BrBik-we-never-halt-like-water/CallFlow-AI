@@ -4,7 +4,7 @@
 
 **A 24×7 AI calling desk built on [CALL-E](https://heycall-e.com).**
 
- in contacts and a goal. CallFlow AI dials, holds real conversations,
+Feed in contacts and a goal. CallFlow AI dials, holds real conversations,
 extracts typed results, and escalates only what needs a person.
 
 [![Python](https://img.shields.io/badge/python-3.11+-3776AB?logo=python&logoColor=white)](https://www.python.org)
