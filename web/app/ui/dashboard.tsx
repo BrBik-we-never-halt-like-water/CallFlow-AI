@@ -63,6 +63,10 @@ export default function Dashboard() {
   const [wakeSeconds, setWakeSeconds] = useState(0);
   const waking = conn === "waking";
 
+  // A live call has real queue and ring time. Counting up makes the wait feel
+  // like progress rather than a hang.
+  const [runSeconds, setRunSeconds] = useState(0);
+
   useEffect(() => {
     let cancelled = false;
 
@@ -152,7 +156,14 @@ export default function Dashboard() {
     setError(null);
     setSelected(null);
     setBusy(true);
+    setRunSeconds(0);
     stopPolling();
+
+    const startedAt = Date.now();
+    const ticker = setInterval(
+      () => setRunSeconds(Math.floor((Date.now() - startedAt) / 1000)),
+      1000,
+    );
 
     try {
       const { run_id } = await api.startRun(campaignId, contacts, dryRun);
@@ -162,6 +173,7 @@ export default function Dashboard() {
           setRun(latest);
           if (latest.status !== "running") {
             stopPolling();
+            clearInterval(ticker);
             setBusy(false);
             if (latest.outcomes.length === 1) setSelected(latest.outcomes[0]);
             // Refresh the remaining live-call budget.
@@ -169,11 +181,13 @@ export default function Dashboard() {
           }
         } catch {
           stopPolling();
+          clearInterval(ticker);
           setBusy(false);
         }
       }, 1500);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
+      clearInterval(ticker);
       setBusy(false);
     }
   }
@@ -463,6 +477,19 @@ export default function Dashboard() {
                 <Stat label="Escalation" value={`${stats?.needs_human_pct ?? 0}%`} />
               </div>
 
+              {/* Preview data must be unmistakable — a judge should never
+                  think a call was placed when it wasn't. */}
+              {run.dry_run && run.outcomes.length > 0 && (
+                <div className="mb-5 rounded-xl border border-indigo-200 bg-[var(--color-brand-soft)] px-4 py-3">
+                  <p className="text-xs leading-relaxed text-indigo-900">
+                    <strong>Preview — sample results.</strong> No calls were
+                    placed and no credits were spent. These outcomes show what
+                    the pipeline returns once a real conversation ends. Switch
+                    to <strong>Live calls</strong> to dial for real.
+                  </p>
+                </div>
+              )}
+
               {run.status === "running" && (
                 <div className="mb-5">
                   <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
@@ -473,8 +500,16 @@ export default function Dashboard() {
                   </div>
                   <p className="mt-2 flex items-center gap-2 text-xs text-[var(--color-muted)]">
                     <Spinner dark />
-                    Calling… updates every 1.5s
+                    {run.dry_run
+                      ? "Building preview…"
+                      : `Calling… ${runSeconds}s elapsed`}
                   </p>
+                  {!run.dry_run && (
+                    <p className="mt-1 text-[11px] text-[var(--color-muted)]">
+                      CALL-E queues the call, then dials — expect 30–60 seconds
+                      before the phone rings.
+                    </p>
+                  )}
                 </div>
               )}
 
@@ -610,8 +645,10 @@ function Stat({
 
 function OutcomeDetail({ outcome }: { outcome: Outcome }) {
   const entries = Object.entries(outcome.extracted ?? {});
+  const isSample = Boolean(outcome.extracted?.is_sample);
   const summaryField = entries.find(([k]) => k === "summary")?.[1];
-  const fields = entries.filter(([k]) => k !== "summary");
+  // `is_sample` is a marker for the UI, not a field CALL-E extracted.
+  const fields = entries.filter(([k]) => k !== "summary" && k !== "is_sample");
 
   return (
     <div className="mt-5 overflow-hidden rounded-xl border border-[var(--color-border)] bg-white/70">
@@ -636,7 +673,7 @@ function OutcomeDetail({ outcome }: { outcome: Outcome }) {
           </p>
         )}
 
-        {(summaryField || outcome.summary) && !outcome.dry_run && (
+        {(summaryField || outcome.summary) && (
           <div className="rounded-lg border-l-2 border-[var(--color-brand)] bg-[var(--color-brand-soft)] px-4 py-3">
             <p className="text-xs leading-relaxed text-[var(--color-ink)]">
               {String(summaryField ?? outcome.summary)}
@@ -646,8 +683,13 @@ function OutcomeDetail({ outcome }: { outcome: Outcome }) {
 
         {fields.length > 0 && (
           <div>
-            <h4 className="mb-2.5 text-[11px] font-semibold uppercase tracking-wide text-[var(--color-muted)]">
+            <h4 className="mb-2.5 flex flex-wrap items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-[var(--color-muted)]">
               Structured result from CALL-E
+              {isSample && (
+                <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[9px] font-bold tracking-wide text-amber-800">
+                  Sample data
+                </span>
+              )}
             </h4>
             <dl className="grid gap-x-8 sm:grid-cols-2">
               {fields.map(([k, v]) => {
@@ -676,21 +718,12 @@ function OutcomeDetail({ outcome }: { outcome: Outcome }) {
           </div>
         )}
 
-        {outcome.dry_run && outcome.summary && (
-          <div>
-            <h4 className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-[var(--color-muted)]">
-              Rendered goal — what the agent would say
-            </h4>
-            <pre className="max-h-56 overflow-auto whitespace-pre-wrap rounded-lg bg-[var(--color-subtle)] p-4 font-mono text-[11px] leading-relaxed text-[var(--color-ink-soft)]">
-              {outcome.summary}
-            </pre>
-          </div>
-        )}
-
         {outcome.transcript && (
           <div>
             <h4 className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-[var(--color-muted)]">
-              Transcript
+              {outcome.dry_run
+                ? "Rendered goal — what the agent would say"
+                : "Transcript"}
             </h4>
             <pre className="max-h-56 overflow-auto whitespace-pre-wrap rounded-lg bg-[var(--color-subtle)] p-4 font-mono text-[11px] leading-relaxed text-[var(--color-ink-soft)]">
               {outcome.transcript}

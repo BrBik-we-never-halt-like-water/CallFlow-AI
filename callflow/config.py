@@ -59,7 +59,7 @@ class Config:
     # --- public demo limits -------------------------------------------------
     # The hosted dashboard lets visitors call their own number. These caps stop
     # one visitor draining the owner's credits or dialing strangers repeatedly.
-    rate_limit_calls: int = field(default_factory=lambda: _int("CALLFLOW_RATE_LIMIT_CALLS", 2))
+    rate_limit_calls: int = field(default_factory=lambda: _int("CALLFLOW_RATE_LIMIT_CALLS", 5))
     rate_limit_window_seconds: int = field(
         default_factory=lambda: _int("CALLFLOW_RATE_LIMIT_WINDOW", 3600)
     )

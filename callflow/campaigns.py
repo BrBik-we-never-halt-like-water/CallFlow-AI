@@ -36,11 +36,15 @@ TRAVEL_DISCOVERY = Campaign(
         "Do not promise a WhatsApp message, an email, a price, or a specific "
         "callback time — none of that is yours to commit to."
     ),
+    # Must mirror TRAVEL_PROPERTIES in schemas.py — this is what the dashboard
+    # lists and what dry-run previews populate.
     outcome_fields={
         "service_interest": "flight | hotel | tour | package | none",
         "destination": "destination city or country",
         "travel_date": "YYYY-MM-DD",
         "party_size": "number of travellers",
+        "budget_inr": "stated budget in INR",
+        "ready_for_quote": "true if a consultant has enough to quote",
     },
     region="IN",
     language="en",
@@ -61,6 +65,13 @@ APPOINTMENT_REMINDER = Campaign(
         "Keep the call under two minutes. Do not give any medical, legal, or "
         "financial advice — if asked, say a colleague will follow up."
     ),
+    # Must mirror the extra properties in SCHEMAS below — this is what the
+    # dashboard lists and what dry-run previews populate.
+    outcome_fields={
+        "confirmed": "true if the appointment was confirmed",
+        "reschedule_to": "preferred new slot, if given",
+        "cancelled": "true if the contact cancelled",
+    },
     region="IN",
     language="en",
     escalate_on_negative=True,

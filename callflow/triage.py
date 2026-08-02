@@ -66,7 +66,9 @@ def triage(outcome: CallOutcome, *, escalate_on_negative: bool = True) -> CallOu
         updates["disposition"] = Disposition.UNREACHABLE
         updates["disposition_reason"] = f"Call did not connect ({status})."
 
-    elif status == "completed":
+    # "preview" is a dry-run sample. It routes like a completed conversation so
+    # the preview shows the same disposition a real call would get.
+    elif status in {"completed", "preview"}:
         updates["disposition"] = Disposition.AUTO_CLOSED
         updates["disposition_reason"] = "Conversation completed with no escalation signals."
 

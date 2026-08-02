@@ -42,9 +42,10 @@ def test_dry_run_places_no_call() -> None:
     result = runner.run_one(TRAVEL_DISCOVERY, contact)
 
     assert result.dry_run is True
-    assert result.status == "DRY_RUN"
-    assert result.disposition is Disposition.SKIPPED
+    assert result.status == "PREVIEW"
     assert result.run_id is None
+    # The preview must be flagged, or it could be mistaken for a real result.
+    assert result.extracted["is_sample"] is True
 
 
 def test_dry_run_masks_phone_in_output() -> None:

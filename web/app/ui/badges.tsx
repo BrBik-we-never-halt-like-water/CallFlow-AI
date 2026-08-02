@@ -1,6 +1,11 @@
 import type { Disposition, Sentiment } from "@/lib/api";
 
 const DISPOSITION: Record<Disposition, { label: string; cls: string; dot: string }> = {
+  in_flight: {
+    label: "Calling…",
+    cls: "bg-indigo-50 text-indigo-700 ring-indigo-200",
+    dot: "bg-indigo-500 animate-pulse",
+  },
   escalated: {
     label: "Needs human",
     cls: "bg-red-50 text-red-700 ring-red-200",

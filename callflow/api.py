@@ -265,10 +265,13 @@ def get_run(run_id: str) -> dict[str, Any]:
         raise HTTPException(status_code=404, detail="Run not found")
 
     outcomes = run["outcomes"]
-    escalated = sum(1 for o in outcomes if o["disposition"] == "escalated")
+    # A row exists as soon as a call is placed, so count only calls that have
+    # actually resolved — an in-flight one is not progress yet.
+    resolved = [o for o in outcomes if o["disposition"] != "in_flight"]
+    escalated = sum(1 for o in resolved if o["disposition"] == "escalated")
     return run | {
         "stats": {
-            "completed": len(outcomes),
+            "completed": len(resolved),
             "total": run["total"],
             "escalated": escalated,
             "auto_closed": sum(1 for o in outcomes if o["disposition"] == "auto_closed"),

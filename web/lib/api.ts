@@ -47,6 +47,7 @@ function resolveBase(raw: string | undefined): string {
 const BASE = resolveBase(process.env.NEXT_PUBLIC_API_URL);
 
 export type Disposition =
+  | "in_flight"
   | "auto_closed"
   | "escalated"
   | "retry"

@@ -49,7 +49,7 @@ services:
 
       # Per-IP allowance, then a shared daily floor.
       - key: CALLFLOW_RATE_LIMIT_CALLS
-        value: "2"
+        value: "5"
 
       - key: CALLFLOW_RATE_LIMIT_WINDOW
         value: "3600"

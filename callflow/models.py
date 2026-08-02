@@ -39,6 +39,9 @@ class Sentiment(str, Enum):
 class Disposition(str, Enum):
     """What the orchestrator decided to do after the call resolved."""
 
+    # Not a decision — the call is still happening. Lets the dashboard show a
+    # row while it runs instead of nothing until it ends.
+    IN_FLIGHT = "in_flight"
     AUTO_CLOSED = "auto_closed"
     ESCALATED = "escalated"
     RETRY = "retry"

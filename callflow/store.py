@@ -36,10 +36,25 @@ class RunStore:
         return run_id
 
     def append_outcome(self, run_id: str, outcome: CallOutcome) -> None:
+        """Add or update a contact's row.
+
+        A live call reports several times as it progresses (queued → ringing →
+        completed), so match on the contact rather than appending, otherwise
+        one call would produce a row per status change.
+        """
+        record = outcome.model_dump(mode="json")
         with self._lock:
             run = self._runs.get(run_id)
-            if run is not None:
-                run["outcomes"].append(outcome.model_dump(mode="json"))
+            if run is None:
+                return
+            for i, existing in enumerate(run["outcomes"]):
+                if (
+                    existing["contact_name"] == record["contact_name"]
+                    and existing["phone_masked"] == record["phone_masked"]
+                ):
+                    run["outcomes"][i] = record
+                    return
+            run["outcomes"].append(record)
 
     def finish(self, run_id: str, error: str | None = None) -> None:
         with self._lock:
