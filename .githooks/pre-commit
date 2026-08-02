@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -e
+
+changed=$(git diff --cached --name-only)
+
+if echo "$changed" | grep -qE '^(callflow/|tests/|pyproject\.toml)'; then
+  echo "== backend: ruff + pytest =="
+  ruff check callflow tests
+  pytest -q
+fi
+
+if echo "$changed" | grep -q '^web/'; then
+  echo "== frontend: lint + type-check =="
+  (cd web && npm run lint && npm run type-check)
+fi
