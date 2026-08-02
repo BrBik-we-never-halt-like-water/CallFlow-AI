@@ -8,7 +8,6 @@ from callflow.campaigns import (
     delete_campaign,
     register_campaign,
     slugify,
-    unique_id,
 )
 
 GOAL = (

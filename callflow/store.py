@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import threading
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from .models import CallOutcome
@@ -28,7 +28,7 @@ class RunStore:
                 "total": total,
                 "dry_run": dry_run,
                 "status": "running",
-                "started_at": datetime.now(timezone.utc).isoformat(),
+                "started_at": datetime.now(UTC).isoformat(),
                 "finished_at": None,
                 "outcomes": [],
                 "error": None,
@@ -61,7 +61,7 @@ class RunStore:
             run = self._runs.get(run_id)
             if run is not None:
                 run["status"] = "failed" if error else "completed"
-                run["finished_at"] = datetime.now(timezone.utc).isoformat()
+                run["finished_at"] = datetime.now(UTC).isoformat()
                 run["error"] = error
 
     def get(self, run_id: str) -> dict[str, Any] | None:

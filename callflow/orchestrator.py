@@ -14,11 +14,12 @@ from __future__ import annotations
 import logging
 import time
 import uuid
-from typing import Any, Callable, Iterable
+from collections.abc import Callable, Iterable
+from typing import Any
 
 from .calle_client import TERMINAL, CalleGateway
 from .config import config
-from .models import Campaign, CallOutcome, Contact, Disposition
+from .models import CallOutcome, Campaign, Contact, Disposition
 from .safety import check_dial_allowed, mask
 from .samples import sample_outcome
 from .triage import triage
