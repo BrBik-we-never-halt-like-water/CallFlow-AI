@@ -7,8 +7,22 @@
 function resolveBase(raw: string | undefined): string {
   const value = raw?.trim();
   if (!value) return "http://127.0.0.1:8000";
+
   const withScheme = /^https?:\/\//i.test(value) ? value : `https://${value}`;
-  return withScheme.replace(/\/+$/, "");
+  const cleaned = withScheme.replace(/\/+$/, "");
+
+  // A bare service name like "callflow-api" is not resolvable — Render's
+  // `property: host` returns that, while `hostport` returns the real domain.
+  // Warn rather than fail silently with an unreachable base URL.
+  const host = cleaned.replace(/^https?:\/\//i, "").split("/")[0];
+  if (!host.includes(".") && !host.startsWith("localhost") && !/^\d/.test(host)) {
+    console.warn(
+      `[callflow] API base "${cleaned}" has no dot in its hostname. ` +
+        "If this is Render, use `property: hostport`, not `host`.",
+    );
+  }
+
+  return cleaned;
 }
 
 const BASE = resolveBase(process.env.NEXT_PUBLIC_API_URL);

@@ -28,11 +28,13 @@ services:
         sync: false
 
       # The dashboard's public URL is wired in automatically once it deploys.
+      # `hostport`, not `host` — the latter is just the service name and would
+      # never match a browser Origin header.
       - key: CALLFLOW_CORS_ORIGINS
         fromService:
           name: callflow-web
           type: web
-          property: host
+          property: hostport
 
       # Visitors may place live calls to their own number, so the allowlist is
       # left unset in production. Rate limits below are what protect the
@@ -80,12 +82,15 @@ services:
       - key: NODE_VERSION
         value: "20.19.5"
 
+      # `hostport` gives the full public host (service.onrender.com).
+      # `host` returns only the service name, which is not resolvable.
+      #
       # Browser-side: inlined into the client bundle at build time.
       - key: NEXT_PUBLIC_API_URL
         fromService:
           name: callflow-api
           type: web
-          property: host
+          property: hostport
 
       # Server-side: read at runtime by the /api/wake route. NEXT_PUBLIC_* vars
       # are a build-time inline for the client and are not guaranteed to exist
@@ -94,4 +99,4 @@ services:
         fromService:
           name: callflow-api
           type: web
-          property: host
+          property: hostport
