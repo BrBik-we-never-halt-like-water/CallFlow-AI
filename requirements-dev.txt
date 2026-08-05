@@ -1,0 +1,11 @@
+# CallFlow AI — development dependencies (tests + lint).
+#
+#   pip install -r requirements-dev.txt
+#
+# Mirrors [project.optional-dependencies].dev in pyproject.toml.
+
+-r requirements.txt
+
+pytest>=8.3.0
+pytest-asyncio>=0.24.0
+ruff>=0.7.0

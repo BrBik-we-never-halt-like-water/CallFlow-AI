@@ -1,7 +1,7 @@
 """Per-visitor rate limiting for the public deployment.
 
 The hosted dashboard lets anyone enter their own number and receive a real
-call. That is the point of the demo — but it runs on the owner's CALL-E
+call. That is the point of the demo — but it runs on the owner's engine
 credits, so an unlimited public endpoint would be trivially drainable and
 could be pointed at strangers.
 

@@ -134,7 +134,7 @@ def register_campaign(
 
     `extra_fields` are appended to the shared triage schema, so every campaign
     still returns sentiment/frustration/opt-out regardless of what else the
-    author asks CALL-E to extract.
+    author asks the engine to extract.
     """
     properties: dict[str, Any] = {}
     outcome_fields: dict[str, str] = {}

@@ -83,7 +83,7 @@ config = Config()
 def require_api_key() -> str:
     if not config.api_key:
         raise RuntimeError(
-            "CALLE_API_KEY is not set. Copy .env.example to .env and add your key "
-            "from https://dashboard.heycall-e.com"
+            "No Voice API key is set. Copy .env.example to .env and set "
+            "CALLE_API_KEY before placing live calls."
         )
     return config.api_key

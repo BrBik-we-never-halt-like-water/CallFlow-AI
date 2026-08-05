@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- Favicon variant of the mark. The geometry is thickened for small sizes: at
+       16px the three lamps merge into a readable tri-colour bar, which is exactly
+       what the mark is meant to do at this scale. -->
+  <rect width="32" height="32" rx="7" fill="#0B0F12"/>
+  <rect x="4.5" y="11" width="23" height="10" rx="5" fill="none" stroke="#35434A" stroke-width="1.5"/>
+  <circle cx="11" cy="16" r="3.2" fill="#3E9E7A"/>
+  <circle cx="16" cy="16" r="3.2" fill="#D69B2D"/>
+  <circle cx="21" cy="16" r="3.2" fill="#DC4B34"/>
+</svg>

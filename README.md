@@ -1,8 +1,8 @@
 <div align="center">
 
-<img src="web/public/assets/CElogo.jpg" alt="CallFlow AI" width="420" />
+# CallFlow AI
 
-**A 24×7 AI calling desk built on [CALL-E](https://heycall-e.com).**
+**An operations layer for outbound phone calls.**
 
 Feed in contacts and a goal. CallFlow AI dials, holds real conversations,
 extracts typed results, and escalates only what needs a person.
@@ -10,11 +10,8 @@ extracts typed results, and escalates only what needs a person.
 [![Python](https://img.shields.io/badge/python-3.11+-3776AB?logo=python&logoColor=white)](https://www.python.org)
 [![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
 [![Next.js](https://img.shields.io/badge/Next.js%2016-000000?logo=nextdotjs&logoColor=white)](https://nextjs.org)
-[![CALL-E](https://img.shields.io/badge/built%20on-CALL--E-4f46e5)](https://heycall-e.com)
-[![Tests](https://img.shields.io/badge/tests-71%20passing-3fb950)](#tests)
+[![Tests](https://img.shields.io/badge/tests-84%20passing-3fb950)](#tests)
 [![Live demo](https://img.shields.io/badge/live-demo-4f46e5)](https://callflow-web.onrender.com)
-
-Built for the [CALL-E: Your Code Is Calling](https://call-e.devpost.com) hackathon.
 
 </div>
 
@@ -38,8 +35,8 @@ the work that needs a human is visible immediately and the rest closes itself.
 
 | | |
 |---|---|
-| **Campaigns, not scripts** | Write a goal in plain English. CALL-E improvises the conversation and adapts when people go off-script. |
-| **Typed results** | Every call returns schema-validated JSON via CALL-E's native `result_schema`. No transcript scraping. |
+| **Campaigns, not scripts** | Write a goal in plain English. The agent improvises the conversation and adapts when people go off-script. |
+| **Typed results** | Every call returns schema-validated JSON via the engine's native `result_schema`. No transcript scraping. |
 | **Sentiment triage** | Frustration and opt-outs escalate to a person. Bad timing is queued for a polite retry. Clean calls auto-close. |
 | **Build your own** | Create unlimited campaigns from the dashboard with custom extraction fields. |
 | **Safe by default** | Dry run is on until you turn it off. An allowlist and per-run ceiling stop accidental calls. |
@@ -49,7 +46,7 @@ the work that needs a human is visible immediately and the rest closes itself.
 ## Architecture
 
 ```
-  Next.js dashboard              FastAPI orchestrator            CALL-E
+  Next.js dashboard              FastAPI orchestrator         voice engine
   -----------------   -- HTTP ->  --------------------  -- SDK ->  ------
   campaigns                       safety gate                     dials
   contact table                     E.164 validation              speaks
@@ -69,7 +66,7 @@ the work that needs a human is visible immediately and the rest closes itself.
                auto-close            retry later           needs human
 ```
 
-**CALL-E is the calling agent.** It owns the phone number, dialer, speech
+**The voice engine is the calling agent.** It owns the phone number, dialer, speech
 recognition, conversational model, turn-taking, voicemail detection, and IVR
 handling. CallFlow AI is the operations layer around it.
 
@@ -84,7 +81,7 @@ python -m venv .venv
 .venv/Scripts/activate           # Windows  ·  source .venv/bin/activate on Unix
 pip install -e .
 
-cp .env.example .env             # add your CALLE_API_KEY
+cp .env.example .env             # add your Voice API key
 python run_api.py                # → http://127.0.0.1:8000
 ```
 
@@ -96,7 +93,7 @@ npm install
 npm run dev                      # → http://localhost:3000
 ```
 
-Get an API key at [dashboard.heycall-e.com](https://dashboard.heycall-e.com).
+Set `CALLE_API_KEY` to the Voice API key from your voice-engine provider.
 New accounts include free calls.
 
 ---
@@ -110,7 +107,7 @@ extracted fields appear in the results table.
 
 **→ [callflow-web.onrender.com](https://callflow-web.onrender.com)**
 
-Because the demo runs on a shared CALL-E account, live calls are rate limited:
+Because the demo runs on a shared engine account, live calls are rate limited:
 
 | Limit | Value |
 |---|---|
@@ -136,7 +133,7 @@ Only call a number you own or have permission to call.
 | `CALLFLOW_MAX_CALLS_PER_RUN` | Hard ceiling per process run. Protects your credit balance. |
 | `CALLFLOW_RATE_LIMIT_CALLS` | Live calls allowed per IP per window (default 2/hour). |
 | `CALLFLOW_DAILY_BUDGET` | Shared daily live-call ceiling across all visitors. |
-| E.164 validation | Malformed numbers are rejected before reaching CALL-E. |
+| E.164 validation | Malformed numbers are rejected before reaching the engine. |
 
 The allowlist and the rate limiter solve different problems. **Use the
 allowlist for private development** — it makes dialing anyone but yourself
@@ -190,7 +187,7 @@ Campaign(
 )
 ```
 
-CALL-E returns this, validated against the schema:
+The engine returns this, validated against the schema:
 
 ```json
 {
@@ -227,7 +224,7 @@ Triage reads those typed fields — never prose — to decide the disposition.
 | `GET /api/campaigns` | List campaigns |
 | `POST /api/campaigns` | Create a campaign with custom extraction fields |
 | `DELETE /api/campaigns/{id}` | Remove a user-created campaign |
-| `POST /api/preview` | Render goals without touching CALL-E |
+| `POST /api/preview` | Render goals without touching the voice engine |
 | `POST /api/runs` | Start a run (background) |
 | `GET /api/runs/{id}` | Poll status, outcomes, and stats |
 
@@ -238,7 +235,7 @@ Triage reads those typed fields — never prose — to decide the disposition.
 ```
 callflow/               Python backend
 ├── api.py              FastAPI surface
-├── calle_client.py     CALL-E SDK wrapper
+├── engine_client.py    Voice engine SDK wrapper
 ├── orchestrator.py     gate → dial → poll → triage
 ├── safety.py           E.164, masking, dial gate
 ├── campaigns.py        built-in + user campaigns
@@ -270,11 +267,11 @@ gateway, and triage precedence is correct.
 
 ## Notes from the build
 
-**`language` is not a valid CALL-E recipient field** — it's `locale`. The API
+**`language` is not a valid recipient field** — it's `locale`. The API
 rejects the former with a `422 extra_forbidden`, which is only discoverable from
 the error payload.
 
-**CALL-E validates task substance.** A thin goal like `"Call and ask about their
+**The engine validates task substance.** A thin goal like `"Call and ask about their
 trip"` is rejected with `call_not_ready`. The goal must state what to say, ask,
 and do on success or failure — the dashboard enforces a 40-character minimum.
 
@@ -286,7 +283,7 @@ difference is what CallFlow AI's campaign templates exist to manage.
 
 ## Status
 
-**Working** — campaigns (built-in and user-created), safety gate, CALL-E
+**Working** — campaigns (built-in and user-created), safety gate, engine
 integration, typed extraction, sentiment triage, CSV import, dashboard with
 live polling, dry-run mode.
 
@@ -343,10 +340,6 @@ and read as empty strings when unset.
 
 <div align="center">
 
-Built by [mohdcodes](https://mohdcodess.onrender.com) ·
-[GitHub](https://github.com/mohdcodes) ·
-[LinkedIn](https://linkedin.com/in/mohdcodes)
-
-Powered by [CALL-E](https://heycall-e.com)
+Created by [BrBik](https://brbik.com)
 
 </div>

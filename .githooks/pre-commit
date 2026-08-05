@@ -3,13 +3,50 @@ set -e
 
 changed=$(git diff --cached --name-only)
 
+# Resolve a Python tool from the project venv first, then PATH.
+#
+# Bare `ruff` only works when the venv happens to be activated, which it usually
+# isn't in a GUI client or a fresh shell — and a hook that dies on
+# "command not found" blocks the commit for a reason that has nothing to do with
+# the code. Look in the venv explicitly, and fall back to PATH.
+find_tool() {
+  local name="$1"
+  for candidate in ".venv/Scripts/$name.exe" ".venv/Scripts/$name" ".venv/bin/$name"; do
+    if [ -x "$candidate" ]; then
+      echo "$candidate"
+      return 0
+    fi
+  done
+  if command -v "$name" > /dev/null 2>&1; then
+    echo "$name"
+    return 0
+  fi
+  return 1
+}
+
 if echo "$changed" | grep -qE '^(callflow/|tests/|pyproject\.toml)'; then
   echo "== backend: ruff + pytest =="
-  ruff check callflow tests
-  pytest -q
+
+  ruff_bin=$(find_tool ruff || true)
+  pytest_bin=$(find_tool pytest || true)
+
+  if [ -z "$ruff_bin" ] || [ -z "$pytest_bin" ]; then
+    # This is an opt-in convenience hook, so a missing toolchain warns loudly and
+    # lets the commit through rather than blocking it. CI runs the same checks and
+    # is the gate that actually counts.
+    echo "  SKIPPED — ruff/pytest not found in .venv or on PATH."
+    echo "  Install them with:  pip install -r requirements-dev.txt"
+  else
+    "$ruff_bin" check callflow tests run_api.py
+    "$pytest_bin" -q
+  fi
 fi
 
 if echo "$changed" | grep -q '^web/'; then
   echo "== frontend: lint + type-check =="
-  (cd web && npm run lint && npm run type-check)
+  if command -v npm > /dev/null 2>&1; then
+    (cd web && npm run lint && npm run type-check)
+  else
+    echo "  SKIPPED — npm not found on PATH."
+  fi
 fi

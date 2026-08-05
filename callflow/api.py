@@ -128,7 +128,7 @@ def create_campaign(body: CampaignIn) -> dict[str, Any]:
             detail=f"Unsupported field type(s): {', '.join(bad)}. Use: {', '.join(sorted(FIELD_TYPES))}",
         )
 
-    # CALL-E rejects thin task text with call_not_ready, so catch it here where
+    # The engine rejects thin task text with call_not_ready, so catch it here where
     # we can give a useful message instead of failing mid-run.
     if len(body.goal_template.strip()) < 40:
         raise HTTPException(
@@ -159,7 +159,7 @@ def remove_campaign(campaign_id: str) -> None:
 
 @app.post("/api/preview")
 def preview(req: RunRequest) -> dict[str, Any]:
-    """Render goals without touching CALL-E. Free, instant, no credits."""
+    """Render goals without touching the voice engine. Free, instant, no credits."""
     try:
         campaign = get_campaign(req.campaign_id)
     except KeyError as exc:
@@ -229,7 +229,7 @@ def start_run(
     if not dry_run and not config.api_key:
         raise HTTPException(
             status_code=400,
-            detail="CALLE_API_KEY is not configured — cannot place live calls.",
+            detail="No Voice API key is configured — cannot place live calls.",
         )
 
     # Live calls spend the owner's credits and ring real people, so the public

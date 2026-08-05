@@ -1,0 +1,23 @@
+# CallFlow AI — backend runtime dependencies.
+#
+# Mirrors [project.dependencies] in pyproject.toml. Installing the package
+# itself (`pip install -e .`) resolves the same set; this file exists for
+# environments that want a plain requirements install.
+#
+#   python -m venv .venv
+#   .venv/Scripts/activate          # Windows
+#   source .venv/bin/activate       # macOS / Linux
+#   pip install -r requirements.txt
+#
+# For tests and linting, use requirements-dev.txt instead — it includes this file.
+
+# Voice engine SDK. The package name is the upstream distribution name and has
+# to stay verbatim or the install fails; it is never surfaced in the UI.
+calle-ai>=0.6.0
+
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+pydantic>=2.9.0
+python-dotenv>=1.0.1
+httpx>=0.27.0
+rich>=13.9.0

@@ -1,7 +1,7 @@
 [project]
 name = "callflow"
 version = "0.1.0"
-description = "24x7 AI calling desk built on CALL-E"
+description = "An operations layer for outbound phone calls"
 requires-python = ">=3.11"
 dependencies = [
     "calle-ai>=0.6.0",

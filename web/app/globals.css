@@ -1,118 +1,455 @@
 @import "tailwindcss";
 
-/* Light theme only — the brand assets are JPEGs with baked-in white
-   backgrounds, so every surface stays white or near-white. */
+/* ==========================================================================
+   CallFlow AI — token layer.
+   Every value in the design system lives here. No hard-coded hex anywhere
+   else in the codebase.
+
+   LIGHT MODE ONLY. There is no dark theme and no surface toggle: one set of
+   surfaces, tuned properly, rather than two that are each slightly wrong.
+
+   The palette is a cool grey-green — deliberately not cream, and deliberately
+   not the blue-grey every B2B dashboard defaults to. Accent colour is reserved
+   for call state (the lamps, §"Lamps" below) and nothing else.
+   ========================================================================== */
+
 :root {
   color-scheme: light;
 
-  --page: #ffffff;
-  --surface: #ffffff;
-  --subtle: #f8fafc;
-  --border: #e8ecf1;
-  --ink: #0f172a;
-  --ink-soft: #475569;
-  --muted: #64748b;
-  --brand: #4f46e5;
-  --brand-soft: #eef2ff;
+  /* ---- Surfaces ---------------------------------------------------------- */
+  --surface: #f4f6f5; /* page background */
+  --surface-raised: #ffffff; /* cards, inputs, panels */
+  --surface-sunken: #eceff0; /* wells, table headers, code blocks */
+  --surface-hover: #e7ebeb; /* hover background */
+
+  /* ---- Text -------------------------------------------------------------- */
+  --text: #0b0f12; /* primary */
+  --text-dim: #47545a; /* secondary — 7.4:1 on --surface */
+  --text-mute: #6b787e; /* tertiary, placeholders — 4.6:1 on --surface */
+  --text-inverse: #ffffff; /* on --surface-inverse */
+
+  /* Inverted surface. The primary CTA is monochrome, never brand-coloured. */
+  --surface-inverse: #12181c;
+
+  /* ---- Rules ------------------------------------------------------------- */
+  --rule: #dde2e1;
+  --rule-strong: #c2cac8;
+
+  /* ---- Lamps — semantic only --------------------------------------------
+     These five colours communicate call state and nothing else. They are
+     never used for buttons, links, headings, hovers, or decoration. That
+     discipline is what makes a lit lamp mean something on an otherwise
+     monochrome page. */
+  --lamp-off: #b3bcbb;
+  --lamp-ice: #4b82c4;
+  --lamp-brass: #c2871a;
+  --lamp-jade: #2f8f6b;
+  --lamp-flare: #d2402a;
+
+  /* Text-safe variants. The pure lamp colours above do not all reach 4.5:1
+     against a light surface, so anything setting *text* in a lamp colour uses
+     these; the dot itself keeps the pure colour. */
+  --lamp-off-text: #5c6a6f;
+  --lamp-ice-text: #2b5688;
+  --lamp-brass-text: #7a5810;
+  --lamp-jade-text: #1c6349;
+  --lamp-flare-text: #9d2c1a;
+
+  /* ---- Type scale (fluid) ------------------------------------------------ */
+  --t-display-xl: clamp(2.5rem, 5.6vw, 4.5rem);
+  --t-display-l: clamp(2rem, 4.2vw, 3.25rem);
+  --t-h2: clamp(1.625rem, 3vw, 2.375rem);
+  --t-h3: 1.375rem;
+  --t-h4: 1.0625rem;
+  --t-body-l: 1.125rem;
+  --t-body: 1rem;
+  --t-small: 0.875rem;
+  --t-data: 0.8125rem;
+  --t-label: 0.6875rem;
+
+  /* ---- Space ------------------------------------------------------------- */
+  --space-section: clamp(72px, 9vw, 132px);
+
+  /* ---- Radius ------------------------------------------------------------
+     Softer than an instrument panel, still precise. Nothing is pill-shaped
+     except lamps, status badges, and avatars. */
+  --r-xs: 3px;
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-lg: 16px;
+  --r-xl: 20px;
+  --r-full: 999px;
+
+  /* ---- Depth ------------------------------------------------------------
+     A soft shadow scale, used sparingly and always with a hairline border so
+     a card still has an edge on a light surface. */
+  --shadow-xs: 0 1px 2px rgba(11, 15, 18, 0.04);
+  --shadow-sm: 0 1px 2px rgba(11, 15, 18, 0.04), 0 2px 6px -2px rgba(11, 15, 18, 0.06);
+  --shadow-md: 0 2px 4px rgba(11, 15, 18, 0.04), 0 8px 20px -6px rgba(11, 15, 18, 0.1);
+  --shadow-lg: 0 4px 8px rgba(11, 15, 18, 0.04), 0 20px 40px -12px rgba(11, 15, 18, 0.14);
+  --shadow-overlay:
+    0 1px 2px rgba(11, 15, 18, 0.08), 0 16px 40px -8px rgba(11, 15, 18, 0.22);
+
+  /* ---- Motion — 200-300ms with gentle easing ---------------------------- */
+  --dur-micro: 150ms;
+  --dur-base: 240ms;
+  --dur-enter: 420ms;
+  --dur-settle: 900ms;
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-inout: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* ---- Layout ------------------------------------------------------------ */
+  --w-marketing: 1180px;
+  --w-app: 1440px;
+  --h-site-header: 68px;
+  --h-app-topbar: 60px;
+  --w-app-nav: 240px;
+  --w-app-nav-collapsed: 60px;
 }
+
+/* --------------------------------------------------------------------------
+   Tailwind v4 theme bridge.
+   -------------------------------------------------------------------------- */
 
 @theme inline {
-  --color-page: var(--page);
   --color-surface: var(--surface);
-  --color-subtle: var(--subtle);
-  --color-border: var(--border);
-  --color-ink: var(--ink);
-  --color-ink-soft: var(--ink-soft);
-  --color-muted: var(--muted);
-  --color-brand: var(--brand);
-  --color-brand-soft: var(--brand-soft);
+  --color-surface-raised: var(--surface-raised);
+  --color-surface-sunken: var(--surface-sunken);
+  --color-surface-hover: var(--surface-hover);
+  --color-surface-inverse: var(--surface-inverse);
 
-  --font-sans: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
-  --font-mono: var(--font-mono), ui-monospace, monospace;
+  --color-text: var(--text);
+  --color-text-dim: var(--text-dim);
+  --color-text-mute: var(--text-mute);
+  --color-text-inverse: var(--text-inverse);
+
+  --color-rule: var(--rule);
+  --color-rule-strong: var(--rule-strong);
+
+  --color-lamp-off: var(--lamp-off);
+  --color-lamp-ice: var(--lamp-ice);
+  --color-lamp-brass: var(--lamp-brass);
+  --color-lamp-jade: var(--lamp-jade);
+  --color-lamp-flare: var(--lamp-flare);
+
+  --color-lamp-off-text: var(--lamp-off-text);
+  --color-lamp-ice-text: var(--lamp-ice-text);
+  --color-lamp-brass-text: var(--lamp-brass-text);
+  --color-lamp-jade-text: var(--lamp-jade-text);
+  --color-lamp-flare-text: var(--lamp-flare-text);
+
+  --font-display: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-inter-tight), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, monospace;
+
+  --text-display-xl: var(--t-display-xl);
+  --text-display-xl--line-height: 0.98;
+  --text-display-xl--letter-spacing: -0.03em;
+  --text-display-l: var(--t-display-l);
+  --text-display-l--line-height: 1.04;
+  --text-display-l--letter-spacing: -0.022em;
+  --text-h2: var(--t-h2);
+  --text-h2--line-height: 1.12;
+  --text-h2--letter-spacing: -0.018em;
+  --text-h3: var(--t-h3);
+  --text-h3--line-height: 1.25;
+  --text-h3--letter-spacing: -0.01em;
+  --text-h4: var(--t-h4);
+  --text-h4--line-height: 1.35;
+  --text-body-l: var(--t-body-l);
+  --text-body-l--line-height: 1.6;
+  --text-body: var(--t-body);
+  --text-body--line-height: 1.65;
+  --text-small: var(--t-small);
+  --text-small--line-height: 1.5;
+  --text-data: var(--t-data);
+  --text-data--line-height: 1.45;
+  --text-label: var(--t-label);
+  --text-label--line-height: 1;
+  --text-label--letter-spacing: 0.14em;
+
+  --radius-xs: var(--r-xs);
+  --radius-sm: var(--r-sm);
+  --radius-md: var(--r-md);
+  --radius-lg: var(--r-lg);
+  --radius-xl: var(--r-xl);
+  --radius-full: var(--r-full);
+
+  --shadow-xs: var(--shadow-xs);
+  --shadow-sm: var(--shadow-sm);
+  --shadow-md: var(--shadow-md);
+  --shadow-lg: var(--shadow-lg);
+  --shadow-overlay: var(--shadow-overlay);
+
+  --ease-out: var(--ease-out);
+  --ease-inout: var(--ease-inout);
+
+  --container-marketing: var(--w-marketing);
+  --container-app: var(--w-app);
 }
 
+/* --------------------------------------------------------------------------
+   Base
+   -------------------------------------------------------------------------- */
+
 html {
-  scroll-behavior: smooth;
-  /* Matches the sticky header height (~3.25rem) plus a small breathing gap,
-     so an anchored section lands just under the nav rather than behind it. */
-  scroll-padding-top: 4.25rem;
+  scroll-padding-top: calc(var(--h-site-header) + 24px);
+  -webkit-text-size-adjust: 100%;
 }
 
 body {
-  background: var(--page);
-  color: var(--ink);
-  font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
-}
-
-/* Tabular numerals stop stat tiles jittering as values update. */
-.nums {
-  font-variant-numeric: tabular-nums;
-  letter-spacing: -0.01em;
-}
-
-/* One card treatment used everywhere, so surfaces read as a system. */
-.card {
   background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 0.875rem;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  color: var(--text);
+  font-family: var(--font-inter-tight), ui-sans-serif, system-ui, sans-serif;
+  font-size: var(--t-body);
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
-.card-hover {
+/* Archivo at width 112 ("Expanded"). Applied through a class rather than an
+   element selector so it is never inherited by body copy. */
+.font-display {
+  font-family: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
+  font-variation-settings: "wdth" 112;
+  font-weight: 600;
+}
+
+/* Every piece of machine-produced data in this product is set in mono, with
+   tabular figures so columns and counters never jitter. */
+.font-mono,
+code,
+kbd,
+samp,
+pre {
+  font-variant-numeric: tabular-nums;
+}
+
+/* The uppercase mono eyebrow — the one place uppercase is used by design. */
+.eyebrow {
+  font-family: var(--font-jetbrains-mono), ui-monospace, monospace;
+  font-size: var(--t-label);
+  line-height: 1;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.measure {
+  max-width: 68ch;
+}
+
+.measure-display {
+  max-width: 20ch;
+}
+
+/* --------------------------------------------------------------------------
+   Focus. Visible focus is a hard requirement.
+   -------------------------------------------------------------------------- */
+
+:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
+  border-radius: inherit;
+}
+
+.skip-link {
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  z-index: 100;
+  padding: 10px 16px;
+  background: var(--surface-raised);
+  color: var(--text);
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--r-sm);
+  box-shadow: var(--shadow-md);
+  font-size: var(--t-small);
+  transform: translateY(-200%);
+  transition: transform var(--dur-base) var(--ease-out);
+}
+
+.skip-link:focus-visible {
+  transform: translateY(0);
+}
+
+::selection {
+  background: var(--surface-inverse);
+  color: var(--text-inverse);
+}
+
+/* --------------------------------------------------------------------------
+   Page texture.
+
+   A single, very quiet grid behind the hero. Not a gradient blob and not a
+   mesh — a draughtsman's grid, masked so it fades out rather than ending at a
+   hard edge. It reads as paper, which is the point.
+   -------------------------------------------------------------------------- */
+
+.grid-field {
+  background-image:
+    linear-gradient(to right, color-mix(in oklab, var(--text) 5%, transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in oklab, var(--text) 5%, transparent) 1px, transparent 1px);
+  background-size: 56px 56px;
+  mask-image: radial-gradient(ellipse 80% 55% at 50% 0%, #000 20%, transparent 78%);
+}
+
+/* --------------------------------------------------------------------------
+   The relay settle — the signature micro-interaction.
+
+   One fast flicker, then hold, plus the lamp's own glow fading in over the
+   last 300ms. It reads as an electromechanical relay closing. Never loops.
+   -------------------------------------------------------------------------- */
+
+@keyframes relay-settle {
+  0% {
+    opacity: 0.2;
+  }
+  12% {
+    opacity: 1;
+  }
+  22% {
+    opacity: 0.35;
+  }
+  40% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+@keyframes relay-glow {
+  0%,
+  66% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+  100% {
+    box-shadow: 0 0 0 3px var(--lamp-halo-color, transparent);
+  }
+}
+
+.lamp-settle {
+  animation:
+    relay-settle var(--dur-settle) var(--ease-out) both,
+    relay-glow var(--dur-settle) var(--ease-out) both;
+}
+
+/* A lamp holding its lit state keeps the halo without re-running the flicker.
+   On a light surface a glow reads as a soft ring rather than a bloom. */
+.lamp-lit {
+  box-shadow: 0 0 0 3px var(--lamp-halo-color, transparent);
+}
+
+@keyframes lamp-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}
+
+.lamp-pulse {
+  animation: lamp-pulse 2.4s var(--ease-inout) infinite;
+}
+
+/* --------------------------------------------------------------------------
+   Reveal + streaming rows
+   -------------------------------------------------------------------------- */
+
+.reveal {
+  opacity: 0;
+  transform: translateY(14px);
   transition:
-    border-color 0.18s ease,
-    box-shadow 0.18s ease;
+    opacity var(--dur-enter) var(--ease-out),
+    transform var(--dur-enter) var(--ease-out);
 }
 
-.card-hover:hover {
-  border-color: #cbd5e1;
-  box-shadow: 0 4px 12px -4px rgba(15, 23, 42, 0.1);
+.reveal[data-shown="true"] {
+  opacity: 1;
+  transform: none;
 }
 
-.brand-gradient {
-  background-image: linear-gradient(135deg, #4f46e5 0%, #6d28d9 100%);
-}
-
-.brand-text-gradient {
-  background-image: linear-gradient(135deg, #2f6bff 0%, #6d28d9 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-}
-
-/* Very light dot field behind the hero — texture without noise. */
-.hero-dots {
-  background-image: radial-gradient(rgba(15, 23, 42, 0.07) 1px, transparent 1px);
-  background-size: 22px 22px;
-  mask-image: radial-gradient(ellipse 70% 60% at 50% 0%, #000 30%, transparent 100%);
-}
-
-@keyframes row-in {
+@keyframes row-enter {
   from {
     opacity: 0;
-    transform: translateY(3px);
   }
   to {
     opacity: 1;
-    transform: none;
   }
 }
 
-.row-in {
-  animation: row-in 0.24s ease-out both;
+.row-enter {
+  animation: row-enter var(--dur-base) var(--ease-out) both;
 }
+
+@keyframes caret {
+  0%,
+  49% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0;
+  }
+}
+
+.caret::after {
+  content: "";
+  display: inline-block;
+  width: 1px;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  background: currentColor;
+  animation: caret 1s steps(1, end) infinite;
+}
+
+/* --------------------------------------------------------------------------
+   Reduced motion. Durations collapse and transforms are removed. Lamps still
+   change colour — they simply stop flickering. Parallax is switched off
+   entirely by the components that use it.
+   -------------------------------------------------------------------------- */
 
 @media (prefers-reduced-motion: reduce) {
-  html {
-    scroll-behavior: auto;
-  }
-  .row-in {
-    animation: none;
-  }
   *,
   *::before,
   *::after {
-    animation-duration: 0.01ms !important;
-    transition-duration: 0.01ms !important;
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .reveal {
+    opacity: 1;
+    transform: none;
+  }
+
+  .lamp-settle {
+    animation: none;
+    box-shadow: 0 0 0 3px var(--lamp-halo-color, transparent);
+  }
+
+  .lamp-pulse,
+  .caret::after {
+    animation: none;
+  }
+}
+
+@media (prefers-contrast: more) {
+  :root {
+    --text-dim: var(--text);
+    --text-mute: #3b464b;
+    --rule: var(--rule-strong);
+  }
+}
+
+@supports (scrollbar-color: auto) {
+  * {
+    scrollbar-color: var(--rule-strong) transparent;
+    scrollbar-width: thin;
   }
 }

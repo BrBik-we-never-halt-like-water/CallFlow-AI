@@ -124,6 +124,22 @@ export interface Run {
   stats: RunStats;
 }
 
+/**
+ * A run as it appears in the list endpoint — no outcomes, plus a settled count.
+ * The full run has to be fetched by id.
+ */
+export interface RunSummary {
+  id: string;
+  campaign_id: string;
+  total: number;
+  dry_run: boolean;
+  status: "running" | "completed" | "failed";
+  started_at: string;
+  finished_at: string | null;
+  error: string | null;
+  completed: number;
+}
+
 export interface Limits {
   used_today: number;
   daily_budget: number;
@@ -190,5 +206,6 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ campaign_id, contacts, dry_run }),
     }),
+  listRuns: () => req<RunSummary[]>("/api/runs"),
   getRun: (id: string) => req<Run>(`/api/runs/${id}`),
 };

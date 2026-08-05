@@ -80,7 +80,7 @@ def test_preview_is_stable_for_the_same_contact() -> None:
 
 
 def test_builtin_outcome_fields_match_their_schemas() -> None:
-    """`outcome_fields` drives the UI and previews; the schema drives CALL-E.
+    """`outcome_fields` drives the UI and previews; the schema drives the engine.
 
     They drift silently — a built-in once declared schema properties with no
     matching `outcome_fields`, so its preview showed nothing campaign-specific.

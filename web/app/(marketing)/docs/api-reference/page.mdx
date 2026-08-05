@@ -1,0 +1,105 @@
+export const metadata = {
+  title: "API reference",
+  description: "Campaigns, previews, and runs over HTTP.",
+};
+
+# API reference
+
+Everything the dashboard does, it does over this API. Base URL is your deployment's
+host; all bodies are JSON.
+
+Authenticate with a **Voice API key** from **Settings → API keys**. Keys are shown once
+at creation and stored hashed, so if you lose one, revoke it and make another.
+
+## Endpoints
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /api/health` | Service status and the active safety settings. |
+| `GET /api/campaigns` | List campaigns. |
+| `POST /api/campaigns` | Create a campaign with custom extraction fields. |
+| `DELETE /api/campaigns/{id}` | Remove a campaign you created. |
+| `POST /api/preview` | Render goals without dialling. Free and instant. |
+| `POST /api/runs` | Start a run. Returns immediately; the run proceeds in the background. |
+| `GET /api/runs` | List runs. |
+| `GET /api/runs/{id}` | Poll status, outcomes, and stats. |
+
+## Health
+
+Returns the guards that are currently in force. Worth calling before a live run if you
+are automating one.
+
+```json
+{
+  "ok": true,
+  "dry_run_default": true,
+  "api_key_configured": true,
+  "max_calls_per_run": 3,
+  "allowlist_active": true,
+  "limits": { "used_today": 0, "daily_budget": 25, "per_window": 2, "window_minutes": 60 }
+}
+```
+
+## Preview
+
+Renders the goal for each contact and returns it. Nothing is dialled and no credits are
+spent, which makes this the right endpoint to call from a form or a test.
+
+```json
+{
+  "campaign_id": "travel-discovery",
+  "contacts": [
+    { "name": "Aditi", "phone": "+15555550100", "context": { "enquiry_note": "Bali in December" } }
+  ]
+}
+```
+
+A contact that fails validation comes back with an `error` on its entry rather than
+failing the whole request, so you can show the operator which row is wrong.
+
+## Starting a run
+
+`dry_run` defaults to the service's own setting, which is `true` unless it has been
+deliberately changed. **Send `false` explicitly to dial.** That asymmetry is on purpose:
+forgetting a field should never be what causes a phone to ring.
+
+```json
+{
+  "campaign_id": "travel-discovery",
+  "dry_run": true,
+  "contacts": [
+    { "name": "Aditi", "phone": "+15555550100", "context": { "enquiry_note": "Bali in December" } }
+  ]
+}
+```
+
+Response:
+
+```json
+{ "run_id": "run_8f2a1c", "dry_run": true, "total": 1 }
+```
+
+## Polling a run
+
+`GET /api/runs/{id}` returns the run with every outcome recorded so far, plus stats.
+
+A row appears as soon as a call is placed, so an in-flight call is visible while it
+happens. `stats.completed` counts only calls that have actually resolved — an
+in-flight one is not progress yet, and counting it as progress is how a progress
+indicator ends up going backwards.
+
+Poll every two to three seconds. There is no long-polling; if you want push instead,
+use [webhooks](/docs/webhooks).
+
+## Errors
+
+Errors come back with a `detail` string written for a person, not a code to look up.
+
+| Status | Meaning |
+|---|---|
+| `400` | The request was understood and rejected. `detail` says what to change. |
+| `404` | No campaign or run with that id. |
+| `429` | A rate limit or the daily budget. Honour `Retry-After`. |
+
+A `400` on a run is usually one of three things: no contacts, a number that is not
+E.164, or a live run requested with no Voice API key configured.

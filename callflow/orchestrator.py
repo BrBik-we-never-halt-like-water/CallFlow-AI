@@ -1,12 +1,11 @@
 """Campaign orchestration: contacts in, typed outcomes out.
 
 Flow per contact:
-    safety gate -> render goal -> [dry run stops here] -> CALL-E create
+    safety gate -> render goal -> [dry run stops here] -> engine create
                 -> poll to terminal -> extract typed result -> triage
 
 Dry-run mode renders and validates everything without spending a credit or
-ringing a real phone, which is also the dry-run path the
-awesome-phone-call-agents contribution rules require.
+ringing a real phone.
 """
 
 from __future__ import annotations
@@ -17,8 +16,8 @@ import uuid
 from collections.abc import Callable, Iterable
 from typing import Any
 
-from .calle_client import TERMINAL, CalleGateway
 from .config import config
+from .engine_client import TERMINAL, EngineGateway
 from .models import CallOutcome, Campaign, Contact, Disposition
 from .safety import check_dial_allowed, mask
 from .samples import sample_outcome
@@ -33,7 +32,7 @@ ProgressHook = Callable[[CallOutcome], None]
 def _live_label(status: str) -> str:
     """Human-readable text for an in-flight call status."""
     return {
-        "queued": "Queued with CALL-E…",
+        "queued": "Queued with the voice engine…",
         "scheduled": "Scheduled…",
         "dialing": "Dialing…",
         "ringing": "Ringing…",
@@ -58,7 +57,7 @@ def render_goal(campaign: Campaign, contact: Contact) -> str:
 
 
 def _extract_result(call: JsonObject) -> JsonObject:
-    """Pull CALL-E's structured extraction out of the call payload.
+    """Pull the engine's structured extraction out of the call payload.
 
     The API has returned this under a few different keys across versions, so we
     check the known candidates rather than assuming one shape.
@@ -104,7 +103,7 @@ def _extract_transcript(call: JsonObject) -> str | None:
 class CampaignRunner:
     def __init__(
         self,
-        gateway: CalleGateway | None = None,
+        gateway: EngineGateway | None = None,
         *,
         dry_run: bool | None = None,
         result_schema: JsonObject | None = None,
@@ -121,9 +120,9 @@ class CampaignRunner:
         self._preview_index = 0
 
     @property
-    def gateway(self) -> CalleGateway:
+    def gateway(self) -> EngineGateway:
         if self._gateway is None:
-            self._gateway = CalleGateway()
+            self._gateway = EngineGateway()
         return self._gateway
 
     def run(

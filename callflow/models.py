@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from .safety import is_e164
 
-# Mirrors TERMINAL_STATUSES in the CALL-E batch-runner reference app.
+# Terminal call statuses reported by the voice engine.
 TERMINAL_STATUSES: frozenset[str] = frozenset(
     {
         "BUSY",
@@ -54,7 +54,7 @@ class Contact(BaseModel):
     phone: str
     region: str | None = None
     language: str | None = None
-    # Arbitrary business context merged into the call goal and CALL-E metadata.
+    # Arbitrary business context merged into the call goal and engine metadata.
     context: dict[str, Any] = Field(default_factory=dict)
 
     @field_validator("phone")
@@ -70,7 +70,7 @@ class Campaign(BaseModel):
 
     id: str
     name: str
-    # Instruction template for CALL-E's `goal` field. Supports {name}, {context[key]}.
+    # Instruction template for the engine's `goal` field. Supports {name}, {context[key]}.
     goal_template: str
     # JSON-schema-ish description of what to extract from the transcript.
     outcome_fields: dict[str, str] = Field(default_factory=dict)

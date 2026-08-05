@@ -1,4 +1,5 @@
 import type { ContactInput } from "./api";
+import { isE164, normalisePhone } from "./format/phone";
 
 export interface ParsedRow {
   row: number;
@@ -10,8 +11,6 @@ export interface ParsedRow {
 }
 
 export const REQUIRED_HEADERS = ["name", "phone", "note"] as const;
-
-const E164 = /^\+[1-9]\d{7,14}$/;
 
 /** Split a CSV line, honouring double-quoted fields that contain commas. */
 function splitCsvLine(line: string): string[] {
@@ -40,26 +39,14 @@ function splitCsvLine(line: string): string[] {
 }
 
 /**
- * Normalise loose phone input into E.164 where the intent is unambiguous.
- * Anything still not E.164 after this is reported as an error rather than
- * guessed at — dialing a wrong number is worse than rejecting a row.
- */
-export function normalisePhone(raw: string, defaultCountryCode = "91"): string {
-  let p = raw.replace(/[\s\-()./]/g, "");
-  if (p.startsWith("00")) p = `+${p.slice(2)}`;
-  if (!p.startsWith("+")) {
-    // A bare 10-digit number is assumed to be in the default country.
-    if (/^\d{10}$/.test(p)) p = `+${defaultCountryCode}${p}`;
-    else if (/^\d{11,15}$/.test(p)) p = `+${p}`;
-  }
-  return p;
-}
-
-/**
  * Parse a CSV / TSV sheet export into contact rows.
  *
  * Accepts an optional header line. Recognised columns: name, phone, note.
  * Without a header, columns are read positionally as name, phone, note.
+ *
+ * Invalid rows come back flagged rather than dropped — the composer shows the
+ * reason inline and offers to remove them, because silently discarding a row
+ * means a contact never gets called and nobody finds out why.
  */
 export function parseSheet(text: string): ParsedRow[] {
   const lines = text
@@ -98,24 +85,25 @@ export function parseSheet(text: string): ParsedRow[] {
     const phone = normalisePhone(rawPhone);
     const rowNumber = i + (hasHeader ? 2 : 1);
 
-    if (!name) {
-      return { row: rowNumber, name, phone, note, valid: false, error: "Missing name" };
-    }
-    if (!rawPhone) {
-      return { row: rowNumber, name, phone, note, valid: false, error: "Missing phone" };
-    }
-    if (!E164.test(phone)) {
-      return {
-        row: rowNumber,
-        name,
-        phone,
-        note,
-        valid: false,
-        error: "Not a valid number — use +country code",
-      };
-    }
-    return { row: rowNumber, name, phone, note, valid: true };
+    return { row: rowNumber, name, phone, note, ...validateRow(name, rawPhone, phone) };
   });
+}
+
+/** Shared so the pasted-grid editor and the CSV importer agree on what's valid. */
+export function validateRow(
+  name: string,
+  rawPhone: string,
+  normalised = normalisePhone(rawPhone),
+): { valid: boolean; error?: string } {
+  if (!name) return { valid: false, error: "Add a name for this row." };
+  if (!rawPhone) return { valid: false, error: "Add a phone number for this row." };
+  if (!isE164(normalised)) {
+    return {
+      valid: false,
+      error: "Not a valid E.164 number — try +919876543210.",
+    };
+  }
+  return { valid: true };
 }
 
 export function toContactInputs(rows: ParsedRow[]): ContactInput[] {
@@ -129,13 +117,6 @@ export function toContactInputs(rows: ParsedRow[]): ContactInput[] {
         appointment_time: "tomorrow at 4pm",
       },
     }));
-}
-
-/** Mask a number for display so full numbers never sit on screen. */
-export function maskPhone(phone: string): string {
-  if (phone.length <= 6) return "***";
-  const reveal = Math.min(3, Math.floor(phone.length / 4));
-  return `${phone.slice(0, reveal)}${"*".repeat(phone.length - 2 * reveal)}${phone.slice(-reveal)}`;
 }
 
 // Reserved fictional numbers only (+1 555 0100-0199) — sample data must never

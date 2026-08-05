@@ -1,7 +1,7 @@
 """Rate limiting for the public demo.
 
 These caps are the only thing standing between a public URL and someone
-draining the owner's CALL-E credits or repeatedly dialing a stranger, so they
+draining the owner's engine credits or repeatedly dialing a stranger, so they
 are tested like the safety gate: fail closed, no off-by-one.
 """
 

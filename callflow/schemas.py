@@ -1,6 +1,6 @@
-"""Result schemas passed to CALL-E's native `result_schema` parameter.
+"""Result schemas passed to the engine's native `result_schema` parameter.
 
-CALL-E performs structured extraction server-side during/after the call, so
+The engine performs structured extraction server-side during/after the call, so
 CallFlow AI never regex-scrapes a transcript. Each campaign declares the typed
 contract it expects back.
 """

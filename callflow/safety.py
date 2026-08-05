@@ -1,8 +1,8 @@
 """Phone-number guardrails.
 
-The awesome-phone-call-agents contribution rules require E.164 formatting,
-masked numbers in any summary output, and an explicit consent step before
-dialing. Everything here enforces that, and fails closed.
+Outbound calling requires E.164 formatting, masked numbers in any summary
+output, and an explicit consent step before dialing. Everything here enforces
+that, and fails closed.
 """
 
 from __future__ import annotations

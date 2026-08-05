@@ -1,7 +1,7 @@
 """In-memory run store.
 
-Deliberately simple: the hackathon demo needs judges to see live state, not a
-production database. Swap for Postgres by reimplementing this interface.
+Deliberately simple: the dashboard needs live run state, not a production
+database. Swap for Postgres by reimplementing this interface.
 """
 
 from __future__ import annotations

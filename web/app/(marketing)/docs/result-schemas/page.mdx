@@ -1,0 +1,92 @@
+export const metadata = {
+  title: "Result schemas",
+  description:
+    "Defining the fields every call returns, the types they come back as, and why extraction happens during the call rather than afterwards.",
+};
+
+# Result schemas
+
+Every call returns a schema-validated object. Not a transcript you have to read, and
+not a summary you have to trust — a set of fields you defined, with the types you
+asked for.
+
+## Two fields you always get
+
+| Field | Type | Meaning |
+|---|---|---|
+| `outcome` | string | How the call ended, in a word or two. |
+| `sentiment` | enum | `positive`, `neutral`, or `negative`. |
+
+`sentiment` is what makes a call log useful. It is the difference between two rows
+that both say `completed` and two rows where one is jade and one is flare.
+
+## Your own fields
+
+Add fields in the campaign editor. Each one needs a key, a type, and a description.
+
+The description is not documentation — it is the instruction the extraction uses to
+decide what belongs in that field. `"party_size"` with the description "number of
+people travelling, including children" behaves differently from the same key with no
+description at all. Write them as if explaining to a colleague who will fill the form
+in for you.
+
+Supported types:
+
+| Type | Comes back as | Use it for |
+|---|---|---|
+| `string` | text | Anything in the contact's own words. |
+| `number` | numeric | Counts, durations, amounts. |
+| `boolean` | true / false | A yes-or-no fact. |
+| `date` | ISO date string | A specific day. |
+| `enum` | one of your listed options | A choice from a fixed set. |
+
+Prefer an `enum` over a `string` wherever the answers really are a fixed set. A string
+field for location fit will come back as "hybrid", "Hybrid", "2 days a week", and
+"flexible" across four calls; an enum comes back as one of your four values, every
+time, and can be filtered.
+
+## Nothing is required except the two defaults
+
+A field the contact never mentioned comes back null rather than invented. That is
+deliberate, and it is why the results are trustworthy: an extraction that fills every
+field on every call is guessing on some of them.
+
+If a field being missing means the call was not useful, that belongs in your triage
+reading of the results — not in forcing the agent to produce a value it does not have.
+
+## Extraction happens during the call
+
+The structured result is produced by the calling engine as the conversation happens,
+against the schema you supplied. CallFlow does not parse transcripts afterwards.
+
+That matters for two reasons. The obvious one is accuracy — extraction with the
+conversation in hand beats extraction from a text dump of it. The less obvious one is
+that a field the schema asked for and the contact did not answer can prompt the agent
+to ask again, in the same call, which no post-hoc parser can do.
+
+## Example
+
+A lead qualification campaign returning six fields:
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "outcome": { "type": "string" },
+    "sentiment": { "type": "string", "enum": ["positive", "neutral", "negative"] },
+    "problem": { "type": "string", "description": "The problem that prompted the enquiry, in the lead's words." },
+    "volume": { "type": "string", "description": "Rough scale — seats, users, calls, or units." },
+    "timeline": { "type": "string", "description": "When they are looking to decide." },
+    "qualified": { "type": "boolean", "description": "True if the lead is worth a rep's time." }
+  },
+  "required": ["outcome", "sentiment"]
+}
+```
+
+## Changing a schema later
+
+Editing a campaign's fields does not rewrite results that already exist. Old runs keep
+the shape they were recorded with, so a report you built last month still works.
+
+If you need a clean break, duplicate the campaign instead of editing it. The runs stay
+separated and you can compare the two.

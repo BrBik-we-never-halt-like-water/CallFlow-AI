@@ -1,0 +1,25 @@
+# Normalise line endings.
+#
+# Without this, `core.autocrlf=true` on Windows warns "LF will be replaced by
+# CRLF" on every file it touches. Declaring the intent here makes the repo
+# authoritative rather than each developer's local config: text is stored as LF
+# in git, and checked out however the platform prefers.
+* text=auto eol=lf
+
+# Files that must stay LF even on Windows — CRLF breaks the shebang line.
+*.sh text eol=lf
+.githooks/* text eol=lf
+
+# Binary: never touch, never diff as text.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.webp binary
+*.woff binary
+*.woff2 binary
+*.pdf binary
+
+# Generated lockfiles: keep them out of diffs and merge conflicts.
+package-lock.json -diff linguist-generated

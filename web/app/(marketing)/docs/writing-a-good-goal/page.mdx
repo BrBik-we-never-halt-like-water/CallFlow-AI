@@ -1,0 +1,121 @@
+export const metadata = {
+  title: "Writing a good goal",
+  description:
+    "The goal field is the product. What separates a goal that works from one that produces a confusing robocall.",
+};
+
+# Writing a good goal
+
+The goal is the entire product.
+
+That is not a figure of speech. The same calling engine, given a one-line task,
+produces a confusing robocall that people hang up on. Given a well-written goal, it
+produces something closer to a competent junior colleague. Nothing else you
+configure — not the schema, not the retry policy, not the calling window — moves the
+outcome anything like as much.
+
+So this page is the one worth reading properly.
+
+## A thin goal fails before it dials
+
+The engine validates whether a task has enough substance to hold a conversation. A
+goal like this is rejected outright:
+
+```text
+Call and ask about their trip.
+```
+
+It comes back as `call_not_ready`, and CallFlow enforces a 40-character minimum in
+the campaign editor so you find out while you are writing rather than halfway
+through a run.
+
+The minimum is a floor, not a target. A goal that scrapes past 40 characters will
+technically dial and will still go badly, because the agent has to improvise
+everything you did not say — including things you would never have said.
+
+## The four things a goal must state
+
+A goal that works answers all four of these. In our experience the second and
+fourth are the ones people leave out.
+
+1. **Who is calling and why.** The agent needs to identify itself, name the
+   organisation, and say what the call is about in one sentence.
+2. **What to ask, in order.** Number them. An unordered list of topics produces a
+   call that wanders and a result with holes in it.
+3. **What to do when they say yes.** Confirm what? Offer what? Record what?
+4. **What to do when they say no** — and separately, what to do when they say *not
+   now*. These are different outcomes and conflating them is the most common
+   mistake.
+
+Everything beyond those four is refinement. Everything short of them is a gamble.
+
+## Say what the agent must refuse to do
+
+This matters more than it sounds. An agent that has not been told what is out of
+bounds will helpfully answer a question it should have deferred — quoting a price,
+confirming a date, commenting on a medical result — because being helpful is what it
+is for.
+
+Write the boundary explicitly:
+
+```text
+Do not quote prices, offer a discount, or commit to any date. If they ask what it
+costs, say pricing depends on volume, that it is published on the website, and that
+a specialist will confirm the detail.
+```
+
+A deferred answer costs you a follow-up. A wrong answer on a recorded call costs
+you more than that.
+
+## Give the escalation instruction in the goal itself
+
+The triage rules run over the result regardless, so frustration and opt-outs are
+caught whether or not you mention them. But saying it in the goal changes the
+agent's behaviour *during* the call rather than only classifying it afterwards:
+
+```text
+If at any point they sound frustrated, ask to speak to a person, or ask you to
+stop, stop immediately, apologise once, and hand off.
+```
+
+Without that line the agent will often try one more question first. With it, it
+stops.
+
+## Ask whether now is a good time
+
+One sentence, near the start, and it changes the shape of your results.
+
+Without it, a contact caught at a bad moment produces a short, negative call that
+looks like disinterest. With it, the same contact says "not now", the call is queued
+for a polite retry, and you keep the lead. **A bad time is not a bad mood** — and
+the difference only shows up in your data if the agent asked.
+
+## Use variables for anything that differs per contact
+
+`{name}` and any `{context[key]}` you supply are substituted before the call. Put the
+specifics in context rather than writing one campaign per situation:
+
+```text
+You are calling {name} about the {context[role]} role at {context[company]}.
+Confirm they can work from {context[location]}, or would need remote.
+```
+
+A missing context key renders as an empty string rather than failing the run, which
+is forgiving at call time and easy to miss while authoring — so check the live
+preview in the campaign editor with a real contact selected before you save.
+
+## What a finished goal looks like
+
+Long enough to be specific, ordered, with the refusals and the escalation stated. If
+yours is three lines, it is not finished; the starter templates run to twenty or
+more, and that is why they work. Every solution page on this site shows its goal
+template in full — those are the real ones, not excerpts, and they are the best
+reference available.
+
+## Test it in dry mode, on a real name
+
+Dry run renders the goal with your actual contact substituted in and shows you the
+exact words that contact would hear. It costs nothing and dials nothing.
+
+Read that output aloud once. Goals that look fine on the page and sound wrong in the
+mouth are common, and thirty seconds of reading catches almost all of them.
