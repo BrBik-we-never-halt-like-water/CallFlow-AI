@@ -4,6 +4,7 @@ import { NuqsAdapter } from "nuqs/adapters/next/app";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ToastProvider } from "@/components/ui/toast";
 import { ViewTransitions } from "@/components/layout/view-transitions";
+import { SiteLoader } from "@/components/layout/site-loader";
 import "./globals.css";
 
 /**
@@ -92,6 +93,7 @@ export default function RootLayout({
             <ToastProvider>{children}</ToastProvider>
           </TooltipProvider>
         </NuqsAdapter>
+        <SiteLoader />
         <ViewTransitions />
       </body>
     </html>

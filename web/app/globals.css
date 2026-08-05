@@ -434,6 +434,46 @@ button[data-menu][data-state="open"]:focus-visible {
   box-shadow: 0 0 0 3px var(--lamp-halo-color, transparent);
 }
 
+/* --------------------------------------------------------------------------
+   Site loader — the first-paint brand splash.
+
+   A full surface with the wordmark over a listening waveform, which holds
+   briefly then fades and hides itself. Self-dismissing in pure CSS so it can
+   never trap the page; skipped entirely under prefers-reduced-motion (below).
+   -------------------------------------------------------------------------- */
+
+.site-loader {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: grid;
+  place-items: center;
+  background: var(--surface);
+  animation: loader-out 0.55s var(--ease-out) 0.9s forwards;
+}
+
+@keyframes loader-out {
+  to {
+    opacity: 0;
+    visibility: hidden;
+  }
+}
+
+.loader-bar {
+  transform-origin: center;
+  animation: loader-bar 1s var(--ease-inout) infinite;
+}
+
+@keyframes loader-bar {
+  0%,
+  100% {
+    transform: scaleY(0.28);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+
 /* The 1–2 bars at the waveform's leading edge get a small live flutter as the
    line is spoken. Transform-based so it never fights the inline height. */
 @keyframes wave-active {
@@ -647,8 +687,14 @@ button[data-menu][data-state="open"]:focus-visible {
 
   .lamp-pulse,
   .caret::after,
-  .page-enter {
+  .page-enter,
+  .loader-bar {
     animation: none;
+  }
+
+  /* Skip the splash entirely rather than letting it hold on screen. */
+  .site-loader {
+    display: none !important;
   }
 }
 
