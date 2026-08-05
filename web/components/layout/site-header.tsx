@@ -7,19 +7,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/cn";
 import { BrandLockup } from "@/components/brand/wordmark";
-import { LampStrip } from "@/components/brand/lamp-strip";
 import { Button } from "@/components/ui/button";
-import type { LampSpec } from "@/lib/lamp";
-
-/** A small proof strip for the mega-panels. Three calls, three outcomes. */
-const PANEL_STRIP: LampSpec[] = [
-  { state: "jade", label: "Auto-closed" },
-  { state: "jade", label: "Auto-closed" },
-  { state: "brass", pulse: true, label: "Queued for retry" },
-  { state: "jade", label: "Auto-closed" },
-  { state: "flare", label: "Needs a person" },
-  { state: "jade", label: "Auto-closed" },
-];
 
 const PRODUCT_LINKS = [
   { label: "How it works", href: "/#how-it-works", hint: "Four steps, spreadsheet to queue" },
@@ -92,16 +80,8 @@ export function SiteHeader() {
         </Link>
 
         <nav aria-label="Main" className="hidden items-center gap-1 lg:flex">
-          <MegaMenu
-            label="Product"
-            links={PRODUCT_LINKS}
-            proof="Every call returns typed fields, not a transcript to read."
-          />
-          <MegaMenu
-            label="Solutions"
-            links={SOLUTION_LINKS}
-            proof="The same engine, with the goal and schema already written for your vertical."
-          />
+          <MegaMenu label="Product" links={PRODUCT_LINKS} />
+          <MegaMenu label="Solutions" links={SOLUTION_LINKS} />
           {FLAT_LINKS.map((link) => (
             <Link
               key={link.href}
@@ -128,18 +108,16 @@ export function SiteHeader() {
 }
 
 /**
- * Two-column panel rather than a plain dropdown: links on the left, and on the
- * right a lamp strip with one line of proof. A nav menu is a page in miniature,
- * and this one gets to make the argument too.
+ * A single-column dropdown: label + one line of context per link, with a caret
+ * that slides in on hover. Deliberately just the links — the panel is a way to
+ * reach a page, not a place to make the argument twice.
  */
 function MegaMenu({
   label,
   links,
-  proof,
 }: {
   label: string;
   links: { label: string; href: string; hint: string }[];
-  proof: string;
 }) {
   // Hover-driven, so the menu opens on pointer-over rather than a click. The
   // Popover is controlled: a short close delay bridges the gap between the
@@ -191,36 +169,29 @@ function MegaMenu({
           // Don't yank focus/scroll when the menu opens under the pointer;
           // keyboard users still Tab straight into the links.
           onOpenAutoFocus={(e) => e.preventDefault()}
-          className="menu-pop z-50 w-[min(640px,calc(100vw-32px))] origin-top overflow-hidden rounded-lg border border-rule-strong bg-surface-raised shadow-overlay"
+          className="menu-pop z-50 w-[min(360px,calc(100vw-32px))] origin-top overflow-hidden rounded-lg border border-rule-strong bg-surface-raised p-2 shadow-overlay"
         >
-          <div className="grid gap-0 sm:grid-cols-[1fr_240px]">
-            <ul className="p-2">
-              {links.map((link) => (
-                <li key={link.href}>
-                  <RadixPopover.Close asChild>
-                    <Link
-                      href={link.href}
-                      className="group/row flex items-center justify-between gap-3 rounded-md px-3 py-2.5 transition-colors duration-(--dur-micro) hover:bg-surface-hover"
-                    >
-                      <span className="flex min-w-0 flex-col gap-0.5">
-                        <span className="text-small font-medium text-text">{link.label}</span>
-                        <span className="text-small text-text-mute">{link.hint}</span>
-                      </span>
-                      <CaretRightIcon
-                        aria-hidden
-                        className="size-4 shrink-0 -translate-x-1 text-text-mute opacity-0 transition-all duration-(--dur-micro) ease-(--ease-out) group-hover/row:translate-x-0 group-hover/row:opacity-100"
-                      />
-                    </Link>
-                  </RadixPopover.Close>
-                </li>
-              ))}
-            </ul>
-
-            <div className="flex flex-col gap-3 border-t border-rule bg-surface-sunken p-4 sm:border-l sm:border-t-0">
-              <LampStrip lamps={PANEL_STRIP} size="sm" />
-              <p className="text-small text-text-dim">{proof}</p>
-            </div>
-          </div>
+          <ul className="flex flex-col gap-0.5">
+            {links.map((link) => (
+              <li key={link.href}>
+                <RadixPopover.Close asChild>
+                  <Link
+                    href={link.href}
+                    className="group/row flex items-center justify-between gap-3 rounded-md px-3 py-2.5 transition-colors duration-(--dur-micro) hover:bg-surface-hover"
+                  >
+                    <span className="flex min-w-0 flex-col gap-0.5">
+                      <span className="text-small font-medium text-text">{link.label}</span>
+                      <span className="text-small text-text-mute">{link.hint}</span>
+                    </span>
+                    <CaretRightIcon
+                      aria-hidden
+                      className="size-4 shrink-0 -translate-x-1 text-text-mute opacity-0 transition-all duration-(--dur-micro) ease-(--ease-out) group-hover/row:translate-x-0 group-hover/row:opacity-100"
+                    />
+                  </Link>
+                </RadixPopover.Close>
+              </li>
+            ))}
+          </ul>
         </RadixPopover.Content>
       </RadixPopover.Portal>
     </RadixPopover.Root>

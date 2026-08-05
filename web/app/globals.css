@@ -457,6 +457,35 @@ pre {
 }
 
 /* --------------------------------------------------------------------------
+   Page transition.
+
+   Next remounts `template.tsx` on every navigation, so a fresh `.page-enter`
+   element is created each time and this animation replays — a gentle fade and
+   settle as the new route lands, while the persistent header/footer stay put.
+
+   CSS rather than a JS library on purpose: the resting state is fully visible,
+   so a crawler or a JS-disabled browser sees the content, never a blank page
+   stuck at opacity 0. `backwards` holds the start frame during the (zero) delay
+   so there is no pre-paint flash, and dropping `forwards` means no lingering
+   transform is left on the wrapper to trip up fixed/sticky descendants.
+   -------------------------------------------------------------------------- */
+
+@keyframes page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.page-enter {
+  animation: page-enter var(--dur-base) var(--ease-out) backwards;
+}
+
+/* --------------------------------------------------------------------------
    Reduced motion. Durations collapse and transforms are removed. Lamps still
    change colour — they simply stop flickering. Parallax is switched off
    entirely by the components that use it.
@@ -483,7 +512,8 @@ pre {
   }
 
   .lamp-pulse,
-  .caret::after {
+  .caret::after,
+  .page-enter {
     animation: none;
   }
 }
