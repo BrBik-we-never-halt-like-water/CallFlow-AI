@@ -311,17 +311,13 @@ button[data-menu][data-state="open"]:focus-visible {
     var(--shadow-sm);
 }
 
-/* A borderless surface with a soft gradient fill — the flow-language stand-in
-   for `border border-rule bg-surface-raised`. Shadow is left to the element so
-   the same surface can read as a quiet card (shadow-sm) or a prominent readout
-   (shadow-lg). */
+/* A card: a flat raised surface with a soft hairline edge and a tighter radius —
+   defined without reading as a hard instrument-panel box. Shadow is left to the
+   element so the same surface can be a quiet card (shadow-sm) or lift on hover. */
 .surface-flow {
-  border-radius: var(--r-xl);
-  background: linear-gradient(
-    180deg,
-    var(--surface-raised),
-    color-mix(in oklab, var(--surface-raised) 92%, var(--surface-sunken))
-  );
+  border-radius: var(--r-md);
+  background: var(--surface-raised);
+  border: 1px solid var(--rule);
 }
 
 /* The hero readout. Not a crisp card: a big 32px radius, a clearly visible

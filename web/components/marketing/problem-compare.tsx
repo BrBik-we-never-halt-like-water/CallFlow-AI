@@ -1,6 +1,6 @@
-import { Lamp } from "@/components/brand/lamp";
 import { Eyebrow } from "@/components/ui/panel";
 import { Reveal } from "@/components/ui/reveal";
+import { LiveLamp } from "./live-lamp";
 
 /**
  * The problem, argued on the left and demonstrated on the right.
@@ -49,12 +49,12 @@ export function ProblemCompare() {
             <LogRow
               {...ROWS[0]}
               status="Interested · positive"
-              lamp={<Lamp state="jade" size="md" label="Auto-closed" />}
+              lamp={<LiveLamp state="jade" size="md" label="Auto-closed" />}
             />
             <LogRow
               {...ROWS[1]}
               status="Asked for a person · frustrated"
-              lamp={<Lamp state="flare" size="md" label="Needs a person" />}
+              lamp={<LiveLamp state="flare" size="md" label="Needs a person" />}
             />
           </LogGroup>
         </Reveal>
@@ -67,7 +67,9 @@ function LogGroup({ label, children }: { label: string; children: React.ReactNod
   return (
     <div className="flex flex-col gap-2">
       <Eyebrow>{label}</Eyebrow>
-      <div className="surface-flow overflow-hidden shadow-sm">{children}</div>
+      <div className="surface-flow overflow-hidden shadow-sm transition-[box-shadow,transform] duration-(--dur-base) ease-(--ease-out) hover:-translate-y-0.5 hover:shadow-md">
+        {children}
+      </div>
     </div>
   );
 }

@@ -1,5 +1,5 @@
-import { Lamp } from "@/components/brand/lamp";
 import { LampStrip } from "@/components/brand/lamp-strip";
+import { LiveLamp } from "./live-lamp";
 import { Eyebrow, SectionHeading } from "@/components/ui/panel";
 import { Reveal } from "@/components/ui/reveal";
 import { Tag } from "@/components/ui/badge";
@@ -72,7 +72,7 @@ export function Steps() {
                 </div>
                 <h3 className="text-h4 font-medium text-text">{step.title}</h3>
                 <p className="text-small text-text-dim">{step.body}</p>
-                <div className="surface-flow mt-1 overflow-hidden p-3 shadow-sm">
+                <div className="surface-flow mt-1 overflow-hidden p-3 shadow-sm transition-[box-shadow,transform] duration-(--dur-base) ease-(--ease-out) hover:-translate-y-0.5 hover:shadow-md">
                   {step.panel}
                 </div>
               </li>
@@ -154,15 +154,15 @@ function TriagePanel() {
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center gap-2">
-        <Lamp state="jade" size="sm" label="Auto-closed" />
+        <LiveLamp state="jade" size="sm" label="Auto-closed" />
         <span className="text-small text-text-dim">9 closed themselves</span>
       </div>
       <div className="flex items-center gap-2">
-        <Lamp state="brass" size="sm" pulse label="Queued for retry" />
+        <LiveLamp state="brass" size="sm" pulse label="Queued for retry" />
         <span className="text-small text-text-dim">2 queued for retry</span>
       </div>
       <div className="flex items-center gap-2">
-        <Lamp state="flare" size="sm" label="Needs a person" />
+        <LiveLamp state="flare" size="sm" label="Needs a person" />
         <span className="text-small text-text">3 need a person</span>
       </div>
     </div>
