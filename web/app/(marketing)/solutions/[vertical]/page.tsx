@@ -6,7 +6,7 @@ import { Tag } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { CodeBlock } from "@/components/ui/code-block";
 import { Accordion } from "@/components/ui/disclosure";
-import { Eyebrow, Panel, SectionHeading } from "@/components/ui/panel";
+import { Eyebrow, SectionHeading } from "@/components/ui/panel";
 import { Rule } from "@/components/ui/rule";
 import { getVertical, schemaToJson, VERTICALS } from "@/lib/verticals";
 
@@ -91,37 +91,40 @@ export default async function SolutionPage({
           sub="This is the whole template, not an excerpt. It is what the agent is told, verbatim — including what it must refuse to do."
         />
 
-        <div className="mt-8 grid gap-4 lg:grid-cols-2">
-          {/* min-w-0: without it these grid columns take their children's
-              min-content width — the unwrapped JSON schema below — and push the
-              whole page wider than the viewport on mobile. */}
-          <div className="flex min-w-0 flex-col gap-3">
+        {/* One basin, not two boxes: what the agent is told flows in on the
+            left, the shape it returns flows back on the right, joined by a seam
+            that fades at both ends. min-w-0 keeps the unwrapped JSON from pushing
+            the columns past the viewport on mobile. */}
+        <div className="pool mt-10 grid gap-x-8 gap-y-10 p-5 sm:p-8 lg:grid-cols-[1.05fr_1fr] lg:gap-x-12">
+          <div className="flex min-w-0 flex-col gap-4">
             <div className="flex flex-wrap items-center gap-2">
               <Eyebrow as="span">Goal template</Eyebrow>
               <Tag>{`{name}`}</Tag>
               <Tag>{`{context.*}`}</Tag>
             </div>
-            <Panel sunken className="p-4">
-              <pre className="overflow-x-auto whitespace-pre-wrap font-mono text-data text-text">
-                {vertical.goalTemplate}
-              </pre>
-            </Panel>
+            <pre className="whitespace-pre-wrap font-mono text-data leading-relaxed text-text-dim">
+              {vertical.goalTemplate}
+            </pre>
           </div>
 
-          <div className="flex min-w-0 flex-col gap-3">
-            <CodeBlock
-              label="Result schema"
-              code={schemaToJson(vertical.schema)}
-              maxHeight="max-h-[32rem]"
-            />
-            <ul className="flex flex-col gap-1.5">
+          <div className="flow-seam-l flex min-w-0 flex-col gap-4 lg:pl-12">
+            <Eyebrow as="span">Result schema</Eyebrow>
+            <CodeBlock bare code={schemaToJson(vertical.schema)} />
+            <ul className="flex flex-col gap-3 pt-2">
               {vertical.schema.map((field) => (
-                <li key={field.key} className="flex flex-wrap items-baseline gap-2">
-                  <code className="font-mono text-data text-text">{field.key}</code>
+                <li
+                  key={field.key}
+                  className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5"
+                >
+                  <code className="font-mono text-data font-medium text-text">
+                    {field.key}
+                  </code>
                   <span className="font-mono text-label uppercase tracking-[0.14em] text-text-mute">
                     {field.type}
                   </span>
-                  <span className="text-small text-text-dim">{field.description}</span>
+                  <span className="w-full text-small text-text-dim">
+                    {field.description}
+                  </span>
                 </li>
               ))}
             </ul>
