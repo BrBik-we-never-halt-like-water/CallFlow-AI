@@ -253,6 +253,15 @@ pre {
   border-radius: inherit;
 }
 
+/* The mega-menu triggers open on hover; while a menu is open, the panel itself
+   is the affordance, so a focus outline on the trigger reads as an ugly box.
+   Suppress it only in the open state — a closed trigger still shows a focus ring
+   for keyboard navigation. Higher specificity than :focus-visible, so no
+   !important needed. */
+button[data-menu][data-state="open"]:focus-visible {
+  outline: none;
+}
+
 .skip-link {
   position: fixed;
   top: 8px;
@@ -410,9 +419,9 @@ pre {
 /* --------------------------------------------------------------------------
    Overlays — mega-menu popover and the mobile sheet.
 
-   The menu grows from its top edge with a small lift; the sheet fades up. Both
-   are keyed off Radix's data-state so the exit plays too, and both collapse to
-   an instant appearance under prefers-reduced-motion (below).
+   The menu grows from its top edge with a small lift; the sheet fades up. The
+   menu closes instantly (see below); both collapse to an instant appearance
+   under prefers-reduced-motion (below).
    -------------------------------------------------------------------------- */
 
 @keyframes menu-in {
@@ -426,20 +435,13 @@ pre {
   }
 }
 
-@keyframes menu-out {
-  to {
-    opacity: 0;
-    transform: translateY(-6px) scale(0.98);
-  }
-}
-
 .menu-pop[data-state="open"] {
   animation: menu-in var(--dur-base) var(--ease-out);
 }
 
-.menu-pop[data-state="closed"] {
-  animation: menu-out var(--dur-micro) var(--ease-inout);
-}
+/* No exit animation on purpose: with one-menu-at-a-time coordination, a closing
+   panel must vanish at once so it never overlaps the panel opening beside it.
+   Radix unmounts immediately when the closed state has no animation to await. */
 
 @keyframes sheet-in {
   from {

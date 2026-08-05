@@ -58,6 +58,38 @@ export function SiteHeader() {
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
+  // One open-menu at a time, owned here rather than per-menu: hovering Solutions
+  // opens it and closes Product in the same render, so the two panels can never
+  // both be open. The close is delayed so the pointer can cross the gap from a
+  // trigger into its panel; opening any menu cancels a pending close.
+  const [openMenu, setOpenMenu] = useState<string | null>(null);
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const cancelClose = () => {
+    if (closeTimer.current) {
+      clearTimeout(closeTimer.current);
+      closeTimer.current = null;
+    }
+  };
+  const openMenuNow = (label: string) => {
+    cancelClose();
+    setOpenMenu(label);
+  };
+  const scheduleClose = () => {
+    cancelClose();
+    // Re-read the DOM's real :hover state when the timer fires rather than
+    // trusting which enter/leave events arrived in which order. Moving between
+    // two adjacent triggers can deliver the old trigger's `mouseleave` *after*
+    // the new trigger's `mouseenter`; trusting that ordering would let a stale
+    // leave close the menu the pointer is now sitting on. Whichever menu part is
+    // actually hovered wins; if none is, the menus close.
+    closeTimer.current = setTimeout(() => {
+      const hovered = document.querySelector("[data-menu]:hover");
+      setOpenMenu(hovered ? hovered.getAttribute("data-menu") : null);
+    }, 140);
+  };
+  useEffect(() => cancelClose, []);
+
   return (
     <header
       className={cn(
@@ -80,8 +112,22 @@ export function SiteHeader() {
         </Link>
 
         <nav aria-label="Main" className="hidden items-center gap-1 lg:flex">
-          <MegaMenu label="Product" links={PRODUCT_LINKS} />
-          <MegaMenu label="Solutions" links={SOLUTION_LINKS} />
+          <MegaMenu
+            label="Product"
+            links={PRODUCT_LINKS}
+            open={openMenu === "Product"}
+            onOpen={() => openMenuNow("Product")}
+            onScheduleClose={scheduleClose}
+            onOpenChange={(next) => (next ? openMenuNow("Product") : scheduleClose())}
+          />
+          <MegaMenu
+            label="Solutions"
+            links={SOLUTION_LINKS}
+            open={openMenu === "Solutions"}
+            onOpen={() => openMenuNow("Solutions")}
+            onScheduleClose={scheduleClose}
+            onOpenChange={(next) => (next ? openMenuNow("Solutions") : scheduleClose())}
+          />
           {FLAT_LINKS.map((link) => (
             <Link
               key={link.href}
@@ -115,40 +161,33 @@ export function SiteHeader() {
 function MegaMenu({
   label,
   links,
+  open,
+  onOpen,
+  onScheduleClose,
+  onOpenChange,
 }: {
   label: string;
   links: { label: string; href: string; hint: string }[];
+  /** Controlled by SiteHeader so only one menu is ever open. */
+  open: boolean;
+  /** Pointer entered the trigger or panel — open now, cancelling any close. */
+  onOpen: () => void;
+  /** Pointer left — start the grace timer before closing. */
+  onScheduleClose: () => void;
+  /** Radix's own open/close (click, Escape, outside-click, keyboard). */
+  onOpenChange: (open: boolean) => void;
 }) {
-  // Hover-driven, so the menu opens on pointer-over rather than a click. The
-  // Popover is controlled: a short close delay bridges the gap between the
-  // trigger and the panel (and between the two adjacent menus) so the menu does
-  // not flicker shut while the pointer is travelling. Click and keyboard still
-  // toggle it via onOpenChange, which keeps touch and keyboard users working.
-  const [open, setOpen] = useState(false);
-  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const cancelClose = () => {
-    if (closeTimer.current) {
-      clearTimeout(closeTimer.current);
-      closeTimer.current = null;
-    }
-  };
-  const scheduleClose = () => {
-    cancelClose();
-    closeTimer.current = setTimeout(() => setOpen(false), 140);
-  };
-  useEffect(() => cancelClose, []);
-
+  // Hover-driven: opens on pointer-over rather than a click. The grace close and
+  // single-open coordination both live in SiteHeader; click and keyboard still
+  // work through onOpenChange, so touch and keyboard users are unaffected.
   return (
-    <RadixPopover.Root open={open} onOpenChange={setOpen}>
+    <RadixPopover.Root open={open} onOpenChange={onOpenChange}>
       <RadixPopover.Trigger asChild>
         <button
           type="button"
-          onMouseEnter={() => {
-            cancelClose();
-            setOpen(true);
-          }}
-          onMouseLeave={scheduleClose}
+          data-menu={label}
+          onMouseEnter={onOpen}
+          onMouseLeave={onScheduleClose}
           className="group inline-flex cursor-pointer items-center gap-1 rounded-sm px-3 py-2 text-small font-medium text-text-dim transition-colors duration-(--dur-micro) hover:bg-surface-hover hover:text-text"
         >
           {label}
@@ -164,11 +203,16 @@ function MegaMenu({
           sideOffset={10}
           align="start"
           collisionPadding={16}
-          onMouseEnter={cancelClose}
-          onMouseLeave={scheduleClose}
+          data-menu={label}
+          onMouseEnter={onOpen}
+          onMouseLeave={onScheduleClose}
           // Don't yank focus/scroll when the menu opens under the pointer;
           // keyboard users still Tab straight into the links.
           onOpenAutoFocus={(e) => e.preventDefault()}
+          // Don't return focus to the trigger on close either — otherwise a
+          // hover-opened menu leaves a focus-ring box sitting on the trigger
+          // after the pointer moves away.
+          onCloseAutoFocus={(e) => e.preventDefault()}
           className="menu-pop z-50 w-[min(360px,calc(100vw-32px))] origin-top overflow-hidden rounded-lg border border-rule-strong bg-surface-raised p-2 shadow-overlay"
         >
           <ul className="flex flex-col gap-0.5">
