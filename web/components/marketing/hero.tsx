@@ -43,11 +43,17 @@ const SPOKEN = spokenLine(DEFAULT_NAME);
 export function Hero() {
   const reduced = usePrefersReducedMotion();
 
-  // Beat one: the line the contact hears. Beat two: the data that comes back.
-  const heard = useTypewriter(SPOKEN, { durationMs: 1300, instant: reduced });
+  // Hold until the site loader has handed off (~1.5s), then play slowly so the
+  // voice and the data feel like they are arriving, not racing. Beat one: the
+  // line the contact hears. Beat two: the data that comes back.
+  const heard = useTypewriter(SPOKEN, {
+    delayMs: 1500,
+    durationMs: 2200,
+    instant: reduced,
+  });
   const returned = useTypewriter(RESULT_JSON, {
-    delayMs: 250,
-    durationMs: 1500,
+    delayMs: 300,
+    durationMs: 2400,
     instant: reduced,
     enabled: heard.done,
   });
@@ -56,6 +62,9 @@ export function Hero() {
   const spokenProgress = SPOKEN.length
     ? Math.min(1, heard.output.length / SPOKEN.length)
     : 0;
+  // Only "speaking" once characters are actually landing — so the wave rests at
+  // its full shape during the wait, then sweeps as the line is spoken.
+  const speaking = heard.output.length > 0 && !heard.done;
 
   return (
     <section className="relative overflow-hidden">
@@ -116,7 +125,7 @@ export function Hero() {
                   <VoiceWave
                     text={SPOKEN}
                     progress={spokenProgress}
-                    speaking={!heard.done}
+                    speaking={speaking}
                   />
                   <p className={cn("text-body font-semibold text-text", !heard.done && "caret")}>
                     {heard.output ? `“${heard.output}${heard.done ? "”" : ""}` : " "}
