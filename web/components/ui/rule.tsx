@@ -24,7 +24,7 @@ export function Rule({
   return (
     <div className={cn("flex items-center gap-3", className)} role="separator">
       <span className="h-px flex-1 bg-rule" />
-      <span aria-hidden className="flex items-center gap-1.5">
+      <span aria-hidden className="flex items-center gap-2.5">
         <Lamp state="jade" size="sm" />
         <Lamp state="brass" size="sm" />
         <Lamp state="flare" size="sm" />

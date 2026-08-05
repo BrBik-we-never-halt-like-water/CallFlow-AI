@@ -2,7 +2,7 @@
 
 import * as RadixPopover from "@radix-ui/react-popover";
 import * as RadixDialog from "@radix-ui/react-dialog";
-import { CaretDownIcon, ListIcon, XIcon } from "@phosphor-icons/react/dist/ssr";
+import { CaretDownIcon, CaretRightIcon, ListIcon, XIcon } from "@phosphor-icons/react/dist/ssr";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/cn";
@@ -73,11 +73,13 @@ export function SiteHeader() {
   return (
     <header
       className={cn(
-        "sticky top-0 z-40 h-16 border-b transition-colors duration-(--dur-base)",
-        // 92% opacity and no blur: the design leans on hairlines, and a frosted
-        // header is the single most recognisable generated-UI tell.
-        "bg-[color-mix(in_oklab,var(--surface)_92%,transparent)]",
-        scrolled ? "border-rule" : "border-transparent",
+        "sticky top-0 z-40 h-16 border-b bg-surface",
+        "transition-[border-color,box-shadow] duration-(--dur-base) ease-(--ease-out)",
+        // Solid, not frosted: the page and the header share --surface, so at the
+        // top the header reads as flush with the hero. On scroll a hairline and a
+        // soft shadow ease in to lift it above the content passing underneath —
+        // an opaque bar never lets text ghost through the way a translucent one does.
+        scrolled ? "border-rule shadow-sm" : "border-transparent",
       )}
     >
       <div className="mx-auto flex h-full max-w-(--container-marketing) items-center justify-between gap-4 px-4 sm:px-6">
@@ -156,10 +158,10 @@ function MegaMenu({
 
       <RadixPopover.Portal>
         <RadixPopover.Content
-          sideOffset={8}
+          sideOffset={10}
           align="start"
           collisionPadding={16}
-          className="z-50 w-[min(640px,calc(100vw-32px))] overflow-hidden rounded-md border border-rule-strong bg-surface-raised shadow-overlay"
+          className="menu-pop z-50 w-[min(640px,calc(100vw-32px))] origin-top overflow-hidden rounded-lg border border-rule-strong bg-surface-raised shadow-overlay"
         >
           <div className="grid gap-0 sm:grid-cols-[1fr_240px]">
             <ul className="p-2">
@@ -168,10 +170,16 @@ function MegaMenu({
                   <RadixPopover.Close asChild>
                     <Link
                       href={link.href}
-                      className="flex flex-col gap-0.5 rounded-sm px-3 py-2 transition-colors duration-(--dur-micro) hover:bg-surface-hover"
+                      className="group/row flex items-center justify-between gap-3 rounded-md px-3 py-2.5 transition-colors duration-(--dur-micro) hover:bg-surface-hover"
                     >
-                      <span className="text-small font-medium text-text">{link.label}</span>
-                      <span className="text-small text-text-mute">{link.hint}</span>
+                      <span className="flex min-w-0 flex-col gap-0.5">
+                        <span className="text-small font-medium text-text">{link.label}</span>
+                        <span className="text-small text-text-mute">{link.hint}</span>
+                      </span>
+                      <CaretRightIcon
+                        aria-hidden
+                        className="size-4 shrink-0 -translate-x-1 text-text-mute opacity-0 transition-all duration-(--dur-micro) ease-(--ease-out) group-hover/row:translate-x-0 group-hover/row:opacity-100"
+                      />
                     </Link>
                   </RadixPopover.Close>
                 </li>
@@ -211,7 +219,7 @@ function MobileNav() {
       </RadixDialog.Trigger>
 
       <RadixDialog.Portal>
-        <RadixDialog.Content className="fixed inset-0 z-50 flex flex-col bg-surface">
+        <RadixDialog.Content className="sheet-in fixed inset-0 z-50 flex flex-col bg-surface">
           <RadixDialog.Title className="sr-only">Menu</RadixDialog.Title>
 
           <div className="flex h-16 shrink-0 items-center justify-between border-b border-rule px-4">

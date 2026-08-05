@@ -8,7 +8,7 @@ import { Lamp, type LampSize } from "./lamp";
 const STAGGER_MS = 60;
 const STAGGER_CAP = 12;
 
-const GAP: Record<LampSize, string> = { sm: "gap-1", md: "gap-1.5", lg: "gap-2" };
+const GAP: Record<LampSize, string> = { sm: "gap-1.5", md: "gap-2", lg: "gap-2.5" };
 
 export interface LampStripProps {
   lamps: LampSpec[];
