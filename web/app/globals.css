@@ -488,6 +488,37 @@ button[data-menu][data-state="open"]:focus-visible {
 }
 
 /* --------------------------------------------------------------------------
+   View Transitions — the real cross-dissolve between routes.
+
+   Where the browser supports it, navigation is driven through
+   startViewTransition (see components/layout/view-transitions.tsx) and the old
+   page dissolves into the new one. Tuned to the design's own duration and
+   easing rather than the UA default. The `.page-enter` fade is redundant here,
+   so it is switched off wherever View Transitions run — the two would otherwise
+   stack into a double animation.
+   -------------------------------------------------------------------------- */
+
+@supports (view-transition-name: none) {
+  .page-enter {
+    animation: none;
+  }
+
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation-duration: var(--dur-base);
+    animation-timing-function: var(--ease-out);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
+  }
+}
+
+/* --------------------------------------------------------------------------
    Reduced motion. Durations collapse and transforms are removed. Lamps still
    change colour — they simply stop flickering. Parallax is switched off
    entirely by the components that use it.

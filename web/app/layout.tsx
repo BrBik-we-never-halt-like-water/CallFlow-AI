@@ -3,6 +3,7 @@ import { Archivo, Inter_Tight, JetBrains_Mono } from "next/font/google";
 import { NuqsAdapter } from "nuqs/adapters/next/app";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ToastProvider } from "@/components/ui/toast";
+import { ViewTransitions } from "@/components/layout/view-transitions";
 import "./globals.css";
 
 /**
@@ -91,6 +92,7 @@ export default function RootLayout({
             <ToastProvider>{children}</ToastProvider>
           </TooltipProvider>
         </NuqsAdapter>
+        <ViewTransitions />
       </body>
     </html>
   );
