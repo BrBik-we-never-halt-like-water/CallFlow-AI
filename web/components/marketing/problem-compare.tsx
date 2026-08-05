@@ -20,7 +20,7 @@ const ROWS = [
 export function ProblemCompare() {
   return (
     <section id="problem" className="mx-auto max-w-(--container-marketing) px-4 sm:px-6">
-      <div className="grid items-start gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,520px)] lg:gap-16">
+      <div className="grid items-center gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,520px)] lg:gap-16">
         <Reveal className="flex flex-col gap-5">
           <h2 className="measure-display font-display text-h2 text-text">
             A completed call tells you nothing.

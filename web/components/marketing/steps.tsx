@@ -71,8 +71,10 @@ export function Steps() {
                   </span>
                 </div>
                 <h3 className="text-h4 font-medium text-text">{step.title}</h3>
-                <p className="text-small text-text-dim">{step.body}</p>
-                <div className="surface-flow mt-1 overflow-hidden p-3 shadow-sm transition-[box-shadow,transform] duration-(--dur-base) ease-(--ease-out) hover:-translate-y-0.5 hover:shadow-md">
+                {/* Fixed heights at desktop so the four cards line up top and
+                    bottom into a symmetric row; natural height when stacked. */}
+                <p className="text-small text-text-dim lg:min-h-[3.5rem]">{step.body}</p>
+                <div className="surface-flow mt-1 flex flex-col justify-center overflow-hidden p-4 shadow-sm transition-[box-shadow,transform] duration-(--dur-base) ease-(--ease-out) hover:-translate-y-0.5 hover:shadow-md lg:min-h-[8rem]">
                   {step.panel}
                 </div>
               </li>
