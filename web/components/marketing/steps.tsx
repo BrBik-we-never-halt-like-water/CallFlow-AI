@@ -29,7 +29,7 @@ const STEPS = [
   {
     n: "03",
     title: "Run it",
-    body: "Dry run proves the pipeline for free. Live mode dials, and results arrive as each call ends.",
+    body: "Rows are validated and the guards checked before anything dials. Results arrive as each call ends.",
     panel: <RunPanel />,
   },
   {
@@ -129,18 +129,17 @@ function CampaignPanel() {
 function RunPanel() {
   return (
     <div className="flex flex-col gap-2">
-      <div className="flex items-center gap-2">
-        <span className="h-5 w-9 rounded-full border border-transparent bg-[var(--lamp-ice)] p-0.5">
-          <span className="block size-4 rounded-full bg-surface-raised" />
-        </span>
-        <span className="text-small text-text">Dry run</span>
+      <p className="eyebrow text-text-mute">Guards on</p>
+      <div className="flex flex-wrap gap-1">
+        <Tag>ALLOWLIST</Tag>
+        <Tag>CEILING 25</Tag>
+        <Tag>RATE 2/HR</Tag>
       </div>
-      <p className="eyebrow text-lamp-ice-text">Dry run · No credits spent</p>
       <LampStrip
         lamps={[
-          { state: "ice", label: "Simulated" },
-          { state: "ice", label: "Simulated" },
-          { state: "ice", label: "Simulated" },
+          { state: "jade", label: "Auto-closed" },
+          { state: "jade", label: "Auto-closed" },
+          { state: "off", label: "Queued" },
           { state: "off", label: "Queued" },
           { state: "off", label: "Queued" },
         ]}

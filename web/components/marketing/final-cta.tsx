@@ -8,7 +8,7 @@ import type { LampSpec } from "@/lib/lamp";
 const STRIP: LampSpec[] = [
   { state: "jade", label: "Auto-closed" },
   { state: "jade", label: "Auto-closed" },
-  { state: "ice", label: "Dry run" },
+  { state: "jade", label: "Auto-closed" },
   { state: "jade", label: "Auto-closed" },
   { state: "brass", pulse: true, label: "Queued for retry" },
   { state: "jade", label: "Auto-closed" },
@@ -34,15 +34,15 @@ export function FinalCta() {
           />
 
           <div className="relative flex flex-col items-center gap-6 px-6 py-(--space-section) text-center">
-            <Eyebrow>Dry run · No credits spent</Eyebrow>
+            <Eyebrow>Start free</Eyebrow>
 
             <h2 className="measure-display font-display text-display-l text-text">
-              See it work without spending a credit.
+              Put your list to work.
             </h2>
 
             <p className="measure text-body-l text-text-dim">
-              Dry run walks the whole pipeline — validation, the safety gates, and the
-              exact words each contact would hear — without placing a single call.
+              Load your contacts, write a goal, and let CallFlow dial. Every run is
+              validated and guarded before it places a single call.
             </p>
 
             <LampStrip lamps={STRIP} size="lg" counts className="items-center" />
@@ -56,9 +56,7 @@ export function FinalCta() {
               </Button>
             </div>
 
-            <p className="text-small text-text-mute">
-              No card required. Dry run is on by default.
-            </p>
+            <p className="text-small text-text-mute">No card required.</p>
           </div>
         </div>
       </Reveal>

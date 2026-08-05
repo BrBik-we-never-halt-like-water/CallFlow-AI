@@ -11,8 +11,8 @@ import { usePrefersReducedMotion, useTypewriter } from "@/lib/hooks/use-typewrit
 /**
  * The hero pairs an argument with a proof.
  *
- * Left: the thesis and the two ways in. Right: a scripted dry run that plays
- * once on load — the line the contact hears, drawn as a voice waveform, then the
+ * Left: the thesis and the two ways in. Right: a scripted call that plays once
+ * on load — the line the contact hears, drawn as a voice waveform, then the
  * typed data that comes back. It shows the product's most characteristic moment
  * without a control to operate, and never shows an error: if the service is
  * unreachable the scripted sequence is all there ever was.
@@ -103,7 +103,7 @@ export function Hero() {
           {/* ---- The proof --------------------------------------------------- */}
           <div className="flex flex-col gap-4">
             <div className="flex items-center gap-3">
-              <Eyebrow>Dry run · no credits spent</Eyebrow>
+              <Eyebrow>See a call resolve</Eyebrow>
               <span aria-hidden className="h-px flex-1 bg-rule" />
             </div>
 
