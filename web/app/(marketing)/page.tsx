@@ -7,6 +7,7 @@ import { SafetySection } from "@/components/marketing/safety-section";
 import { Steps } from "@/components/marketing/steps";
 import { VerticalStrip } from "@/components/marketing/vertical-strip";
 import { WaveSpine } from "@/components/brand/wave-spine";
+import { WaveCanvas } from "@/components/brand/wave-canvas";
 
 /**
  * The home page.
@@ -26,16 +27,16 @@ export default function HomePage() {
       <SpineDivider />
       <ProblemCompare />
 
-      <SpineDivider />
+      <SpineDivider bold />
       <Steps />
 
-      <SpineDivider />
+      <SpineDivider bold />
       <CapabilityGrid />
 
       <SpineDivider />
       <VerticalStrip />
 
-      <SpineDivider />
+      <SpineDivider bold />
       <SafetySection />
 
       <SpineDivider />
@@ -46,10 +47,14 @@ export default function HomePage() {
   );
 }
 
-function SpineDivider() {
+function SpineDivider({ bold = false }: { bold?: boolean }) {
   return (
     <div className="mx-auto max-w-(--container-marketing) px-4 py-(--space-section) sm:px-6">
-      <WaveSpine />
+      {bold ? (
+        <WaveCanvas pitch={7} className="h-16 text-text opacity-80" />
+      ) : (
+        <WaveSpine />
+      )}
     </div>
   );
 }
