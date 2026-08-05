@@ -4,7 +4,7 @@ import * as RadixPopover from "@radix-ui/react-popover";
 import * as RadixDialog from "@radix-ui/react-dialog";
 import { CaretDownIcon, CaretRightIcon, ListIcon, XIcon } from "@phosphor-icons/react/dist/ssr";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/cn";
 import { BrandLockup } from "@/components/brand/wordmark";
 import { LampStrip } from "@/components/brand/lamp-strip";
@@ -141,11 +141,36 @@ function MegaMenu({
   links: { label: string; href: string; hint: string }[];
   proof: string;
 }) {
+  // Hover-driven, so the menu opens on pointer-over rather than a click. The
+  // Popover is controlled: a short close delay bridges the gap between the
+  // trigger and the panel (and between the two adjacent menus) so the menu does
+  // not flicker shut while the pointer is travelling. Click and keyboard still
+  // toggle it via onOpenChange, which keeps touch and keyboard users working.
+  const [open, setOpen] = useState(false);
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const cancelClose = () => {
+    if (closeTimer.current) {
+      clearTimeout(closeTimer.current);
+      closeTimer.current = null;
+    }
+  };
+  const scheduleClose = () => {
+    cancelClose();
+    closeTimer.current = setTimeout(() => setOpen(false), 140);
+  };
+  useEffect(() => cancelClose, []);
+
   return (
-    <RadixPopover.Root>
+    <RadixPopover.Root open={open} onOpenChange={setOpen}>
       <RadixPopover.Trigger asChild>
         <button
           type="button"
+          onMouseEnter={() => {
+            cancelClose();
+            setOpen(true);
+          }}
+          onMouseLeave={scheduleClose}
           className="group inline-flex cursor-pointer items-center gap-1 rounded-sm px-3 py-2 text-small font-medium text-text-dim transition-colors duration-(--dur-micro) hover:bg-surface-hover hover:text-text"
         >
           {label}
@@ -161,6 +186,11 @@ function MegaMenu({
           sideOffset={10}
           align="start"
           collisionPadding={16}
+          onMouseEnter={cancelClose}
+          onMouseLeave={scheduleClose}
+          // Don't yank focus/scroll when the menu opens under the pointer;
+          // keyboard users still Tab straight into the links.
+          onOpenAutoFocus={(e) => e.preventDefault()}
           className="menu-pop z-50 w-[min(640px,calc(100vw-32px))] origin-top overflow-hidden rounded-lg border border-rule-strong bg-surface-raised shadow-overlay"
         >
           <div className="grid gap-0 sm:grid-cols-[1fr_240px]">

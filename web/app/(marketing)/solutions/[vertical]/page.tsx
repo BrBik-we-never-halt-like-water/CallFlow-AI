@@ -92,7 +92,10 @@ export default async function SolutionPage({
         />
 
         <div className="mt-8 grid gap-4 lg:grid-cols-2">
-          <div className="flex flex-col gap-3">
+          {/* min-w-0: without it these grid columns take their children's
+              min-content width — the unwrapped JSON schema below — and push the
+              whole page wider than the viewport on mobile. */}
+          <div className="flex min-w-0 flex-col gap-3">
             <div className="flex flex-wrap items-center gap-2">
               <Eyebrow as="span">Goal template</Eyebrow>
               <Tag>{`{name}`}</Tag>
@@ -105,7 +108,7 @@ export default async function SolutionPage({
             </Panel>
           </div>
 
-          <div className="flex flex-col gap-3">
+          <div className="flex min-w-0 flex-col gap-3">
             <CodeBlock
               label="Result schema"
               code={schemaToJson(vertical.schema)}
