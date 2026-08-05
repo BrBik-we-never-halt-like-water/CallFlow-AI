@@ -6,7 +6,7 @@ import { ProblemCompare } from "@/components/marketing/problem-compare";
 import { SafetySection } from "@/components/marketing/safety-section";
 import { Steps } from "@/components/marketing/steps";
 import { VerticalStrip } from "@/components/marketing/vertical-strip";
-import { FlowDivider } from "@/components/marketing/flow-divider";
+import { WaveSpine } from "@/components/brand/wave-spine";
 
 /**
  * The home page.
@@ -23,25 +23,33 @@ export default function HomePage() {
     <>
       <Hero />
 
-      <FlowDivider />
+      <SpineDivider />
       <ProblemCompare />
 
-      <FlowDivider />
+      <SpineDivider />
       <Steps />
 
-      <FlowDivider />
+      <SpineDivider />
       <CapabilityGrid />
 
-      <FlowDivider />
+      <SpineDivider />
       <VerticalStrip />
 
-      <FlowDivider />
+      <SpineDivider />
       <SafetySection />
 
-      <FlowDivider />
+      <SpineDivider />
       <PricingPreview />
 
       <FinalCta />
     </>
+  );
+}
+
+function SpineDivider() {
+  return (
+    <div className="mx-auto max-w-(--container-marketing) px-4 py-(--space-section) sm:px-6">
+      <WaveSpine />
+    </div>
   );
 }
