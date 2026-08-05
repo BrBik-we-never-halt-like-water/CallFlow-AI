@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Eyebrow } from "@/components/ui/panel";
+import { VoiceWave } from "./voice-wave";
 import { api } from "@/lib/api";
 import type { LampSpec } from "@/lib/lamp";
 import { usePrefersReducedMotion, useTypewriter } from "@/lib/hooks/use-typewriter";
@@ -130,6 +131,11 @@ export function Hero() {
   // Derived: the button is busy while a sequence the visitor started is still playing.
   const running = runId > 0 && !returned.done;
 
+  // The waveform's playhead rides the exact typing progress of the spoken line.
+  const spokenProgress = spoken.length
+    ? Math.min(1, heard.output.length / spoken.length)
+    : 0;
+
   async function runDry() {
     setRunId((n) => n + 1);
 
@@ -236,16 +242,21 @@ export function Hero() {
 
         {/* ---- The panel --------------------------------------------------- */}
         {/* A floating readout rather than a hard-edged card: soft gradient fill,
-            bright top edge, no border. Its blocks are joined by seams that fade
-            at both ends instead of full-width rules. */}
-        <div className="card-flow overflow-hidden">
+            bright top edge, no border, blocks separated by air. The caller line
+            is led by a voice waveform drawn from the words themselves. */}
+        <div className="card-flow flex flex-col gap-6 p-6 sm:p-8">
           <PanelBlock label="What the caller hears">
-            <p className={cn("text-body text-text", !heard.done && "caret")}>
+            <div className="flex flex-col gap-4">
+              <VoiceWave
+                text={spoken}
+                progress={spokenProgress}
+                speaking={!heard.done}
+              />
+              <p className={cn("text-body font-semibold text-text", !heard.done && "caret")}>
               {heard.output ? `“${heard.output}${heard.done ? "”" : ""}` : " "}
-            </p>
+              </p>
+            </div>
           </PanelBlock>
-
-          <div className="seam-x mx-5" />
 
           <PanelBlock label="What comes back">
             <pre
@@ -258,9 +269,7 @@ export function Hero() {
             </pre>
           </PanelBlock>
 
-          <div className="seam-x mx-5" />
-
-          <div className="flex items-center justify-between gap-3 p-5">
+          <div className="flex items-center justify-between gap-3">
             <Eyebrow>Schema-validated</Eyebrow>
             <p className="font-mono text-data text-text-mute">
               {Object.keys(result).length} fields
@@ -305,10 +314,10 @@ function ParallaxGrid() {
 
 function PanelBlock({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="flex flex-col gap-2.5 p-4 sm:p-5">
+    <div className="flex flex-col gap-2.5">
       <Eyebrow>{label}</Eyebrow>
       {/* A fixed minimum height stops the panel resizing as text types in. */}
-      <div className="min-h-20">{children}</div>
+      <div className="min-h-16">{children}</div>
     </div>
   );
 }
