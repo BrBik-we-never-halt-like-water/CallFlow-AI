@@ -30,7 +30,7 @@ export function FinalCta() {
         <div className="card-flow relative mx-auto max-w-(--container-marketing) overflow-hidden">
           <div
             aria-hidden
-            className="grid-field pointer-events-none absolute inset-0"
+            className="wave-field pointer-events-none absolute inset-0"
           />
 
           <div className="relative flex flex-col items-center gap-6 px-6 py-(--space-section) text-center">

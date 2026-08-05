@@ -172,7 +172,7 @@ function ParallaxGrid() {
     return (
       <div
         aria-hidden
-        className="grid-field pointer-events-none absolute inset-x-0 top-0 h-[42rem]"
+        className="wave-field pointer-events-none absolute inset-x-0 top-0 h-[42rem]"
       />
     );
   }
@@ -181,7 +181,7 @@ function ParallaxGrid() {
     <motion.div
       aria-hidden
       style={{ y }}
-      className="grid-field pointer-events-none absolute inset-x-0 -top-16 h-[46rem]"
+      className="wave-field pointer-events-none absolute inset-x-0 -top-16 h-[46rem]"
     />
   );
 }
