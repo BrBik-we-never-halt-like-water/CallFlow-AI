@@ -7,7 +7,7 @@ import {
   TableIcon,
   UserSoundIcon,
 } from "@phosphor-icons/react/dist/ssr";
-import { Panel, SectionHeading } from "@/components/ui/panel";
+import { SectionHeading } from "@/components/ui/panel";
 import { Reveal, RevealGroup, RevealItem } from "@/components/ui/reveal";
 
 /**
@@ -71,18 +71,17 @@ export function CapabilityGrid() {
       <RevealGroup className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {CAPABILITIES.map(({ icon: IconComponent, title, body, detail }) => (
           <RevealItem key={title} className="flex">
-            <Panel interactive className="group flex h-full flex-col gap-3 p-5">
-              <span className="flex size-10 items-center justify-center rounded-md border border-rule bg-surface-sunken text-text-dim transition-colors duration-(--dur-base) group-hover:text-text">
+            <div className="surface-flow group flex h-full flex-col gap-3 p-5 shadow-sm transition-[box-shadow,transform] duration-(--dur-base) ease-(--ease-out) hover:-translate-y-0.5 hover:shadow-md">
+              <span className="flex size-10 items-center justify-center rounded-lg bg-surface-sunken text-text-dim transition-colors duration-(--dur-base) group-hover:text-text">
                 <IconComponent aria-hidden weight="light" className="size-5" />
               </span>
 
               <h3 className="text-h4 font-medium text-text">{title}</h3>
               <p className="text-small text-text-dim">{body}</p>
 
-              <p className="mt-auto border-t border-rule pt-3 text-small text-text-mute">
-                {detail}
-              </p>
-            </Panel>
+              <div className="seam-x mt-auto" />
+              <p className="text-small text-text-mute">{detail}</p>
+            </div>
           </RevealItem>
         ))}
       </RevealGroup>

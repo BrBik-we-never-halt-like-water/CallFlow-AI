@@ -311,8 +311,20 @@ button[data-menu][data-state="open"]:focus-visible {
     var(--shadow-sm);
 }
 
-/* A raised readout that floats rather than sits in a hard-edged box: soft
-   gradient fill, a bright top edge, and a wide soft shadow — no border. */
+/* A borderless surface with a soft gradient fill — the flow-language stand-in
+   for `border border-rule bg-surface-raised`. Shadow is left to the element so
+   the same surface can read as a quiet card (shadow-sm) or a prominent readout
+   (shadow-lg). */
+.surface-flow {
+  border-radius: var(--r-xl);
+  background: linear-gradient(
+    180deg,
+    var(--surface-raised),
+    color-mix(in oklab, var(--surface-raised) 92%, var(--surface-sunken))
+  );
+}
+
+/* The hero readout: the flow surface plus a bright top edge and a wide shadow. */
 .card-flow {
   border-radius: var(--r-xl);
   background: linear-gradient(
