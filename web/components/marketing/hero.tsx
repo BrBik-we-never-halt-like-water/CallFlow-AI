@@ -235,14 +235,17 @@ export function Hero() {
         </div>
 
         {/* ---- The panel --------------------------------------------------- */}
-        <div className="overflow-hidden rounded-xl border border-rule bg-surface-raised shadow-md">
+        {/* A floating readout rather than a hard-edged card: soft gradient fill,
+            bright top edge, no border. Its blocks are joined by seams that fade
+            at both ends instead of full-width rules. */}
+        <div className="card-flow overflow-hidden">
           <PanelBlock label="What the caller hears">
             <p className={cn("text-body text-text", !heard.done && "caret")}>
               {heard.output ? `“${heard.output}${heard.done ? "”" : ""}` : " "}
             </p>
           </PanelBlock>
 
-          <div className="h-px bg-rule" />
+          <div className="seam-x mx-5" />
 
           <PanelBlock label="What comes back">
             <pre
@@ -255,9 +258,9 @@ export function Hero() {
             </pre>
           </PanelBlock>
 
-          <div className="h-px bg-rule" />
+          <div className="seam-x mx-5" />
 
-          <div className="flex items-center justify-between gap-3 p-4">
+          <div className="flex items-center justify-between gap-3 p-5">
             <Eyebrow>Schema-validated</Eyebrow>
             <p className="font-mono text-data text-text-mute">
               {Object.keys(result).length} fields

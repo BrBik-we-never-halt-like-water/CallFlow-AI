@@ -311,8 +311,35 @@ button[data-menu][data-state="open"]:focus-visible {
     var(--shadow-sm);
 }
 
-/* A vertical seam that fades at both ends — a join, not a wall. Desktop only,
-   where the two halves sit side by side. */
+/* A raised readout that floats rather than sits in a hard-edged box: soft
+   gradient fill, a bright top edge, and a wide soft shadow — no border. */
+.card-flow {
+  border-radius: var(--r-xl);
+  background: linear-gradient(
+    180deg,
+    var(--surface-raised),
+    color-mix(in oklab, var(--surface-raised) 92%, var(--surface-sunken))
+  );
+  box-shadow:
+    inset 0 1px 0 color-mix(in oklab, #ffffff 60%, transparent),
+    var(--shadow-lg);
+}
+
+/* Hairlines that fade at both ends — the flow-language replacement for a hard
+   full-width / full-height divider. `seam-x` is horizontal, `seam-y` vertical;
+   `flow-seam-l` is the desktop-only fading left border used between columns. */
+.seam-x {
+  height: 1px;
+  border: 0;
+  background: linear-gradient(90deg, transparent, var(--rule-strong), transparent);
+}
+
+.seam-y {
+  width: 1px;
+  align-self: stretch;
+  background: linear-gradient(180deg, transparent, var(--rule-strong), transparent);
+}
+
 @media (min-width: 1024px) {
   .flow-seam-l {
     border-left: 1px solid transparent;
