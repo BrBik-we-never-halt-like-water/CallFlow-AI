@@ -27,7 +27,7 @@ export function FinalCta() {
   return (
     <section className="mt-(--space-section) px-4 sm:px-6">
       <Reveal>
-        <div className="relative mx-auto max-w-(--container-marketing) overflow-hidden rounded-xl border border-rule bg-surface-raised shadow-md">
+        <div className="card-flow relative mx-auto max-w-(--container-marketing) overflow-hidden">
           <div
             aria-hidden
             className="grid-field pointer-events-none absolute inset-0"

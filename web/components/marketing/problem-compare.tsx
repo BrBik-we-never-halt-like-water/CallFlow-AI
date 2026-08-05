@@ -67,9 +67,7 @@ function LogGroup({ label, children }: { label: string; children: React.ReactNod
   return (
     <div className="flex flex-col gap-2">
       <Eyebrow>{label}</Eyebrow>
-      <div className="overflow-hidden rounded-md border border-rule bg-surface-raised">
-        {children}
-      </div>
+      <div className="surface-flow overflow-hidden shadow-sm">{children}</div>
     </div>
   );
 }

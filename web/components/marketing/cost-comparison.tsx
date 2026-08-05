@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Eyebrow, Panel, SectionHeading } from "@/components/ui/panel";
+import { Eyebrow, SectionHeading } from "@/components/ui/panel";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { formatCurrency, formatNumber, type Currency } from "@/lib/format";
@@ -65,7 +65,7 @@ export function CostComparison({ currency }: { currency: Currency }) {
       </div>
 
       <div className="mt-8 grid gap-4 md:grid-cols-2">
-        <Panel className="flex flex-col divide-y divide-rule">
+        <div className="surface-flow flex flex-col divide-y divide-rule shadow-sm">
           <header className="p-5">
             <Eyebrow>A tele-caller</Eyebrow>
             <p className="mt-2 font-display text-h3 text-text">One person, one phone</p>
@@ -85,9 +85,9 @@ export function CostComparison({ currency }: { currency: Currency }) {
             value={`${notesHoursPerMonth.toFixed(0)}h/month typed by hand`}
           />
           <Row label="Sentiment recorded" value="Only when someone remembers" />
-        </Panel>
+        </div>
 
-        <Panel className="flex flex-col divide-y divide-rule border-text">
+        <div className="surface-flow flex flex-col divide-y divide-rule shadow-md">
           <header className="p-5">
             <Eyebrow>CallFlow Growth</Eyebrow>
             <p className="mt-2 font-display text-h3 text-text">A campaign, not a headcount</p>
@@ -100,7 +100,7 @@ export function CostComparison({ currency }: { currency: Currency }) {
           <Row label="Hours covered" value="24×7, including weekends" />
           <Row label="Notes" value="Typed automatically, on every call" />
           <Row label="Sentiment recorded" value="Every call, as a typed field" />
-        </Panel>
+        </div>
       </div>
 
       <p className="mt-4 text-small text-text-mute">
