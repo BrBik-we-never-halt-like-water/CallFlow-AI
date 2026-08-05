@@ -6,7 +6,7 @@ import { ProblemCompare } from "@/components/marketing/problem-compare";
 import { SafetySection } from "@/components/marketing/safety-section";
 import { Steps } from "@/components/marketing/steps";
 import { VerticalStrip } from "@/components/marketing/vertical-strip";
-import { Rule } from "@/components/ui/rule";
+import { FlowDivider } from "@/components/marketing/flow-divider";
 
 /**
  * The home page.
@@ -23,33 +23,25 @@ export default function HomePage() {
     <>
       <Hero />
 
-      <SectionDivider />
+      <FlowDivider />
       <ProblemCompare />
 
-      <SectionDivider />
+      <FlowDivider />
       <Steps />
 
-      <SectionDivider />
+      <FlowDivider />
       <CapabilityGrid />
 
-      <SectionDivider />
+      <FlowDivider />
       <VerticalStrip />
 
-      <SectionDivider />
+      <FlowDivider />
       <SafetySection />
 
-      <SectionDivider />
+      <FlowDivider />
       <PricingPreview />
 
       <FinalCta />
     </>
-  );
-}
-
-function SectionDivider() {
-  return (
-    <div className="mx-auto max-w-(--container-marketing) px-4 py-(--space-section) sm:px-6">
-      <Rule withLamps />
-    </div>
   );
 }
