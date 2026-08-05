@@ -2,24 +2,12 @@
 
 import * as RadixPopover from "@radix-ui/react-popover";
 import * as RadixDialog from "@radix-ui/react-dialog";
-import { CaretDownIcon, ListIcon, XIcon } from "@phosphor-icons/react/dist/ssr";
+import { CaretDownIcon, CaretRightIcon, ListIcon, XIcon } from "@phosphor-icons/react/dist/ssr";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/cn";
 import { BrandLockup } from "@/components/brand/wordmark";
-import { LampStrip } from "@/components/brand/lamp-strip";
 import { Button } from "@/components/ui/button";
-import type { LampSpec } from "@/lib/lamp";
-
-/** A small proof strip for the mega-panels. Three calls, three outcomes. */
-const PANEL_STRIP: LampSpec[] = [
-  { state: "jade", label: "Auto-closed" },
-  { state: "jade", label: "Auto-closed" },
-  { state: "brass", pulse: true, label: "Queued for retry" },
-  { state: "jade", label: "Auto-closed" },
-  { state: "flare", label: "Needs a person" },
-  { state: "jade", label: "Auto-closed" },
-];
 
 const PRODUCT_LINKS = [
   { label: "How it works", href: "/#how-it-works", hint: "Four steps, spreadsheet to queue" },
@@ -70,14 +58,48 @@ export function SiteHeader() {
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
+  // One open-menu at a time, owned here rather than per-menu: hovering Solutions
+  // opens it and closes Product in the same render, so the two panels can never
+  // both be open. The close is delayed so the pointer can cross the gap from a
+  // trigger into its panel; opening any menu cancels a pending close.
+  const [openMenu, setOpenMenu] = useState<string | null>(null);
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const cancelClose = () => {
+    if (closeTimer.current) {
+      clearTimeout(closeTimer.current);
+      closeTimer.current = null;
+    }
+  };
+  const openMenuNow = (label: string) => {
+    cancelClose();
+    setOpenMenu(label);
+  };
+  const scheduleClose = () => {
+    cancelClose();
+    // Re-read the DOM's real :hover state when the timer fires rather than
+    // trusting which enter/leave events arrived in which order. Moving between
+    // two adjacent triggers can deliver the old trigger's `mouseleave` *after*
+    // the new trigger's `mouseenter`; trusting that ordering would let a stale
+    // leave close the menu the pointer is now sitting on. Whichever menu part is
+    // actually hovered wins; if none is, the menus close.
+    closeTimer.current = setTimeout(() => {
+      const hovered = document.querySelector("[data-menu]:hover");
+      setOpenMenu(hovered ? hovered.getAttribute("data-menu") : null);
+    }, 140);
+  };
+  useEffect(() => cancelClose, []);
+
   return (
     <header
       className={cn(
-        "sticky top-0 z-40 h-16 border-b transition-colors duration-(--dur-base)",
-        // 92% opacity and no blur: the design leans on hairlines, and a frosted
-        // header is the single most recognisable generated-UI tell.
-        "bg-[color-mix(in_oklab,var(--surface)_92%,transparent)]",
-        scrolled ? "border-rule" : "border-transparent",
+        "sticky top-0 z-40 h-16 border-b bg-surface",
+        "transition-[border-color,box-shadow] duration-(--dur-base) ease-(--ease-out)",
+        // Solid, not frosted: the page and the header share --surface, so at the
+        // top the header reads as flush with the hero. On scroll a hairline and a
+        // soft shadow ease in to lift it above the content passing underneath —
+        // an opaque bar never lets text ghost through the way a translucent one does.
+        scrolled ? "border-rule shadow-sm" : "border-transparent",
       )}
     >
       <div className="mx-auto flex h-full max-w-(--container-marketing) items-center justify-between gap-4 px-4 sm:px-6">
@@ -93,12 +115,18 @@ export function SiteHeader() {
           <MegaMenu
             label="Product"
             links={PRODUCT_LINKS}
-            proof="Every call returns typed fields, not a transcript to read."
+            open={openMenu === "Product"}
+            onOpen={() => openMenuNow("Product")}
+            onScheduleClose={scheduleClose}
+            onOpenChange={(next) => (next ? openMenuNow("Product") : scheduleClose())}
           />
           <MegaMenu
             label="Solutions"
             links={SOLUTION_LINKS}
-            proof="The same engine, with the goal and schema already written for your vertical."
+            open={openMenu === "Solutions"}
+            onOpen={() => openMenuNow("Solutions")}
+            onScheduleClose={scheduleClose}
+            onOpenChange={(next) => (next ? openMenuNow("Solutions") : scheduleClose())}
           />
           {FLAT_LINKS.map((link) => (
             <Link
@@ -126,24 +154,40 @@ export function SiteHeader() {
 }
 
 /**
- * Two-column panel rather than a plain dropdown: links on the left, and on the
- * right a lamp strip with one line of proof. A nav menu is a page in miniature,
- * and this one gets to make the argument too.
+ * A single-column dropdown: label + one line of context per link, with a caret
+ * that slides in on hover. Deliberately just the links — the panel is a way to
+ * reach a page, not a place to make the argument twice.
  */
 function MegaMenu({
   label,
   links,
-  proof,
+  open,
+  onOpen,
+  onScheduleClose,
+  onOpenChange,
 }: {
   label: string;
   links: { label: string; href: string; hint: string }[];
-  proof: string;
+  /** Controlled by SiteHeader so only one menu is ever open. */
+  open: boolean;
+  /** Pointer entered the trigger or panel — open now, cancelling any close. */
+  onOpen: () => void;
+  /** Pointer left — start the grace timer before closing. */
+  onScheduleClose: () => void;
+  /** Radix's own open/close (click, Escape, outside-click, keyboard). */
+  onOpenChange: (open: boolean) => void;
 }) {
+  // Hover-driven: opens on pointer-over rather than a click. The grace close and
+  // single-open coordination both live in SiteHeader; click and keyboard still
+  // work through onOpenChange, so touch and keyboard users are unaffected.
   return (
-    <RadixPopover.Root>
+    <RadixPopover.Root open={open} onOpenChange={onOpenChange}>
       <RadixPopover.Trigger asChild>
         <button
           type="button"
+          data-menu={label}
+          onMouseEnter={onOpen}
+          onMouseLeave={onScheduleClose}
           className="group inline-flex cursor-pointer items-center gap-1 rounded-sm px-3 py-2 text-small font-medium text-text-dim transition-colors duration-(--dur-micro) hover:bg-surface-hover hover:text-text"
         >
           {label}
@@ -156,33 +200,42 @@ function MegaMenu({
 
       <RadixPopover.Portal>
         <RadixPopover.Content
-          sideOffset={8}
+          sideOffset={10}
           align="start"
           collisionPadding={16}
-          className="z-50 w-[min(640px,calc(100vw-32px))] overflow-hidden rounded-md border border-rule-strong bg-surface-raised shadow-overlay"
+          data-menu={label}
+          onMouseEnter={onOpen}
+          onMouseLeave={onScheduleClose}
+          // Don't yank focus/scroll when the menu opens under the pointer;
+          // keyboard users still Tab straight into the links.
+          onOpenAutoFocus={(e) => e.preventDefault()}
+          // Don't return focus to the trigger on close either — otherwise a
+          // hover-opened menu leaves a focus-ring box sitting on the trigger
+          // after the pointer moves away.
+          onCloseAutoFocus={(e) => e.preventDefault()}
+          className="menu-pop z-50 w-[min(360px,calc(100vw-32px))] origin-top overflow-hidden rounded-lg border border-rule-strong bg-surface-raised p-2 shadow-overlay"
         >
-          <div className="grid gap-0 sm:grid-cols-[1fr_240px]">
-            <ul className="p-2">
-              {links.map((link) => (
-                <li key={link.href}>
-                  <RadixPopover.Close asChild>
-                    <Link
-                      href={link.href}
-                      className="flex flex-col gap-0.5 rounded-sm px-3 py-2 transition-colors duration-(--dur-micro) hover:bg-surface-hover"
-                    >
+          <ul className="flex flex-col gap-0.5">
+            {links.map((link) => (
+              <li key={link.href}>
+                <RadixPopover.Close asChild>
+                  <Link
+                    href={link.href}
+                    className="group/row flex items-center justify-between gap-3 rounded-md px-3 py-2.5 transition-colors duration-(--dur-micro) hover:bg-surface-hover"
+                  >
+                    <span className="flex min-w-0 flex-col gap-0.5">
                       <span className="text-small font-medium text-text">{link.label}</span>
                       <span className="text-small text-text-mute">{link.hint}</span>
-                    </Link>
-                  </RadixPopover.Close>
-                </li>
-              ))}
-            </ul>
-
-            <div className="flex flex-col gap-3 border-t border-rule bg-surface-sunken p-4 sm:border-l sm:border-t-0">
-              <LampStrip lamps={PANEL_STRIP} size="sm" />
-              <p className="text-small text-text-dim">{proof}</p>
-            </div>
-          </div>
+                    </span>
+                    <CaretRightIcon
+                      aria-hidden
+                      className="size-4 shrink-0 -translate-x-1 text-text-mute opacity-0 transition-all duration-(--dur-micro) ease-(--ease-out) group-hover/row:translate-x-0 group-hover/row:opacity-100"
+                    />
+                  </Link>
+                </RadixPopover.Close>
+              </li>
+            ))}
+          </ul>
         </RadixPopover.Content>
       </RadixPopover.Portal>
     </RadixPopover.Root>
@@ -211,7 +264,7 @@ function MobileNav() {
       </RadixDialog.Trigger>
 
       <RadixDialog.Portal>
-        <RadixDialog.Content className="fixed inset-0 z-50 flex flex-col bg-surface">
+        <RadixDialog.Content className="sheet-in fixed inset-0 z-50 flex flex-col bg-surface">
           <RadixDialog.Title className="sr-only">Menu</RadixDialog.Title>
 
           <div className="flex h-16 shrink-0 items-center justify-between border-b border-rule px-4">

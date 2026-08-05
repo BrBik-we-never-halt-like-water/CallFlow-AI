@@ -51,11 +51,12 @@ export function Steps() {
       </Reveal>
 
       <div className="relative mt-10">
-        {/* The connecting rule only exists on desktop, where the steps actually
-            read as a horizontal sequence. */}
+        {/* The connecting line only exists on desktop, where the steps actually
+            read as a horizontal sequence. A gradient that fades at both ends so
+            it reads as a current running through the steps, not a hard rail. */}
         <div
           aria-hidden
-          className="absolute inset-x-0 top-3 hidden h-px bg-rule lg:block"
+          className="absolute inset-x-0 top-3 hidden h-px bg-gradient-to-r from-transparent via-rule-strong to-transparent lg:block"
         />
 
         <ol className="grid gap-8 lg:grid-cols-4 lg:gap-6">
@@ -71,7 +72,7 @@ export function Steps() {
                 </div>
                 <h3 className="text-h4 font-medium text-text">{step.title}</h3>
                 <p className="text-small text-text-dim">{step.body}</p>
-                <div className="mt-1 overflow-hidden rounded-md border border-rule bg-surface-raised p-3">
+                <div className="surface-flow mt-1 overflow-hidden p-3 shadow-sm">
                   {step.panel}
                 </div>
               </li>

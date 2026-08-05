@@ -73,20 +73,20 @@
   /* ---- Radius ------------------------------------------------------------
      Softer than an instrument panel, still precise. Nothing is pill-shaped
      except lamps, status badges, and avatars. */
-  --r-xs: 3px;
-  --r-sm: 6px;
-  --r-md: 10px;
-  --r-lg: 16px;
-  --r-xl: 20px;
+  --r-xs: 4px;
+  --r-sm: 7px;
+  --r-md: 12px;
+  --r-lg: 18px;
+  --r-xl: 24px;
   --r-full: 999px;
 
   /* ---- Depth ------------------------------------------------------------
      A soft shadow scale, used sparingly and always with a hairline border so
      a card still has an edge on a light surface. */
-  --shadow-xs: 0 1px 2px rgba(11, 15, 18, 0.04);
-  --shadow-sm: 0 1px 2px rgba(11, 15, 18, 0.04), 0 2px 6px -2px rgba(11, 15, 18, 0.06);
-  --shadow-md: 0 2px 4px rgba(11, 15, 18, 0.04), 0 8px 20px -6px rgba(11, 15, 18, 0.1);
-  --shadow-lg: 0 4px 8px rgba(11, 15, 18, 0.04), 0 20px 40px -12px rgba(11, 15, 18, 0.14);
+  --shadow-xs: 0 1px 2px rgba(11, 15, 18, 0.05);
+  --shadow-sm: 0 1px 2px rgba(11, 15, 18, 0.05), 0 3px 8px -2px rgba(11, 15, 18, 0.08);
+  --shadow-md: 0 2px 4px rgba(11, 15, 18, 0.05), 0 10px 24px -6px rgba(11, 15, 18, 0.12);
+  --shadow-lg: 0 4px 8px rgba(11, 15, 18, 0.05), 0 24px 48px -12px rgba(11, 15, 18, 0.14);
   --shadow-overlay:
     0 1px 2px rgba(11, 15, 18, 0.08), 0 16px 40px -8px rgba(11, 15, 18, 0.22);
 
@@ -253,6 +253,15 @@ pre {
   border-radius: inherit;
 }
 
+/* The mega-menu triggers open on hover; while a menu is open, the panel itself
+   is the affordance, so a focus outline on the trigger reads as an ugly box.
+   Suppress it only in the open state — a closed trigger still shows a focus ring
+   for keyboard navigation. Higher specificity than :focus-visible, so no
+   !important needed. */
+button[data-menu][data-state="open"]:focus-visible {
+  outline: none;
+}
+
 .skip-link {
   position: fixed;
   top: 8px;
@@ -276,6 +285,90 @@ pre {
 ::selection {
   background: var(--surface-inverse);
   color: var(--text-inverse);
+}
+
+/* --------------------------------------------------------------------------
+   Water — the flow language.
+
+   Where a section used to be two hard-bordered boxes, it becomes one soft
+   basin: content sits *in* a shallow, gradient-lit pool with no rectangular
+   edge, the two halves are joined by a seam that fades out top and bottom
+   instead of a full-height rule, and overflowing content dissolves at the edge
+   like a water surface rather than being chopped by a border. Softness plus
+   continuity is what reads as flow.
+   -------------------------------------------------------------------------- */
+
+.pool {
+  border-radius: var(--r-xl);
+  background:
+    radial-gradient(
+      130% 90% at 50% -10%,
+      color-mix(in oklab, var(--surface-raised) 65%, var(--surface-sunken)),
+      var(--surface-sunken) 62%
+    );
+  box-shadow:
+    inset 0 1px 0 color-mix(in oklab, #ffffff 55%, transparent),
+    var(--shadow-sm);
+}
+
+/* A borderless surface with a soft gradient fill — the flow-language stand-in
+   for `border border-rule bg-surface-raised`. Shadow is left to the element so
+   the same surface can read as a quiet card (shadow-sm) or a prominent readout
+   (shadow-lg). */
+.surface-flow {
+  border-radius: var(--r-xl);
+  background: linear-gradient(
+    180deg,
+    var(--surface-raised),
+    color-mix(in oklab, var(--surface-raised) 92%, var(--surface-sunken))
+  );
+}
+
+/* The hero readout. Not a crisp card: a big 32px radius, a clearly visible
+   top-to-bottom gradient (bright at the top, settling into the cool page grey),
+   and a wide, very soft glow so the edges melt into the page rather than drawing
+   a hard rectangle. */
+.card-flow {
+  border-radius: 32px;
+  background: linear-gradient(
+    170deg,
+    #ffffff 0%,
+    var(--surface-raised) 34%,
+    color-mix(in oklab, var(--surface-raised) 82%, var(--surface-sunken)) 100%
+  );
+  box-shadow:
+    inset 0 1px 0 color-mix(in oklab, #ffffff 85%, transparent),
+    0 2px 6px -2px rgba(11, 15, 18, 0.06),
+    0 40px 80px -32px rgba(11, 15, 18, 0.4);
+}
+
+/* Hairlines that fade at both ends — the flow-language replacement for a hard
+   full-width / full-height divider. `seam-x` is horizontal, `seam-y` vertical;
+   `flow-seam-l` is the desktop-only fading left border used between columns. */
+.seam-x {
+  height: 1px;
+  border: 0;
+  background: linear-gradient(90deg, transparent, var(--rule-strong), transparent);
+}
+
+.seam-y {
+  width: 1px;
+  align-self: stretch;
+  background: linear-gradient(180deg, transparent, var(--rule-strong), transparent);
+}
+
+@media (min-width: 1024px) {
+  .flow-seam-l {
+    border-left: 1px solid transparent;
+    border-image: linear-gradient(
+        180deg,
+        transparent,
+        var(--rule-strong) 28%,
+        var(--rule-strong) 72%,
+        transparent
+      )
+      1;
+  }
 }
 
 /* --------------------------------------------------------------------------
@@ -339,6 +432,63 @@ pre {
    On a light surface a glow reads as a soft ring rather than a bloom. */
 .lamp-lit {
   box-shadow: 0 0 0 3px var(--lamp-halo-color, transparent);
+}
+
+/* --------------------------------------------------------------------------
+   Site loader — the first-paint brand splash.
+
+   A full surface with the wordmark over a listening waveform, which holds
+   briefly then fades and hides itself. Self-dismissing in pure CSS so it can
+   never trap the page; skipped entirely under prefers-reduced-motion (below).
+   -------------------------------------------------------------------------- */
+
+.site-loader {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: grid;
+  place-items: center;
+  background: var(--surface);
+  animation: loader-out 0.55s var(--ease-out) 0.9s forwards;
+}
+
+@keyframes loader-out {
+  to {
+    opacity: 0;
+    visibility: hidden;
+  }
+}
+
+.loader-bar {
+  transform-origin: center;
+  animation: loader-bar 1s var(--ease-inout) infinite;
+}
+
+@keyframes loader-bar {
+  0%,
+  100% {
+    transform: scaleY(0.28);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+
+/* The 1–2 bars at the waveform's leading edge get a small live flutter as the
+   line is spoken. Transform-based so it never fights the inline height. */
+@keyframes wave-active {
+  0%,
+  100% {
+    transform: scaleY(1);
+  }
+  50% {
+    transform: scaleY(1.28);
+  }
+}
+
+.wave-active {
+  transform-origin: center;
+  animation: wave-active 0.5s var(--ease-inout) infinite;
 }
 
 @keyframes lamp-pulse {
@@ -408,6 +558,108 @@ pre {
 }
 
 /* --------------------------------------------------------------------------
+   Overlays — mega-menu popover and the mobile sheet.
+
+   The menu grows from its top edge with a small lift; the sheet fades up. The
+   menu closes instantly (see below); both collapse to an instant appearance
+   under prefers-reduced-motion (below).
+   -------------------------------------------------------------------------- */
+
+@keyframes menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.menu-pop[data-state="open"] {
+  animation: menu-in var(--dur-base) var(--ease-out);
+}
+
+/* No exit animation on purpose: with one-menu-at-a-time coordination, a closing
+   panel must vanish at once so it never overlaps the panel opening beside it.
+   Radix unmounts immediately when the closed state has no animation to await. */
+
+@keyframes sheet-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.sheet-in[data-state="open"] {
+  animation: sheet-in var(--dur-base) var(--ease-out);
+}
+
+/* --------------------------------------------------------------------------
+   Page transition.
+
+   Next remounts `template.tsx` on every navigation, so a fresh `.page-enter`
+   element is created each time and this animation replays — a gentle fade and
+   settle as the new route lands, while the persistent header/footer stay put.
+
+   CSS rather than a JS library on purpose: the resting state is fully visible,
+   so a crawler or a JS-disabled browser sees the content, never a blank page
+   stuck at opacity 0. `backwards` holds the start frame during the (zero) delay
+   so there is no pre-paint flash, and dropping `forwards` means no lingering
+   transform is left on the wrapper to trip up fixed/sticky descendants.
+   -------------------------------------------------------------------------- */
+
+@keyframes page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.page-enter {
+  animation: page-enter var(--dur-base) var(--ease-out) backwards;
+}
+
+/* --------------------------------------------------------------------------
+   View Transitions — the real cross-dissolve between routes.
+
+   Where the browser supports it, navigation is driven through
+   startViewTransition (see components/layout/view-transitions.tsx) and the old
+   page dissolves into the new one. Tuned to the design's own duration and
+   easing rather than the UA default. The `.page-enter` fade is redundant here,
+   so it is switched off wherever View Transitions run — the two would otherwise
+   stack into a double animation.
+   -------------------------------------------------------------------------- */
+
+@supports (view-transition-name: none) {
+  .page-enter {
+    animation: none;
+  }
+
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation-duration: var(--dur-base);
+    animation-timing-function: var(--ease-out);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
+  }
+}
+
+/* --------------------------------------------------------------------------
    Reduced motion. Durations collapse and transforms are removed. Lamps still
    change colour — they simply stop flickering. Parallax is switched off
    entirely by the components that use it.
@@ -434,8 +686,15 @@ pre {
   }
 
   .lamp-pulse,
-  .caret::after {
+  .caret::after,
+  .page-enter,
+  .loader-bar {
     animation: none;
+  }
+
+  /* Skip the splash entirely rather than letting it hold on screen. */
+  .site-loader {
+    display: none !important;
   }
 }
 

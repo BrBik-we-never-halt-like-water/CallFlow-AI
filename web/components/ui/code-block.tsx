@@ -18,6 +18,7 @@ export function CodeBlock({
   /** Caption above the block, in mono. */
   label,
   copyable = true,
+  bare = false,
   className,
   maxHeight,
 }: {
@@ -25,6 +26,8 @@ export function CodeBlock({
   language?: "json" | "text";
   label?: string;
   copyable?: boolean;
+  /** Drop the border and background so the block can sit inside another surface. */
+  bare?: boolean;
   className?: string;
   /** Tailwind max-height class, e.g. `max-h-72`. Adds its own scroll. */
   maxHeight?: string;
@@ -33,7 +36,12 @@ export function CodeBlock({
     <div className={cn("flex flex-col gap-1.5", className)}>
       {label ? <p className="eyebrow text-text-mute">{label}</p> : null}
 
-      <div className="relative rounded-md border border-rule bg-surface-sunken">
+      <div
+        className={cn(
+          "relative",
+          bare ? "" : "rounded-md border border-rule bg-surface-sunken",
+        )}
+      >
         {copyable ? (
           <div className="absolute right-1.5 top-1.5 z-10">
             <CopyButton value={code} />
