@@ -5,14 +5,15 @@ import Link from "next/link";
 import { cn } from "@/lib/cn";
 import { Button } from "@/components/ui/button";
 import { Eyebrow } from "@/components/ui/panel";
+import { WaveCanvas } from "@/components/brand/wave-canvas";
 import { VoiceWave } from "./voice-wave";
 import { usePrefersReducedMotion, useTypewriter } from "@/lib/hooks/use-typewriter";
 
 /**
  * The hero pairs an argument with a proof.
  *
- * Left: the thesis and the two ways in. Right: a scripted dry run that plays
- * once on load — the line the contact hears, drawn as a voice waveform, then the
+ * Left: the thesis and the two ways in. Right: a scripted call that plays once
+ * on load — the line the contact hears, drawn as a voice waveform, then the
  * typed data that comes back. It shows the product's most characteristic moment
  * without a control to operate, and never shows an error: if the service is
  * unreachable the scripted sequence is all there ever was.
@@ -43,11 +44,17 @@ const SPOKEN = spokenLine(DEFAULT_NAME);
 export function Hero() {
   const reduced = usePrefersReducedMotion();
 
-  // Beat one: the line the contact hears. Beat two: the data that comes back.
-  const heard = useTypewriter(SPOKEN, { durationMs: 1300, instant: reduced });
+  // Hold until the site loader has handed off (~1.5s), then play slowly so the
+  // voice and the data feel like they are arriving, not racing. Beat one: the
+  // line the contact hears. Beat two: the data that comes back.
+  const heard = useTypewriter(SPOKEN, {
+    delayMs: 1500,
+    durationMs: 2200,
+    instant: reduced,
+  });
   const returned = useTypewriter(RESULT_JSON, {
-    delayMs: 250,
-    durationMs: 1500,
+    delayMs: 300,
+    durationMs: 2400,
     instant: reduced,
     enabled: heard.done,
   });
@@ -56,6 +63,9 @@ export function Hero() {
   const spokenProgress = SPOKEN.length
     ? Math.min(1, heard.output.length / SPOKEN.length)
     : 0;
+  // Only "speaking" once characters are actually landing — so the wave rests at
+  // its full shape during the wait, then sweeps as the line is spoken.
+  const speaking = heard.output.length > 0 && !heard.done;
 
   return (
     <section className="relative overflow-hidden">
@@ -69,7 +79,6 @@ export function Hero() {
           <div className="flex flex-col gap-6">
             <div className="flex items-center gap-3">
               <Eyebrow>AI calling desk</Eyebrow>
-              <span aria-hidden className="h-px flex-1 bg-rule" />
             </div>
 
             <h1 className="measure-display font-display text-display-xl text-text">
@@ -103,8 +112,7 @@ export function Hero() {
           {/* ---- The proof --------------------------------------------------- */}
           <div className="flex flex-col gap-4">
             <div className="flex items-center gap-3">
-              <Eyebrow>Dry run · no credits spent</Eyebrow>
-              <span aria-hidden className="h-px flex-1 bg-rule" />
+              <Eyebrow>See a call resolve</Eyebrow>
             </div>
 
             {/* A floating readout rather than a hard-edged card: soft gradient
@@ -116,7 +124,7 @@ export function Hero() {
                   <VoiceWave
                     text={SPOKEN}
                     progress={spokenProgress}
-                    speaking={!heard.done}
+                    speaking={speaking}
                   />
                   <p className={cn("text-body font-semibold text-text", !heard.done && "caret")}>
                     {heard.output ? `“${heard.output}${heard.done ? "”" : ""}` : " "}
@@ -148,32 +156,32 @@ export function Hero() {
 }
 
 /**
- * The parallax layer.
- *
- * `useScroll` + `useTransform` rather than a scroll listener, so the transform runs on
- * the compositor and never blocks the main thread while someone is reading. The travel
- * is deliberately tiny — 60px over the whole hero.
+ * The hero's eye-catching wave: a bold voice waveform across the top that fades
+ * down into the page, drifting slightly on scroll. Replaces the faint grid so
+ * the "voice" reads immediately. Off (a single resting frame) under
+ * prefers-reduced-motion.
  */
 function ParallaxGrid() {
   const reduced = useReducedMotion();
   const { scrollY } = useScroll();
-  const y = useTransform(scrollY, [0, 600], [0, 60]);
+  const y = useTransform(scrollY, [0, 600], [0, 50]);
+
+  const band = <WaveCanvas pitch={10} className="h-full text-text opacity-50" />;
+  const cls =
+    "pointer-events-none absolute inset-x-0 top-0 h-64 [mask-image:linear-gradient(to_bottom,#000,transparent)] [-webkit-mask-image:linear-gradient(to_bottom,#000,transparent)]";
 
   if (reduced) {
     return (
-      <div
-        aria-hidden
-        className="grid-field pointer-events-none absolute inset-x-0 top-0 h-[42rem]"
-      />
+      <div aria-hidden className={cls}>
+        {band}
+      </div>
     );
   }
 
   return (
-    <motion.div
-      aria-hidden
-      style={{ y }}
-      className="grid-field pointer-events-none absolute inset-x-0 -top-16 h-[46rem]"
-    />
+    <motion.div aria-hidden style={{ y }} className={cls}>
+      {band}
+    </motion.div>
   );
 }
 

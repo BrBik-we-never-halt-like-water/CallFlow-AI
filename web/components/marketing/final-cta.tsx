@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { LampStrip } from "@/components/brand/lamp-strip";
+import { WaveCanvas } from "@/components/brand/wave-canvas";
 import { Button } from "@/components/ui/button";
 import { Eyebrow } from "@/components/ui/panel";
 import { Reveal } from "@/components/ui/reveal";
@@ -8,7 +9,7 @@ import type { LampSpec } from "@/lib/lamp";
 const STRIP: LampSpec[] = [
   { state: "jade", label: "Auto-closed" },
   { state: "jade", label: "Auto-closed" },
-  { state: "ice", label: "Dry run" },
+  { state: "jade", label: "Auto-closed" },
   { state: "jade", label: "Auto-closed" },
   { state: "brass", pulse: true, label: "Queued for retry" },
   { state: "jade", label: "Auto-closed" },
@@ -27,22 +28,25 @@ export function FinalCta() {
   return (
     <section className="mt-(--space-section) px-4 sm:px-6">
       <Reveal>
-        <div className="relative mx-auto max-w-(--container-marketing) overflow-hidden rounded-xl border border-rule bg-surface-raised shadow-md">
+        <div className="card-flow relative mx-auto max-w-(--container-marketing) overflow-hidden">
+          {/* Bold waves at the top, fading away downward. */}
           <div
             aria-hidden
-            className="grid-field pointer-events-none absolute inset-0"
-          />
+            className="pointer-events-none absolute inset-x-0 top-0 h-48 [mask-image:linear-gradient(to_bottom,#000,transparent)] [-webkit-mask-image:linear-gradient(to_bottom,#000,transparent)]"
+          >
+            <WaveCanvas pitch={9} className="h-full text-text opacity-70" />
+          </div>
 
           <div className="relative flex flex-col items-center gap-6 px-6 py-(--space-section) text-center">
-            <Eyebrow>Dry run · No credits spent</Eyebrow>
+            <Eyebrow>Start free</Eyebrow>
 
             <h2 className="measure-display font-display text-display-l text-text">
-              See it work without spending a credit.
+              Put your list to work.
             </h2>
 
             <p className="measure text-body-l text-text-dim">
-              Dry run walks the whole pipeline — validation, the safety gates, and the
-              exact words each contact would hear — without placing a single call.
+              Load your contacts, write a goal, and let CallFlow dial. Every run is
+              validated and guarded before it places a single call.
             </p>
 
             <LampStrip lamps={STRIP} size="lg" counts className="items-center" />
@@ -56,9 +60,7 @@ export function FinalCta() {
               </Button>
             </div>
 
-            <p className="text-small text-text-mute">
-              No card required. Dry run is on by default.
-            </p>
+            <p className="text-small text-text-mute">No card required.</p>
           </div>
         </div>
       </Reveal>

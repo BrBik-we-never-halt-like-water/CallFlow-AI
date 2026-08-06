@@ -5,7 +5,6 @@ import Link from "next/link";
 import { cn } from "@/lib/cn";
 import { Tag } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Panel } from "@/components/ui/panel";
 import { Tooltip } from "@/components/ui/tooltip";
 import type { Currency } from "@/lib/format";
 import {
@@ -94,9 +93,12 @@ export function PlanCards({
         {PLANS.map((plan) => {
           const price = monthlyEquivalent(plan, currency, period);
           return (
-            <Panel
+            <div
               key={plan.id}
-              className={cn("flex flex-col gap-4 p-5", plan.mostChosen && "border-text")}
+              className={cn(
+                "surface-flow flex flex-col gap-4 p-5",
+                plan.mostChosen ? "shadow-md" : "shadow-sm",
+              )}
             >
               <div className="flex items-center justify-between gap-2">
                 <h3 className="text-h4 font-medium text-text">{plan.name}</h3>
@@ -147,13 +149,13 @@ export function PlanCards({
               >
                 <Link href={plan.ctaHref}>{plan.cta}</Link>
               </Button>
-            </Panel>
+            </div>
           );
         })}
       </div>
 
       {/* Enterprise as a full-width band: it is a conversation, not a column. */}
-      <Panel className="mt-4 flex flex-col gap-5 p-5 lg:flex-row lg:items-center lg:justify-between">
+      <div className="surface-flow mt-4 flex flex-col gap-5 p-5 shadow-sm lg:flex-row lg:items-center lg:justify-between">
         <div className="flex flex-col gap-2">
           <h3 className="text-h4 font-medium text-text">{ENTERPRISE.name}</h3>
           <p className="text-small text-text-dim">{ENTERPRISE.tagline}</p>
@@ -175,7 +177,7 @@ export function PlanCards({
         <Button asChild variant="secondary" className="shrink-0">
           <Link href={ENTERPRISE.ctaHref}>{ENTERPRISE.cta}</Link>
         </Button>
-      </Panel>
+      </div>
     </>
   );
 }

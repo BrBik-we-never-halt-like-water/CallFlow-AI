@@ -311,17 +311,13 @@ button[data-menu][data-state="open"]:focus-visible {
     var(--shadow-sm);
 }
 
-/* A borderless surface with a soft gradient fill — the flow-language stand-in
-   for `border border-rule bg-surface-raised`. Shadow is left to the element so
-   the same surface can read as a quiet card (shadow-sm) or a prominent readout
-   (shadow-lg). */
+/* A card: a flat raised surface with a soft hairline edge and a tighter radius —
+   defined without reading as a hard instrument-panel box. Shadow is left to the
+   element so the same surface can be a quiet card (shadow-sm) or lift on hover. */
 .surface-flow {
-  border-radius: var(--r-xl);
-  background: linear-gradient(
-    180deg,
-    var(--surface-raised),
-    color-mix(in oklab, var(--surface-raised) 92%, var(--surface-sunken))
-  );
+  border-radius: var(--r-md);
+  background: var(--surface-raised);
+  border: 1px solid var(--rule);
 }
 
 /* The hero readout. Not a crisp card: a big 32px radius, a clearly visible
@@ -385,6 +381,25 @@ button[data-menu][data-state="open"]:focus-visible {
     linear-gradient(to bottom, color-mix(in oklab, var(--text) 5%, transparent) 1px, transparent 1px);
   background-size: 56px 56px;
   mask-image: radial-gradient(ellipse 80% 55% at 50% 0%, #000 20%, transparent 78%);
+}
+
+/* Ambient voice field: a very faint waveform, tiled and drifting slowly, that
+   replaces the draughtsman's grid behind the hero and closing CTA — so even the
+   background reads as voice. Masked to fade out; still under prefers-reduced-
+   motion it simply stops drifting. */
+.wave-field {
+  background-image: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='240'%20height='80'%3E%3Cpath%20d='M0%2040%20Q30%2012%2060%2040%20T120%2040%20T180%2040%20T240%2040'%20fill='none'%20stroke='%230b0f12'%20stroke-opacity='0.06'%20stroke-width='1.2'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+  background-size: 240px 80px;
+  animation: wave-drift 30s linear infinite;
+  mask-image: radial-gradient(ellipse 82% 60% at 50% 0%, #000 18%, transparent 80%);
+  -webkit-mask-image: radial-gradient(ellipse 82% 60% at 50% 0%, #000 18%, transparent 80%);
+}
+
+@keyframes wave-drift {
+  to {
+    background-position: 240px 0;
+  }
 }
 
 /* --------------------------------------------------------------------------
@@ -472,6 +487,32 @@ button[data-menu][data-state="open"]:focus-visible {
   50% {
     transform: scaleY(1);
   }
+}
+
+/* Primary CTA: a soft pulse ring echoes outward on hover, like a voice emitting
+   a pulse. Off under prefers-reduced-motion. */
+@keyframes btn-pulse {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in oklab, var(--text) 22%, transparent);
+    opacity: 0.55;
+  }
+  100% {
+    box-shadow: 0 0 0 12px transparent;
+    opacity: 0;
+  }
+}
+
+.btn-pulse::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+}
+
+.btn-pulse:hover::after {
+  animation: btn-pulse 1.3s var(--ease-out) infinite;
 }
 
 /* The 1–2 bars at the waveform's leading edge get a small live flutter as the

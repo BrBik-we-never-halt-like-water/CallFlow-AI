@@ -40,7 +40,7 @@ const CAPABILITIES: { icon: Icon; title: string; body: string; detail: string }[
   {
     icon: ShieldCheckIcon,
     title: "Safe by default",
-    body: "Dry run is on until you turn it off. An allowlist and a per-run ceiling stop accidental calls.",
+    body: "An allowlist and a per-run ceiling stop accidental calls, and every run is validated before it dials.",
     detail: "Every guard fails closed, and every guard is visible before you start.",
   },
   {

@@ -1,4 +1,5 @@
 import { cn } from "@/lib/cn";
+import { WaveLine } from "@/components/brand/wave-spine";
 
 /**
  * A surface: hairline border plus a soft shadow.
@@ -90,9 +91,7 @@ export function SectionHeading({
           )}
         >
           <Eyebrow>{eyebrow}</Eyebrow>
-          {align === "left" ? (
-            <span aria-hidden className="h-px w-12 bg-rule" />
-          ) : null}
+          {align === "left" ? <WaveLine className="w-12" /> : null}
         </div>
       ) : null}
 

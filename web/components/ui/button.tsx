@@ -17,7 +17,7 @@ export type ButtonSize = "sm" | "md" | "lg";
  */
 const VARIANTS: Record<ButtonVariant, string> = {
   primary:
-    "bg-surface-inverse text-text-inverse hover:opacity-90 active:opacity-80 border border-transparent",
+    "btn-pulse bg-surface-inverse text-text-inverse hover:opacity-90 active:opacity-80 border border-transparent",
   secondary:
     "border border-rule-strong bg-transparent text-text hover:bg-surface-hover active:bg-surface-sunken",
   ghost: "border border-transparent bg-transparent text-text-dim hover:bg-surface-hover hover:text-text",
