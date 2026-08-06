@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { LampStrip } from "@/components/brand/lamp-strip";
+import { WaveCanvas } from "@/components/brand/wave-canvas";
 import { Button } from "@/components/ui/button";
 import { Eyebrow } from "@/components/ui/panel";
 import { Reveal } from "@/components/ui/reveal";
@@ -28,10 +29,13 @@ export function FinalCta() {
     <section className="mt-(--space-section) px-4 sm:px-6">
       <Reveal>
         <div className="card-flow relative mx-auto max-w-(--container-marketing) overflow-hidden">
+          {/* Bold waves at the top, fading away downward. */}
           <div
             aria-hidden
-            className="wave-field pointer-events-none absolute inset-0"
-          />
+            className="pointer-events-none absolute inset-x-0 top-0 h-48 [mask-image:linear-gradient(to_bottom,#000,transparent)] [-webkit-mask-image:linear-gradient(to_bottom,#000,transparent)]"
+          >
+            <WaveCanvas pitch={9} className="h-full text-text opacity-70" />
+          </div>
 
           <div className="relative flex flex-col items-center gap-6 px-6 py-(--space-section) text-center">
             <Eyebrow>Start free</Eyebrow>

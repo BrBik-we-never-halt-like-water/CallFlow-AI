@@ -9,7 +9,6 @@ import {
 } from "@phosphor-icons/react/dist/ssr";
 import { SectionHeading } from "@/components/ui/panel";
 import { Reveal, RevealGroup, RevealItem } from "@/components/ui/reveal";
-import { WaveCanvas } from "@/components/brand/wave-canvas";
 
 /**
  * The six capabilities.
@@ -70,29 +69,18 @@ export function CapabilityGrid() {
       </Reveal>
 
       <RevealGroup className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {CAPABILITIES.map(({ icon: IconComponent, title, body, detail }, i) => (
+        {CAPABILITIES.map(({ icon: IconComponent, title, body, detail }) => (
           <RevealItem key={title} className="flex">
-            <div className="surface-flow group flex h-full flex-col overflow-hidden shadow-sm transition-[box-shadow,transform] duration-(--dur-base) ease-(--ease-out) hover:-translate-y-0.5 hover:shadow-md">
-              {/* Waveform masthead: the voice is the card's structural header. */}
-              <div className="relative flex h-14 shrink-0 items-center bg-surface-inverse px-5">
-                <WaveCanvas
-                  tone="inverse"
-                  seed={i * 1.7}
-                  pitch={7}
-                  className="absolute inset-0 opacity-55"
-                />
-                <span className="relative flex size-8 items-center justify-center rounded-md bg-white/10 text-text-inverse">
-                  <IconComponent aria-hidden weight="light" className="size-5" />
-                </span>
-              </div>
+            <div className="surface-flow group flex h-full flex-col gap-3 p-5 shadow-sm transition-[box-shadow,transform] duration-(--dur-base) ease-(--ease-out) hover:-translate-y-0.5 hover:shadow-md">
+              <span className="flex size-10 items-center justify-center rounded-lg bg-surface-sunken text-text-dim transition-colors duration-(--dur-base) group-hover:text-text">
+                <IconComponent aria-hidden weight="light" className="size-5" />
+              </span>
 
-              <div className="flex flex-1 flex-col gap-3 p-5">
-                <h3 className="text-h4 font-medium text-text">{title}</h3>
-                <p className="text-small text-text-dim">{body}</p>
+              <h3 className="text-h4 font-medium text-text">{title}</h3>
+              <p className="text-small text-text-dim">{body}</p>
 
-                <div className="seam-x mt-auto" />
-                <p className="text-small text-text-mute">{detail}</p>
-              </div>
+              <div className="seam-x mt-auto" />
+              <p className="text-small text-text-mute">{detail}</p>
             </div>
           </RevealItem>
         ))}

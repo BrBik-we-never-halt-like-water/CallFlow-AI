@@ -5,6 +5,7 @@ import Link from "next/link";
 import { cn } from "@/lib/cn";
 import { Button } from "@/components/ui/button";
 import { Eyebrow } from "@/components/ui/panel";
+import { WaveCanvas } from "@/components/brand/wave-canvas";
 import { VoiceWave } from "./voice-wave";
 import { usePrefersReducedMotion, useTypewriter } from "@/lib/hooks/use-typewriter";
 
@@ -78,7 +79,6 @@ export function Hero() {
           <div className="flex flex-col gap-6">
             <div className="flex items-center gap-3">
               <Eyebrow>AI calling desk</Eyebrow>
-              <span aria-hidden className="h-px flex-1 bg-rule" />
             </div>
 
             <h1 className="measure-display font-display text-display-xl text-text">
@@ -113,7 +113,6 @@ export function Hero() {
           <div className="flex flex-col gap-4">
             <div className="flex items-center gap-3">
               <Eyebrow>See a call resolve</Eyebrow>
-              <span aria-hidden className="h-px flex-1 bg-rule" />
             </div>
 
             {/* A floating readout rather than a hard-edged card: soft gradient
@@ -157,32 +156,32 @@ export function Hero() {
 }
 
 /**
- * The parallax layer.
- *
- * `useScroll` + `useTransform` rather than a scroll listener, so the transform runs on
- * the compositor and never blocks the main thread while someone is reading. The travel
- * is deliberately tiny — 60px over the whole hero.
+ * The hero's eye-catching wave: a bold voice waveform across the top that fades
+ * down into the page, drifting slightly on scroll. Replaces the faint grid so
+ * the "voice" reads immediately. Off (a single resting frame) under
+ * prefers-reduced-motion.
  */
 function ParallaxGrid() {
   const reduced = useReducedMotion();
   const { scrollY } = useScroll();
-  const y = useTransform(scrollY, [0, 600], [0, 60]);
+  const y = useTransform(scrollY, [0, 600], [0, 50]);
+
+  const band = <WaveCanvas pitch={10} className="h-full text-text opacity-50" />;
+  const cls =
+    "pointer-events-none absolute inset-x-0 top-0 h-64 [mask-image:linear-gradient(to_bottom,#000,transparent)] [-webkit-mask-image:linear-gradient(to_bottom,#000,transparent)]";
 
   if (reduced) {
     return (
-      <div
-        aria-hidden
-        className="wave-field pointer-events-none absolute inset-x-0 top-0 h-[42rem]"
-      />
+      <div aria-hidden className={cls}>
+        {band}
+      </div>
     );
   }
 
   return (
-    <motion.div
-      aria-hidden
-      style={{ y }}
-      className="wave-field pointer-events-none absolute inset-x-0 -top-16 h-[46rem]"
-    />
+    <motion.div aria-hidden style={{ y }} className={cls}>
+      {band}
+    </motion.div>
   );
 }
 
