@@ -489,24 +489,6 @@ button[data-menu][data-state="open"]:focus-visible {
   }
 }
 
-/* The voice-flow spine between sections: each bar pulses on a shared keyframe,
-   and the staggered per-bar delay (set inline) makes the peak travel across
-   like a live voice. Transform-based so it never fights the inline height. */
-@keyframes spine-wave {
-  0%,
-  100% {
-    transform: scaleY(0.42);
-  }
-  50% {
-    transform: scaleY(1);
-  }
-}
-
-.spine-bar {
-  transform-origin: center;
-  animation: spine-wave 1.9s var(--ease-inout) infinite;
-}
-
 /* Primary CTA: a soft pulse ring echoes outward on hover, like a voice emitting
    a pulse. Off under prefers-reduced-motion. */
 @keyframes btn-pulse {

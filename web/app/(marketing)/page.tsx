@@ -6,7 +6,6 @@ import { ProblemCompare } from "@/components/marketing/problem-compare";
 import { SafetySection } from "@/components/marketing/safety-section";
 import { Steps } from "@/components/marketing/steps";
 import { VerticalStrip } from "@/components/marketing/vertical-strip";
-import { WaveSpine } from "@/components/brand/wave-spine";
 import { WaveCanvas } from "@/components/brand/wave-canvas";
 
 /**
@@ -50,11 +49,10 @@ export default function HomePage() {
 function SpineDivider({ bold = false }: { bold?: boolean }) {
   return (
     <div className="mx-auto max-w-(--container-marketing) px-4 py-(--space-section) sm:px-6">
-      {bold ? (
-        <WaveCanvas pitch={7} className="h-16 text-text opacity-80" />
-      ) : (
-        <WaveSpine />
-      )}
+      <WaveCanvas
+        pitch={bold ? 7 : 11}
+        className={bold ? "h-16 text-text opacity-80" : "h-9 text-text opacity-40"}
+      />
     </div>
   );
 }
