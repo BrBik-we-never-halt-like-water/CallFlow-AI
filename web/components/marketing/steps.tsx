@@ -1,5 +1,5 @@
-import { Lamp } from "@/components/brand/lamp";
 import { LampStrip } from "@/components/brand/lamp-strip";
+import { LiveLamp } from "./live-lamp";
 import { Eyebrow, SectionHeading } from "@/components/ui/panel";
 import { Reveal } from "@/components/ui/reveal";
 import { Tag } from "@/components/ui/badge";
@@ -29,7 +29,7 @@ const STEPS = [
   {
     n: "03",
     title: "Run it",
-    body: "Dry run proves the pipeline for free. Live mode dials, and results arrive as each call ends.",
+    body: "Rows are validated and the guards checked before anything dials. Results arrive as each call ends.",
     panel: <RunPanel />,
   },
   {
@@ -71,8 +71,10 @@ export function Steps() {
                   </span>
                 </div>
                 <h3 className="text-h4 font-medium text-text">{step.title}</h3>
-                <p className="text-small text-text-dim">{step.body}</p>
-                <div className="surface-flow mt-1 overflow-hidden p-3 shadow-sm">
+                {/* Fixed heights at desktop so the four cards line up top and
+                    bottom into a symmetric row; natural height when stacked. */}
+                <p className="text-small text-text-dim lg:min-h-[3.5rem]">{step.body}</p>
+                <div className="surface-flow mt-1 flex flex-col justify-center overflow-hidden p-4 shadow-sm transition-[box-shadow,transform] duration-(--dur-base) ease-(--ease-out) hover:-translate-y-0.5 hover:shadow-md lg:min-h-[8rem]">
                   {step.panel}
                 </div>
               </li>
@@ -129,18 +131,17 @@ function CampaignPanel() {
 function RunPanel() {
   return (
     <div className="flex flex-col gap-2">
-      <div className="flex items-center gap-2">
-        <span className="h-5 w-9 rounded-full border border-transparent bg-[var(--lamp-ice)] p-0.5">
-          <span className="block size-4 rounded-full bg-surface-raised" />
-        </span>
-        <span className="text-small text-text">Dry run</span>
+      <p className="eyebrow text-text-mute">Guards on</p>
+      <div className="flex flex-wrap gap-1">
+        <Tag>ALLOWLIST</Tag>
+        <Tag>CEILING 25</Tag>
+        <Tag>RATE 2/HR</Tag>
       </div>
-      <p className="eyebrow text-lamp-ice-text">Dry run · No credits spent</p>
       <LampStrip
         lamps={[
-          { state: "ice", label: "Simulated" },
-          { state: "ice", label: "Simulated" },
-          { state: "ice", label: "Simulated" },
+          { state: "jade", label: "Auto-closed" },
+          { state: "jade", label: "Auto-closed" },
+          { state: "off", label: "Queued" },
           { state: "off", label: "Queued" },
           { state: "off", label: "Queued" },
         ]}
@@ -154,15 +155,15 @@ function TriagePanel() {
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center gap-2">
-        <Lamp state="jade" size="sm" label="Auto-closed" />
+        <LiveLamp state="jade" size="sm" label="Auto-closed" />
         <span className="text-small text-text-dim">9 closed themselves</span>
       </div>
       <div className="flex items-center gap-2">
-        <Lamp state="brass" size="sm" pulse label="Queued for retry" />
+        <LiveLamp state="brass" size="sm" pulse label="Queued for retry" />
         <span className="text-small text-text-dim">2 queued for retry</span>
       </div>
       <div className="flex items-center gap-2">
-        <Lamp state="flare" size="sm" label="Needs a person" />
+        <LiveLamp state="flare" size="sm" label="Needs a person" />
         <span className="text-small text-text">3 need a person</span>
       </div>
     </div>

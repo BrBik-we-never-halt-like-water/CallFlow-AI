@@ -24,7 +24,7 @@ export function PricingPreview() {
         <SectionHeading
           eyebrow="Pricing"
           title="Start free, pay when you dial."
-          sub="Dry runs are free and unlimited on every plan, including the free one. You only spend on calls that actually connect."
+          sub="You only spend on calls that actually connect — on every plan, including the free one."
         />
       </Reveal>
 

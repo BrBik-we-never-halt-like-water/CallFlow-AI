@@ -54,10 +54,10 @@ const DEMO_GUARDS: Guard[] = [
 
 const GUARDS_EXPLAINED = [
   {
-    name: "Dry run",
-    behaviour: "On by default",
+    name: "Validation first",
+    behaviour: "Before any dial",
     detail:
-      "Every new run starts in dry mode. It validates the rows, walks the safety gates, and renders the exact words each contact would hear — without dialling. Turning it off takes a deliberate confirmation that shows you the contact count, the credit estimate, and the window.",
+      "Every run validates the rows and walks the safety gates before a single number is dialled — a row that fails is skipped and says why. Starting a run takes a deliberate confirmation that shows you the contact count, the credit estimate, and the window.",
   },
   {
     name: "Allowlist",

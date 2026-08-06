@@ -6,7 +6,7 @@ import { ProblemCompare } from "@/components/marketing/problem-compare";
 import { SafetySection } from "@/components/marketing/safety-section";
 import { Steps } from "@/components/marketing/steps";
 import { VerticalStrip } from "@/components/marketing/vertical-strip";
-import { Rule } from "@/components/ui/rule";
+import { WaveCanvas } from "@/components/brand/wave-canvas";
 
 /**
  * The home page.
@@ -23,22 +23,22 @@ export default function HomePage() {
     <>
       <Hero />
 
-      <SectionDivider />
+      <SpineDivider />
       <ProblemCompare />
 
-      <SectionDivider />
+      <SpineDivider bold />
       <Steps />
 
-      <SectionDivider />
+      <SpineDivider bold />
       <CapabilityGrid />
 
-      <SectionDivider />
+      <SpineDivider />
       <VerticalStrip />
 
-      <SectionDivider />
+      <SpineDivider bold />
       <SafetySection />
 
-      <SectionDivider />
+      <SpineDivider />
       <PricingPreview />
 
       <FinalCta />
@@ -46,10 +46,13 @@ export default function HomePage() {
   );
 }
 
-function SectionDivider() {
+function SpineDivider({ bold = false }: { bold?: boolean }) {
   return (
     <div className="mx-auto max-w-(--container-marketing) px-4 py-(--space-section) sm:px-6">
-      <Rule withLamps />
+      <WaveCanvas
+        pitch={bold ? 7 : 11}
+        className={bold ? "h-16 text-text opacity-80" : "h-9 text-text opacity-40"}
+      />
     </div>
   );
 }

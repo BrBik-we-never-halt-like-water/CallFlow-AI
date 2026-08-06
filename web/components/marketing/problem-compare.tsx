@@ -1,6 +1,8 @@
-import { Lamp } from "@/components/brand/lamp";
 import { Eyebrow } from "@/components/ui/panel";
 import { Reveal } from "@/components/ui/reveal";
+import { WaveCanvas } from "@/components/brand/wave-canvas";
+import { Tag } from "@/components/ui/badge";
+import { LiveLamp } from "./live-lamp";
 
 /**
  * The problem, argued on the left and demonstrated on the right.
@@ -20,7 +22,7 @@ const ROWS = [
 export function ProblemCompare() {
   return (
     <section id="problem" className="mx-auto max-w-(--container-marketing) px-4 sm:px-6">
-      <div className="grid items-start gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,520px)] lg:gap-16">
+      <div className="grid items-center gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,520px)] lg:gap-16">
         <Reveal className="flex flex-col gap-5">
           <h2 className="measure-display font-display text-h2 text-text">
             A completed call tells you nothing.
@@ -45,16 +47,20 @@ export function ProblemCompare() {
             ))}
           </LogGroup>
 
-          <LogGroup label="The same two calls, here">
+          <LogGroup label="The same two calls, understood">
             <LogRow
               {...ROWS[0]}
-              status="Interested · positive"
-              lamp={<Lamp state="jade" size="md" label="Auto-closed" />}
+              wave={0.6}
+              outcome="interested"
+              sentiment="positive"
+              lamp={<LiveLamp state="jade" size="md" label="Auto-closed" />}
             />
             <LogRow
               {...ROWS[1]}
-              status="Asked for a person · frustrated"
-              lamp={<Lamp state="flare" size="md" label="Needs a person" />}
+              wave={2.4}
+              outcome="needs a person"
+              sentiment="frustrated"
+              lamp={<LiveLamp state="flare" size="md" label="Needs a person" />}
             />
           </LogGroup>
         </Reveal>
@@ -67,7 +73,7 @@ function LogGroup({ label, children }: { label: string; children: React.ReactNod
   return (
     <div className="flex flex-col gap-2">
       <Eyebrow>{label}</Eyebrow>
-      <div className="overflow-hidden rounded-md border border-rule bg-surface-raised">
+      <div className="surface-flow overflow-hidden shadow-sm transition-[box-shadow,transform] duration-(--dur-base) ease-(--ease-out) hover:-translate-y-0.5 hover:shadow-md">
         {children}
       </div>
     </div>
@@ -80,26 +86,50 @@ function LogRow({
   duration,
   status,
   lamp,
+  wave,
+  outcome,
+  sentiment,
 }: {
   name: string;
   phone: string;
   duration: string;
-  status: string;
+  status?: string;
   lamp?: React.ReactNode;
+  /** Insight mode: show the call's own voice waveform (seed) and the typed
+      fields extracted from it, rather than a bare number and duration. */
+  wave?: number;
+  outcome?: string;
+  sentiment?: string;
 }) {
+  const insight = wave !== undefined;
+
   return (
-    <div className="flex items-center gap-3 border-b border-rule px-3 py-2.5 last:border-0">
-      {/* The slot is reserved in both groups, so the rows line up and the only
-          difference between them is whether a lamp is lit. */}
+    <div className="flex items-center gap-3 border-b border-rule px-3 py-3 last:border-0">
       <span className="flex size-2.5 shrink-0 items-center justify-center">{lamp}</span>
-      <span className="min-w-0 flex-1 truncate text-small text-text">{name}</span>
-      <span className="hidden font-mono text-data tabular-nums text-text-mute sm:inline">
-        {phone}
-      </span>
-      <span className="font-mono text-data tabular-nums text-text-mute">{duration}</span>
-      <span className="w-44 shrink-0 truncate text-right text-small text-text-dim">
-        {status}
-      </span>
+      <span className="w-24 shrink-0 truncate text-small text-text sm:w-28">{name}</span>
+
+      {insight ? (
+        <>
+          {/* The call's voice, then the typed fields the system pulled from it. */}
+          <span className="hidden min-w-0 flex-1 sm:block">
+            <WaveCanvas seed={wave} pitch={6} className="h-6 text-text" />
+          </span>
+          <div className="flex shrink-0 items-center gap-1.5">
+            <Tag mono={false}>{outcome}</Tag>
+            <Tag mono={false}>{sentiment}</Tag>
+          </div>
+        </>
+      ) : (
+        <>
+          <span className="hidden min-w-0 flex-1 font-mono text-data tabular-nums text-text-mute sm:inline">
+            {phone}
+          </span>
+          <span className="font-mono text-data tabular-nums text-text-mute">{duration}</span>
+          <span className="w-24 shrink-0 truncate text-right text-small text-text-mute">
+            {status}
+          </span>
+        </>
+      )}
     </div>
   );
 }

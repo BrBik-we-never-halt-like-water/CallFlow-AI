@@ -2,6 +2,7 @@ import { CaretRightIcon } from "@phosphor-icons/react/dist/ssr";
 import Link from "next/link";
 import { SectionHeading } from "@/components/ui/panel";
 import { Reveal } from "@/components/ui/reveal";
+import { WaveCanvas } from "@/components/brand/wave-canvas";
 import { VERTICALS } from "@/lib/verticals";
 
 /**
@@ -37,6 +38,14 @@ export function VerticalStrip() {
                   <span className="mt-0.5 block text-small text-text-mute">
                     {vertical.metricLabel}
                   </span>
+                </span>
+
+                {/* Subtle voice touch: the vertical's waveform fades in on hover. */}
+                <span
+                  aria-hidden
+                  className="hidden h-5 w-24 shrink-0 opacity-0 transition-opacity duration-(--dur-base) ease-(--ease-out) group-hover:opacity-100 lg:block"
+                >
+                  <WaveCanvas seed={i * 1.3} pitch={6} className="h-full text-text-mute" />
                 </span>
 
                 <span className="hidden max-w-xs text-small text-text-dim sm:block">
