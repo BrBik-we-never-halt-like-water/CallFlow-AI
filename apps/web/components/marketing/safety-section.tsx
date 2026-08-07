@@ -42,14 +42,6 @@ const DEMO_GUARDS: Guard[] = [
       "Paces how fast calls go out, so a run reaches people at a human rhythm instead of arriving as a burst.",
     settingsHref: "/docs/safety-configuration",
   },
-  {
-    id: "window",
-    label: "Window",
-    value: "09:00–20:00 IST",
-    explanation:
-      "Calls are only placed inside this window. A contact reached outside it is queued for the next opening rather than dialled.",
-    settingsHref: "/docs/safety-configuration",
-  },
 ];
 
 const GUARDS_EXPLAINED = [
@@ -70,12 +62,6 @@ const GUARDS_EXPLAINED = [
     behaviour: "Paced",
     detail:
       "Calls go out at a set rate per hour. The point is not throughput; it is that a run should reach people at a human rhythm.",
-  },
-  {
-    name: "Calling window",
-    behaviour: "Queued outside hours",
-    detail:
-      "Outside the window nothing is dialled. Contacts wait for the next opening, which is also why a bad time is queued for retry instead of counted as a bad outcome.",
   },
   {
     name: "Suppression list",

@@ -45,9 +45,9 @@ const CAPABILITIES: { icon: Icon; title: string; body: string; detail: string }[
   },
   {
     icon: ClockIcon,
-    title: "Runs while you sleep",
-    body: "Campaigns work through evenings and weekends, inside the calling window you set.",
-    detail: "Your team reads outcomes in the morning.",
+    title: "Runs in the background",
+    body: "Start a run and walk away — it keeps dialling while you do something else.",
+    detail: "Come back to typed results, not a spinner.",
   },
   {
     icon: PhoneCallIcon,

@@ -249,7 +249,7 @@ If they sound frustrated, ask for a person, or ask not to be called again, stop 
       {
         question: "Our enquiries are students — is calling them appropriate?",
         answer:
-          "They enquired, which is consent to be contacted about the thing they asked about, and the call opens by saying which institution it is from. The calling window keeps it inside reasonable hours, and the agent asks whether now is a good time before doing anything else. A student who says it is a bad time is queued for a polite retry rather than pushed.",
+          "They enquired, which is consent to be contacted about the thing they asked about, and the call opens by saying which institution it is from. The agent asks whether now is a good time before doing anything else, and a student who says it is a bad time is queued for a polite retry rather than pushed.",
       },
       {
         question: "What stops it from over-promising to get an application?",

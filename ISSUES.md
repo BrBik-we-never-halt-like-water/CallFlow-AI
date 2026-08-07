@@ -47,7 +47,7 @@ exist in this repo**; `SYSTEM.md` §12 is the closest real gap map until it's wr
 | [#17](#17--orphaned-organisations-confirmed-in-practice) | S3 | Orphaned orgs consume slugs permanently | database | it-3 | **FIXED** |
 | [#18](#18--supabase-rejects-email-domains-without-mx-records) | S4 | Supabase rejects domains without MX records | external | it-3 | WONTFIX |
 | [#19](#19--built-in-email-sender-quota-is-exhausted-quickly) | S2 | Built-in email sender quota exhausted quickly | config | it-3 | **PARTLY FIXED** |
-| [#20](#20--calling-windows-are-not-enforced-anywhere-in-the-backend) | S2 | Calling windows are not enforced anywhere in the backend | backend + web | it-4 | OPEN |
+| [#20](#20--calling-windows-are-not-enforced-anywhere-in-the-backend) | S2 | Calling windows are not enforced anywhere in the backend | backend + web | it-4 | **PARTLY FIXED** |
 | [#21](#21--organisationlogo_url-was-missing-from-the-orm-model) | S4 | `Organisation.logo_url` was missing from the ORM model | backend | it-4 | **FIXED** |
 | [#22](#22--half-the-real-runtime-dependencies-were-undeclared-in-pyprojecttoml) | S2 | Half the real runtime dependencies were undeclared in `pyproject.toml` | backend | it-4 | **FIXED** |
 | [#23](#23--root-envexample-still-had-callflow_dry_run-and-no-supabase-config-at-all) | S2 | Root `.env.example` still had `CALLFLOW_DRY_RUN` and no Supabase config at all | config | it-4 | **FIXED** |
@@ -442,28 +442,41 @@ the file itself for the current wording.
 ---
 
 ### #20 — Calling windows are not enforced anywhere in the backend
-**S2 · OPEN · backend + web**
+**S2 · PARTLY FIXED · backend + web**
 
 Found while fact-checking `README.md` against the real code for this iteration's docs
 pass. `apps/api/app/domain/safety.py` has no window check at all — grepping the whole
 backend for `window_start`/`window_end`/calling-window logic returns nothing.
 
-**Impact.** This is a `CLAUDE.md` non-negotiable #9 violation ("never show a success
-state for something that did not happen"), not just a missing feature. Several surfaces
-assert the guard is real: `apps/web/app/(app)/app/settings/safety/page.tsx`'s "Calling
-window" section states outright "Nothing is dialled outside `{windowStart}–{windowEnd}`
-… A contact reached outside the window is queued for the next opening rather than
-counted as a failure" — none of that happens. The marketing safety section
-(`components/marketing/safety-section.tsx`) and the `/docs/safety-configuration` page
-make the same claim. The window value itself is also only ever stored in component
-state / `localStorage` on the settings page, never sent to the API.
+**Impact.** This was a `CLAUDE.md` non-negotiable #9 violation ("never show a success
+state for something that did not happen"), not just a missing feature — and a wider one
+than first found. A follow-up sweep (prompted by a user report of a confusing dashboard)
+turned up the same false claim in **eight** places, not the three originally listed:
+`apps/web/components/app/safety-bar.tsx`'s `guardsFromHealth()` (the guard chip shown on
+the *actual run composer*, hardcoding `"09:00–20:00 IST"` as if confirmed — the one guard
+in that function that didn't follow its own "unconfirmed → null/OFF" rule),
+`settings/safety/page.tsx`, `components/app/campaign-editor.tsx` (told users configuring
+a real campaign "nothing is dialled outside this window," and the same panel's retry
+"attempts"/"spacing" controls turned out to have an identical problem — the `RETRY`
+disposition is real, but nothing acts on the attempt count or spacing automatically),
+the marketing `safety-section.tsx` (both the demo guard bar and the explained-guards
+list), `/docs/safety-configuration`, `lib/docs.ts`'s summary of that page, and — most
+seriously — **`/trust`'s regional compliance notes**, which stated as fact that "India —
+calling windows default to 09:00–20:00 IST and are enforced per campaign" and the
+equivalent for US area codes. That's a false regulatory-compliance claim on the one page
+a prospect reads specifically to assess compliance risk before signing.
 
-**Fix.** Either wire real enforcement — a per-campaign or per-org window column, checked
-in `check_dial_allowed()` (the same place suppression is now checked, so the pattern
-already exists), with queued-for-retry semantics for a contact reached outside it — or,
-until that ships, correct every surface that currently claims it's real to say plainly
-that it isn't wired up yet (`AuthNotice`/`NotWiredNotice` is the existing pattern for
-exactly this).
+**Fixed:** every surface above now either omits the claim or says plainly that calling
+windows (and, in the campaign editor, automatic retry) aren't enforced yet — using the
+existing `NotWiredNotice` pattern, and `guardsFromHealth()`'s window guard now reports
+`null` (renders as `OFF`, consistent with how every other unconfirmed guard already
+behaves) instead of a hardcoded fake value.
+
+**Still open:** the underlying feature. Either wire real enforcement — a per-campaign or
+per-org window column, checked in `check_dial_allowed()` (the same place suppression is
+now checked, so the pattern already exists), with queued-for-retry semantics — or leave
+it permanently out of the product. What's fixed is that nothing lies about it in the
+meantime.
 
 **Depends on:** #1 (fixed) for a place to persist a window per org/campaign.
 

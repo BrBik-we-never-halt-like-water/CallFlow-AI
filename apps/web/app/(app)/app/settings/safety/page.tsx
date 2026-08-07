@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { SettingsSection } from "@/components/app/settings-section";
+import { NotWiredNotice, SettingsSection } from "@/components/app/settings-section";
 import { guardsFromHealth, SafetyBar } from "@/components/app/safety-bar";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
@@ -124,16 +124,7 @@ export default function SafetySettingsPage() {
         </div>
       </SettingsSection>
 
-      <SettingsSection
-        title="Calling window"
-        description="The organisation default. A campaign can narrow it, but not widen it."
-        effect={`Nothing is dialled outside ${windowStart}–${windowEnd} ${timezone}. A contact reached outside the window is queued for the next opening rather than counted as a failure.`}
-        footer={
-          <Button size="sm" onClick={notSaved}>
-            Save window
-          </Button>
-        }
-      >
+      <SettingsSection title="Calling window" description="The organisation default.">
         <div className="grid gap-4 sm:grid-cols-3">
           <Field label="From">
             <Input
@@ -155,6 +146,11 @@ export default function SafetySettingsPage() {
             <Select value={timezone} onValueChange={setTimezone} options={TIMEZONES} />
           </Field>
         </div>
+
+        <NotWiredNotice>
+          Not enforced yet — a run can still dial outside these hours. Setting a
+          window here doesn&apos;t change that until this ships.
+        </NotWiredNotice>
       </SettingsSection>
     </div>
   );

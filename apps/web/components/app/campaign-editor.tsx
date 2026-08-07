@@ -4,6 +4,7 @@ import { PlusIcon, TrashIcon } from "@phosphor-icons/react/dist/ssr";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { cn } from "@/lib/cn";
+import { NotWiredNotice } from "@/components/app/settings-section";
 import { Tag } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -265,8 +266,7 @@ export function CampaignEditor({ existing }: { existing?: Campaign }) {
           <div className="flex flex-col gap-1">
             <Eyebrow>Calling window</Eyebrow>
             <p className="text-small text-text-dim">
-              Nothing is dialled outside this window. Contacts wait for the next opening
-              rather than being counted as failures.
+              The hours you intend to call within.
             </p>
           </div>
 
@@ -304,6 +304,11 @@ export function CampaignEditor({ existing }: { existing?: Campaign }) {
               />
             </Field>
           </div>
+
+          <NotWiredNotice>
+            Not enforced yet — this is saved locally for your own reference, but a run
+            can still dial outside these hours.
+          </NotWiredNotice>
         </Panel>
 
         {/* ---- Retry policy -------------------------------------------- */}
@@ -311,8 +316,8 @@ export function CampaignEditor({ existing }: { existing?: Campaign }) {
           <div className="flex flex-col gap-1">
             <Eyebrow>Retry policy</Eyebrow>
             <p className="text-small text-text-dim">
-              Applies when someone was unavailable or said it was a bad time. A bad time
-              isn&apos;t a bad mood, so these are retried rather than escalated.
+              A bad time isn&apos;t a bad mood — unavailable contacts and bad-time calls
+              are marked for retry rather than escalated.
             </p>
           </div>
 
@@ -348,6 +353,12 @@ export function CampaignEditor({ existing }: { existing?: Campaign }) {
               />
             </Field>
           </div>
+
+          <NotWiredNotice>
+            The disposition is real — a bad-time call is genuinely marked for retry.
+            Automatically acting on these attempt and spacing settings isn&apos;t built
+            yet, so retrying today is a manual second run.
+          </NotWiredNotice>
 
           <Switch
             checked={settings.escalateOnNegative}

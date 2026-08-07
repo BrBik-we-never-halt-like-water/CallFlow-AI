@@ -87,9 +87,9 @@ const SECTIONS = [
     id: "regional",
     heading: "Regional compliance notes",
     paragraphs: [
-      "India — calling windows default to 09:00–20:00 IST and are enforced per campaign. Where a campaign targets numbers registered on a national do-not-call preference list, you are responsible for scrubbing against it; import the list into your suppression list and it will be enforced on every run.",
+      "India — where a campaign targets numbers registered on a national do-not-call preference list, you are responsible for scrubbing against it; import the list into your suppression list and it will be enforced on every run, checked before every dial, permanently. Calling-hour restrictions are not enforced by the product yet — that is your responsibility until they are.",
       "European Union and United Kingdom — a DPA including the standard contractual clauses is available. Data residency in the EU can be arranged on Enterprise. Automated calling to individuals generally requires prior consent, and the consent-capture setting exists for exactly that.",
-      "United States — calling windows default to local time per area code where region data is available. Consent requirements for automated calls vary by state and are stricter than for manual dialling; take your own advice before running a live campaign.",
+      "United States — consent requirements for automated calls vary by state and are stricter than for manual dialling; take your own advice before running a live campaign. Calling-hour restrictions are not enforced by the product yet — that is your responsibility until they are.",
       "None of the above is legal advice. The guards exist so that your policy can be enforced by the product rather than remembered by a person.",
     ],
   },

@@ -58,7 +58,7 @@ export const DOC_SECTIONS: DocSection[] = [
       {
         slug: "safety-configuration",
         title: "Safety configuration",
-        summary: "The allowlist, the per-run ceiling, rate limits, calling windows, and suppression.",
+        summary: "The allowlist, the per-run ceiling, rate limits, and the suppression list.",
       },
       {
         slug: "api-reference",

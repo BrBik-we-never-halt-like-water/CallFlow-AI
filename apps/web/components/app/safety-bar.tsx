@@ -128,9 +128,11 @@ export function guardsFromHealth(health: Health | null): Guard[] {
     {
       id: "window",
       label: "Window",
-      // The calling window is a per-campaign setting rather than a service-wide
-      // one, so this reflects the organisation default.
-      value: "09:00–20:00 IST",
+      // Not built yet — see ISSUES.md #20. This used to show a hardcoded
+      // "09:00–20:00 IST" as if it were real and enforced; `null` is the
+      // honest value for a guard with no backing implementation at all,
+      // and renders exactly like any other guard the service can't confirm.
+      value: null,
       explanation:
         "Calls are only placed inside this window. A contact reached outside it is queued for the next opening rather than dialled.",
       settingsHref: "/app/settings/safety",
