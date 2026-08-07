@@ -222,6 +222,14 @@ export interface ApiKeyCreated extends ApiKey {
   key: string;
 }
 
+export interface Suppression {
+  id: string;
+  phone_masked: string;
+  source: string;
+  reason: string | null;
+  suppressed_at: string;
+}
+
 export type Provider = "twilio" | "plivo";
 
 export interface ProviderCredential {
@@ -377,6 +385,16 @@ export const api = {
       body: JSON.stringify({ name }),
     }),
   revokeApiKey: (id: string) => authReq<void>(`/api/v1/api-keys/${id}`, { method: "DELETE" }),
+
+  // --- suppression list ------------------------------------------------------
+  listSuppressions: () => authReq<Suppression[]>("/api/v1/suppressions"),
+  addSuppression: (phone: string, reason?: string) =>
+    authReq<Suppression>("/api/v1/suppressions", {
+      method: "POST",
+      body: JSON.stringify({ phone, reason }),
+    }),
+  removeSuppression: (id: string) =>
+    authReq<void>(`/api/v1/suppressions/${id}`, { method: "DELETE" }),
 
   // --- integrations ----------------------------------------------------------
   listProviderCredentials: () => authReq<ProviderCredential[]>("/api/v1/integrations/providers"),

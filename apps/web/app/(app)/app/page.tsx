@@ -113,8 +113,7 @@ export default function OverviewPage() {
       <PageTitle session={session} />
       <ConnectionBanner phase={phase} />
 
-      {/* ---- Metrics. Deployment-wide today, not per-org — runs aren't
-          attributed to an org yet (ADR-1). */}
+      {/* ---- Metrics, scoped to this organisation's own runs. ------------ */}
       <div className="grid gap-4 lg:grid-cols-2">
         <Panel className="flex flex-col gap-2 p-4 sm:p-5">
           <div className="flex items-baseline justify-between gap-2">

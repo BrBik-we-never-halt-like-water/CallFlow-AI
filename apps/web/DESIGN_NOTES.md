@@ -98,19 +98,24 @@ the label, and the pure colour for the dot. Never set text in a raw `--lamp-*`.
 
 ## 5. Where the UI is ahead of the API
 
-The service (`callflow/`) has campaigns, preview, runs, and health. It has **no** auth,
-billing, contacts store, escalation store, suppression endpoint, or settings persistence.
-
-Rather than fake those, each surface says what is real:
+This table is a living gap-map, not a one-time note — update the row the moment a surface
+moves from fake to real, the same turn as the code change. Auth, org-scoped persistence,
+suppression enforcement, team, API keys, and provider (Twilio/Plivo) credential storage
+have all shipped since this section was first written; billing and calling-window
+enforcement have not, and are still fake if left undocumented here.
 
 | Surface | Data |
 |---|---|
-| Overview, runs, escalations, contacts | **Real.** Derived from hydrated runs — escalations are outcomes with `disposition === "escalated"`, contacts are grouped from call history. |
-| Safety + API-key panes | **Real.** Read from `/api/health`. |
-| Campaign editor | **Real** for name/goal/fields/region/language. |
-| Calling window, retry policy | **Local.** `localStorage`, per campaign id — the campaign API has no field for them. See `lib/campaign-draft.ts`. |
-| Suppression list | **Local.** `lib/suppression.ts`, and the page says plainly that a browser-local list is not the global guarantee the product promises. |
-| Auth, billing, team, numbers, integrations, notifications | **Not wired.** Forms validate, then say nothing was sent, via `AuthNotice` / `NotWiredNotice`. |
+| Overview, runs, escalations, contacts | **Real.** Org-scoped, persisted in Postgres. Escalations are outcomes with `disposition === "escalated"`, contacts are grouped from call history. |
+| Suppression list | **Real.** `public.suppressions`, org-scoped and RLS-enforced, and it's the actual table `check_dial_allowed()` checks before every dial (ISSUES.md #3). |
+| Auth, team, profile | **Real.** Supabase auth, real invitations sent via email, real role-based permissions (`app/auth/permissions.py`). |
+| API keys | **Real.** Org-scoped, hashed at rest, shown once. |
+| Integrations (Twilio, Plivo) | **Real** credential storage only. Connecting a number does not yet change which number a run dials from — that needs the voice-agent platform (`FEATURES.md` F17). |
+| Campaign editor — name, goal, fields, region, language | **Real.** |
+| Campaign editor — calling window, retry policy | **Local.** `localStorage`, per campaign id — the create-campaign payload never sends these. `NotWiredNotice` says so on the panel. |
+| Safety pane — calling window | **Not enforced.** The fields save, but no guard in `check_dial_allowed()` reads them (ISSUES.md #20). |
+| Billing | **Partly real.** Usage numbers are the same limiter every run passes through. No payment processor is connected — upgrade/downgrade aren't wired. |
+| Notifications | **Not wired.** Forms validate, then say nothing was sent, via `AuthNotice` / `NotWiredNotice`. |
 
 The rule applied throughout: **never show a success state for something that did not
 happen.** A fake "check your inbox" leaves someone waiting for an email that will never

@@ -30,7 +30,7 @@ exist in this repo**; `SYSTEM.md` §12 is the closest real gap map until it's wr
 |---|---|---|---|---|---|
 | [#1](#1--no-persistence-anywhere) | S1 | No persistence anywhere | backend | it-1 | **FIXED** |
 | [#2](#2--user-campaigns-are-global-and-ephemeral) | S1 | User campaigns are global and ephemeral | backend | it-1 | **FIXED** |
-| [#3](#3--suppression-list-is-never-enforced) | S1 | Suppression list is never enforced | backend + web | it-1 | **PARTLY FIXED** |
+| [#3](#3--suppression-list-is-never-enforced) | S1 | Suppression list is never enforced | backend + web | it-1 | **FIXED** |
 | [#4](#4--calloutcomerun_id-holds-the-provider-call-id) | S1 | `CallOutcome.run_id` holds the provider call id | backend | it-1 | **FIXED** |
 | [#5](#5--rate-limits-and-daily-budget-are-per-process-and-reset-on-restart) | S2 | Rate limits reset on restart, not shared | backend | it-1 | OPEN |
 | [#6](#6--three-high-severity-npm-advisories) | S2 | Three high-severity npm advisories | web | it-1 | OPEN |
@@ -101,7 +101,7 @@ persisted ones.
 ---
 
 ### #3 — Suppression list is never enforced
-**S1 · PARTLY FIXED · backend + web · `app/domain/safety.py`, `app/database/repositories/suppressions.py`**
+**S1 · FIXED · backend + web · `app/domain/safety.py`, `app/database/repositories/suppressions.py`, `app/api/v1/routes/suppressions.py`**
 
 `web/lib/suppression.ts` used to keep the list in one browser's `localStorage`. The dial
 path (`safety.check_dial_allowed`) never consulted it.
@@ -112,27 +112,37 @@ dial someone who had asked not to be called. This was the most serious gap after
 because it was a stated promise with legal weight (DPDP, TCPA, TRAI), and the UI actively
 asserted it was true.
 
-**Read/enforcement side fixed.** A `suppressions` table keyed on `(org_id, phone_hash)`
-(SHA-256 with a per-deployment pepper, `PHONE_HASH_PEPPER`). `check_dial_allowed()` now
-takes an `is_suppressed: bool` and denies the dial if true — checked against a snapshot of
-suppressed hashes resolved once per run and consulted for every contact in it
-(`FEATURES.md` F14). This shipped in the same change as dry_run removal (see Iteration 4):
-once dry_run stopped being a de facto safety net, this became the guard that actually has
-to hold. Verified by the orchestrator test suite (a suppressed contact never reaches the
-gateway).
+**Read/enforcement side fixed first.** A `suppressions` table keyed on `(org_id,
+phone_hash)` (SHA-256 with a per-deployment pepper, `PHONE_HASH_PEPPER`).
+`check_dial_allowed()` now takes an `is_suppressed: bool` and denies the dial if true —
+checked against a snapshot of suppressed hashes resolved once per run and consulted for
+every contact in it (`FEATURES.md` F14). This shipped in the same change as dry_run
+removal (see Iteration 4): once dry_run stopped being a de facto safety net, this became
+the guard that actually has to hold. Verified by the orchestrator test suite (a suppressed
+contact never reaches the gateway).
 
-**Write side still open.** `app/database/repositories/suppressions.py`'s `add_suppression()`
-and `remove_suppression()` have no caller anywhere in the app — there is no
-`/api/v1/suppressions` route, and a `do_not_call` disposition from triage does not
-automatically insert a row. In practice the table can only be populated by a direct
-database write today. The frontend's "Contacts" page suppression toggle is still a
-**separate, disconnected** `localStorage` list — adding a number there does not touch the
-table the dial path actually checks. So the guarantee now holds for any row that's already
-in `public.suppressions`, but there is still no product-facing way to put one there.
-Found by an agent fact-checking `SYSTEM.md` against the code for this same iteration.
+**Write side fixed in this iteration.** `app/database/repositories/suppressions.py`'s
+`add_suppression()` and `remove_suppression()` had no caller anywhere in the app — no
+`/api/v1/suppressions` route existed, so the table could only be populated by a direct
+database write, and the frontend's "Contacts" page suppression toggle was a **separate,
+disconnected** `localStorage` list that never touched it. Found by re-reading the dial
+path against the frontend while investigating the calling-window claims in #20 — the same
+"UI promises something the backend doesn't do" shape, on a legally-weighted guarantee.
 
-**Depends on:** #1 (fixed). **Blocks:** a real fix needs a CRUD route/UI (or triage
-auto-insert on `do_not_call`) before this can close fully.
+Fixed by adding `app/api/v1/routes/suppressions.py`: `GET/POST /api/v1/suppressions` and
+`DELETE /api/v1/suppressions/{id}`, gated by the `SUPPRESSIONS_READ`/`ADD`/`REMOVE`
+permissions that already existed in the permission matrix (unused until now — this route
+is the feature they were written for). Adding is `operator` role or above; removing
+(making someone callable again) is owner-only, matching the table's existing RLS insert/
+delete policies exactly. The "Contacts" page's suppression tab now calls this API
+directly instead of `lib/suppression.ts`, which is deleted.
+
+**Still open, separately:** a `do_not_call` disposition from triage does not yet
+auto-insert a suppression row — today a person still has to add the number by hand after
+noticing the call ended that way. Not blocking, since the manual path is now real; tracked
+for a future iteration rather than reopening this issue.
+
+**Depends on:** #1 (fixed).
 
 ---
 

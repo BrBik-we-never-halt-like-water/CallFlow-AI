@@ -17,6 +17,7 @@ from app.api.v1.routes.invitations import router as invitations_router
 from app.api.v1.routes.organisations import router as organisations_router
 from app.api.v1.routes.profile import router as profile_router
 from app.api.v1.routes.runs import router as runs_router
+from app.api.v1.routes.suppressions import router as suppressions_router
 from app.core.config import config
 from app.core.rate_limit import limiter
 from app.database import database
@@ -67,6 +68,7 @@ app.include_router(organisations_router)
 app.include_router(invitations_router)
 app.include_router(campaigns_router)
 app.include_router(runs_router)
+app.include_router(suppressions_router)
 app.include_router(api_keys_router)
 app.include_router(integrations_router)
 

@@ -2,7 +2,7 @@
 
 import { AddressBookIcon, ProhibitIcon } from "@phosphor-icons/react/dist/ssr";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ConnectionBanner } from "@/components/app/connection-banner";
 import { MaskedPhone } from "@/components/app/masked-phone";
 import { LampBadge, Tag } from "@/components/ui/badge";
@@ -13,20 +13,14 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Field } from "@/components/ui/field";
 import { Input, SearchInput } from "@/components/ui/input";
 import { Eyebrow, Panel } from "@/components/ui/panel";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
-import type { Outcome } from "@/lib/api";
+import { api, type Outcome, type Suppression } from "@/lib/api";
 import { formatAge, formatTimestamp } from "@/lib/format";
 import { isE164, normalisePhone } from "@/lib/format/phone";
 import { lampForOutcome } from "@/lib/lamp";
-import { useStoredJson } from "@/lib/hooks/use-external-store";
-import {
-  addSuppressed,
-  NO_SUPPRESSED,
-  removeSuppressed,
-  SUPPRESSION_KEY,
-  type SuppressedNumber,
-} from "@/lib/suppression";
 import { useAppStore } from "@/lib/app-store";
+import { useSession } from "@/lib/hooks/use-session";
 
 interface ContactRecord {
   name: string;
@@ -37,16 +31,28 @@ interface ContactRecord {
 
 export default function ContactsPage() {
   const toast = useToast();
+  const session = useSession();
   const { outcomes, phase, loadingRuns } = useAppStore();
   const [tab, setTab] = useState("all");
   const [query, setQuery] = useState("");
   const [addOpen, setAddOpen] = useState(false);
-  // Subscribed rather than read-on-mount, so the list is correct on first paint and
-  // stays in sync if another tab changes it.
-  const [suppressed, setSuppressed] = useStoredJson<SuppressedNumber[]>(
-    SUPPRESSION_KEY,
-    NO_SUPPRESSED,
-  );
+  const [suppressed, setSuppressed] = useState<Suppression[] | null>(null);
+
+  const profile = session.status === "signed-in" ? session.profile : null;
+  const canAdd = profile?.permissions.includes("suppressions:add") ?? false;
+  const canRemove = profile?.permissions.includes("suppressions:remove") ?? false;
+
+  function loadSuppressions() {
+    api
+      .listSuppressions()
+      .then(setSuppressed)
+      .catch(() => toast({ tone: "error", title: "Couldn't load the suppression list" }));
+  }
+
+  useEffect(() => {
+    loadSuppressions();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile?.active.org_id]);
 
   /**
    * Contacts are derived from calls, because that is the only contact data the service
@@ -90,9 +96,11 @@ export default function ContactsPage() {
           <h1 className="font-display text-h2 text-text">Who you&apos;ve called</h1>
         </div>
         <div className="flex gap-2">
-          <Button variant="secondary" onClick={() => setAddOpen(true)}>
-            Suppress a number
-          </Button>
+          {canAdd ? (
+            <Button variant="secondary" onClick={() => setAddOpen(true)}>
+              Suppress a number
+            </Button>
+          ) : null}
           <Button asChild>
             <Link href="/app/runs/new">Import CSV</Link>
           </Button>
@@ -106,7 +114,7 @@ export default function ContactsPage() {
         onValueChange={setTab}
         tabs={[
           { value: "all", label: "All contacts", count: contacts.length },
-          { value: "suppressed", label: "Suppression list", count: suppressed.length },
+          { value: "suppressed", label: "Suppression list", count: suppressed?.length ?? 0 },
         ]}
       >
         {/* ---- All contacts --------------------------------------------- */}
@@ -184,62 +192,42 @@ export default function ContactsPage() {
           <Panel sunken className="flex flex-col gap-2 p-4">
             <Eyebrow>How this works</Eyebrow>
             <p className="measure text-small text-text-dim">
-              Anyone who asks not to be called again is added here automatically and is
-              never dialled by any campaign, ever. It is not per-campaign, it cannot be
-              overridden from a run, and re-importing a CSV containing a suppressed number
-              does not bring it back.
-            </p>
-            <p className="measure text-small text-lamp-brass-text">
-              On this deployment the list is held in your browser only — the service has no
-              suppression endpoint yet, so it will not apply on another device or to
-              someone else on your team.
+              Anyone who asks not to be called again is added here and is never dialled by
+              any campaign, ever. This is global across your whole organisation, it cannot
+              be overridden from a run, and re-importing a CSV containing a suppressed
+              number does not bring it back. Only an owner can remove a number.
             </p>
           </Panel>
 
-          {suppressed.length === 0 ? (
+          {suppressed === null ? (
+            <div className="flex flex-col gap-2">
+              <Skeleton className="h-14 w-full" />
+              <Skeleton className="h-14 w-full" />
+            </div>
+          ) : suppressed.length === 0 ? (
             <Panel>
               <EmptyState
                 icon={ProhibitIcon}
                 title="No suppressed numbers"
                 body="Anyone who asks not to be called again is added here automatically and is never dialled by any campaign."
                 action={
-                  <Button variant="secondary" onClick={() => setAddOpen(true)}>
-                    Suppress a number
-                  </Button>
+                  canAdd ? (
+                    <Button variant="secondary" onClick={() => setAddOpen(true)}>
+                      Suppress a number
+                    </Button>
+                  ) : undefined
                 }
               />
             </Panel>
           ) : (
             <ul className="flex flex-col gap-2">
               {suppressed.map((entry) => (
-                <li key={entry.phone}>
-                  <Panel className="flex flex-wrap items-center gap-3 p-3">
-                    <span className="min-w-0 flex-1 font-mono text-data tabular-nums text-text-mute line-through">
-                      <MaskedPhone phone={entry.phone} />
-                    </span>
-                    <Tag>Suppressed</Tag>
-                    <span className="font-mono text-data text-text-mute">
-                      {entry.reason === "opted_out"
-                        ? "opted out"
-                        : entry.reason === "imported"
-                          ? "imported"
-                          : "added by hand"}
-                    </span>
-                    <span className="font-mono text-data text-text-mute">
-                      {formatTimestamp(entry.addedAt)}
-                    </span>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => {
-                        setSuppressed(removeSuppressed(suppressed, entry.phone));
-                        toast({ tone: "warning", title: "Number un-suppressed" });
-                      }}
-                    >
-                      Remove
-                    </Button>
-                  </Panel>
-                </li>
+                <SuppressionRow
+                  key={entry.id}
+                  entry={entry}
+                  canRemove={canRemove}
+                  onRemoved={loadSuppressions}
+                />
               ))}
             </ul>
           )}
@@ -249,39 +237,112 @@ export default function ContactsPage() {
       <SuppressDialog
         open={addOpen}
         onOpenChange={setAddOpen}
-        onAdd={(phone, note) => {
-          setSuppressed(addSuppressed(suppressed, phone, "manual", note));
+        onAdded={() => {
           toast({ tone: "success", title: "Number suppressed" });
+          loadSuppressions();
         }}
       />
     </div>
   );
 }
 
+function SuppressionRow({
+  entry,
+  canRemove,
+  onRemoved,
+}: {
+  entry: Suppression;
+  canRemove: boolean;
+  onRemoved: () => void;
+}) {
+  const toast = useToast();
+  const [removing, setRemoving] = useState(false);
+
+  async function remove() {
+    setRemoving(true);
+    try {
+      await api.removeSuppression(entry.id);
+      toast({ tone: "warning", title: "Number un-suppressed" });
+      onRemoved();
+    } catch (error) {
+      toast({
+        tone: "error",
+        title: "Couldn't un-suppress that number",
+        body: error instanceof Error ? error.message : undefined,
+      });
+    } finally {
+      setRemoving(false);
+    }
+  }
+
+  return (
+    <li>
+      <Panel className="flex flex-wrap items-center gap-3 p-3">
+        <span className="min-w-0 flex-1 font-mono text-data tabular-nums text-text-mute line-through">
+          {entry.phone_masked}
+        </span>
+        <Tag>Suppressed</Tag>
+        <span className="font-mono text-data text-text-mute">
+          {entry.reason ||
+            (entry.source === "opt_out"
+              ? "opted out"
+              : entry.source === "imported"
+                ? "imported"
+                : entry.source === "api"
+                  ? "via API"
+                  : "added by hand")}
+        </span>
+        <span className="font-mono text-data text-text-mute">
+          {formatTimestamp(entry.suppressed_at)}
+        </span>
+        {canRemove ? (
+          <Button variant="ghost" size="sm" onClick={remove} loading={removing}>
+            Remove
+          </Button>
+        ) : null}
+      </Panel>
+    </li>
+  );
+}
+
 function SuppressDialog({
   open,
   onOpenChange,
-  onAdd,
+  onAdded,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onAdd: (phone: string, note?: string) => void;
+  onAdded: () => void;
 }) {
+  const toast = useToast();
   const [phone, setPhone] = useState("");
   const [note, setNote] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
-  function submit() {
+  async function submit() {
     const normalised = normalisePhone(phone);
     if (!isE164(normalised)) {
       setError("That number isn't valid. Use international format, like +919876543210.");
       return;
     }
     setError(null);
-    onAdd(normalised, note.trim() || undefined);
-    setPhone("");
-    setNote("");
-    onOpenChange(false);
+    setSaving(true);
+    try {
+      await api.addSuppression(normalised, note.trim() || undefined);
+      setPhone("");
+      setNote("");
+      onOpenChange(false);
+      onAdded();
+    } catch (error) {
+      toast({
+        tone: "error",
+        title: "Couldn't suppress that number",
+        body: error instanceof Error ? error.message : undefined,
+      });
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -295,7 +356,9 @@ function SuppressDialog({
             <Button variant="secondary" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <Button onClick={submit}>Suppress this number</Button>
+            <Button onClick={submit} loading={saving}>
+              Suppress this number
+            </Button>
           </>
         }
       >

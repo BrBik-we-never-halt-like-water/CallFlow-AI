@@ -103,7 +103,7 @@ What a user can actually do, which endpoint it hits, and what survives a restart
 | **Safety guards** | View the guards in force; they are enforced server-side per dial | read via `GET /api/health` | ⚠️ env vars only, not editable from UI |
 | **Escalations** | Filter by reason/campaign/age, sort oldest-first, open transcript, mark resolved | none — derived client-side from `GET /api/v1/runs/{id}` | ❌ resolution is component state, lost on navigate |
 | **Contacts list** | Search, view call history | none — derived from run outcomes | ❌ |
-| **Suppression list** | Checked before every dial, server-side, against the org's real table | enforced inside `POST /api/v1/runs`; no CRUD route exists yet | ⚠️ enforcement is real Postgres; there is no way to *add* to that table yet (see §7) — the "Contacts" page's add/remove UI is still a separate, disconnected `localStorage` list |
+| **Suppression list** | View, add, and remove (owner-only) — org-wide, checked before every dial | `GET/POST /api/v1/suppressions`, `DELETE /api/v1/suppressions/{id}` | ✅ org-scoped Postgres row; the same table `check_dial_allowed()` checks (see §7) |
 | **Calling window / retry policy** | Edit per campaign | none | ⚠️ `localStorage`, never sent to the API, not enforced |
 | **Org setup gate** | Mandatory, non-skippable name confirmation on a fresh organisation, then a skippable profile-details step | `POST /api/v1/organisations/me/complete-onboarding`, `PATCH /api/v1/me` | ✅ `organisations.onboarded_at`, server-verified — not `localStorage` |
 | **Onboarding** | 4-step walkthrough ending in a real, live call, reached only after the org-setup gate clears | `POST /api/v1/runs` | ⚠️ step index in `localStorage` |
@@ -148,6 +148,7 @@ Legend: ✅ persists · ⚠️ persists locally/partially · ❌ lost on restart
 | `services/campaign_runner.py` | Per-contact pipeline — **fully `async def`**, using `asyncio.to_thread()` for the still-synchronous voice SDK | `CampaignRunner`, `render_goal()` |
 | `api/v1/routes/campaigns.py` | `/api/v1/campaigns` — list/create/delete/preview, org-scoped | `router`, `resolve_campaign()` |
 | `api/v1/routes/runs.py` | `/api/v1/runs` — start/list/get, org-scoped, background execution | `router` |
+| `api/v1/routes/suppressions.py` | `/api/v1/suppressions` — list/add/remove the org's do-not-call list. Add is operator+, remove is owner-only, matching the RLS policy | `router` |
 | `api/v1/routes/api_keys.py` | `/api/v1/api-keys` — list/create/revoke, org-scoped, owner/admin only | `router` |
 | `api/v1/routes/integrations.py` | `/api/v1/integrations/providers/{provider}` — connect (upsert)/list/disconnect, owner/admin only | `router` |
 | `integrations/voice/engine.py` | **The only vendor-SDK boundary**, aliased on import | `EngineGateway`, `EngineAPIError`, `TERMINAL` |
@@ -196,9 +197,10 @@ accepted, and everything downstream — permissions, RLS, routes — is identica
 
 A caller who belongs to more than one organisation sends `X-Org-Id` (Supabase-token path
 only); omitting it falls back to the earliest-joined membership. Organisation, team,
-profile, API-key, and integration-credential management (`/api/v1/organisations/*`,
-`/api/v1/me`, `/api/v1/invitations/*`, `/api/v1/api-keys/*`, `/api/v1/integrations/*`) are
-their own routers and aren't detailed below — one exception follows, since it's
+profile, API-key, suppression-list, and integration-credential management
+(`/api/v1/organisations/*`, `/api/v1/me`, `/api/v1/invitations/*`, `/api/v1/api-keys/*`,
+`/api/v1/suppressions/*`, `/api/v1/integrations/*`) are their own routers and aren't
+detailed below — one exception follows, since it's
 new and load-bearing for the mandatory onboarding gate described in §3/§12. All bodies JSON.
 
 **`POST /api/v1/organisations/me/complete-onboarding`** — requires `Permission.ORG_UPDATE`.
@@ -588,15 +590,15 @@ started run and a ringing phone.
 The rate limiter **reserves slots at check time** so concurrent requests cannot both pass,
 and exposes `release()` for a run that fails before dialling.
 
-**Suppression is checked, but nothing writes to the list yet.** `check_dial_allowed` takes
-`is_suppressed` as a plain boolean and denies the dial if true (`ISSUES.md` #3, dial-path
-half closed) — this is real, since `POST /api/v1/runs` resolves it against the org's actual
-`public.suppressions` table before every run. But `database/repositories/suppressions.py`'s
-`add_suppression()` has no caller anywhere in the app: there is no `/api/v1/suppressions`
-route, and a `do_not_call` disposition does not automatically insert a row. In practice the
-table can currently only be populated by a direct database write. The frontend's "Contacts"
-page suppression toggle is a **separate, disconnected** `localStorage` list — adding a
-number there does not touch the real table the dial path checks.
+**Suppression is checked and has a real write path.** `check_dial_allowed` takes
+`is_suppressed` as a plain boolean and denies the dial if true — `POST /api/v1/runs`
+resolves it against the org's actual `public.suppressions` table before every run.
+`GET/POST /api/v1/suppressions` and `DELETE /api/v1/suppressions/{id}` (`ISSUES.md` #3,
+now fixed) let a person actually populate that table: the "Contacts" page's suppression
+tab calls these directly, replacing the old disconnected `localStorage` list. Adding
+requires `operator` or above; removing (making someone callable again) is owner-only,
+matching the table's RLS policy. Still missing: a `do_not_call` triage disposition does
+not yet auto-insert a row — today someone has to add the number by hand after the call.
 
 **Required by `FEATURES.md` F19 but missing:** calling-window enforcement · credit-balance
 check · consent flag.
@@ -779,9 +781,8 @@ Consistent with `web/DESIGN_NOTES.md` §5.
 | Dashboard, runs, escalations, contacts, ⌘K search | **Real** — derived from hydrated runs |
 | Safety pane, voice-API-key status, status page, credit balance | **Real** — from `/api/health` |
 | Campaign editor (name, goal, fields, region, language) | **Real** |
-| Organisation setup gate, team, API keys, Integrations (credential storage), Billing (plan + usage) | **Real** — see §3. Integrations doesn't yet place a call over a connected number; Billing has no payment processor |
+| Organisation setup gate, team, API keys, Integrations (credential storage), Billing (plan + usage), Suppression list | **Real** — see §3. Integrations doesn't yet place a call over a connected number; Billing has no payment processor |
 | Calling window, retry policy, onboarding progress | **Local only** — `localStorage` |
-| Suppression list *(the "Contacts" page toggle)* | **Local only** — a `localStorage` list disconnected from the real, org-scoped table the dial path now checks (§7) |
 | Numbers, notifications, webhooks | **Not wired** — validate then say so |
 
 The governing rule, applied throughout: **never show a success state for something that
