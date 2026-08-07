@@ -11,49 +11,40 @@ import { SectionHeading } from "@/components/ui/panel";
 import { Reveal, RevealGroup, RevealItem } from "@/components/ui/reveal";
 
 /**
- * The six capabilities.
- *
- * Every line names something the operator controls or receives, never how the system is
- * built — "returns schema-validated data", not "calls a structured extraction endpoint".
- * One icon set, one stroke weight, and no colour: these are capabilities, not call
- * states, so they get none of the lamp palette.
+ * The six capabilities — one line each. Every line names something the operator
+ * controls or receives, never how the system is built. One icon set, one stroke
+ * weight, no colour: these are capabilities, not call states.
  */
-const CAPABILITIES: { icon: Icon; title: string; body: string; detail: string }[] = [
+const CAPABILITIES: { icon: Icon; title: string; body: string }[] = [
   {
     icon: SlidersIcon,
     title: "Goal-driven, not scripted",
-    body: "Write an objective in plain English. The agent improvises and adapts when people go off-script.",
-    detail: "No call trees, no branching scripts to maintain.",
+    body: "Write the objective in plain English. The agent adapts when people go off-script.",
   },
   {
     icon: TableIcon,
     title: "Typed results, not transcripts",
-    body: "Every call returns schema-validated data — outcome, sentiment, and your own fields — ready for your systems.",
-    detail: "You define the fields; they come back the same shape every time.",
+    body: "Every call returns schema-validated data — outcome, sentiment, and your own fields.",
   },
   {
     icon: UserSoundIcon,
     title: "Knows when to back off",
-    body: "Frustration and opt-outs go to a person. Bad timing is queued for a polite retry instead.",
-    detail: "A bad time isn't a bad mood — and the difference is in your data.",
+    body: "Frustration and opt-outs reach a person; bad timing is queued for a polite retry.",
   },
   {
     icon: ShieldCheckIcon,
     title: "Safe by default",
-    body: "An allowlist and a per-run ceiling stop accidental calls, and every run is validated before it dials.",
-    detail: "Every guard fails closed, and every guard is visible before you start.",
+    body: "An allowlist and a per-run ceiling stop accidental calls. Every run validates first.",
   },
   {
     icon: ClockIcon,
     title: "Runs while you sleep",
-    body: "Campaigns work through evenings and weekends, inside the calling window you set.",
-    detail: "Your team reads outcomes in the morning.",
+    body: "Campaigns work evenings and weekends, inside the window you set.",
   },
   {
     icon: PhoneCallIcon,
     title: "Real conversations",
-    body: "Dialling, speech, turn-taking, voicemail, and IVR are handled end to end.",
-    detail: "There's no telephony stack for you to maintain.",
+    body: "Dialling, speech, turn-taking, voicemail, and IVR — handled end to end.",
   },
 ];
 
@@ -64,12 +55,12 @@ export function CapabilityGrid() {
         <SectionHeading
           eyebrow="What you get"
           title="An operations layer, not a robocall dialler."
-          sub="Six things that make the difference between a tool your team uses every day and one they abandon in a fortnight."
+          sub="The difference between a tool your team keeps and one they abandon in a fortnight."
         />
       </Reveal>
 
       <RevealGroup className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {CAPABILITIES.map(({ icon: IconComponent, title, body, detail }) => (
+        {CAPABILITIES.map(({ icon: IconComponent, title, body }) => (
           <RevealItem key={title} className="flex">
             <div className="surface-flow group flex h-full flex-col gap-3 p-5 shadow-sm transition-[box-shadow,transform] duration-(--dur-base) ease-(--ease-out) hover:-translate-y-0.5 hover:shadow-md">
               <span className="flex size-10 items-center justify-center rounded-lg bg-surface-sunken text-text-dim transition-colors duration-(--dur-base) group-hover:text-text">
@@ -78,9 +69,6 @@ export function CapabilityGrid() {
 
               <h3 className="text-h4 font-medium text-text">{title}</h3>
               <p className="text-small text-text-dim">{body}</p>
-
-              <div className="seam-x mt-auto" />
-              <p className="text-small text-text-mute">{detail}</p>
             </div>
           </RevealItem>
         ))}

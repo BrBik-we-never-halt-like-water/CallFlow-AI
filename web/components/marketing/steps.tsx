@@ -17,25 +17,25 @@ const STEPS = [
   {
     n: "01",
     title: "Load your contacts",
-    body: "Paste them in or drop a CSV. Every row is validated before anything is dialled.",
+    body: "Paste them in or drop a CSV. Every row is validated before anything dials.",
     panel: <ContactsPanel />,
   },
   {
     n: "02",
     title: "Choose a campaign",
-    body: "Use a starter template or write your own goal and pick exactly which fields to extract.",
+    body: "Start from a template or write your own goal, and pick the fields to extract.",
     panel: <CampaignPanel />,
   },
   {
     n: "03",
     title: "Run it",
-    body: "Rows are validated and the guards checked before anything dials. Results arrive as each call ends.",
+    body: "Guards are checked, then it dials. Results arrive as each call ends.",
     panel: <RunPanel />,
   },
   {
     n: "04",
     title: "Triage what matters",
-    body: "Clean outcomes close themselves. Only frustration, opt-outs, and requests for a person reach your team.",
+    body: "Clean outcomes close themselves. Only the calls that need a person reach your team.",
     panel: <TriagePanel />,
   },
 ];

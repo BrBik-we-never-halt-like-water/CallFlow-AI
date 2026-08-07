@@ -56,38 +56,32 @@ const GUARDS_EXPLAINED = [
   {
     name: "Validation first",
     behaviour: "Before any dial",
-    detail:
-      "Every run validates the rows and walks the safety gates before a single number is dialled — a row that fails is skipped and says why. Starting a run takes a deliberate confirmation that shows you the contact count, the credit estimate, and the window.",
+    detail: "Every run validates rows and walks the gates before dialling; a failing row is skipped and says why.",
   },
   {
     name: "Allowlist",
     behaviour: "Fails closed",
-    detail:
-      "While the allowlist has anything on it, those are the only numbers that can be reached. A contact that is not on it is skipped before the call is placed, and the row says so.",
+    detail: "With anything on it, those are the only numbers that can be reached. Everything else is skipped.",
   },
   {
     name: "Per-run ceiling",
     behaviour: "Hard stop",
-    detail:
-      "A run cannot place more real calls than the ceiling, no matter how long the list is. It stops and tells you it stopped, rather than quietly working through five hundred rows.",
+    detail: "A run can't place more calls than the ceiling. It stops and tells you, however long the list.",
   },
   {
     name: "Rate limit",
     behaviour: "Paced",
-    detail:
-      "Calls go out at a set rate per hour. The point is not throughput; it is that a run should reach people at a human rhythm.",
+    detail: "Calls go out at a set rate per hour, so a run reaches people at a human rhythm.",
   },
   {
     name: "Calling window",
     behaviour: "Queued outside hours",
-    detail:
-      "Outside the window nothing is dialled. Contacts wait for the next opening, which is also why a bad time is queued for retry instead of counted as a bad outcome.",
+    detail: "Outside the window nothing dials; contacts wait for the next opening.",
   },
   {
     name: "Suppression list",
     behaviour: "Permanent, global",
-    detail:
-      "Anyone who asks not to be called again is added automatically and is never dialled by any campaign, ever. It is not per-campaign and it cannot be overridden from a run.",
+    detail: "Anyone who opts out is added automatically and never dialled again, by any campaign.",
   },
 ];
 
@@ -98,7 +92,7 @@ export function SafetySection() {
         <SectionHeading
           eyebrow="Safety"
           title="The guards fail closed."
-          sub="CallFlow places real phone calls, so every guard is on until you deliberately turn it off — and each one is visible on the screen where you start a run."
+          sub="Real calls go out, so every guard is on by default — and visible right where you start a run."
         />
       </Reveal>
 
