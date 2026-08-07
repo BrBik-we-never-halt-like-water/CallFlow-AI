@@ -52,6 +52,9 @@ exist in this repo**; `SYSTEM.md` §12 is the closest real gap map until it's wr
 | [#22](#22--half-the-real-runtime-dependencies-were-undeclared-in-pyprojecttoml) | S2 | Half the real runtime dependencies were undeclared in `pyproject.toml` | backend | it-4 | **FIXED** |
 | [#23](#23--root-envexample-still-had-callflow_dry_run-and-no-supabase-config-at-all) | S2 | Root `.env.example` still had `CALLFLOW_DRY_RUN` and no Supabase config at all | config | it-4 | **FIXED** |
 | [#24](#24--featuresmd-does-not-exist) | S3 | `FEATURES.md` does not exist | docs | it-4 | OPEN |
+| [#25](#25--editing-a-campaign-silently-created-a-duplicate) | S1 | Editing a campaign silently created a duplicate | backend + web | it-5 | **FIXED** |
+| [#26](#26--the-run-composers-window-guard-chip-reintroduced-an-already-fixed-false-claim) | S2 | The run composer's Window guard chip reintroduced an already-fixed false claim | web | it-5 | **FIXED** |
+| [#27](#27--the-required-field-checkbox-had-no-effect-on-the-schema-sent-to-the-engine) | S3 | The "Required" field checkbox had no effect on the schema sent to the engine | backend + web | it-5 | **FIXED** |
 
 ---
 
@@ -568,6 +571,88 @@ doesn't exist and fold §12's gap map into being the canonical target-state docu
 instead. Noted at the top of `SYSTEM.md`, in `CLAUDE.md`'s document map, and in this
 file's own header so nobody trusts an `F<n>` reference as pointing to a real file
 until one of these happens.
+
+---
+
+## Iteration 5 — 2026-08-07 · dashboard revamp: honesty and wiring sweep
+
+Findings from a systematic pass over the remaining `/app/*` pages, tracing every button
+to what it actually calls, prompted by user feedback that the dashboard needed to "look
+good" and be trustworthy before launch. Two more instances of the calling-window shape
+turned up (#20, #3) plus one genuine data-integrity bug.
+
+### #25 — Editing a campaign silently created a duplicate
+**S1 · FIXED · backend + web · `app/api/v1/routes/campaigns.py`, `web/components/app/campaign-editor.tsx`**
+
+The campaigns list's "Edit" menu item opened `/app/campaigns/{id}` with the full editor
+unlocked for any non-template campaign (`campaign-editor.tsx`, `readOnly =
+existing?.built_in`). Its `save()` unconditionally called `api.createCampaign(...)`
+regardless of whether an existing campaign was being edited. No `PATCH`/`PUT` route
+existed on the backend at all — `create_campaign` always slugifies the name into a new
+id and inserts a new row.
+
+**Impact.** Opening a real campaign via "Edit," changing something, and clicking "Save
+campaign" created a second, independent campaign with a new id and left the original
+completely unchanged — while the toast said "Campaign saved," implying the edit had
+taken effect. A person who edited a goal template to fix a mistake would keep running
+the old, broken campaign without realising it, since the run composer's campaign picker
+now shows both and nothing distinguishes "the one you just edited" from "the original."
+
+**Fix.** Added `PATCH /api/v1/campaigns/{campaign_id}` (`Permission.CAMPAIGNS_WRITE`,
+same validation as `POST`, id/slug never changes so existing runs keep pointing at the
+right campaign) and `campaigns_repo.update_campaign()`. No migration needed — the
+`campaigns_write` RLS policy was already `for all` (insert/update/delete), so the
+database side of this was ready and unused, same shape as #3's suppression permissions.
+`campaign-editor.tsx`'s `save()` now branches: `PATCH` when editing an existing,
+non-built-in campaign, `POST` otherwise.
+
+### #26 — The run composer's Window guard chip reintroduced an already-fixed false claim
+**S2 · FIXED · web · `web/app/(app)/app/runs/new/page.tsx`, `web/components/app/safety-bar.tsx`**
+
+`safety-bar.tsx`'s `guardsFromHealth()` was fixed earlier this iteration (see #20) to
+report the "Window" guard as `null`/OFF, since calling-hour enforcement doesn't exist in
+`check_dial_allowed()`. `runs/new/page.tsx` built its `guards` list by taking that
+honest result and then unconditionally overwriting the window guard's `value` with the
+selected campaign's locally-stored window (`loadLocalSettings`), rendering it in the
+normal "active" chip style with a concrete time range and a popover claiming "Calls are
+only placed inside this window... queued for the next opening rather than dialled."
+
+**Impact.** The exact false claim #20 fixed in one file was still live in the one place
+an operator looks immediately before starting a real run — the safety bar on the run
+composer itself.
+
+**Fix.** Removed the override; the composer now renders `guardsFromHealth(health)`
+directly, same as everywhere else. Also fixed `safety-bar.tsx`'s own `explanation` text
+for the window guard, which I'd missed when fixing #20 — the value had been changed to
+`null` but the explanation still asserted the window was enforced, contradicting the
+"this guard is off" caveat rendered directly below it in the same popover.
+
+**Depends on:** #20 (fixed).
+
+### #27 — The "Required" field checkbox had no effect on the schema sent to the engine
+**S3 · FIXED · backend + web · `app/domain/result_schemas.py`, `app/api/v1/routes/campaigns.py`, `web/lib/campaign-fields.ts`**
+
+The campaign editor's per-field "Required" checkbox is labelled "the call isn't complete
+without it," and the live schema preview shown beside the form added the field to a
+`required` array to match. `toWireFields()` never sent that flag, `FieldIn` had no
+`required` property, and `build_result_schema()` always used a hardcoded
+`BASE_REQUIRED` — so the checkbox's only real effect was a wording change in the
+description text sent to the engine ("Leave it null if the contact didn't say."), not
+the structural schema constraint the UI implied.
+
+**Fix.** Threaded `required` end to end: `CampaignField.required` (wire type) →
+`FieldIn.required` → collected into a list in `_validate_and_build_fields()` →
+`build_result_schema(properties, extra_required)`, appended to `BASE_REQUIRED` rather
+than replacing it, so a campaign can never make triage's own fields optional. Both
+`POST` and the new `PATCH` (#25) pass it through.
+
+**Known remaining gap, not blocking:** the editor reloads an existing campaign's fields
+from `outcome_fields: dict[str, str]` (description only) — type, `required`, and enum
+options are not persisted per-field today, so re-opening a saved campaign shows every
+field as a generic, optional string regardless of how it was configured. Fixing that
+needs `outcome_fields` (or a new column) to carry structured per-field metadata, not
+just descriptions — a real gap, but pre-existing and separate from this fix, which is
+about what a *new* save sends going forward.
 
 ---
 

@@ -58,6 +58,7 @@ export function toWireFields(fields: EditorField[]): CampaignField[] {
       key: field.key.trim(),
       type: toWireType(field.type),
       description: describeForExtraction(field),
+      required: field.required,
     }));
 }
 

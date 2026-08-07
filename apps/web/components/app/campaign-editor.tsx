@@ -165,15 +165,19 @@ export function CampaignEditor({ existing }: { existing?: Campaign }) {
     if (blocker) return;
     setSaving(true);
     try {
-      const created = await api.createCampaign({
+      const draft = {
         name: name.trim(),
         goal_template: goal,
         extra_fields: toWireFields(fields),
         region,
         language,
         escalate_on_negative: settings.escalateOnNegative,
-      });
-      saveLocalSettings(created.id, settings);
+      };
+      const saved =
+        existing && !existing.built_in
+          ? await api.updateCampaign(existing.id, draft)
+          : await api.createCampaign(draft);
+      saveLocalSettings(saved.id, settings);
       toast({ tone: "success", title: "Campaign saved" });
       router.push("/app/campaigns");
     } catch (error) {

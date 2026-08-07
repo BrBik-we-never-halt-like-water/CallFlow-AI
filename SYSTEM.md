@@ -96,7 +96,7 @@ What a user can actually do, which endpoint it hits, and what survives a restart
 
 | Feature area | User actions available | Endpoint(s) | Persists? |
 |---|---|---|---|
-| **Campaigns** | List, create (name + goal + extraction fields), duplicate, delete, live goal/schema preview | `GET/POST /api/v1/campaigns`, `DELETE /api/v1/campaigns/{id}` | ✅ org-scoped Postgres row (built-ins stay Python constants) |
+| **Campaigns** | List, create, edit in place (name + goal + extraction fields, id/slug never changes), duplicate, delete, live goal/schema preview | `GET/POST /api/v1/campaigns`, `PATCH/DELETE /api/v1/campaigns/{id}` | ✅ org-scoped Postgres row (built-ins stay Python constants) |
 | **Goal preview** | Render the goal per contact — free, no dialling | `POST /api/v1/campaigns/preview` (authenticated; currently unused by any UI — the editor and run composer render locally, see §5) | n/a (stateless) |
 | **Contacts (in a run)** | Paste, CSV drop, manual grid entry, per-row E.164 validation, remove-all-invalid | none — client-side only, sent inline with the run | ❌ never stored |
 | **Runs** | Start (always live), watch live, open a call's transcript, export CSV | `POST /api/v1/runs`, `GET /api/v1/runs`, `GET /api/v1/runs/{id}` | ✅ org-scoped Postgres, updated as each call resolves |
@@ -146,7 +146,7 @@ Legend: ✅ persists · ⚠️ persists locally/partially · ❌ lost on restart
 | `domain/campaigns.py` | 2 built-in constants + `slugify()`. **No runtime registry anymore** — custom campaigns are real rows, resolved through the repository above | `TRAVEL_DISCOVERY`, `APPOINTMENT_REMINDER`, `REGISTRY`, `SCHEMAS`, `BUILT_IN_IDS`, `FIELD_TYPES`, `slugify()` |
 | `domain/api_keys.py` | Generating and hashing CallFlow API keys. Pure — no I/O, no database | `generate_api_key()`, `hash_api_key()`, `looks_like_api_key()` |
 | `services/campaign_runner.py` | Per-contact pipeline — **fully `async def`**, using `asyncio.to_thread()` for the still-synchronous voice SDK | `CampaignRunner`, `render_goal()` |
-| `api/v1/routes/campaigns.py` | `/api/v1/campaigns` — list/create/delete/preview, org-scoped | `router`, `resolve_campaign()` |
+| `api/v1/routes/campaigns.py` | `/api/v1/campaigns` — list/create/update/delete/preview, org-scoped | `router`, `resolve_campaign()` |
 | `api/v1/routes/runs.py` | `/api/v1/runs` — start/list/get, org-scoped, background execution | `router` |
 | `api/v1/routes/suppressions.py` | `/api/v1/suppressions` — list/add/remove the org's do-not-call list. Add is operator+, remove is owner-only, matching the RLS policy | `router` |
 | `api/v1/routes/api_keys.py` | `/api/v1/api-keys` — list/create/revoke, org-scoped, owner/admin only | `router` |
@@ -290,6 +290,7 @@ Requires `Permission.CAMPAIGNS_WRITE` (operator role or above).
 | `goal_template` ≥ 40 chars | Pydantic **and** an explicit re-check with a friendlier message |
 | `extra_fields[].key` 1–40 chars | Pydantic |
 | `extra_fields[].type` ∈ `{string, boolean, integer, number}` | Handler, 400 listing the valid set |
+| `extra_fields[].required` | Appended to the schema's `required` array alongside `BASE_REQUIRED` (`domain/result_schemas.py`) — a field marked required in the editor is actually required in the schema sent to the engine, not just a description hint |
 
 → `201` the created campaign (same shape as the list) · `400` bad field type · `400` goal too short
 
@@ -299,6 +300,21 @@ The id is slugified from the name with a numeric suffix on collision, checked ag
 a campaign called "Holiday enquiry follow-up" with the same id, and neither collides with
 the other (`org_id` scopes everything). Keys are slugified to `snake_case`; a key that
 slugifies to empty is silently dropped.
+
+### `PATCH /api/v1/campaigns/{campaign_id}`
+
+Requires `Permission.CAMPAIGNS_WRITE`. Same body and validation as `POST`. The id/slug
+never changes on update, only the row's content — so existing runs that reference this
+`campaign_id` keep pointing at the right campaign after an edit.
+
+→ `200` the updated campaign · `400` if built-in ("Built-in campaigns cannot be edited.")
+· `404` unknown or belongs to another organisation
+
+Before this route existed, the campaign editor's "Edit" entry point called the same
+`createCampaign` the "New campaign" button used — so editing a real campaign silently
+created a second, independent one and left the original untouched, while the toast said
+"Campaign saved." Fixed by adding this route and branching the frontend's `save()` on
+whether `existing` is set.
 
 ### `DELETE /api/v1/campaigns/{campaign_id}`
 Requires `Permission.CAMPAIGNS_DELETE`.

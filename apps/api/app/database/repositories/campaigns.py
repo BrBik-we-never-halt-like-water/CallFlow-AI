@@ -74,6 +74,42 @@ async def create_campaign(
     )
 
 
+async def update_campaign(
+    conn: asyncpg.Connection,
+    *,
+    org_id: UUID,
+    campaign_id: str,
+    name: str,
+    goal_template: str,
+    outcome_fields: dict[str, str],
+    result_schema: dict[str, Any],
+    region: str | None,
+    language: str | None,
+    escalate_on_negative: bool,
+) -> asyncpg.Record | None:
+    """The id/slug never changes on update — only what a run reads."""
+    return await conn.fetchrow(
+        """
+        update public.campaigns
+        set name = $3, goal_template = $4, outcome_fields = $5::jsonb,
+            result_schema = $6::jsonb, region = $7, language = $8,
+            escalate_on_negative = $9
+        where org_id = $1 and id = $2
+        returning id, name, goal_template, outcome_fields, result_schema, region, language,
+                  escalate_on_negative, created_at
+        """,
+        org_id,
+        campaign_id,
+        name,
+        goal_template,
+        outcome_fields,
+        result_schema,
+        region,
+        language,
+        escalate_on_negative,
+    )
+
+
 async def delete_campaign(conn: asyncpg.Connection, org_id: UUID, campaign_id: str) -> str | None:
     return await conn.fetchval(
         "delete from public.campaigns where org_id = $1 and id = $2 returning id",

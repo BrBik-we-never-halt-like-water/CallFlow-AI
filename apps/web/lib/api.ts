@@ -73,6 +73,7 @@ export interface CampaignField {
   key: string;
   type: FieldType;
   description: string;
+  required?: boolean;
 }
 
 export interface CampaignDraft {
@@ -316,6 +317,11 @@ export const api = {
   createCampaign: (draft: CampaignDraft) =>
     authReq<Campaign>("/api/v1/campaigns", {
       method: "POST",
+      body: JSON.stringify(draft),
+    }),
+  updateCampaign: (id: string, draft: CampaignDraft) =>
+    authReq<Campaign>(`/api/v1/campaigns/${id}`, {
+      method: "PATCH",
       body: JSON.stringify(draft),
     }),
   deleteCampaign: (id: string) =>

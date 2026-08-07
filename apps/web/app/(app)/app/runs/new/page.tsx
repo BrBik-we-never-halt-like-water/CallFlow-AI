@@ -14,7 +14,6 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { useToast } from "@/components/ui/toast";
 import { api } from "@/lib/api";
 import { useAppStore } from "@/lib/app-store";
-import { loadLocalSettings } from "@/lib/campaign-draft";
 import { renderGoalPreview } from "@/lib/campaign-fields";
 import { toContactInputs, type ParsedRow } from "@/lib/contacts";
 
@@ -68,23 +67,7 @@ function RunComposer() {
   const validRows = useMemo(() => rows.filter((r) => r.valid), [rows]);
   const contacts = useMemo(() => toContactInputs(rows), [rows]);
 
-  const settings = useMemo(
-    () => (campaignId ? loadLocalSettings(campaignId) : loadLocalSettings("")),
-    [campaignId],
-  );
-
-  const guards = useMemo(() => {
-    const base = guardsFromHealth(health);
-    // Reflect this campaign's own window rather than the organisation default.
-    return base.map((guard) =>
-      guard.id === "window"
-        ? {
-            ...guard,
-            value: `${settings.window.start}–${settings.window.end} ${shortZone(settings.window.timezone)}`,
-          }
-        : guard,
-    );
-  }, [health, settings]);
+  const guards = useMemo(() => guardsFromHealth(health), [health]);
 
   const ceiling = health?.max_calls_per_run ?? null;
   const overCeiling = ceiling !== null && validRows.length > ceiling;
@@ -288,19 +271,4 @@ function Estimate({
       </dd>
     </div>
   );
-}
-
-/** `Asia/Kolkata` → `IST`, for the mono guard chips. */
-function shortZone(timezone: string): string {
-  const map: Record<string, string> = {
-    "Asia/Kolkata": "IST",
-    "Asia/Dubai": "GST",
-    "Europe/London": "GMT",
-    "Europe/Berlin": "CET",
-    "America/New_York": "ET",
-    "America/Los_Angeles": "PT",
-    "Asia/Singapore": "SGT",
-    "Australia/Sydney": "AEST",
-  };
-  return map[timezone] ?? timezone.split("/")[1]?.replace(/_/g, " ") ?? timezone;
 }

@@ -44,13 +44,22 @@ BASE_PROPERTIES: JsonObject = {
 BASE_REQUIRED = ["outcome", "sentiment", "frustration_signals", "summary"]
 
 
-def build_result_schema(extra_properties: JsonObject | None = None) -> JsonObject:
-    """Compose a campaign-specific schema on top of the shared triage fields."""
+def build_result_schema(
+    extra_properties: JsonObject | None = None,
+    extra_required: list[str] | None = None,
+) -> JsonObject:
+    """Compose a campaign-specific schema on top of the shared triage fields.
+
+    `extra_required` is a campaign's own fields marked required in the editor —
+    appended rather than replacing `BASE_REQUIRED`, so a campaign can never make
+    triage's own fields optional.
+    """
     properties = {**BASE_PROPERTIES, **(extra_properties or {})}
+    required = [*BASE_REQUIRED, *(extra_required or [])]
     return {
         "type": "object",
         "properties": properties,
-        "required": BASE_REQUIRED,
+        "required": required,
     }
 
 

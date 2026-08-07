@@ -134,7 +134,7 @@ export function guardsFromHealth(health: Health | null): Guard[] {
       // and renders exactly like any other guard the service can't confirm.
       value: null,
       explanation:
-        "Calls are only placed inside this window. A contact reached outside it is queued for the next opening rather than dialled.",
+        "Restricting calls to certain hours isn't enforced yet — a run can dial at any time of day until this ships.",
       settingsHref: "/app/settings/safety",
     },
   ];

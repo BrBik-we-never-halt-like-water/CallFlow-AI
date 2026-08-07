@@ -25,6 +25,7 @@ class FieldIn(BaseModel):
     key: str = Field(min_length=1, max_length=40)
     type: str = "string"
     description: str = ""
+    required: bool = False
 
 
 class CampaignIn(BaseModel):
@@ -110,11 +111,9 @@ async def list_campaigns(
     return [_built_in_json(c) for c in REGISTRY.values()] + [_row_json(r) for r in rows]
 
 
-@router.post("", response_model=CampaignOut, status_code=status.HTTP_201_CREATED)
-async def create_campaign(
+def _validate_and_build_fields(
     body: CampaignIn,
-    user: Annotated[CurrentUser, Depends(RequirePermission(Permission.CAMPAIGNS_WRITE))],
-) -> CampaignOut:
+) -> tuple[dict[str, Any], dict[str, str], list[str]]:
     bad = [f.type for f in body.extra_fields if f.type not in FIELD_TYPES]
     if bad:
         raise HTTPException(
@@ -132,6 +131,7 @@ async def create_campaign(
 
     properties: dict[str, Any] = {}
     outcome_fields: dict[str, str] = {}
+    required: list[str] = []
     for field in body.extra_fields:
         key = slugify(field.key).replace("-", "_")
         if not key:
@@ -140,6 +140,17 @@ async def create_campaign(
         description = field.description.strip() or f"The contact's {key.replace('_', ' ')}."
         properties[key] = {"type": ftype, "description": description}
         outcome_fields[key] = description
+        if field.required:
+            required.append(key)
+    return properties, outcome_fields, required
+
+
+@router.post("", response_model=CampaignOut, status_code=status.HTTP_201_CREATED)
+async def create_campaign(
+    body: CampaignIn,
+    user: Annotated[CurrentUser, Depends(RequirePermission(Permission.CAMPAIGNS_WRITE))],
+) -> CampaignOut:
+    properties, outcome_fields, required = _validate_and_build_fields(body)
 
     async with database.as_user(user.auth_user_id) as conn:
         existing = await campaigns_repo.list_org_campaigns(conn, user.org_id)
@@ -159,10 +170,44 @@ async def create_campaign(
             name=body.name.strip(),
             goal_template=body.goal_template.strip(),
             outcome_fields=outcome_fields,
-            result_schema=build_result_schema(properties),
+            result_schema=build_result_schema(properties, required),
             region=body.region,
             language=body.language,
             escalate_on_negative=body.escalate_on_negative,
+        )
+    return _row_json(row)
+
+
+@router.patch("/{campaign_id}", response_model=CampaignOut)
+async def update_campaign(
+    campaign_id: str,
+    body: CampaignIn,
+    user: Annotated[CurrentUser, Depends(RequirePermission(Permission.CAMPAIGNS_WRITE))],
+) -> CampaignOut:
+    if campaign_id in BUILT_IN_IDS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Built-in campaigns cannot be edited. Duplicate it to make changes.",
+        )
+
+    properties, outcome_fields, required = _validate_and_build_fields(body)
+
+    async with database.as_user(user.auth_user_id) as conn:
+        row = await campaigns_repo.update_campaign(
+            conn,
+            org_id=user.org_id,
+            campaign_id=campaign_id,
+            name=body.name.strip(),
+            goal_template=body.goal_template.strip(),
+            outcome_fields=outcome_fields,
+            result_schema=build_result_schema(properties, required),
+            region=body.region,
+            language=body.language,
+            escalate_on_negative=body.escalate_on_negative,
+        )
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=f"Unknown campaign: {campaign_id}"
         )
     return _row_json(row)
 
