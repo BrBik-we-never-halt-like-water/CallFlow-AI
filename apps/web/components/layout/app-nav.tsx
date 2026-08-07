@@ -4,16 +4,34 @@ import type { Icon } from "@phosphor-icons/react";
 import {
   AddressBookIcon,
   BroadcastIcon,
+  CaretUpDownIcon,
+  CheckIcon,
   GaugeIcon,
   GearSixIcon,
   MegaphoneIcon,
+  PlusIcon,
   SidebarSimpleIcon,
   UserFocusIcon,
 } from "@phosphor-icons/react/dist/ssr";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useState } from "react";
 import { cn } from "@/lib/cn";
+import { CreateOrgDialog } from "@/components/app/create-org-dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Tag } from "@/components/ui/badge";
 import { Tooltip } from "@/components/ui/tooltip";
+import { useToast } from "@/components/ui/toast";
+import { useActiveOrg } from "@/lib/hooks/use-active-org";
+import { useOrganisations } from "@/lib/hooks/use-organisations";
+import type { SessionProfile } from "@/lib/hooks/use-session";
 
 export interface NavItem {
   label: string;
@@ -44,12 +62,14 @@ export function AppNav({
   collapsed,
   onToggleCollapsed,
   escalationCount,
-  orgName,
+  profile,
+  refreshSession,
 }: {
   collapsed: boolean;
   onToggleCollapsed: () => void;
   escalationCount: number;
-  orgName: string | null;
+  profile: SessionProfile | null;
+  refreshSession: () => void;
 }) {
   const pathname = usePathname() ?? "";
 
@@ -62,7 +82,7 @@ export function AppNav({
         collapsed ? "w-(--w-app-nav-collapsed)" : "w-(--w-app-nav)",
       )}
     >
-      <OrgSwitcher collapsed={collapsed} orgName={orgName} />
+      <OrgSwitcher collapsed={collapsed} profile={profile} refreshSession={refreshSession} />
 
       <ul className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto p-2">
         {NAV_ITEMS.map((item) => {
@@ -146,35 +166,130 @@ export function AppNav({
   );
 }
 
+/**
+ * The one real place to switch, create, or manage organisations.
+ *
+ * This used to be a static display (name only, no dropdown), while the actual
+ * switcher lived in the header and a third copy of it lived inside the user's
+ * account menu — three controls for one job, none of them labelled clearly
+ * enough to tell apart. This is the only one now, in the spot every workspace
+ * switcher in a B2B dashboard lives: top of the sidebar.
+ */
 function OrgSwitcher({
   collapsed,
-  orgName,
+  profile,
+  refreshSession,
 }: {
   collapsed: boolean;
-  orgName: string | null;
+  profile: SessionProfile | null;
+  refreshSession: () => void;
 }) {
-  const label = orgName ?? "Loading…";
+  const toast = useToast();
+  const { orgs, refresh: refreshOrgs } = useOrganisations(profile);
+  const [, setActiveOrgId] = useActiveOrg();
+  const [creating, setCreating] = useState(false);
+
+  const label = profile?.active.org_name ?? "Loading…";
+
+  if (!profile) {
+    return (
+      <div className="border-b border-rule p-2">
+        <div
+          className={cn(
+            "flex h-10 items-center gap-2.5 rounded-sm px-2.5",
+            collapsed && "justify-center px-0",
+          )}
+        >
+          <span className="flex size-6 shrink-0 items-center justify-center rounded-xs border border-rule bg-surface-sunken" />
+          {!collapsed ? <span className="h-3.5 flex-1 rounded-xs bg-surface-sunken" /> : null}
+        </div>
+      </div>
+    );
+  }
+
+  function switchOrg(orgId: string) {
+    if (orgId === profile?.active.org_id) return;
+    setActiveOrgId(orgId);
+    refreshSession();
+  }
+
+  const list = orgs ?? [
+    {
+      id: profile.active.org_id,
+      name: profile.active.org_name,
+      slug: profile.active.org_slug,
+      logo_url: profile.active.org_logo_url,
+      role: profile.active.role,
+    },
+  ];
+
   return (
     <div className="border-b border-rule p-2">
-      <button
-        type="button"
-        className={cn(
-          "flex h-10 w-full cursor-pointer items-center gap-2.5 rounded-sm px-2.5",
-          "text-small transition-colors hover:bg-surface-hover",
-          collapsed && "justify-center px-0",
-        )}
-      >
-        {/* Initial rather than a logo: an organisation that has not uploaded one gets a
-            consistent mark instead of a broken image. */}
-        <span className="flex size-6 shrink-0 items-center justify-center rounded-xs border border-rule bg-surface-sunken font-mono text-label text-text">
-          {label.charAt(0).toUpperCase()}
-        </span>
-        {!collapsed ? (
-          <span className="min-w-0 flex-1 truncate text-left font-medium text-text">
-            {label}
-          </span>
-        ) : null}
-      </button>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            aria-label={`Switch organisation — currently ${label}`}
+            className={cn(
+              "flex h-10 w-full cursor-pointer items-center gap-2.5 rounded-sm px-2.5",
+              "text-small transition-colors hover:bg-surface-hover",
+              collapsed && "justify-center px-0",
+            )}
+          >
+            {/* Initial rather than a logo: an organisation that has not uploaded one gets a
+                consistent mark instead of a broken image. */}
+            <span className="flex size-6 shrink-0 items-center justify-center rounded-xs border border-rule bg-surface-sunken font-mono text-label text-text">
+              {label.charAt(0).toUpperCase()}
+            </span>
+            {!collapsed ? (
+              <>
+                <span className="min-w-0 flex-1 truncate text-left font-medium text-text">
+                  {label}
+                </span>
+                <CaretUpDownIcon aria-hidden className="size-3.5 shrink-0 text-text-mute" />
+              </>
+            ) : null}
+          </button>
+        </DropdownMenuTrigger>
+
+        <DropdownMenuContent align="start" className="min-w-64">
+          <DropdownMenuLabel>Organisations</DropdownMenuLabel>
+          {list.map((org) => (
+            <DropdownMenuItem key={org.id} onSelect={() => switchOrg(org.id)}>
+              {org.id === profile.active.org_id ? (
+                <CheckIcon aria-hidden weight="bold" className="size-4 shrink-0" />
+              ) : (
+                <span className="size-4 shrink-0" aria-hidden />
+              )}
+              <span className="min-w-0 flex-1 truncate">{org.name}</span>
+              <Tag>{org.role}</Tag>
+            </DropdownMenuItem>
+          ))}
+
+          <DropdownMenuSeparator />
+
+          <DropdownMenuItem onSelect={() => setCreating(true)}>
+            <PlusIcon aria-hidden className="size-4" />
+            New organisation
+          </DropdownMenuItem>
+          <DropdownMenuItem>
+            <Link href="/app/settings" className="flex flex-1 items-center gap-2">
+              <GearSixIcon aria-hidden className="size-4" />
+              Organisation settings
+            </Link>
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+
+      <CreateOrgDialog
+        open={creating}
+        onOpenChange={setCreating}
+        onCreated={(org) => {
+          refreshOrgs();
+          switchOrg(org.id);
+          toast({ tone: "success", title: "Organisation created", body: org.name });
+        }}
+      />
     </div>
   );
 }

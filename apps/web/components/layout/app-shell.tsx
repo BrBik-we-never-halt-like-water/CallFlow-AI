@@ -45,14 +45,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           collapsed={collapsed}
           onToggleCollapsed={toggleCollapsed}
           escalationCount={escalations.length}
-          orgName={profile?.active.org_name ?? null}
+          profile={profile}
+          refreshSession={session.refresh}
         />
 
         <div className="flex min-w-0 flex-1 flex-col">
           <AppTopBar
             profile={profile}
             loading={session.status === "loading"}
-            refreshSession={session.refresh}
           />
 
           <main
@@ -72,11 +72,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 function AppTopBar({
   profile,
   loading,
-  refreshSession,
 }: {
   profile: SessionProfile | null;
   loading: boolean;
-  refreshSession: () => void;
 }) {
   return (
     <header className="sticky top-0 z-30 flex h-(--h-app-topbar) shrink-0 items-center gap-3 border-b border-rule bg-surface-raised px-4 sm:px-6">
@@ -101,7 +99,7 @@ function AppTopBar({
             <QuestionIcon aria-hidden className="size-4" />
           </Link>
         </Tooltip>
-        <UserMenu profile={profile} loading={loading} refreshSession={refreshSession} />
+        <UserMenu profile={profile} loading={loading} />
       </div>
     </header>
   );

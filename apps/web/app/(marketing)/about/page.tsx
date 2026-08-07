@@ -98,7 +98,7 @@ export default function AboutPage() {
           {[
             {
               term: "Sales and demos",
-              detail: "Book a 15-minute call and bring your own list — we will run it in dry mode together.",
+              detail: "Book a 15-minute call and bring your own list — we'll run a few calls from it for real.",
               href: "/demo",
               cta: "Book a demo",
             },

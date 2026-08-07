@@ -7,7 +7,7 @@ import type { LampSpec } from "@/lib/lamp";
 export const metadata: Metadata = {
   title: "Book a demo",
   description:
-    "Fifteen minutes. Bring your own contact list and we will run it in dry mode together — no calls placed, no credits spent.",
+    "Fifteen minutes. Bring your own contact list and watch it run for real, with the ceiling set low.",
 };
 
 const STRIP: LampSpec[] = [
@@ -29,8 +29,8 @@ const WHAT_HAPPENS = [
     body: "In plain English, with the fields you want back. This is the part that decides whether the whole thing works, and it takes about four minutes.",
   },
   {
-    title: "We run it in dry mode",
-    body: "You see the exact words each contact would hear, and a typed result for each one. Nothing is dialled and no credits are spent.",
+    title: "We run a few real calls",
+    body: "Two or three from your own list, ceiling set low, on the spot — a typed result for each one, not a mock-up.",
   },
 ];
 
@@ -53,7 +53,7 @@ export default function DemoPage() {
           </h1>
           <p className="measure text-body-l text-text-dim">
             Not a slide deck. We open the product, load contacts you brought, and run
-            them in dry mode so you can see the typed results before you decide anything.
+            a few of them for real, right there, before you decide anything.
           </p>
 
           <ol className="mt-2 flex flex-col gap-5 border-t border-rule pt-6">

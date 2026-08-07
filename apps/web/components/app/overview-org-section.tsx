@@ -1,154 +1,34 @@
 "use client";
 
-import {
-  CaretDownIcon,
-  CheckIcon,
-  GearSixIcon,
-  PlusIcon,
-  UserPlusIcon,
-} from "@phosphor-icons/react/dist/ssr";
+import { CaretDownIcon, UserPlusIcon } from "@phosphor-icons/react/dist/ssr";
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { CreateOrgDialog } from "@/components/app/create-org-dialog";
 import { InviteDialog } from "@/components/app/invite-dialog";
 import { SessionGate } from "@/components/app/session-gate";
 import { Tag } from "@/components/ui/badge";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { Popover } from "@/components/ui/disclosure";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useToast } from "@/components/ui/toast";
 import { api, type Team } from "@/lib/api";
-import { useActiveOrg } from "@/lib/hooks/use-active-org";
-import { useOrganisations } from "@/lib/hooks/use-organisations";
 import type { SessionProfile, SessionState } from "@/lib/hooks/use-session";
 
 /**
- * Overview's org identity + team, as a slim control row — not a stack of boxes.
- * Organisation setup (rename, logo) lives one click away in Settings, reached
- * from here, rather than a conditional card that can silently fail to appear.
+ * The dashboard's team roster popover — who else is in this organisation.
+ *
+ * Switching organisations lives in exactly one place now: the sidebar's org
+ * switcher. This used to also render its own org-switching dropdown here,
+ * which — alongside a third copy inside the user menu — meant three controls
+ * for one job. This popover's only job is "who's on the team."
  */
-export function OrgTeamControls({
+export function TeamControls({
   session,
 }: {
   session: SessionState & { refresh: () => void };
 }) {
   return (
-    <SessionGate session={session} skeletonClassName="h-9 w-64">
-      {(profile) => (
-        <div className="flex flex-wrap items-center gap-2">
-          <OrgMenu profile={profile} refreshSession={session.refresh} />
-          <TeamMenu profile={profile} />
-        </div>
-      )}
+    <SessionGate session={session} skeletonClassName="h-9 w-24">
+      {(profile) => <TeamMenu profile={profile} />}
     </SessionGate>
-  );
-}
-
-function OrgAvatar({ name, logoUrl, size = "size-6" }: { name: string; logoUrl: string | null; size?: string }) {
-  if (logoUrl) {
-    // eslint-disable-next-line @next/next/no-img-element -- remote Supabase Storage URL
-    return <img src={logoUrl} alt="" className={`${size} shrink-0 rounded-full object-cover`} />;
-  }
-  return (
-    <span
-      aria-hidden
-      className={`flex ${size} shrink-0 items-center justify-center rounded-full bg-surface-inverse text-[0.65rem] font-medium text-text-inverse`}
-    >
-      {name.charAt(0).toUpperCase()}
-    </span>
-  );
-}
-
-function OrgMenu({
-  profile,
-  refreshSession,
-}: {
-  profile: SessionProfile;
-  refreshSession: () => void;
-}) {
-  const toast = useToast();
-  const { orgs, refresh: refreshOrgs } = useOrganisations(profile);
-  const [, setActiveOrgId] = useActiveOrg();
-  const [creating, setCreating] = useState(false);
-
-  function switchOrg(orgId: string) {
-    if (orgId === profile.active.org_id) return;
-    setActiveOrgId(orgId);
-    refreshSession();
-  }
-
-  const list =
-    orgs ?? [
-      {
-        id: profile.active.org_id,
-        name: profile.active.org_name,
-        slug: profile.active.org_slug,
-        logo_url: profile.active.org_logo_url,
-        role: profile.active.role,
-      },
-    ];
-
-  return (
-    <>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <button
-            type="button"
-            className="flex h-9 items-center gap-2 rounded-sm border border-rule px-2.5 text-small font-medium text-text transition-colors hover:bg-surface-hover"
-          >
-            <OrgAvatar name={profile.active.org_name} logoUrl={profile.active.org_logo_url} />
-            <span className="max-w-40 truncate">{profile.active.org_name}</span>
-            <CaretDownIcon aria-hidden className="size-3.5 text-text-mute" />
-          </button>
-        </DropdownMenuTrigger>
-
-        <DropdownMenuContent align="start" className="min-w-64">
-          <DropdownMenuLabel>Organisations</DropdownMenuLabel>
-          {list.map((org) => (
-            <DropdownMenuItem key={org.id} onSelect={() => switchOrg(org.id)}>
-              {org.id === profile.active.org_id ? (
-                <CheckIcon aria-hidden weight="bold" className="size-4 shrink-0" />
-              ) : (
-                <span className="size-4 shrink-0" aria-hidden />
-              )}
-              <span className="min-w-0 flex-1 truncate">{org.name}</span>
-              <Tag>{org.role}</Tag>
-            </DropdownMenuItem>
-          ))}
-
-          <DropdownMenuSeparator />
-
-          <DropdownMenuItem onSelect={() => setCreating(true)}>
-            <PlusIcon aria-hidden className="size-4" />
-            New organisation
-          </DropdownMenuItem>
-          <DropdownMenuItem>
-            <Link href="/app/settings" className="flex flex-1 items-center gap-2">
-              <GearSixIcon aria-hidden className="size-4" />
-              Organisation settings
-            </Link>
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
-
-      <CreateOrgDialog
-        open={creating}
-        onOpenChange={setCreating}
-        onCreated={(org) => {
-          refreshOrgs();
-          switchOrg(org.id);
-          toast({ tone: "success", title: "Organisation created", body: org.name });
-        }}
-      />
-    </>
   );
 }
 
@@ -181,9 +61,10 @@ function TeamMenu({ profile }: { profile: SessionProfile }) {
         trigger={
           <button
             type="button"
-            className="flex h-9 items-center gap-1.5 rounded-sm border border-rule px-2.5 transition-colors hover:bg-surface-hover"
+            className="flex h-9 items-center gap-2 rounded-sm border border-rule px-2.5 transition-colors hover:bg-surface-hover"
             aria-label="Team"
           >
+            <span className="eyebrow text-text-mute">Team</span>
             {loading ? (
               <Skeleton className="size-6 rounded-full" />
             ) : shown.length === 0 ? (

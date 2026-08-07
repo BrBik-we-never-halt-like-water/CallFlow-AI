@@ -8,7 +8,7 @@ import { LampStrip } from "@/components/brand/lamp-strip";
 import { ConnectionBanner } from "@/components/app/connection-banner";
 import { EscalationCard } from "@/components/app/escalation-card";
 import { MaskedPhone } from "@/components/app/masked-phone";
-import { OrgTeamControls } from "@/components/app/overview-org-section";
+import { TeamControls } from "@/components/app/overview-org-section";
 import { AreaChart } from "@/components/ui/area-chart";
 import { LampBadge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -162,7 +162,7 @@ export default function OverviewPage() {
           <EmptyState
             icon={PhoneSlashIcon}
             title="Nothing has been dialled yet"
-            body="Add a few contacts and run a campaign in dry mode. It costs nothing and shows you exactly what would happen."
+            body="Add a few contacts and start a run — results appear here as calls settle."
             action={
               <Button asChild>
                 <Link href="/app/runs/new">Start a run</Link>
@@ -231,7 +231,7 @@ export default function OverviewPage() {
           {runs.length === 0 ? (
             <EmptyState
               title="No runs yet"
-              body="Runs are how contacts get called. Start one in dry mode to see the pipeline end to end."
+              body="Runs are how contacts get called. Start one to see the pipeline end to end."
               action={
                 <Button asChild size="sm">
                   <Link href="/app/runs/new">Start a run</Link>
@@ -303,7 +303,7 @@ function PageTitle({ session }: { session: ReturnType<typeof useSession> }) {
     <div className="flex flex-wrap items-center justify-between gap-3">
       <div className="flex flex-wrap items-center gap-3">
         <h1 className="font-display text-h2 text-text">Dashboard</h1>
-        <OrgTeamControls session={session} />
+        <TeamControls session={session} />
       </div>
       <div className="flex gap-2">
         <Button asChild variant="secondary">

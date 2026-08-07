@@ -170,7 +170,7 @@ export default function RunsPage() {
           <EmptyState
             icon={BroadcastIcon}
             title="No runs yet"
-            body="Runs are how contacts get called. Start one in dry mode to see the pipeline end to end."
+            body="Runs are how contacts get called. Start one to see the pipeline end to end."
             action={
               <Button asChild>
                 <Link href="/app/runs/new">Start a run</Link>
