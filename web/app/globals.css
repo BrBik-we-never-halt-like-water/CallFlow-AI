@@ -315,9 +315,17 @@ button[data-menu][data-state="open"]:focus-visible {
    defined without reading as a hard instrument-panel box. Shadow is left to the
    element so the same surface can be a quiet card (shadow-sm) or lift on hover. */
 .surface-flow {
-  border-radius: var(--r-md);
-  background: var(--surface-raised);
-  border: 1px solid var(--rule);
+  /* A soft, borderless-feeling surface: a large radius, a gentle top-lit
+     gradient, and only a faint hairline — so cards read as raised paper melting
+     into the page rather than hard-edged boxes. Elevation is left to each
+     card's own shadow utility, so this never fights a Tailwind `shadow-*`. */
+  border-radius: var(--r-xl);
+  background: linear-gradient(
+    180deg,
+    color-mix(in oklab, #ffffff 62%, var(--surface-raised)) 0%,
+    var(--surface-raised) 100%
+  );
+  border: 1px solid color-mix(in oklab, var(--rule) 45%, transparent);
 }
 
 /* The hero readout. Not a crisp card: a big 32px radius, a clearly visible
