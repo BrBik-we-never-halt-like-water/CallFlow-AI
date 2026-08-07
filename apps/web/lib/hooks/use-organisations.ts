@@ -7,8 +7,9 @@ import type { SessionProfile } from "@/lib/hooks/use-session";
 /**
  * Every organisation the signed-in user belongs to.
  *
- * Shared by the user-menu's org switcher and Overview's org strip so there is one
- * fetch, not two independent copies of the same list drifting apart.
+ * Backs the sidebar org switcher (`app-nav.tsx`) — the one place in the dashboard
+ * that switches, creates, or lists organisations. See its own docstring for why
+ * there is only one now.
  */
 export function useOrganisations(profile: SessionProfile | null): {
   orgs: Organisation[] | null;
