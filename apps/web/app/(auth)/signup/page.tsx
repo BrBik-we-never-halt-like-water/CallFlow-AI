@@ -74,10 +74,9 @@ export default function SignupPage() {
     toast({ tone: "success", title: "Account created" });
 
     // Confirmation is disabled on this project, so signup returns a session and the
-    // user goes straight to onboarding rather than a "check your inbox" dead end.
-    // OnboardingGate shows the mandatory org-setup modal over whatever page loads
-    // first, so this can go straight to the welcome walkthrough underneath it.
-    router.replace("/app/welcome");
+    // user goes straight into the dashboard rather than a "check your inbox" dead end.
+    // OnboardingGate shows the mandatory org-setup modal over it immediately.
+    router.replace("/app");
     router.refresh();
   }
 

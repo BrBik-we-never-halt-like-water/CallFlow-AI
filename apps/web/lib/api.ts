@@ -265,11 +265,21 @@ async function authHeaders(): Promise<Record<string, string>> {
 }
 
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
-    ...init,
-    headers: { "Content-Type": "application/json", ...init?.headers },
-    cache: "no-store",
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}${path}`, {
+      ...init,
+      headers: { "Content-Type": "application/json", ...init?.headers },
+      cache: "no-store",
+    });
+  } catch {
+    // fetch() itself throwing means the request never reached a server at
+    // all — DNS, a dropped connection, a dev server mid-restart. The raw
+    // `TypeError: Failed to fetch` is meaningless to whoever is looking at
+    // the toast, so this is the one place that translates it, rather than
+    // every caller of the API client reinventing the same catch.
+    throw new Error("The service didn't respond. Check your connection and try again.");
+  }
   if (!res.ok) {
     let message = `Request failed: ${res.status}`;
     try {

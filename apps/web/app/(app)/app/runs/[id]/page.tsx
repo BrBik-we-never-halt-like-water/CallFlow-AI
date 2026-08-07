@@ -142,7 +142,7 @@ export default function RunDetailPage() {
           ) : null}
         </div>
 
-        {/* Cold start: lamps in sequence, captioned. Never a spinner. */}
+        {/* Before the first outcome lands: lamps in sequence, captioned. Never a spinner. */}
         {run.outcomes.length === 0 && live ? (
           <div className="flex flex-col gap-2">
             <LampStrip
@@ -152,7 +152,7 @@ export default function RunDetailPage() {
               }))}
               size="md"
             />
-            <p className="font-mono text-data text-text-dim">Waking the service…</p>
+            <p className="font-mono text-data text-text-dim">Dialling the first contacts…</p>
           </div>
         ) : (
           <LampStrip lamps={lamps} size="md" wrap counts />
