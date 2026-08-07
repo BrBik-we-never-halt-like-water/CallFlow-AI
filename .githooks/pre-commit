@@ -24,7 +24,7 @@ find_tool() {
   return 1
 }
 
-if echo "$changed" | grep -qE '^(callflow/|tests/|pyproject\.toml)'; then
+if echo "$changed" | grep -qE '^apps/api/'; then
   echo "== backend: ruff + pytest =="
 
   ruff_bin=$(find_tool ruff || true)
@@ -35,17 +35,17 @@ if echo "$changed" | grep -qE '^(callflow/|tests/|pyproject\.toml)'; then
     # lets the commit through rather than blocking it. CI runs the same checks and
     # is the gate that actually counts.
     echo "  SKIPPED — ruff/pytest not found in .venv or on PATH."
-    echo "  Install them with:  pip install -r requirements-dev.txt"
+    echo "  Install them with:  pip install -e \"./apps/api[dev]\""
   else
-    "$ruff_bin" check callflow tests run_api.py
-    "$pytest_bin" -q
+    (cd apps/api && "$OLDPWD/$ruff_bin" check app tests)
+    (cd apps/api && "$OLDPWD/$pytest_bin" -q)
   fi
 fi
 
-if echo "$changed" | grep -q '^web/'; then
+if echo "$changed" | grep -q '^apps/web/'; then
   echo "== frontend: lint + type-check =="
   if command -v npm > /dev/null 2>&1; then
-    (cd web && npm run lint && npm run type-check)
+    (cd apps/web && npm run lint && npm run type-check)
   else
     echo "  SKIPPED — npm not found on PATH."
   fi

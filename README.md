@@ -10,8 +10,8 @@ extracts typed results, and escalates only what needs a person.
 [![Python](https://img.shields.io/badge/python-3.11+-3776AB?logo=python&logoColor=white)](https://www.python.org)
 [![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
 [![Next.js](https://img.shields.io/badge/Next.js%2016-000000?logo=nextdotjs&logoColor=white)](https://nextjs.org)
-[![Tests](https://img.shields.io/badge/tests-84%20passing-3fb950)](#tests)
-[![Live demo](https://img.shields.io/badge/live-demo-4f46e5)](https://callflow-web.onrender.com)
+[![Tests](https://img.shields.io/badge/tests-85%20passing-3fb950)](#tests)
+[![Live](https://img.shields.io/badge/live-callflow--ai.brbik.com-4f46e5)](https://callflow-ai.brbik.com)
 
 </div>
 
@@ -39,7 +39,7 @@ the work that needs a human is visible immediately and the rest closes itself.
 | **Typed results** | Every call returns schema-validated JSON via the engine's native `result_schema`. No transcript scraping. |
 | **Sentiment triage** | Frustration and opt-outs escalate to a person. Bad timing is queued for a polite retry. Clean calls auto-close. |
 | **Build your own** | Create unlimited campaigns from the dashboard with custom extraction fields. |
-| **Safe by default** | Dry run is on until you turn it off. An allowlist and per-run ceiling stop accidental calls. |
+| **Safe by default** | Every dial passes an E.164 check, an allowlist, a per-run ceiling, rate limiting, a shared daily budget, and the suppression list — any guard that can't complete denies the call. |
 
 ---
 
@@ -77,92 +77,88 @@ handling. CallFlow AI is the operations layer around it.
 **Backend** — Python 3.11+
 
 ```bash
+cd apps/api
 python -m venv .venv
 .venv/Scripts/activate           # Windows  ·  source .venv/bin/activate on Unix
-pip install -e .
+pip install -e ".[dev]"
 
-cp .env.example .env             # add your Voice API key
-python run_api.py                # → http://127.0.0.1:8000
+cp ../../.env.example ../../.env # repo root — config.py reads it from there
+uvicorn app.main:app --reload --port 8000   # → http://127.0.0.1:8000
 ```
 
 **Frontend** — Node 20+
 
 ```bash
-cd web
+cd apps/web
 npm install
+cp .env.example .env.local
 npm run dev                      # → http://localhost:3000
 ```
 
-Set `CALLE_API_KEY` to the Voice API key from your voice-engine provider.
-New accounts include free calls.
+Set `CALLE_API_KEY` to the Voice API key from your voice-engine provider — new
+accounts include free calls.
+
+Auth and persistence run on Supabase: a project gives you a Postgres database, a
+JWKS URL, and publishable/secret keys. Set `SUPABASE_URL`, `SUPABASE_JWKS_URL`,
+`DATABASE_URL`, and `SUPABASE_SECRET_KEY` for the API, and
+`NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY` for the frontend,
+then run the Alembic migrations in `apps/api/alembic/versions/` against that
+database. See `SUPABASE_SETUP.md` for the exact dashboard steps.
 
 ---
 
 ## Try it live
 
-The hosted dashboard places **real phone calls**. Enter your own number, pick a
-campaign, switch to Live mode, and answer — the agent greets you by name and
-holds an actual conversation. When you hang up, the transcript, sentiment, and
-extracted fields appear in the results table.
+**→ [callflow-ai.brbik.com](https://callflow-ai.brbik.com)**
 
-**→ [callflow-web.onrender.com](https://callflow-web.onrender.com)**
+There is no more anonymous "enter your number and see what happens" demo —
+the dashboard requires an account. Sign up, and you get an organisation of
+your own with Supabase-backed auth and roles (owner, admin, operator,
+viewer). From there you can create a campaign, load contacts, and start a
+run, which **places real phone calls** — every run dials for real,
+unconditionally, from the first one.
 
-Because the demo runs on a shared engine account, live calls are rate limited:
-
-| Limit | Value |
-|---|---|
-| Per visitor | 2 live calls per hour |
-| Shared daily budget | 20 live calls |
-| Dry run | Unlimited, always available |
-
-Only call a number you own or have permission to call.
-
-> The free tier sleeps after inactivity, so the first load can take 30–60
-> seconds. The dashboard shows *"Waking the backend…"* while it starts.
+Only call a number you own or have permission to call. The run stays inside
+the safety guards below regardless of who starts it: the allowlist, the
+per-run ceiling, the rate limiter, the shared daily budget, and the
+suppression list all still apply.
 
 ---
 
 ## Safety
 
-> **CallFlow AI places real phone calls.** Every guard below fails closed.
+> **CallFlow AI places real phone calls.** There is no dry-run mode — every run
+> dials for real, unconditionally, from the first one. That is a deliberate
+> product decision, not a gap: it means the guards below are what actually
+> stands between "started a run" and "rang a real phone", so every one of them
+> fails closed.
 
 | Guard | Behaviour |
 |---|---|
-| `CALLFLOW_DRY_RUN` | **Defaults to `true`.** Renders and validates everything; dials nothing. |
-| `CALLFLOW_ALLOWLIST` | When non-empty, only these E.164 numbers can be dialed. |
-| `CALLFLOW_MAX_CALLS_PER_RUN` | Hard ceiling per process run. Protects your credit balance. |
-| `CALLFLOW_RATE_LIMIT_CALLS` | Live calls allowed per IP per window (default 2/hour). |
-| `CALLFLOW_DAILY_BUDGET` | Shared daily live-call ceiling across all visitors. |
 | E.164 validation | Malformed numbers are rejected before reaching the engine. |
+| `CALLFLOW_ALLOWLIST` | When non-empty, only these E.164 numbers can be dialed. |
+| `CALLFLOW_MAX_CALLS_PER_RUN` | Hard ceiling per run. Protects your credit balance. |
+| `CALLFLOW_RATE_LIMIT_CALLS` | Calls allowed per IP per window (default 5/hour). |
+| `CALLFLOW_DAILY_BUDGET` | Shared daily call ceiling across the whole deployment. |
+| Suppression list | A contact who opted out is looked up by a peppered phone hash before every dial and denied, regardless of who starts the run. |
 
 The allowlist and the rate limiter solve different problems. **Use the
 allowlist for private development** — it makes dialing anyone but yourself
-impossible. **Use the rate limiter for a public deployment**, where visitors
-legitimately need to call their own numbers but no one should be able to drain
-the account or dial a stranger repeatedly.
+impossible. **Use the rate limiter in production** so no single run, or no
+runaway retry loop, can drain the account.
 
 Set `CALLFLOW_OWNER_KEY` and send it as an `X-CallFlow-Owner-Key` header to
-lift the limits for your own testing.
+lift the rate limiter for your own testing.
 
 Phone numbers are masked (`+15******100`) in every log, API response, and UI
 surface. All sample data uses reserved fictional numbers (`+1 555 0100–0199`)
 that cannot connect to a real person.
 
-**While developing, keep `CALLFLOW_DRY_RUN=true` and set an allowlist to your
-own number.**
+**While developing, set an allowlist to your own number** — with no dry run,
+that's the guard that keeps a bug from calling someone who isn't you.
 
-### Dry run
-
-Dry run exercises the entire pipeline — goal templating, contact validation, the
-safety gate, and the result shape — without placing a call or spending a credit.
-
-```bash
-curl -X POST http://127.0.0.1:8000/api/runs \
-  -H 'Content-Type: application/json' \
-  -d '{"campaign_id":"travel-discovery","dry_run":true,
-       "contacts":[{"name":"Aditi","phone":"+15555550100",
-                    "context":{"enquiry_note":"Bali in December"}}]}'
-```
+Starting a run at all requires the `runs:start` permission (owner, admin, or
+operator — not viewer), since every run now spends real credits.
 
 ---
 
@@ -218,37 +214,43 @@ Triage reads those typed fields — never prose — to decide the disposition.
 
 ## API
 
+Every endpoint below except `/api/health` requires `Authorization: Bearer
+<supabase-access-token>` and resolves to one organisation, so results are
+always scoped to the caller's org — enforced again at the database by RLS.
+
 | Endpoint | Purpose |
 |---|---|
-| `GET /api/health` | Backend status and active safety settings |
-| `GET /api/campaigns` | List campaigns |
-| `POST /api/campaigns` | Create a campaign with custom extraction fields |
-| `DELETE /api/campaigns/{id}` | Remove a user-created campaign |
-| `POST /api/preview` | Render goals without touching the voice engine |
-| `POST /api/runs` | Start a run (background) |
-| `GET /api/runs/{id}` | Poll status, outcomes, and stats |
+| `GET /api/health` | Backend status and active safety settings — unauthenticated |
+| `GET /api/v1/campaigns` | List built-in and org-created campaigns |
+| `POST /api/v1/campaigns` | Create a campaign with custom extraction fields |
+| `DELETE /api/v1/campaigns/{id}` | Remove a user-created campaign |
+| `POST /api/v1/campaigns/preview` | Render goals without touching the voice engine |
+| `POST /api/v1/runs` | Start a run — dials for real, in the background |
+| `GET /api/v1/runs` | List the org's runs |
+| `GET /api/v1/runs/{id}` | Poll a run's status, outcomes, and stats |
 
 ---
 
 ## Project layout
 
 ```
-callflow/               Python backend
-├── api.py              FastAPI surface
-├── engine_client.py    Voice engine SDK wrapper
-├── orchestrator.py     gate → dial → poll → triage
-├── safety.py           E.164, masking, dial gate
-├── campaigns.py        built-in + user campaigns
-├── schemas.py          result_schema definitions
-├── triage.py           disposition logic
-├── models.py           domain models
-└── store.py            in-memory run store
+apps/api/app/                     FastAPI backend
+├── main.py                       app assembly, lifespan, CORS
+├── api/v1/routes/                HTTP endpoints — campaigns, runs, organisations, invitations, profile
+├── core/                         config.py, rate_limit.py
+├── auth/                         tokens.py, dependencies.py, permissions.py
+├── database/                     models.py, session.py, privileged.py, repositories/
+├── domain/                       entities, safety, triage, result_schemas, campaigns — pure, no I/O
+├── services/campaign_runner.py   gate → dial → poll → triage
+└── integrations/voice/engine.py  the one voice-SDK import
 
-web/                    Next.js 16 dashboard
-├── app/                landing page + dashboard
-└── lib/                API client, CSV parsing
+apps/api/alembic/                 migrations (psycopg; runtime uses asyncpg)
+apps/api/tests/                   9 files, 85 tests
 
-tests/                  56 tests
+apps/web/                         Next.js 16 dashboard
+├── app/(marketing) (auth) (app)  public site, login/signup, the dashboard
+├── components/                   brand, ui, marketing, app, layout
+└── lib/                          typed API client, Supabase clients, formatters
 ```
 
 ---
@@ -256,12 +258,15 @@ tests/                  56 tests
 ## Tests
 
 ```bash
-pytest -q     # 71 passed
+cd apps/api && pytest -q     # 85 passed
 ```
 
-Coverage focuses on what can cause harm: the safety gate fails closed, masking
-never leaks more than half a number, dry run provably never touches the
-gateway, and triage precedence is correct.
+Coverage focuses on what can cause harm: the safety gate fails closed for bad
+numbers, an exhausted ceiling, and a suppressed contact; masking never leaks
+more than half a number; triage precedence is correct; and 11 tests hit a real
+Postgres database directly to prove one organisation's rows — campaigns,
+members, suppressions — are invisible and unwritable from another tenant's
+session.
 
 ---
 
@@ -283,9 +288,11 @@ difference is what CallFlow AI's campaign templates exist to manage.
 
 ## Status
 
-**Working** — campaigns (built-in and user-created), safety gate, engine
-integration, typed extraction, sentiment triage, CSV import, dashboard with
-live polling, dry-run mode.
+**Working** — accounts and organisations with role-based permissions and
+RLS-enforced tenancy, campaigns (built-in and user-created, persisted per
+org), safety gate with an enforced suppression list, engine integration,
+typed extraction, sentiment triage, CSV import, dashboard with live polling.
+Every run places real calls; there is no dry-run mode.
 
 ---
 
@@ -331,7 +338,6 @@ and read as empty strings when unset.
 |---|---|
 | **Booking tools** | Let a campaign call MCP tools — flights, hotels, tours — driven by the extracted outcome, so a confirmed intent books itself. |
 | **Scheduled campaigns** | Recurring runs with time-zone-aware calling windows, so nobody is dialed at 3am local time. |
-| **Persistent storage** | Runs are in-memory today. Postgres would give history, per-campaign analytics, and sentiment trends over time. |
 | **Inbound calls** | Handle calls coming *in*, not just going out. |
 | **CRM write-back** | Push outcomes to HubSpot or Salesforce so results land where the team already works. |
 | **Retry orchestration** | Act on the `retry` disposition automatically instead of only surfacing it. |
