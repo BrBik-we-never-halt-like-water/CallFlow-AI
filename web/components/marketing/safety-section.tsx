@@ -70,7 +70,6 @@ export function SafetySection() {
     <section id="safety" className="mx-auto max-w-(--container-marketing) px-4 sm:px-6">
       <Reveal>
         <SectionHeading
-          eyebrow="Safety"
           title="The guards fail closed."
           sub="Real calls go out, so every guard is on by default — and visible right where you start a run."
         />

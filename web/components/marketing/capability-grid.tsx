@@ -80,7 +80,6 @@ export function CapabilityGrid() {
     <section id="capabilities" className="mx-auto max-w-(--container-marketing) px-4 sm:px-6">
       <Reveal>
         <SectionHeading
-          eyebrow="What you get"
           title="An operations layer, not a robocall dialler."
           sub="The difference between a tool your team keeps and one they abandon in a fortnight."
         />

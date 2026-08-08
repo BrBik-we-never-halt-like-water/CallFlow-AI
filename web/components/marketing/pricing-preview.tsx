@@ -23,7 +23,6 @@ export function PricingPreview() {
     <section className="mx-auto max-w-(--container-marketing) px-4 sm:px-6">
       <Reveal>
         <SectionHeading
-          eyebrow="Pricing"
           title="Start free, pay when you dial."
           sub="You only spend on calls that actually connect — on every plan, including the free one."
         />

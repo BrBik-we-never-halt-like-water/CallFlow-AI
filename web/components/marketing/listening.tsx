@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/cn";
-import { Eyebrow } from "@/components/ui/panel";
 import { useCanvasAnimation } from "@/lib/hooks/use-canvas-animation";
 import { usePrefersReducedMotion } from "@/lib/hooks/use-external-store";
 
@@ -122,7 +121,6 @@ export function Listening({ className }: { className?: string }) {
 
       <div className="relative grid items-center gap-12 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
         <div className="flex flex-col gap-5">
-          <Eyebrow>Right now</Eyebrow>
           <h2 className="measure-display font-display text-h2 text-text">
             The line never goes quiet.
           </h2>
@@ -171,7 +169,7 @@ export function Listening({ className }: { className?: string }) {
                 }}
               >
                 <div className="flex items-center justify-between gap-3">
-                  <Eyebrow>{r.who}</Eyebrow>
+                  <span className="text-small font-medium text-text-dim">{r.who}</span>
                   <span
                     className={cn(
                       "size-2 rounded-full",

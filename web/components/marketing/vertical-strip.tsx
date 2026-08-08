@@ -17,7 +17,6 @@ export function VerticalStrip() {
     <section className="mx-auto max-w-(--container-marketing) px-4 sm:px-6">
       <Reveal>
         <SectionHeading
-          eyebrow="Built for"
           title="Teams that live on the phone."
           sub="One engine — the goal and result schema already written for how your team works."
         />

@@ -371,11 +371,7 @@ button[data-menu][data-state="open"]:focus-visible {
    content gets a rectangle, a page reads as a form rather than a composition.
    The radius is large enough that the corner never reads as a frame. */
 .card {
-  background: linear-gradient(
-    170deg,
-    color-mix(in oklab, var(--surface-raised) 92%, transparent) 0%,
-    color-mix(in oklab, var(--surface-raised) 62%, transparent) 100%
-  );
+  background: linear-gradient(170deg, var(--surface-raised) 0%, var(--surface-sunken) 100%);
   border: 0;
   border-radius: var(--r-xl);
 }
@@ -384,7 +380,7 @@ button[data-menu][data-state="open"]:focus-visible {
   background: linear-gradient(
     170deg,
     var(--surface-raised) 0%,
-    color-mix(in oklab, var(--surface-raised) 78%, transparent) 100%
+    color-mix(in oklab, var(--surface-sunken) 55%, var(--surface-raised)) 100%
   );
   border: 0;
   border-radius: var(--r-xl);
@@ -397,7 +393,7 @@ button[data-menu][data-state="open"]:focus-visible {
   background: linear-gradient(
     170deg,
     var(--surface-raised) 0%,
-    color-mix(in oklab, var(--primary) 4%, var(--surface-raised)) 100%
+    color-mix(in oklab, var(--primary) 5%, var(--surface-raised)) 100%
   );
   border: 0;
   border-radius: var(--r-xl);
@@ -423,8 +419,8 @@ button[data-menu][data-state="open"]:focus-visible {
 .card-sunken {
   background: linear-gradient(
     170deg,
-    color-mix(in oklab, var(--surface-sunken) 88%, transparent) 0%,
-    color-mix(in oklab, var(--surface-sunken) 55%, transparent) 100%
+    var(--surface-sunken) 0%,
+    color-mix(in oklab, var(--surface-sunken) 70%, var(--surface-raised)) 100%
   );
   border: 0;
   border-radius: var(--r-xl);

@@ -59,7 +59,6 @@ export function Steps() {
     <section id="how-it-works" className="mx-auto max-w-(--container-marketing) px-4 sm:px-6">
       <Reveal>
         <SectionHeading
-          eyebrow="How it works"
           title="Watch one contact become a triaged result."
         />
       </Reveal>

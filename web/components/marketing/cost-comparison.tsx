@@ -32,7 +32,6 @@ export function CostComparison() {
   return (
     <section className="mx-auto max-w-(--container-marketing) px-4 sm:px-6">
       <SectionHeading
-        eyebrow="What it replaces"
         title="One person dials in sequence. A campaign dials in parallel."
         sub="Your number, not our claim — watch the same day's calls clear each way."
       />

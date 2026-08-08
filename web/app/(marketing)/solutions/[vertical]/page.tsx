@@ -72,7 +72,7 @@ export default async function SolutionPage({
       {/* ---- The pain ------------------------------------------------------ */}
       <Divider />
       <section className="mx-auto max-w-(--container-marketing) px-4 sm:px-6">
-        <SectionHeading eyebrow="The problem" title="What this actually costs you today." />
+        <SectionHeading title="What this actually costs you today." />
         <ol className="mt-8 grid items-stretch gap-4 md:grid-cols-3">
           {vertical.pain.map((line, i) => (
             <li
@@ -92,7 +92,6 @@ export default async function SolutionPage({
       <Divider />
       <section className="mx-auto max-w-(--container-marketing) px-4 sm:px-6">
         <SectionHeading
-          eyebrow="The campaign"
           title="The exact goal, and the exact fields it returns."
           sub="This is the whole template, not an excerpt. It is what the agent is told, verbatim — including what it must refuse to do."
         />
@@ -142,7 +141,6 @@ export default async function SolutionPage({
       <Divider />
       <section className="mx-auto max-w-(--container-marketing) px-4 sm:px-6">
         <SectionHeading
-          eyebrow="The maths"
           title="What it frees up, on your numbers."
           sub="Change any of these. Nothing here is a claim about your business until you put your own figures in."
         />
@@ -154,7 +152,7 @@ export default async function SolutionPage({
       {/* ---- Objections ---------------------------------------------------- */}
       <Divider />
       <section className="mx-auto max-w-(--container-marketing) px-4 sm:px-6">
-        <SectionHeading eyebrow="Fair questions" title="The two objections we hear most." />
+        <SectionHeading title="The two objections we hear most." />
         <div className="mt-8 max-w-3xl">
           <Accordion
             items={vertical.objections.map((objection) => ({

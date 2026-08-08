@@ -63,13 +63,11 @@ export function Eyebrow({
  * readable measure.
  */
 export function SectionHeading({
-  eyebrow,
   title,
   sub,
   className,
   align = "left",
 }: {
-  eyebrow?: string;
   title: React.ReactNode;
   sub?: React.ReactNode;
   className?: string;
@@ -83,15 +81,9 @@ export function SectionHeading({
         className,
       )}
     >
-      {/* No trailing squiggle. A decorative mark beside every eyebrow on every
-          section is a tic, not a system — it says nothing and it appears
-          everywhere, which is the definition of noise. */}
-      {eyebrow ? (
-        <div className={cn("flex items-center", align === "center" && "justify-center")}>
-          <Eyebrow>{eyebrow}</Eyebrow>
-        </div>
-      ) : null}
-
+      {/* No eyebrow. A label above every section title restated the heading
+          in fewer words on every screen; the heading already says what the
+          section is. */}
       {/* The title arrives word by word. Applied here rather than per section
           so every heading on the site moves the same way — a motion rule, not a
           one-off flourish on the sections someone remembered to decorate. */}
