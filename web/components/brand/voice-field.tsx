@@ -5,43 +5,45 @@ import { useCanvasAnimation } from "@/lib/hooks/use-canvas-animation";
 import { cn } from "@/lib/cn";
 
 /**
- * The hero's atmosphere: heavy waves of voice that periodically resolve into a
- * grid, then break apart into waves again.
+ * The hero's atmosphere: many small waves superimposing into one big messy
+ * one, which periodically gathers into a grid and then breaks apart again.
  *
- * The cycle is the argument. Speech arrives as something loose and physical,
- * settles into an ordered record, and the line immediately fills with the next
- * call — so the field is never finished, and it spends most of its time as
- * waves because that is what the product is mostly doing.
+ * The mess is made of order. Ten thin bands each carry their own simple wave,
+ * with its own frequency, phase and drift; what looks complicated is those ten
+ * simple things crossing. That is also why it never repeats — the components
+ * are modulated on slow, mutually prime cycles, so the composite keeps
+ * becoming a different shape.
  *
- * Chunky by design. The dots vary in size across a wide range, which is what
- * makes a particle field read as weight and texture rather than as a thin
- * dotted line; the size is a property of the particle, so the same dot stays
- * the same dot through the whole cycle. Bigger dots also carry slightly more
- * alpha, so the wave has body at its crest and thins toward the edges.
+ * Dots do not overlap while waving. Within a band they are evenly spaced at a
+ * pitch wider than the largest diameter, and they sit exactly on their band's
+ * line with no jitter, so a band stays a legible row of separate dots rather
+ * than collapsing into a smear. Only band crossings put dots near each other,
+ * which is the intended texture rather than a pile.
  *
- * Order comes from the grid being genuinely regular — even columns, fixed row
- * rhythm, each particle keeping one slot — which is what stops the resolved
- * state looking like a tidier accident.
+ * The grid resolves upward from the waves' centre, taller than it is dense, so
+ * the ordered state occupies the upper half of the hero where there is room
+ * for it.
  */
 
 interface P {
-  /** Position along the width, 0–1. */
+  /** Even position along its own band, 0–1. */
   u: number;
   band: number;
-  /** Vertical jitter within the band. */
-  j: number;
-  /** Radius in CSS pixels — the source of the chunkiness. */
+  /** Radius in CSS pixels. */
   r: number;
   speed: number;
-  /** Grid slot. */
   col: number;
   row: number;
   /** Per-particle lag so the field gathers raggedly, not as one block. */
   lag: number;
 }
 
-const BANDS = 3;
-const ROWS = 6;
+const BANDS = 10;
+/** Horizontal pitch within a band, in CSS px. Must exceed the largest diameter. */
+const PITCH = 10;
+const R_MIN = 1.2;
+const R_MAX = 3.7;
+
 const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v));
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 const ease = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
@@ -54,28 +56,27 @@ export function VoiceField({ className }: { className?: string }) {
 
   const ref = useCanvasAnimation(
     ({ ctx, w, h, t, reduced }) => {
-      const cols = Math.max(16, Math.min(30, Math.round(w / 52)));
-      // Six per grid slot: the grid stays regular while the wave state has enough
-      // bodies to read as a mass rather than a sprinkle.
-      const count = cols * ROWS * 6;
+      // Spacing is derived from the pitch, so widening the viewport adds dots
+      // rather than stretching the gaps between them.
+      const perBand = Math.max(40, Math.round(w / PITCH));
+      const count = perBand * BANDS;
+      const cols = Math.max(24, Math.min(52, Math.round(w / 26)));
 
       if (!particles.current || particles.current.length !== count) {
-        // Deterministic so the same field draws on every load and the grid
-        // always assembles into the same arrangement.
         particles.current = Array.from({ length: count }, (_, i) => {
-          const n = (i * 2654435761) % 1000;
+          const band = i % BANDS;
+          const idx = Math.floor(i / BANDS);
           const m = (i * 40503) % 1000;
+          const n = (i * 2654435761) % 1000;
           return {
-            u: i / count,
-            band: i % BANDS,
-            j: (n / 1000 - 0.5) * 1.9,
-            // A wide spread, weighted small, so a few heavy dots read as
-            // texture against many light ones.
-            r: 1.1 + Math.pow(m / 1000, 2.1) * 4.6,
-            speed: 0.55 + (n % 500) / 1000,
+            // Even within the band — this is what keeps dots off each other.
+            u: idx / perBand,
+            band,
+            r: R_MIN + Math.pow(m / 1000, 1.7) * (R_MAX - R_MIN),
+            speed: 0.7 + (n % 400) / 1400,
             col: i % cols,
-            row: Math.floor(i / cols) % ROWS,
-            lag: (m % 300) / 1000,
+            row: Math.floor(i / cols),
+            lag: (m % 280) / 1000,
           };
         });
       }
@@ -85,7 +86,6 @@ export function VoiceField({ className }: { className?: string }) {
       const time = reduced ? 4 : t;
       const p = reduced ? 0 : (t % CYCLE) / CYCLE;
 
-      // Mostly waves. The grid is a brief resolve, not half the loop.
       const g =
         p < 0.5
           ? 0
@@ -97,55 +97,56 @@ export function VoiceField({ className }: { className?: string }) {
                 ? 1 - ease(clamp((p - 0.76) / 0.12, 0, 1))
                 : 0;
 
-      const midY = h * 0.38;
-      const amp = h * 0.15;
-      const gridW = Math.min(w * 0.68, 820);
-      const gridX = (w - gridW) / 2;
-      const rowGap = Math.min(30, h * 0.05);
-      const gridY = midY - ((ROWS - 1) * rowGap) / 2;
+      const midY = h * 0.4;
+      const rows = Math.ceil(count / cols);
+      const colGap = Math.min(w * 0.72, 880) / Math.max(1, cols - 1);
+      const rowGap = Math.min(13, h * 0.02);
+      const gridX = (w - colGap * (cols - 1)) / 2;
+      // Grow upward from the waves rather than around them: the bottom of the
+      // grid sits just under the wave centre and the rest climbs into the
+      // empty upper half.
+      const gridBottom = midY + h * 0.06;
+      const gridTop = gridBottom - rowGap * (rows - 1);
 
       for (const q of particles.current) {
         const k = ease(clamp((g - q.lag) / (1 - q.lag || 1), 0, 1));
 
-        // ---- wave position -------------------------------------------------
-        const u = (q.u + time * 0.013 * q.speed) % 1;
-        const env = Math.sin(u * Math.PI) ** 0.75;
-        const bandPhase = q.band * 2.1;
+        // ---- wave -----------------------------------------------------------
+        const u = (q.u + time * 0.012 * q.speed) % 1;
+        const env = Math.sin(u * Math.PI) ** 0.7;
+        const ph = q.band * 1.31;
 
-        // Frequencies and amplitudes drift on slow, mutually prime cycles, so
-        // the wave keeps becoming a different wave instead of looping.
-        const f1 = 2.6 + Math.sin(time * 0.061 + bandPhase) * 1.1;
-        const f2 = 5.3 + Math.cos(time * 0.041 + bandPhase) * 1.8;
-        const a1 = 1 + Math.sin(time * 0.049 + bandPhase) * 0.4;
-        const a2 = 0.48 + Math.cos(time * 0.033 + bandPhase * 1.6) * 0.26;
+        // Two components per band, kept simple. The complexity in the picture
+        // comes from ten bands crossing, not from one elaborate wave.
+        const f1 = 2.2 + Math.sin(time * 0.057 + ph) * 0.9;
+        const f2 = 4.6 + Math.cos(time * 0.039 + ph) * 1.5;
+        const a1 = 1 + Math.sin(time * 0.047 + ph) * 0.38;
+        const a2 = 0.42 + Math.cos(time * 0.031 + ph * 1.4) * 0.22;
 
         const shape =
-          Math.sin(u * f1 * Math.PI + time * 0.44 + bandPhase) * a1 +
-          Math.sin(u * f2 * Math.PI - time * 0.3 + bandPhase) * a2;
+          Math.sin(u * f1 * Math.PI + time * 0.4 + ph) * a1 +
+          Math.sin(u * f2 * Math.PI - time * 0.27 + ph) * a2;
 
         const wx = u * w;
+        // No jitter: the dot sits exactly on its band's line.
         const wy =
-          midY +
-          (q.band - (BANDS - 1) / 2) * h * 0.11 +
-          shape * amp * env +
-          q.j * h * 0.011;
+          midY + (q.band - (BANDS - 1) / 2) * h * 0.042 + shape * h * 0.062 * env;
 
-        // ---- grid position -------------------------------------------------
-        const gx = gridX + (q.col / Math.max(1, cols - 1)) * gridW;
-        const gy = gridY + q.row * rowGap;
+        // ---- grid -----------------------------------------------------------
+        const gx = gridX + q.col * colGap;
+        const gy = gridTop + q.row * rowGap;
 
         const x = lerp(wx, gx, k);
         const y = lerp(wy, gy, k);
 
-        // Heavier dots hold more weight; crests hold more than troughs.
-        const crest = Math.max(0, shape / 1.6);
-        const weight = 0.35 + (q.r / 5.7) * 0.65;
-        const a = (0.1 + crest * 0.24 + k * 0.12) * weight * (0.35 + env * 0.65);
+        const crest = Math.max(0, shape / 1.5);
+        const weight = 0.4 + ((q.r - R_MIN) / (R_MAX - R_MIN)) * 0.6;
+        const a = (0.09 + crest * 0.2 + k * 0.1) * weight * (0.35 + env * 0.65);
 
         ctx.beginPath();
         ctx.arc(x, y, q.r, 0, Math.PI * 2);
         ctx.fillStyle =
-          k > 0.5 || q.band === 1
+          k > 0.5 || q.band % 4 === 1
             ? `rgba(59, 47, 217, ${(a * 0.9).toFixed(3)})`
             : `rgba(14, 17, 20, ${a.toFixed(3)})`;
         ctx.fill();
