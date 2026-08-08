@@ -16,7 +16,7 @@ import { useAppStore } from "@/lib/app-store";
 type SortOrder = "oldest" | "newest";
 
 /**
- * Needs a person — a worklist, not a table dump.
+ * Needs a person   a worklist, not a table dump.
  *
  * Sorted oldest first by default, and that default is the design. The oldest escalation
  * is the most expensive one: somebody was frustrated, nobody has called them back, and
@@ -62,7 +62,7 @@ export default function EscalationsPage() {
           </h1>
           {escalations.length > 0 ? (
             <p className="text-small text-text-dim">
-              Oldest first — the longest wait is the most expensive one.
+              Oldest first   the longest wait is the most expensive one.
             </p>
           ) : null}
         </div>

@@ -7,7 +7,7 @@ deliberately departed from the brief. Written for whoever picks this up next.
 
 ## 1. Direction change, mid-build
 
-The build started against a brief titled **"The Exchange"** — a light/dark dual-surface
+The build started against a brief titled **"The Exchange"**   a light/dark dual-surface
 instrument-panel design that explicitly banned parallax, glassmorphism, gradient blobs,
 and card shadows.
 
@@ -39,22 +39,22 @@ mono-for-machine-data rule, the safety-first run composer, and the discipline ru
 
 ## 2. The one rule worth protecting
 
-**Colour with meaning is reserved for meaning.** The five lamp colours — `off`, `ice`,
-`brass`, `jade`, `flare` — communicate call state and nothing else. They are never used
+**Colour with meaning is reserved for meaning.** The five lamp colours   `off`, `ice`,
+`brass`, `jade`, `flare`   communicate call state and nothing else. They are never used
 for buttons, links, headings, hovers, or decoration.
 
 Consequences that look odd until you know the rule:
 
 - The primary CTA is **monochrome** (`--surface-inverse` on `--text-inverse`), not brand-coloured.
-- JSON syntax highlighting in `CodeBlock` uses **weight and dimming, not hue** — a syntax
+- JSON syntax highlighting in `CodeBlock` uses **weight and dimming, not hue**   a syntax
   palette would put arbitrary colour on screen.
 - Charts and sparklines are drawn in `--rule-strong`, with no series colours.
 
 Three deliberate exceptions, each because the thing being coloured *is* state:
 
-1. `Button variant="danger"` uses flare — a destructive action must not be misread.
-2. Toast tones use lamp colours — a toast reports what happened to a call.
-3. Form error borders use flare — a field that will block a run is call state.
+1. `Button variant="danger"` uses flare   a destructive action must not be misread.
+2. Toast tones use lamp colours   a toast reports what happened to a call.
+3. Form error borders use flare   a field that will block a run is call state.
 
 If you add a colour to this product, check it against that rule first.
 
@@ -88,8 +88,8 @@ alternating background bands.
 The pure lamp colours do not all clear 4.5:1 against a light surface, so there are two
 sets of tokens:
 
-- `--lamp-*` — the dot itself, always the pure colour.
-- `--lamp-*-text` — anything setting *text* in a lamp colour.
+- `--lamp-*`   the dot itself, always the pure colour.
+- `--lamp-*-text`   anything setting *text* in a lamp colour.
 
 `LampBadge` uses both at once: a `color-mix` surface, a `color-mix` border, `-text` for
 the label, and the pure colour for the dot. Never set text in a raw `--lamp-*`.
@@ -105,10 +105,10 @@ Rather than fake those, each surface says what is real:
 
 | Surface | Data |
 |---|---|
-| Overview, runs, escalations, contacts | **Real.** Derived from hydrated runs — escalations are outcomes with `disposition === "escalated"`, contacts are grouped from call history. |
+| Overview, runs, escalations, contacts | **Real.** Derived from hydrated runs   escalations are outcomes with `disposition === "escalated"`, contacts are grouped from call history. |
 | Safety + API-key panes | **Real.** Read from `/api/health`. |
 | Campaign editor | **Real** for name/goal/fields/region/language. |
-| Calling window, retry policy | **Local.** `localStorage`, per campaign id — the campaign API has no field for them. See `lib/campaign-draft.ts`. |
+| Calling window, retry policy | **Local.** `localStorage`, per campaign id   the campaign API has no field for them. See `lib/campaign-draft.ts`. |
 | Suppression list | **Local.** `lib/suppression.ts`, and the page says plainly that a browser-local list is not the global guarantee the product promises. |
 | Auth, billing, team, numbers, integrations, notifications | **Not wired.** Forms validate, then say nothing was sent, via `AuthNotice` / `NotWiredNotice`. |
 
@@ -116,7 +116,7 @@ The rule applied throughout: **never show a success state for something that did
 happen.** A fake "check your inbox" leaves someone waiting for an email that will never
 arrive, and they blame the product rather than the gap.
 
-`Stop run` is the sharpest case — the service has no cancel endpoint, so it stops
+`Stop run` is the sharpest case   the service has no cancel endpoint, so it stops
 *polling* and the toast says exactly that: "Updates stopped, run not cancelled."
 
 ---
@@ -127,7 +127,7 @@ The editor offers `string | number | boolean | date | enum`. The service accepts
 `string | number | integer | boolean`.
 
 `date` and `enum` map to `string`, with their constraint folded into the field
-description — and the description *is* the extraction instruction, so "one of: onsite,
+description   and the description *is* the extraction instruction, so "one of: onsite,
 hybrid, remote_only" genuinely constrains the answer. See `lib/campaign-fields.ts`.
 Better than dropping two useful types from the editor.
 
@@ -138,10 +138,10 @@ Better than dropping two useful types from the editor.
 `eslint-config-next` enables `react-hooks/set-state-in-effect`, which flags the common
 "read localStorage in an effect, then setState" shape. The codebase avoids it three ways:
 
-1. **`lib/hooks/use-external-store.ts`** — `useSyncExternalStore` over `localStorage` and
+1. **`lib/hooks/use-external-store.ts`**   `useSyncExternalStore` over `localStorage` and
    `matchMedia`. Correct on first paint, SSR-safe, no cascading render. Use this for any
    new browser-state read.
-2. **Render-phase derivation** — `useTypewriter`, `useRunPoll`, `StatusBoard`, and the
+2. **Render-phase derivation**   `useTypewriter`, `useRunPoll`, `StatusBoard`, and the
    hero's lamp sequence compare a key during render instead of resetting in an effect.
 3. **Two justified `eslint-disable`s**, both genuine external-system reads:
    the campaign editor's one-shot `sessionStorage` handoff (which must also *clear* it),
@@ -181,15 +181,15 @@ module speaks the vendor's name.
 
 Three deliberate exceptions, all functional:
 
-1. `calle-ai` in `requirements.txt` / `pyproject.toml` — the real distribution name; the
+1. `calle-ai` in `requirements.txt` / `pyproject.toml`   the real distribution name; the
    install breaks otherwise.
-2. `CALLE_API_KEY` as an environment variable — the brief explicitly permits this. Every
+2. `CALLE_API_KEY` as an environment variable   the brief explicitly permits this. Every
    *label* says "Voice API key".
-3. `"call-e/customerMetadata"` in `orchestrator.py` — an API payload key. Changing it
+3. `"call-e/customerMetadata"` in `orchestrator.py`   an API payload key. Changing it
    would break extraction.
 
 **Left in place, for you to decide:** `DEVPOST_STORY.md` at the repo root is entirely a
-hackathon artefact. Deleting authored narrative felt like your call rather than mine — but
+hackathon artefact. Deleting authored narrative felt like your call rather than mine   but
 it is the one remaining hackathon reference in the repo.
 
 **Still worth doing:** check the vendor's terms for an attribution requirement. Most
@@ -202,13 +202,13 @@ Five-minute check, avoids a takedown.
 
 Everything in `lib/pricing.ts` that is a price, an included volume, or an overage rate is
 `null`, and renders as a visible `TODO` chip. A wrong number on a pricing page is worse
-than an obviously missing one — nobody signs off a placeholder, but they will quote one
+than an obviously missing one   nobody signs off a placeholder, but they will quote one
 back at you.
 
 The comparison and ROI calculators are different: those are **editable estimate inputs**
 with real defaults, clearly labelled as the buyer's assumptions rather than our claims.
 
-Fill in the checklist at the top of `lib/pricing.ts` and the whole page is correct — no
+Fill in the checklist at the top of `lib/pricing.ts` and the whole page is correct   no
 layout changes needed.
 
 ---
@@ -242,4 +242,4 @@ NEXT_PUBLIC_SITE_URL   absolute site URL, for canonical links and social cards
 ```
 
 `lib/api.ts` rejects internal hostnames a browser cannot resolve and falls back to the
-public URL — worth knowing before debugging an opaque "fetch failed".
+public URL   worth knowing before debugging an opaque "fetch failed".

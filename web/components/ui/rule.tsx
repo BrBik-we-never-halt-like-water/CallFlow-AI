@@ -3,7 +3,7 @@ import { Lamp } from "@/components/brand/lamp";
 
 /**
  * A hairline rule. Default elevation in this design is a 1px border, so this is
- * the workhorse separator — there are no card shadows to do the job instead.
+ * the workhorse separator   there are no card shadows to do the job instead.
  *
  * `withLamps` sets three lamps into the line. Used between home-page sections,
  * where a divider carrying the product's one idea is doing more work than a

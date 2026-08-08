@@ -7,13 +7,13 @@ export const metadata = {
 
 Newest first. Dates are the day a change reached production.
 
-## 2026-08-05 — Interface rebuild
+## 2026-08-05   Interface rebuild
 
-The whole interface was rebuilt around one idea: a completed call tells you nothing, so
-the state of every call should be visible the moment it ends.
+The whole interface was rebuilt around one idea: a completed call tells you nothing
+until its state is visible the moment it ends.
 
 - **Lamp strips replace progress bars.** A run now shows one lamp per call, and each
-  lamp carries a state — queued, simulated, in conversation, queued for retry,
+  lamp carries a state   queued, simulated, in conversation, queued for retry,
   auto-closed, or needs a person. A bar told you how much was done; a strip tells you
   how it went.
 - **The dry-run switch confirms before going live.** It is the only switch in the

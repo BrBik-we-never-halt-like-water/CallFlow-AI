@@ -42,7 +42,7 @@ export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElemen
    * changes size while it works.
    */
   loading?: boolean;
-  /** Render as the child element — for a link that looks like a button. */
+  /** Render as the child element   for a link that looks like a button. */
   asChild?: boolean;
 }
 
@@ -84,7 +84,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       {loading ? (
         <>
           {/* The label stays in flow but invisible, which is what locks the
-              width — the button cannot jump as it starts working. */}
+              width   the button cannot jump as it starts working. */}
           <span className="invisible contents">{children}</span>
           <span className="absolute inset-0 flex items-center justify-center gap-1">
             <LoadingLamps />

@@ -8,7 +8,7 @@ import { useField } from "./field";
 
 /**
  * Shared control chrome. Depth is a 1px rule, never a shadow, and the error
- * state is a flare rule — the only place a lamp colour appears on a control,
+ * state is a flare rule   the only place a lamp colour appears on a control,
  * because a field that will stop a run from starting is call state.
  */
 const CONTROL = [

@@ -1,7 +1,7 @@
 """Sample outcomes for dry-run previews.
 
 Dry run must never place a call, but an empty results table hides everything
-the product actually does — extraction, sentiment, triage. These generate a
+the product actually does   extraction, sentiment, triage. These generate a
 plausible outcome per contact so the whole pipeline is visible without dialing.
 
 Every record produced here is flagged `is_sample: true` and the UI labels it,
@@ -72,7 +72,7 @@ def _slot(contact: Contact, index: int) -> int:
     """Pick a stable profile for a contact.
 
     Position-based, so a short list walks through the profiles in order and a
-    preview reliably shows more than one outcome — including an escalation,
+    preview reliably shows more than one outcome   including an escalation,
     which is the point of the triage demo. A name hash was tried first and
     clustered badly: three contacts could all land on the same profile.
 

@@ -23,8 +23,8 @@ export interface DryRunConfirmDetails {
  * safety story is also a sales asset. Three things make it different from every other
  * switch in the product:
  *
- *  1. It defaults to on, and the sub-label says what that means — "Nothing will be
- *     dialled" — rather than just naming the setting.
+ *  1. It defaults to on, and the sub-label says what that means   "Nothing will be
+ *     dialled"   rather than just naming the setting.
  *  2. It is the only switch that confirms. Turning it off spends money and rings real
  *     people, and the confirmation shows the numbers that decision depends on.
  *  3. Its state is announced politely to assistive tech, because the difference between

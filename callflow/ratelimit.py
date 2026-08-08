@@ -1,13 +1,13 @@
 """Per-visitor rate limiting for the public deployment.
 
 The hosted dashboard lets anyone enter their own number and receive a real
-call. That is the point of the demo — but it runs on the owner's engine
+call. That is the point of the demo   but it runs on the owner's engine
 credits, so an unlimited public endpoint would be trivially drainable and
 could be pointed at strangers.
 
 Two limits, both fail closed:
-  * per-IP    — stops one visitor burning the balance or harassing a number
-  * per-day   — a global floor so the demo still works late in the judging day
+  * per-IP      stops one visitor burning the balance or harassing a number
+  * per-day     a global floor so the demo still works late in the judging day
 
 The owner bypasses both by sending an owner key, so testing is unrestricted.
 """
@@ -67,7 +67,7 @@ class RateLimiter:
                     False,
                     f"Live-call limit reached ({config.rate_limit_calls} per "
                     f"{int(window // 60)} minutes). Try again in about {mins} minute"
-                    f"{'s' if mins != 1 else ''}, or use dry run — it is unlimited.",
+                    f"{'s' if mins != 1 else ''}, or use dry run   it is unlimited.",
                     retry,
                 )
 

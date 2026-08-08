@@ -59,7 +59,7 @@ export default function CampaignsPage() {
         }),
       );
     } catch {
-      /* storage unavailable — the editor opens empty, which is recoverable */
+      /* storage unavailable   the editor opens empty, which is recoverable */
     }
     router.push("/app/campaigns/new?from=duplicate");
   }
@@ -72,7 +72,7 @@ export default function CampaignsPage() {
       toast({ tone: "success", title: "Campaign deleted" });
       setPendingDelete(null);
       refresh();
-      // The campaign list lives on the connection hook, which loads once — a reload is
+      // The campaign list lives on the connection hook, which loads once   a reload is
       // the honest way to reflect the deletion until that becomes refetchable.
       router.refresh();
     } catch (error) {

@@ -4,7 +4,7 @@ import { useEffect, useRef } from "react";
 import { cn } from "@/lib/cn";
 
 /**
- * A live voice waveform on a canvas — the bold, structural counterpart to the
+ * A live voice waveform on a canvas   the bold, structural counterpart to the
  * CSS spine. Used as card mastheads, call-row voices, and section bands.
  *
  * All instances share ONE requestAnimationFrame loop (registered below), so a
@@ -40,7 +40,7 @@ function unregister(cb: Draw) {
   }
 }
 
-/** Layered travelling sine — loudest in the centre, tapering to the ends. */
+/** Layered travelling sine   loudest in the centre, tapering to the ends. */
 function amp(x: number, t: number, seed: number) {
   const env = Math.sin(Math.PI * x);
   const w =

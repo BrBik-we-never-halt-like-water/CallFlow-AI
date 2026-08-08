@@ -8,7 +8,7 @@ import { LiveLamp } from "./live-lamp";
  * The problem, argued on the left and demonstrated on the right.
  *
  * The demonstration is two call-log rows. The "without" pair is deliberately
- * identical — same status, same duration, no way to tell them apart — and the
+ * identical   same status, same duration, no way to tell them apart   and the
  * "with" pair is the same two calls carrying lamps. That contrast *is* the pitch,
  * so it gets room and no caption: explaining it would concede that it doesn't
  * land on its own.
@@ -29,7 +29,7 @@ export function ProblemCompare() {
           </h2>
           <p className="measure text-body-l text-text-dim">
             In a normal call log, a delighted customer and a furious one look identical
-            — both just say <span className="font-mono text-data">completed</span>. Your
+              both just say <span className="font-mono text-data">completed</span>. Your
             team burns hours dialling, repeating the same five questions, and typing
             notes into a CRM afterwards. You find out a call went badly when someone
             escalates, which is far too late.

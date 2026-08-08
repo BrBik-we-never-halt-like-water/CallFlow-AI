@@ -1,5 +1,5 @@
 /**
- * Phone number handling — the ONLY place in the codebase that masks a number.
+ * Phone number handling   the ONLY place in the codebase that masks a number.
  *
  * Masking is a product guarantee, not a display preference: a full number must
  * never sit on screen unless the viewer deliberately reveals it and is
@@ -17,7 +17,7 @@ export function isE164(phone: string): boolean {
  * Normalise loose input into E.164 where the intent is unambiguous.
  *
  * Anything still not E.164 afterwards is reported as an error rather than
- * guessed at — dialling a wrong number is worse than rejecting a row.
+ * guessed at   dialling a wrong number is worse than rejecting a row.
  */
 export function normalisePhone(raw: string, defaultCountryCode = "91"): string {
   let p = raw.replace(/[\s\-()./]/g, "");
@@ -35,7 +35,7 @@ export function normalisePhone(raw: string, defaultCountryCode = "91"): string {
  *
  * Keeps the leading `+` and country prefix so an operator can still tell which
  * region a row belongs to, and the last three digits so they can match it
- * against a number a colleague reads out — without the number itself being
+ * against a number a colleague reads out   without the number itself being
  * readable off a shared screen.
  */
 export function maskPhone(phone: string): string {

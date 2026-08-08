@@ -1,8 +1,8 @@
 /**
- * Commercial configuration — the single source of truth for pricing.
+ * Commercial configuration   the single source of truth for pricing.
  *
  * ─────────────────────────────────────────────────────────────────────────────
- * TODO BEFORE LAUNCH — every `null` below is an unset commercial number and
+ * TODO BEFORE LAUNCH   every `null` below is an unset commercial number and
  * renders as a visible `TODO` chip on /pricing. Nothing here is a placeholder
  * guess dressed up as a real price, because a wrong number on a pricing page is
  * worse than an obviously missing one.
@@ -42,7 +42,7 @@ export interface Plan {
   features: string[];
   cta: string;
   ctaHref: string;
-  /** Marked with a 1px ink border and a small mono tag — never a coloured banner. */
+  /** Marked with a 1px ink border and a small mono tag   never a coloured banner. */
   mostChosen?: boolean;
 }
 
@@ -203,7 +203,7 @@ export const FEATURE_MATRIX: MatrixCategory[] = [
       {
         label: "Calls placed per hour",
         hint: "A pacing limit, so a run never looks like a burst of robocalls.",
-        values: { free: "—", starter: null, growth: null, scale: null },
+        values: { free: " ", starter: null, growth: null, scale: null },
       },
       {
         label: "Your own caller ID",
@@ -302,7 +302,7 @@ export const FEATURE_MATRIX: MatrixCategory[] = [
       },
       {
         label: "First-reply target",
-        values: { free: "—", starter: "2 business days", growth: "1 business day", scale: "4 hours" },
+        values: { free: " ", starter: "2 business days", growth: "1 business day", scale: "4 hours" },
       },
       {
         label: "Onboarding session",
@@ -316,7 +316,7 @@ export const FEATURE_MATRIX: MatrixCategory[] = [
    Cost comparison. This is the argument that closes deals in this market: the
    buyer is comparing against hiring a tele-caller, not against an API.
 
-   These are ESTIMATE INPUTS, not claims — the page exposes them as editable
+   These are ESTIMATE INPUTS, not claims   the page exposes them as editable
    fields and recomputes, so a buyer can put their own salary figure in.
    --------------------------------------------------------------------------- */
 
@@ -359,7 +359,7 @@ export const PRICING_FAQ: { q: string; a: string }[] = [
   },
   {
     q: "Do dry runs cost anything?",
-    a: "No. Dry runs are free on every plan, including Free, and they are unlimited. A dry run walks the whole pipeline — row validation, the safety gates, the rendered goal, and a sample typed result — without dialling. Nothing about a dry run touches your call volume.",
+    a: "No. Dry runs are free on every plan, including Free, and they are unlimited. A dry run walks the whole pipeline   row validation, the safety gates, the rendered goal, and a sample typed result   without dialling. Nothing about a dry run touches your call volume.",
   },
   {
     q: "What happens when I go over my included volume?",

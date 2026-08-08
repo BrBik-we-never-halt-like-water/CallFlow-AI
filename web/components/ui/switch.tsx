@@ -20,7 +20,7 @@ export interface SwitchProps {
   disabled?: boolean;
   /**
    * Track colour when on. Defaults to the monochrome inverse surface. A lamp
-   * colour is only correct where the switch itself sets call state — which in
+   * colour is only correct where the switch itself sets call state   which in
    * practice means the dry-run switch and nothing else.
    */
   tone?: LampState;

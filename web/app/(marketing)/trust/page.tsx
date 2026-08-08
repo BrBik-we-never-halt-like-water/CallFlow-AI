@@ -12,7 +12,7 @@ export const metadata: Metadata = {
  * Trust.
  *
  * Set as a single narrow column of ruled prose, with no cards and no illustration.
- * This page should read like a document, because that is what earns trust — a
+ * This page should read like a document, because that is what earns trust   a
  * compliance reviewer skimming for retention windows and sub-processors is looking
  * for a document, and dressing it up as marketing makes them trust it less.
  *
@@ -36,7 +36,7 @@ const SECTIONS = [
     id: "consent",
     heading: "Consent, and how it lands as a typed field",
     paragraphs: [
-      "You are responsible for having a lawful basis to call the people on your list — usually because they enquired, are an existing customer, or gave consent. CallFlow does not source phone numbers and never supplies contacts.",
+      "You are responsible for having a lawful basis to call the people on your list   usually because they enquired, are an existing customer, or gave consent. CallFlow does not source phone numbers and never supplies contacts.",
       "Where a campaign needs consent captured on the call itself, turn on the consent requirement in Settings → Compliance. The agent then asks for it explicitly and the answer comes back as a typed boolean alongside the words used, so it is auditable rather than inferred from prose.",
       "A campaign with the consent requirement on will not record a result as complete if consent was refused. The call ends politely and the contact is suppressed.",
     ],
@@ -45,7 +45,7 @@ const SECTIONS = [
     id: "opt-outs",
     heading: "Opt-outs and the suppression list",
     paragraphs: [
-      "If someone asks not to be called again — in any phrasing the agent recognises as an opt-out — the call ends and the number is added to your suppression list immediately.",
+      "If someone asks not to be called again   in any phrasing the agent recognises as an opt-out   the call ends and the number is added to your suppression list immediately.",
       "The suppression list is global and permanent. It applies across every campaign in your organisation, forever, and it cannot be overridden from a run. A suppressed number is skipped before a call is placed, and the row says why.",
       "You can also add numbers manually or import a do-not-call list in bulk. Suppression survives contact re-imports: re-uploading a CSV that contains a suppressed number does not resurrect it.",
     ],
@@ -54,7 +54,7 @@ const SECTIONS = [
     id: "number-masking",
     heading: "Phone number masking",
     paragraphs: [
-      "Phone numbers are masked everywhere in the interface by default — in tables, run views, transcripts, exports shown on screen, and error messages. What you see is the country prefix and the last three digits.",
+      "Phone numbers are masked everywhere in the interface by default   in tables, run views, transcripts, exports shown on screen, and error messages. What you see is the country prefix and the last three digits.",
       "Revealing a full number is a separate action, available only to roles you have granted it to. Masking is implemented in exactly one place in the codebase, so a new screen cannot accidentally ship without it.",
       "Logs written by the service mask numbers the same way. A full number is not written to an application log.",
     ],
@@ -64,7 +64,7 @@ const SECTIONS = [
     heading: "Data retention and deletion",
     paragraphs: [
       "Transcripts and recordings are kept for the window on your plan, and you can shorten that window on any plan, including Free. When the window passes they are deleted, not archived.",
-      "Typed results — outcome, sentiment, and your own fields — are kept for the life of the account so your reporting stays intact after transcripts expire. They contain no audio and no full phone numbers.",
+      "Typed results   outcome, sentiment, and your own fields   are kept for the life of the account so your reporting stays intact after transcripts expire. They contain no audio and no full phone numbers.",
       "You can export everything as CSV or JSON at any time, and you can request deletion of an individual contact or of the whole organisation from Settings → Compliance. Deletion requests are honoured within 30 days and cover backups.",
     ],
   },
@@ -75,21 +75,21 @@ const SECTIONS = [
       "CallFlow relies on a small number of infrastructure providers. They are listed here by category and function, which is the level of detail a data-protection assessment needs; the current named list, with jurisdictions, is provided with the DPA and on request.",
     ],
     list: [
-      "Voice and telephony — places the call, handles speech and turn-taking. Receives the phone number, the campaign goal, and the result schema.",
-      "Cloud hosting and compute — runs the service. Receives all data processed by the platform.",
-      "Managed database and object storage — stores campaigns, results, transcripts, and recordings at rest.",
-      "Transactional email — sends account, verification, and notification email. Receives your users' email addresses, never contact data.",
-      "Payment processing — handles card details and invoicing. Card numbers never reach our systems.",
-      "Error monitoring and logging — receives operational telemetry with phone numbers masked.",
+      "Voice and telephony   places the call, handles speech and turn-taking. Receives the phone number, the campaign goal, and the result schema.",
+      "Cloud hosting and compute   runs the service. Receives all data processed by the platform.",
+      "Managed database and object storage   stores campaigns, results, transcripts, and recordings at rest.",
+      "Transactional email   sends account, verification, and notification email. Receives your users' email addresses, never contact data.",
+      "Payment processing   handles card details and invoicing. Card numbers never reach our systems.",
+      "Error monitoring and logging   receives operational telemetry with phone numbers masked.",
     ],
   },
   {
     id: "regional",
     heading: "Regional compliance notes",
     paragraphs: [
-      "India — calling windows default to 09:00–20:00 IST and are enforced per campaign. Where a campaign targets numbers registered on a national do-not-call preference list, you are responsible for scrubbing against it; import the list into your suppression list and it will be enforced on every run.",
-      "European Union and United Kingdom — a DPA including the standard contractual clauses is available. Data residency in the EU can be arranged on Enterprise. Automated calling to individuals generally requires prior consent, and the consent-capture setting exists for exactly that.",
-      "United States — calling windows default to local time per area code where region data is available. Consent requirements for automated calls vary by state and are stricter than for manual dialling; take your own advice before running a live campaign.",
+      "India   calling windows default to 09:00–20:00 IST and are enforced per campaign. Where a campaign targets numbers registered on a national do-not-call preference list, you are responsible for scrubbing against it; import the list into your suppression list and it will be enforced on every run.",
+      "European Union and United Kingdom   a DPA including the standard contractual clauses is available. Data residency in the EU can be arranged on Enterprise. Automated calling to individuals generally requires prior consent, and the consent-capture setting exists for exactly that.",
+      "United States   calling windows default to local time per area code where region data is available. Consent requirements for automated calls vary by state and are stricter than for manual dialling; take your own advice before running a live campaign.",
       "None of the above is legal advice. The guards exist so that your policy can be enforced by the product rather than remembered by a person.",
     ],
   },
@@ -98,7 +98,7 @@ const SECTIONS = [
     heading: "Security and reporting a problem",
     paragraphs: [
       "Data is encrypted in transit and at rest. Access to production is limited, logged, and requires multi-factor authentication. API keys are shown once at creation, stored hashed, and can be revoked immediately.",
-      "If you believe you have found a vulnerability, email security@callflow.ai. We will acknowledge within two business days. Please do not run automated scanning against live calling endpoints — a test that places real calls reaches real people.",
+      "If you believe you have found a vulnerability, email security@callflow.ai. We will acknowledge within two business days. Please do not run automated scanning against live calling endpoints   a test that places real calls reaches real people.",
     ],
   },
 ];

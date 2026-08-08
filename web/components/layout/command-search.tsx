@@ -26,7 +26,7 @@ interface Result {
  *
  * Searches destinations, campaigns, and contacts already called. Contact matching
  * runs against the full number so an operator can paste one in, but the number is
- * only ever *displayed* masked — the search is a lookup, not a way around masking.
+ * only ever *displayed* masked   the search is a lookup, not a way around masking.
  */
 export function CommandSearch() {
   const router = useRouter();

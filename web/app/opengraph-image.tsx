@@ -6,7 +6,7 @@ import { ImageResponse } from "next/og";
  * No photography and no vendor mark. The strip is the whole idea of the product in one
  * row, which is the only thing worth putting on a card that gets seen at thumbnail size.
  */
-export const alt = "CallFlow AI — every call comes back as data";
+export const alt = "CallFlow AI   every call comes back as data";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 

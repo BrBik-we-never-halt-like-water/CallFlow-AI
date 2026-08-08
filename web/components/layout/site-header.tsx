@@ -97,7 +97,7 @@ export function SiteHeader() {
         "transition-[border-color,box-shadow] duration-(--dur-base) ease-(--ease-out)",
         // Solid, not frosted: the page and the header share --surface, so at the
         // top the header reads as flush with the hero. On scroll a hairline and a
-        // soft shadow ease in to lift it above the content passing underneath —
+        // soft shadow ease in to lift it above the content passing underneath  
         // an opaque bar never lets text ghost through the way a translucent one does.
         scrolled ? "border-rule shadow-sm" : "border-transparent",
       )}
@@ -155,7 +155,7 @@ export function SiteHeader() {
 
 /**
  * A single-column dropdown: label + one line of context per link, with a caret
- * that slides in on hover. Deliberately just the links — the panel is a way to
+ * that slides in on hover. Deliberately just the links   the panel is a way to
  * reach a page, not a place to make the argument twice.
  */
 function MegaMenu({
@@ -170,9 +170,9 @@ function MegaMenu({
   links: { label: string; href: string; hint: string }[];
   /** Controlled by SiteHeader so only one menu is ever open. */
   open: boolean;
-  /** Pointer entered the trigger or panel — open now, cancelling any close. */
+  /** Pointer entered the trigger or panel   open now, cancelling any close. */
   onOpen: () => void;
-  /** Pointer left — start the grace timer before closing. */
+  /** Pointer left   start the grace timer before closing. */
   onScheduleClose: () => void;
   /** Radix's own open/close (click, Escape, outside-click, keyboard). */
   onOpenChange: (open: boolean) => void;
@@ -209,7 +209,7 @@ function MegaMenu({
           // Don't yank focus/scroll when the menu opens under the pointer;
           // keyboard users still Tab straight into the links.
           onOpenAutoFocus={(e) => e.preventDefault()}
-          // Don't return focus to the trigger on close either — otherwise a
+          // Don't return focus to the trigger on close either   otherwise a
           // hover-opened menu leaves a focus-ring box sitting on the trigger
           // after the pointer moves away.
           onCloseAutoFocus={(e) => e.preventDefault()}

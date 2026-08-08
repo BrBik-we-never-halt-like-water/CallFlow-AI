@@ -1,4 +1,4 @@
-# CallFlow AI — backend runtime dependencies.
+# CallFlow AI   backend runtime dependencies.
 #
 # Mirrors [project.dependencies] in pyproject.toml. Installing the package
 # itself (`pip install -e .`) resolves the same set; this file exists for
@@ -9,7 +9,7 @@
 #   source .venv/bin/activate       # macOS / Linux
 #   pip install -r requirements.txt
 #
-# For tests and linting, use requirements-dev.txt instead — it includes this file.
+# For tests and linting, use requirements-dev.txt instead   it includes this file.
 
 # Voice engine SDK. The package name is the upstream distribution name and has
 # to stay verbatim or the install fails; it is never surfaced in the UI.

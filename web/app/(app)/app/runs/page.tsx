@@ -75,7 +75,7 @@ export default function RunsPage() {
       cell: (run) => {
         const hydrated = hydratedRuns.find((h) => h.id === run.id);
         if (!hydrated || hydrated.outcomes.length === 0) {
-          return <span className="font-mono text-data text-text-mute">—</span>;
+          return <span className="font-mono text-data text-text-mute"> </span>;
         }
         return (
           <LampStrip lamps={hydrated.outcomes.slice(0, 20).map(lampForOutcome)} size="sm" />

@@ -11,7 +11,7 @@ export const metadata: Metadata = {
 };
 
 /**
- * About — deliberately short.
+ * About   deliberately short.
  *
  * This is also where the author credit lives. It was previously in the site footer,
  * which put a personal byline on every page of a product that is asking businesses
@@ -33,12 +33,12 @@ export default function AboutPage() {
           CallFlow exists because of one specific frustration: a call log tells you a
           call happened, and almost nothing else. A delighted customer and a furious one
           both read <span className="font-mono text-data">completed</span>, and the
-          difference only surfaces when someone escalates — by which point it is a
+          difference only surfaces when someone escalates   by which point it is a
           complaint rather than a conversation.
         </p>
         <p className="text-body text-text-dim">
           The people who feel this hardest are not developers. They are recruiting
-          coordinators, clinic managers, admissions teams, and agency owners — the
+          coordinators, clinic managers, admissions teams, and agency owners   the
           person who owns a spreadsheet of numbers and is judged on what happens to it.
           They are choosing between hiring another tele-caller and finding another way,
           and almost every tool aimed at them is sold to their engineering team instead.
@@ -66,7 +66,7 @@ export default function AboutPage() {
           >
             mohdcodes
           </a>
-          . If something here is wrong, slow, or missing, that is the person to tell —
+          . If something here is wrong, slow, or missing, that is the person to tell  
           and the fastest way to get it changed is to say which screen you were on and
           what you expected to happen.
         </p>
@@ -98,7 +98,7 @@ export default function AboutPage() {
           {[
             {
               term: "Sales and demos",
-              detail: "Book a 15-minute call and bring your own list — we will run it in dry mode together.",
+              detail: "Book a 15-minute call and bring your own list   we will run it in dry mode together.",
               href: "/demo",
               cta: "Book a demo",
             },

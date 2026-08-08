@@ -6,7 +6,7 @@ import { Rule } from "@/components/ui/rule";
  *
  * A single `Rule withLamps` sits above the form. It is the one decorative use of the
  * lamp strip anywhere in the product, and it is justified because signing in is the
- * doorway to a surface where lamps carry meaning — it reads as the instrument
+ * doorway to a surface where lamps carry meaning   it reads as the instrument
  * powering on rather than as ornament.
  */
 export function AuthCard({

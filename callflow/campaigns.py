@@ -1,6 +1,6 @@
 """Built-in campaign definitions.
 
-Travel is the demo vertical. The engine underneath is campaign-agnostic — a new
+Travel is the demo vertical. The engine underneath is campaign-agnostic   a new
 vertical is a goal template plus a result schema, nothing more.
 """
 
@@ -34,9 +34,9 @@ TRAVEL_DISCOVERY = Campaign(
         "everything with the travel consultants, and that a colleague will get "
         "back to them with options. Thank them by name and end the call.\n\n"
         "Do not promise a WhatsApp message, an email, a price, or a specific "
-        "callback time — none of that is yours to commit to."
+        "callback time   none of that is yours to commit to."
     ),
-    # Must mirror TRAVEL_PROPERTIES in schemas.py — this is what the dashboard
+    # Must mirror TRAVEL_PROPERTIES in schemas.py   this is what the dashboard
     # lists and what dry-run previews populate.
     outcome_fields={
         "service_interest": "flight | hotel | tour | package | none",
@@ -63,9 +63,9 @@ APPOINTMENT_REMINDER = Campaign(
         "and time would suit them better. If they want to cancel, accept it without "
         "pushing back and confirm the cancellation.\n\n"
         "Keep the call under two minutes. Do not give any medical, legal, or "
-        "financial advice — if asked, say a colleague will follow up."
+        "financial advice   if asked, say a colleague will follow up."
     ),
-    # Must mirror the extra properties in SCHEMAS below — this is what the
+    # Must mirror the extra properties in SCHEMAS below   this is what the
     # dashboard lists and what dry-run previews populate.
     outcome_fields={
         "confirmed": "true if the appointment was confirmed",

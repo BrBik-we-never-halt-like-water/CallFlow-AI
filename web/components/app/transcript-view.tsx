@@ -22,8 +22,8 @@ interface Turn {
  * A call, in full: the conversation on the left, what came out of it on the right.
  *
  * The triage decision is rendered as a chain of typed fields rather than as prose. That
- * is the guarantee the whole product rests on — the reason a call was escalated is a
- * value you can check, not a sentence someone wrote — so it is displayed as a chain of
+ * is the guarantee the whole product rests on   the reason a call was escalated is a
+ * value you can check, not a sentence someone wrote   so it is displayed as a chain of
  * values, and never assembled by reading the summary text.
  */
 export function TranscriptView({ outcome }: { outcome: Outcome }) {
@@ -109,7 +109,7 @@ function Conversation({ turns, outcome }: { turns: Turn[]; outcome: Outcome }) {
         <Eyebrow>Conversation</Eyebrow>
         <p className="text-small text-text-dim">
           {outcome.dry_run
-            ? "Dry runs don't produce a transcript — nothing was said, because nothing was dialled."
+            ? "Dry runs don't produce a transcript   nothing was said, because nothing was dialled."
             : "No transcript was recorded for this call."}
         </p>
         {outcome.summary ? (
@@ -254,7 +254,7 @@ function triageChain(outcome: Outcome): string[] {
 }
 
 function formatValue(value: unknown): string {
-  if (value === null || value === undefined) return "—";
+  if (value === null || value === undefined) return " ";
   if (typeof value === "boolean") return value ? "yes" : "no";
   if (typeof value === "object") return JSON.stringify(value);
   return String(value);

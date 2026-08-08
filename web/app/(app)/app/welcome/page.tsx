@@ -78,7 +78,7 @@ export default function WelcomePage() {
       setRunId(run_id);
       setStep(3);
       refresh();
-      toast({ tone: "success", title: "Run started", body: "Dry run — nothing is being dialled." });
+      toast({ tone: "success", title: "Run started", body: "Dry run   nothing is being dialled." });
     } catch (error) {
       toast({
         tone: "error",
@@ -261,7 +261,7 @@ export default function WelcomePage() {
             <Eyebrow>Dry run · No credits spent</Eyebrow>
             <h1 className="font-display text-h2 text-text">This is what comes back</h1>
             <p className="measure text-body text-text-dim">
-              Not a transcript to read — typed fields, plus a triage decision derived from
+              Not a transcript to read   typed fields, plus a triage decision derived from
               them. That is the whole product.
             </p>
           </div>

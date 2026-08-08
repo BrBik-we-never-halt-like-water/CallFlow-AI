@@ -42,7 +42,7 @@ export default function NotificationsSettingsPage() {
             ? digest === "immediate"
               ? "You'll be emailed as soon as a call needs a person. Everything else follows the switches below."
               : "Escalations are batched into one email per hour, so a burst of them doesn't become a burst of email."
-            : "Nothing will email you about escalations. The count in the nav is the only signal — check it."
+            : "Nothing will email you about escalations. The count in the nav is the only signal   check it."
         }
         footer={
           <Button size="sm" onClick={save}>
@@ -67,7 +67,7 @@ export default function NotificationsSettingsPage() {
             checked={runFinished}
             onCheckedChange={setRunFinished}
             label="A run finished"
-            subLabel="Off by default — the results will still be there in the morning."
+            subLabel="Off by default   the results will still be there in the morning."
           />
           <Switch
             checked={weeklySummary}

@@ -13,7 +13,7 @@ import type { LampSpec } from "@/lib/lamp";
  *
  * One flare lamp among seven off ones: something specific failed, and it is not
  * everything. The copy makes the point that matters most to somebody who places phone
- * calls for a living — this is our fault, not their data.
+ * calls for a living   this is our fault, not their data.
  */
 const ONE_FLARE: LampSpec[] = [
   { state: "off", label: "Fine" },
@@ -53,7 +53,7 @@ export default function GlobalError({
           <LampStrip lamps={ONE_FLARE} size="lg" />
           <h1 className="font-display text-display-l text-text">The service is down.</h1>
           <p className="text-body-l text-text-dim">
-            This isn&apos;t your account or your data. We&apos;re on it — check status for
+            This isn&apos;t your account or your data. We&apos;re on it   check status for
             updates.
           </p>
 

@@ -27,7 +27,7 @@ export interface LampProps {
   /** Slow pulse. Reserved for "queued for retry". */
   pulse?: boolean;
   /**
-   * Accessible name. Omit only when an ancestor already names this lamp — a
+   * Accessible name. Omit only when an ancestor already names this lamp   a
    * LampStrip labels itself as a whole, so its lamps are decorative.
    */
   label?: string;
@@ -44,7 +44,7 @@ export interface LampProps {
 /**
  * A single status lamp.
  *
- * On a state change it performs one "relay settle" — a fast flicker, then hold, with a
+ * On a state change it performs one "relay settle"   a fast flicker, then hold, with a
  * soft halo fading in at the end. It never loops. An idle lamp does not animate at all,
  * and an `off` lamp never animates or glows, because an unlit lamp has nothing to
  * announce.
@@ -63,7 +63,7 @@ export function Lamp({
 
   // Remounting the inner span replays the CSS animation from the start, which is what
   // makes a state change read as a relay closing rather than a colour swap. The first
-  // paint deliberately does not animate — the strip's stagger owns the entrance.
+  // paint deliberately does not animate   the strip's stagger owns the entrance.
   const [settleKey, setSettleKey] = useState(0);
   const previous = useRef(state);
   const mounted = useRef(false);

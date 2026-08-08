@@ -3,8 +3,8 @@
  *
  * The goal template and the result schema are shown in full on each page, and
  * that is the point rather than a detail: buyers in this category have been shown
- * a lot of vague AI demos, and the literal artefact — the exact instruction the
- * agent is given, and the exact fields that come back — is the thing that makes
+ * a lot of vague AI demos, and the literal artefact   the exact instruction the
+ * agent is given, and the exact fields that come back   is the thing that makes
  * the claim checkable. Anything trimmed for tidiness here weakens the page.
  */
 
@@ -67,7 +67,7 @@ If they are happy to continue, screen for four things, in this order:
 3. What salary range are they looking for?
 4. Can they work from {context[location]}, or would they need remote?
 
-Keep it conversational. If they ask a question you cannot answer — about the team, the interview process, or anything contractual — tell them a recruiter will follow up and note that they asked.
+Keep it conversational. If they ask a question you cannot answer   about the team, the interview process, or anything contractual   tell them a recruiter will follow up and note that they asked.
 
 If they say they are not interested, thank them and ask whether they would like to be contacted about future roles. If they ask to be removed from the list, confirm that you will remove them and end the call.
 
@@ -109,12 +109,12 @@ If at any point they sound frustrated, ask to speak to a person, or ask you to s
       {
         question: "Won't candidates be put off by an automated screening call?",
         answer:
-          "The call says it is automated in the first few seconds — that line is on by default and cannot be fully removed. In practice the objection candidates actually raise is the opposite one: being asked the same five questions by a person, at a time that does not suit them, and then waiting a week for a reply. This calls at a reasonable hour, takes two minutes, and anyone who would rather speak to a human is handed to one immediately.",
+          "The call says it is automated in the first few seconds   that line is on by default and cannot be fully removed. In practice the objection candidates actually raise is the opposite one: being asked the same five questions by a person, at a time that does not suit them, and then waiting a week for a reply. This calls at a reasonable hour, takes two minutes, and anyone who would rather speak to a human is handed to one immediately.",
       },
       {
         question: "What happens when a candidate asks something the agent can't answer?",
         answer:
-          "It says a recruiter will follow up and records the question in the `recruiter_question` field, so the follow-up starts with the answer already known. It does not guess at package details, interview stages, or anything contractual — a wrong answer on a call is worse than a deferred one.",
+          "It says a recruiter will follow up and records the question in the `recruiter_question` field, so the follow-up starts with the answer already known. It does not guess at package details, interview stages, or anything contractual   a wrong answer on a call is worse than a deferred one.",
       },
     ],
     roi: { contactsPerMonth: 400, currentConversionPct: 35, minutesPerCall: 8 },
@@ -139,7 +139,7 @@ If yes, say that the appointment on {context[missed_date]} was missed and ask wh
 
 If none of the openings suit, ask what days and times generally work for them and record that instead of forcing a choice.
 
-If they say they no longer need the appointment, ask briefly whether that is because the issue resolved, they went elsewhere, or something else — then thank them and close.
+If they say they no longer need the appointment, ask briefly whether that is because the issue resolved, they went elsewhere, or something else   then thank them and close.
 
 Do not give any clinical advice, discuss test results, or comment on their treatment, even if asked directly. If they raise anything clinical, tell them a member of the practice will call back about it.
 
@@ -174,14 +174,14 @@ If they sound distressed or frustrated, or ask for a person, stop and hand off t
     ],
     objections: [
       {
-        question: "We're a clinic — can this touch patient data at all?",
+        question: "We're a clinic   can this touch patient data at all?",
         answer:
           "The call is given only the name, the missed date, and the openings you want offered. It is instructed not to discuss anything clinical and to hand off if a patient raises it, and the `clinical_question_raised` field tells you exactly which calls need a practice callback. Numbers are masked everywhere in the interface, retention is configurable, and a signed DPA is available.",
       },
       {
         question: "What if the slot gets taken while the call is happening?",
         answer:
-          "Offer the openings you are willing to hold, and treat the returned `slot_accepted` as a request rather than a booking — the front desk confirms it against the diary. Teams running this at volume usually reserve a small pool of recovery slots so the confirmation is a formality.",
+          "Offer the openings you are willing to hold, and treat the returned `slot_accepted` as a request rather than a booking   the front desk confirms it against the diary. Teams running this at volume usually reserve a small pool of recovery slots so the confirmation is a formality.",
       },
     ],
     roi: { contactsPerMonth: 300, currentConversionPct: 22, minutesPerCall: 5 },
@@ -195,19 +195,19 @@ If they sound distressed or frustrated, or ask for a person, stop and hand off t
     metric: "Every enquiry called back, not just the recent ones",
     pain: [
       "Enquiries arrive in bursts around deadlines, and the team can only call back the newest ones.",
-      "The questions are the same every time — fees, start dates, entry requirements, hostel — but the answers still need a person.",
+      "The questions are the same every time   fees, start dates, entry requirements, hostel   but the answers still need a person.",
       "A student who enquired ten days ago has usually already applied somewhere that called them back on day one.",
     ],
     goalTemplate: `You are calling {name}, who enquired about studying {context[programme]} at {context[institution]}.
 
-Confirm you are speaking to {name}, say which institution you are calling from, and state clearly that you are an automated assistant. Ask whether now is a good time — many of these calls reach students in class, and a bad time is not a bad outcome.
+Confirm you are speaking to {name}, say which institution you are calling from, and state clearly that you are an automated assistant. Ask whether now is a good time   many of these calls reach students in class, and a bad time is not a bad outcome.
 
 If they can talk, work through three things:
 1. Confirm which programme they are interested in, and which intake or start term they are aiming for.
 2. Ask how far along they are: still exploring, planning to apply, already applied, or applied elsewhere too.
 3. Ask what would help them decide, and record it in their own words.
 
-You may confirm these facts and nothing more: the programmes offered, published start terms, and that fees and entry requirements are on the website. Do not quote a fee figure, promise a scholarship, or comment on whether their grades would be accepted — an admissions officer follows up on all of that.
+You may confirm these facts and nothing more: the programmes offered, published start terms, and that fees and entry requirements are on the website. Do not quote a fee figure, promise a scholarship, or comment on whether their grades would be accepted   an admissions officer follows up on all of that.
 
 If they say they have already accepted an offer elsewhere, congratulate them, ask which institution if they are willing to say, and close politely.
 
@@ -247,14 +247,14 @@ If they sound frustrated, ask for a person, or ask not to be called again, stop 
     ],
     objections: [
       {
-        question: "Our enquiries are students — is calling them appropriate?",
+        question: "Our enquiries are students   is calling them appropriate?",
         answer:
           "They enquired, which is consent to be contacted about the thing they asked about, and the call opens by saying which institution it is from. The calling window keeps it inside reasonable hours, and the agent asks whether now is a good time before doing anything else. A student who says it is a bad time is queued for a polite retry rather than pushed.",
       },
       {
         question: "What stops it from over-promising to get an application?",
         answer:
-          "The goal lists exactly what may be confirmed — programmes, published start terms, and where the fee information lives — and the agent is told not to quote figures, promise scholarships, or comment on eligibility. Anything in that territory sets `needs_officer_callback` instead, and an officer follows up. The agent has no incentive to close; it is scored on returning accurate fields, not on conversions.",
+          "The goal lists exactly what may be confirmed   programmes, published start terms, and where the fee information lives   and the agent is told not to quote figures, promise scholarships, or comment on eligibility. Anything in that territory sets `needs_officer_callback` instead, and an officer follows up. The agent has no incentive to close; it is scored on returning accurate fields, not on conversions.",
       },
     ],
     roi: { contactsPerMonth: 800, currentConversionPct: 28, minutesPerCall: 6 },
@@ -276,14 +276,14 @@ If they sound frustrated, ask for a person, or ask not to be called again, stop 
 Confirm you are speaking to {name}, say who you are calling from, and state clearly that you are an automated assistant. Ask whether now is a good time; if not, ask when suits and end politely.
 
 If they can talk, qualify on four things, conversationally rather than as a checklist:
-1. What problem prompted the enquiry — in their words, not a category.
+1. What problem prompted the enquiry   in their words, not a category.
 2. Roughly how many people or how much volume this would need to cover.
 3. What timeline they are working to.
 4. Who else would be involved in deciding.
 
 Do not quote prices, offer a discount, or commit to any date. If they ask what it costs, say pricing depends on volume, that it is published on the website, and that a specialist will confirm the detail.
 
-If they are clearly not a fit — no budget, no timeline, or a problem this does not solve — say so kindly, thank them, and close. It is better to mark a lead unqualified than to book a meeting nobody wants.
+If they are clearly not a fit   no budget, no timeline, or a problem this does not solve   say so kindly, thank them, and close. It is better to mark a lead unqualified than to book a meeting nobody wants.
 
 If they ask to speak to a person, ask not to be called again, or sound annoyed, stop qualifying and hand off immediately.`,
     schema: [
@@ -295,7 +295,7 @@ If they ask to speak to a person, ask not to be called again, or sound annoyed, 
       {
         key: "volume",
         type: "string",
-        description: "Rough scale — seats, users, calls, or units.",
+        description: "Rough scale   seats, users, calls, or units.",
       },
       { key: "timeline", type: "string", description: "When they are looking to decide." },
       {
@@ -316,7 +316,7 @@ If they ask to speak to a person, ask not to be called again, or sound annoyed, 
     ],
     objections: [
       {
-        question: "Our leads expect a human — won't this cost us deals?",
+        question: "Our leads expect a human   won't this cost us deals?",
         answer:
           "The alternative is not a human calling in five minutes, it is a human calling tomorrow. This calls while the enquiry is still live, asks four questions, and hands anyone who wants a person straight to one. Reps then spend their hours on qualified conversations rather than on discovery calls that end in the first two minutes.",
       },

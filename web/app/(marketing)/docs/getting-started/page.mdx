@@ -1,21 +1,21 @@
 export const metadata = {
   title: "Getting started",
   description:
-    "From an empty account to a dry run with typed results, in about five minutes. Nothing here dials anyone.",
+    "From an empty account to a typed result, in about five minutes. Nothing here dials anyone.",
 };
 
 # Getting started
 
-This walkthrough ends with you looking at a typed result from a call that was never
-placed. Nothing in it spends a credit or rings a phone.
+Three steps take you from an empty account to a typed result   without spending a
+credit or ringing a phone.
 
 ## 1. Add a few contacts
 
 Open **Contacts → Import CSV**, or paste straight from a spreadsheet. Three rows is
 enough to start.
 
-The columns recognised are `name`, `phone`, and `note`. A header row is optional;
-without one, columns are read in that order.
+Recognised columns are `name`, `phone`, and `note`. A header row is optional; without
+one, columns are read in that order.
 
 ```text
 name,phone,note
@@ -24,60 +24,41 @@ Rahul Verma,+15555550101,honeymoon package enquiry
 Priya Nair,+15555550102,family trip to Singapore
 ```
 
-Every row is validated before anything else happens. Numbers must be E.164 — a
-leading `+` and a country code — and a bare ten-digit number is assumed to be in your
-default region. Rows that fail are flagged with the reason inline and are never
-silently dropped.
+Every row is validated up front. Numbers must be E.164   a leading `+` and a country
+code   and a bare ten-digit number is assumed to be in your default region. A row
+that fails is flagged inline with the reason, never silently dropped.
 
-Those sample numbers are reserved fictional ones in the `+1 555 0100–0199` range.
-They cannot connect to a real person, which is why the sample data uses them.
+Those sample numbers are reserved fictional ones in the `+1 555 0100–0199` range and
+cannot connect to a real person.
 
 ## 2. Pick a campaign
 
 A campaign is two things: a goal written in plain English, and the fields you want
 back from every call.
 
-Start with one of the built-in templates. They are marked `TEMPLATE` and cannot be
-edited in place — duplicate one if you want to change it. Reading a template's goal
-is also the fastest way to understand what a good goal looks like; see
+Start with a built-in template   marked `TEMPLATE`, duplicate one to edit it. Reading
+a template's goal is also the fastest way to see what a good goal looks like: see
 [Writing a good goal](/docs/writing-a-good-goal).
 
-## 3. Run it in dry mode
+## 3. Read the result
 
-Go to **Runs → New run**. Dry run is already on, and the panel says so:
-`DRY RUN · NO CREDITS SPENT`.
+Open any row. The conversation sits on the left; on the right, the extracted fields
+and the triage decision as a short chain   `Frustration detected → Needs a person`.
 
-A dry run walks the entire pipeline:
+That chain reads from typed fields, never from prose. The reason a call was
+escalated is a value you can check, not a sentence somebody wrote.
 
-- every row is validated
-- the safety gate runs, exactly as it would on a live call
-- the goal is rendered with each contact substituted in, so you see the actual words
-- a sample result is passed through the real triage logic
+## 4. Going live
 
-What you get back has the same shape a live call produces. The lamps are ice, because
-ice means simulated.
+Turn the dry-run switch off when you're ready. It's the only switch in the product
+that asks for confirmation   showing the contact count, the credit estimate, the
+calling window, and whether the allowlist is on.
 
-## 4. Read the result
-
-Open any row. You get the conversation on the left and, on the right, the extracted
-fields plus the triage decision as a short chain — `Frustration detected → Needs a
-person`.
-
-That chain reads from typed fields, never from prose. It is the guarantee the product
-makes: the reason a call was escalated is a value you can check, not a sentence
-somebody wrote.
-
-## 5. Going live
-
-When you are ready, turn the dry-run switch off. It is the only switch in the product
-that asks you to confirm, and the confirmation tells you how many contacts are in the
-run, the estimated credits, your calling window, and whether the allowlist is on.
-
-Before that first live run, do two things:
-
-1. Put **your own number** on the allowlist. While the allowlist has anything on it,
-   nothing else can be dialled.
-2. Set the **per-run ceiling** low — three or five. You can raise it once you have
-   seen a real call go through.
-
-Both live in [Safety configuration](/docs/safety-configuration).
+> **Before that first live run**
+>
+> 1. Put your own number on the **allowlist**   while it holds anything, nothing
+>    else can be dialled.
+> 2. Set the **per-run ceiling** low, three or five, and raise it once a real call
+>    has gone through cleanly.
+>
+> Both live in [Safety configuration](/docs/safety-configuration).

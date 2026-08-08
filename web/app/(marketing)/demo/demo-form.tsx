@@ -65,7 +65,7 @@ export function DemoForm() {
         <h2 className="font-display text-h3 text-text">Send this and we&apos;ll book it</h2>
         <p className="text-small text-text-dim">
           The scheduler isn&apos;t connected yet, so nothing has been booked. Send the
-          email below — it already has your details in it — and we&apos;ll come back with
+          email below   it already has your details in it   and we&apos;ll come back with
           two or three times within one business day.
         </p>
 
@@ -79,7 +79,7 @@ export function DemoForm() {
           <Button asChild>
             <a
               href={`mailto:hello@callflow.ai?subject=${encodeURIComponent(
-                `Demo request — ${company}`,
+                `Demo request   ${company}`,
               )}&body=${encodeURIComponent(`${body}\n\nReply-to: ${email}\n`)}`}
             >
               Send the request
@@ -107,7 +107,7 @@ export function DemoForm() {
       <div className="flex flex-col gap-1">
         <h2 className="font-display text-h3 text-text">Request a time</h2>
         <p className="text-small text-text-mute">
-          No phone number needed — everything happens over a screen share.
+          No phone number needed   everything happens over a screen share.
         </p>
       </div>
 
@@ -152,7 +152,7 @@ export function DemoForm() {
           />
         </Field>
 
-        <Field label="What you'd use it for" help="Optional — it helps us prepare.">
+        <Field label="What you'd use it for" help="Optional   it helps us prepare.">
           <Select
             id="demo-vertical"
             value={vertical}

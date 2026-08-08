@@ -14,7 +14,7 @@ import { useAppStore } from "@/lib/app-store";
 /**
  * Billing.
  *
- * The usage meter is a lamp strip, not a progress bar — same reasoning as everywhere
+ * The usage meter is a lamp strip, not a progress bar   same reasoning as everywhere
  * else in the product: a bar reports a fraction, and a strip reports units of the thing
  * being counted. Here each lamp is a slice of today's live-call budget, so "nearly out"
  * looks like nearly out.
@@ -124,7 +124,7 @@ export default function BillingSettingsPage() {
 
       <NotWiredNotice>
         Plans, cards, top-ups, and invoices need a billing service, which this deployment
-        does not have. The daily live-call budget above is real — it comes from the calling
+        does not have. The daily live-call budget above is real   it comes from the calling
         service and it genuinely governs whether the next run can dial.
       </NotWiredNotice>
     </div>

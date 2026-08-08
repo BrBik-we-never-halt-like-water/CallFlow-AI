@@ -12,7 +12,7 @@ type Phase = "checking" | "up" | "slow" | "down";
 /**
  * A live status board rather than a static page.
  *
- * It reports what it actually measured — including "slow", which is the honest answer
+ * It reports what it actually measured   including "slow", which is the honest answer
  * for a service that is starting up. Claiming "operational" while a request hangs, or
  * "down" while it is merely waking, are both worse than saying which one it is.
  */
@@ -83,7 +83,7 @@ export function StatusBoard() {
             lamp: "brass",
             label: "Slower than usual",
             detail:
-              "The service is responding but took a while — most likely it was asleep and is starting up.",
+              "The service is responding but took a while   most likely it was asleep and is starting up.",
           }
         : phase === "down"
           ? {
@@ -124,7 +124,7 @@ export function StatusBoard() {
           label="Calling service"
           lamp={overall.lamp}
           value={
-            phase === "checking" ? "—" : phase === "down" ? "No response" : `${latency ?? "—"} ms`
+            phase === "checking" ? " " : phase === "down" ? "No response" : `${latency ?? " "} ms`
           }
           detail={
             phase === "down"
@@ -148,7 +148,7 @@ export function StatusBoard() {
           value={
             health
               ? `Ceiling ${health.max_calls_per_run}, allowlist ${health.allowlist_active ? "on" : "off"}`
-              : "—"
+              : " "
           }
           detail="Read directly from the service, not from a cached value."
         />

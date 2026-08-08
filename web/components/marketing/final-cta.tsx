@@ -19,7 +19,7 @@ const STRIP: LampSpec[] = [
 /**
  * The closing note.
  *
- * A raised card rather than an inverted band — the page is light throughout, and the
+ * A raised card rather than an inverted band   the page is light throughout, and the
  * emphasis comes from elevation and the grid behind it rather than from flipping the
  * surface.
  */

@@ -6,10 +6,10 @@ export const metadata = {
 # API reference
 
 Everything the dashboard does, it does over this API. Base URL is your deployment's
-host; all bodies are JSON.
+host; every body is JSON.
 
-Authenticate with a **Voice API key** from **Settings → API keys**. Keys are shown once
-at creation and stored hashed, so if you lose one, revoke it and make another.
+Authenticate with a **Voice API key** from **Settings → API keys**. Keys are shown
+once at creation and stored hashed   lose one, revoke it, and make another.
 
 ## Endpoints
 
@@ -29,6 +29,11 @@ at creation and stored hashed, so if you lose one, revoke it and make another.
 Returns the guards that are currently in force. Worth calling before a live run if you
 are automating one.
 
+```bash
+curl https://your-deployment.host/api/health \
+  -H "Authorization: Bearer $CALLFLOW_API_KEY"
+```
+
 ```json
 {
   "ok": true,
@@ -42,16 +47,19 @@ are automating one.
 
 ## Preview
 
-Renders the goal for each contact and returns it. Nothing is dialled and no credits are
-spent, which makes this the right endpoint to call from a form or a test.
+Renders the goal for each contact and returns it   nothing dialled, no credits spent.
+The right endpoint to call from a form or a test.
 
-```json
-{
-  "campaign_id": "travel-discovery",
-  "contacts": [
-    { "name": "Aditi", "phone": "+15555550100", "context": { "enquiry_note": "Bali in December" } }
-  ]
-}
+```bash
+curl https://your-deployment.host/api/preview \
+  -H "Authorization: Bearer $CALLFLOW_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "campaign_id": "travel-discovery",
+    "contacts": [
+      { "name": "Aditi", "phone": "+15555550100", "context": { "enquiry_note": "Bali in December" } }
+    ]
+  }'
 ```
 
 A contact that fails validation comes back with an `error` on its entry rather than
@@ -63,14 +71,17 @@ failing the whole request, so you can show the operator which row is wrong.
 deliberately changed. **Send `false` explicitly to dial.** That asymmetry is on purpose:
 forgetting a field should never be what causes a phone to ring.
 
-```json
-{
-  "campaign_id": "travel-discovery",
-  "dry_run": true,
-  "contacts": [
-    { "name": "Aditi", "phone": "+15555550100", "context": { "enquiry_note": "Bali in December" } }
-  ]
-}
+```bash
+curl https://your-deployment.host/api/runs \
+  -H "Authorization: Bearer $CALLFLOW_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "campaign_id": "travel-discovery",
+    "dry_run": true,
+    "contacts": [
+      { "name": "Aditi", "phone": "+15555550100", "context": { "enquiry_note": "Bali in December" } }
+    ]
+  }'
 ```
 
 Response:
@@ -84,7 +95,7 @@ Response:
 `GET /api/runs/{id}` returns the run with every outcome recorded so far, plus stats.
 
 A row appears as soon as a call is placed, so an in-flight call is visible while it
-happens. `stats.completed` counts only calls that have actually resolved — an
+happens. `stats.completed` counts only calls that have actually resolved   an
 in-flight one is not progress yet, and counting it as progress is how a progress
 indicator ends up going backwards.
 
