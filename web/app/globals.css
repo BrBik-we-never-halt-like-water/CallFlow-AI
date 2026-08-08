@@ -365,34 +365,45 @@ button[data-menu][data-state="open"]:focus-visible {
    never the only one.
    -------------------------------------------------------------------------- */
 
+/* No borders.
+   A card is a pool of lighter surface, not a box with an edge drawn round it.
+   Separation comes from the wash and from space; the moment every group of
+   content gets a rectangle, a page reads as a form rather than a composition.
+   The radius is large enough that the corner never reads as a frame. */
 .card {
-  background: var(--surface-raised);
-  border: 1px solid var(--rule);
-  border-radius: var(--r-lg);
+  background: linear-gradient(
+    170deg,
+    color-mix(in oklab, var(--surface-raised) 92%, transparent) 0%,
+    color-mix(in oklab, var(--surface-raised) 62%, transparent) 100%
+  );
+  border: 0;
+  border-radius: var(--r-xl);
 }
 
 .card-raised {
-  background: var(--surface-raised);
-  border: 1px solid var(--rule);
-  border-radius: var(--r-lg);
-  box-shadow: var(--shadow-sm);
-}
-
-/* Earns attention by rising off the row and by its edge — never by colour
-   alone, and never by a hard black border. */
-.card-feature {
-  background: var(--surface-raised);
-  border: 1px solid var(--primary-edge);
-  border-radius: var(--r-lg);
-  box-shadow: var(--shadow-md);
-}
-
-/* A sunken basin: content sits *in* a shallow well rather than on a raised
-   card. Used where two columns share one container. */
-.card-sunken {
-  background: var(--surface-sunken);
-  border: 1px solid var(--rule);
+  background: linear-gradient(
+    170deg,
+    var(--surface-raised) 0%,
+    color-mix(in oklab, var(--surface-raised) 78%, transparent) 100%
+  );
+  border: 0;
   border-radius: var(--r-xl);
+  box-shadow: 0 1px 2px rgba(14, 17, 20, 0.03), 0 14px 30px -18px rgba(14, 17, 20, 0.16);
+}
+
+/* Earns attention by light, not by an outline: a warmer fill and a soft halo
+   in the primary, with no edge to draw. */
+.card-feature {
+  background: linear-gradient(
+    170deg,
+    var(--surface-raised) 0%,
+    color-mix(in oklab, var(--primary) 4%, var(--surface-raised)) 100%
+  );
+  border: 0;
+  border-radius: var(--r-xl);
+  box-shadow:
+    0 1px 2px rgba(14, 17, 20, 0.04),
+    0 20px 44px -22px color-mix(in oklab, var(--primary) 42%, transparent);
 }
 
 /* Interactive cards lift on hover. Transform and shadow only — never a
@@ -408,17 +419,15 @@ button[data-menu][data-state="open"]:focus-visible {
   transform: translateY(-3px);
 }
 
-/* A card is top-lit: a faint highlight along the top edge reads as a physical
-   surface catching light, and it is what stops a flat rectangle looking like a
-   div with a border. One gradient, no glow, no ring. */
-.card,
-.card-raised,
-.card-feature {
-  background-image: linear-gradient(
-    180deg,
-    color-mix(in oklab, #ffffff 60%, transparent) 0%,
-    transparent 42%
+/* A sunken basin: content sits in a shallow well. Also borderless. */
+.card-sunken {
+  background: linear-gradient(
+    170deg,
+    color-mix(in oklab, var(--surface-sunken) 88%, transparent) 0%,
+    color-mix(in oklab, var(--surface-sunken) 55%, transparent) 100%
   );
+  border: 0;
+  border-radius: var(--r-xl);
 }
 
 /* Glass, used sparingly — the header and the one featured card. Falls back to

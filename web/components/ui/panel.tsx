@@ -1,5 +1,4 @@
 import { cn } from "@/lib/cn";
-import { WaveLine } from "@/components/brand/wave-spine";
 
 /**
  * A surface, at one of the three levels defined in globals.css.
@@ -83,15 +82,12 @@ export function SectionHeading({
         className,
       )}
     >
+      {/* No trailing squiggle. A decorative mark beside every eyebrow on every
+          section is a tic, not a system — it says nothing and it appears
+          everywhere, which is the definition of noise. */}
       {eyebrow ? (
-        <div
-          className={cn(
-            "flex items-center gap-3",
-            align === "center" && "justify-center",
-          )}
-        >
+        <div className={cn("flex items-center", align === "center" && "justify-center")}>
           <Eyebrow>{eyebrow}</Eyebrow>
-          {align === "left" ? <WaveLine className="w-12" /> : null}
         </div>
       ) : null}
 

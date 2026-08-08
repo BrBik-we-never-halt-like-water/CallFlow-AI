@@ -6,8 +6,7 @@ import { cn } from "@/lib/cn";
 import { Button } from "@/components/ui/button";
 import { Tag } from "@/components/ui/badge";
 import { Eyebrow } from "@/components/ui/panel";
-import { WaveCanvas } from "@/components/brand/wave-canvas";
-import { CrystalliseWave } from "@/components/brand/crystallise-wave";
+import { VoiceField } from "@/components/brand/voice-field";
 import { usePrefersReducedMotion, useTypewriter } from "@/lib/hooks/use-typewriter";
 
 /**
@@ -161,11 +160,13 @@ export function Hero() {
 function ParallaxGrid() {
   const reduced = useReducedMotion();
   const { scrollY } = useScroll();
-  const y = useTransform(scrollY, [0, 600], [0, 50]);
+  // Two layers at different rates: the field drifts slower than the page, which
+  // is what makes it sit behind rather than on the surface.
+  const y = useTransform(scrollY, [0, 700], [0, 90]);
 
-  const band = <WaveCanvas pitch={10} className="h-full text-text opacity-40" />;
+  const band = <VoiceField />;
   const cls =
-    "pointer-events-none absolute inset-x-0 top-0 h-64 [mask-image:linear-gradient(to_bottom,#000,transparent)] [-webkit-mask-image:linear-gradient(to_bottom,#000,transparent)]";
+    "pointer-events-none absolute inset-0 [mask-image:radial-gradient(ellipse_86%_74%_at_50%_42%,#000_28%,transparent_84%)] [-webkit-mask-image:radial-gradient(ellipse_86%_74%_at_50%_42%,#000_28%,transparent_84%)]";
 
   if (reduced) {
     return (
@@ -179,6 +180,39 @@ function ParallaxGrid() {
     <motion.div aria-hidden style={{ y }} className={cls}>
       {band}
     </motion.div>
+  );
+}
+
+/**
+ * A slim trace of the line being spoken, with a lit playhead.
+ *
+ * Deliberately quiet. The field behind the hero already carries the voice at
+ * full volume, and two waveforms competing in one view is what made this card
+ * read as busy — so inside the card the signal is reduced to a hairline that
+ * simply shows how far through the sentence we are.
+ */
+function VoiceLine({ progress, speaking }: { progress: number; speaking: boolean }) {
+  const BARS = 56;
+  return (
+    <div aria-hidden className="flex h-6 items-center gap-px">
+      {Array.from({ length: BARS }, (_, i) => {
+        const at = i / BARS;
+        const head = speaking && Math.abs(at - progress) < 1.5 / BARS;
+        return (
+          <i
+            key={i}
+            className={cn(
+              "flex-1 rounded-[1px] transition-[background-color,height] duration-150",
+              // Spoken bars stay light. At --text-dim and this bar count they
+              // merge into one solid black block the moment the line finishes,
+              // which is a filled rectangle, not a trace.
+              head ? "bg-lamp-brass" : at < progress ? "bg-rule-strong" : "bg-rule",
+            )}
+            style={{ height: head ? "100%" : at < progress ? "44%" : "22%" }}
+          />
+        );
+      })}
+    </div>
   );
 }
 
@@ -223,14 +257,10 @@ function HeardBlock({
   return (
     <PanelBlock label="What the caller hears">
       <div className="flex flex-col gap-4">
-        {/* The signal settles into the result below it once the line finishes —
-            the headline's claim, animated rather than captioned. */}
-        <CrystalliseWave
-          text={spoken}
-          progress={progress}
-          speaking={speaking}
-          settled={done}
-        />
+        {/* A quiet trace, not a second animation: the atmosphere behind the hero
+            already carries the voice, and two competing waveforms in one view
+            is what made this card read as busy. */}
+        <VoiceLine progress={progress} speaking={speaking} />
         <div className="relative">
           <p aria-hidden className="invisible text-body font-semibold">
             {`“${spoken}”`}
