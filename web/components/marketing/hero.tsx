@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Tag } from "@/components/ui/badge";
 import { Eyebrow } from "@/components/ui/panel";
 import { VoiceField } from "@/components/brand/voice-field";
+import { SpeechWave } from "@/components/brand/speech-wave";
 import { usePrefersReducedMotion, useTypewriter } from "@/lib/hooks/use-typewriter";
 
 /**
@@ -62,8 +63,11 @@ export function Hero() {
     instant: reduced,
   });
 
-  // Only "speaking" once characters are actually landing, so the level meter
-  // moves while the line is being said and rests once it lands.
+  // Drives the waveform playhead: exactly how far through the line we are.
+  const spokenProgress = SPOKEN.length
+    ? Math.min(1, heard.output.length / SPOKEN.length)
+    : 0;
+  // Only "speaking" once characters are actually landing.
   const speaking = heard.output.length > 0 && !heard.done;
 
   return (
@@ -133,6 +137,7 @@ export function Hero() {
                   spoken={SPOKEN}
                   output={heard.output}
                   done={heard.done}
+                  progress={spokenProgress}
                   speaking={speaking}
                   live
                 />
@@ -251,18 +256,21 @@ function HeardBlock({
   spoken,
   output,
   done,
+  progress = 1,
   speaking = false,
   live = false,
 }: {
   spoken: string;
   output: string;
   done: boolean;
+  progress?: number;
   speaking?: boolean;
   live?: boolean;
 }) {
   return (
     <PanelBlock label="What the caller hears" trailing={<LevelMeter speaking={speaking} />}>
       <div className="flex flex-col gap-4">
+        <SpeechWave text={spoken} progress={progress} speaking={speaking} />
         <div className="relative">
           <p aria-hidden className="invisible text-body font-semibold">
             {`“${spoken}”`}

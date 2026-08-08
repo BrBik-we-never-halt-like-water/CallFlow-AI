@@ -19,8 +19,8 @@ import { cn } from "@/lib/cn";
  * point, and below about 3px the shape is indistinguishable anyway.
  */
 
-const COLS = 190;
-const ROWS = 46;
+const COLS = 260;
+const ROWS = 62;
 /** Camera distance to the nearest row / the furthest row. */
 const Z_NEAR = 0.55;
 const Z_FAR = 4.2;
