@@ -27,24 +27,17 @@ export interface LampSpec {
 }
 
 export const LAMP_LABELS: Record<LampState, string> = {
+  // Not currently assigned by any disposition — reserved for a future
+  // "scheduled, not yet dialling" state rather than retired outright.
   off: "Queued",
-  ice: "Dry run",
+  ice: "Scheduled",
   brass: "In conversation",
   jade: "Closed",
   flare: "Needs a person",
 };
 
-/**
- * Which lamp a settled outcome gets.
- *
- * A dry-run result is always ice regardless of how the simulated conversation
- * went — the operator's first question about any result is "did this actually
- * dial?", and the answer has to be visible before the outcome is.
- */
+/** Which lamp a settled outcome gets. */
 export function lampForOutcome(outcome: Outcome): LampSpec {
-  if (outcome.dry_run && outcome.disposition !== "in_flight") {
-    return { state: "ice", label: "Dry run — nothing was dialled" };
-  }
   return lampForDisposition(outcome.disposition);
 }
 
@@ -85,7 +78,6 @@ export interface LampCounts {
   closed: number;
   retry: number;
   needsPerson: number;
-  dryRun: number;
   queued: number;
   settled: number;
   total: number;
@@ -96,7 +88,6 @@ export function countLamps(lamps: LampSpec[]): LampCounts {
     closed: 0,
     retry: 0,
     needsPerson: 0,
-    dryRun: 0,
     queued: 0,
     settled: 0,
     total: lamps.length,
@@ -104,7 +95,6 @@ export function countLamps(lamps: LampSpec[]): LampCounts {
 
   for (const lamp of lamps) {
     if (lamp.state === "off") counts.queued += 1;
-    else if (lamp.state === "ice") counts.dryRun += 1;
     else if (lamp.state === "jade") counts.closed += 1;
     else if (lamp.state === "flare") counts.needsPerson += 1;
     else if (lamp.state === "brass" && lamp.pulse) counts.retry += 1;
@@ -127,7 +117,6 @@ export function describeStrip(lamps: LampSpec[]): string {
   if (c.closed) parts.push(`${c.closed} closed`);
   if (c.retry) parts.push(`${c.retry} queued for retry`);
   if (c.needsPerson) parts.push(`${c.needsPerson} need a person`);
-  if (c.dryRun) parts.push(`${c.dryRun} simulated in a dry run`);
   if (c.queued) parts.push(`${c.queued} not yet dialled`);
 
   const noun = c.total === 1 ? "call" : "calls";

@@ -20,8 +20,7 @@ export interface SwitchProps {
   disabled?: boolean;
   /**
    * Track colour when on. Defaults to the monochrome inverse surface. A lamp
-   * colour is only correct where the switch itself sets call state — which in
-   * practice means the dry-run switch and nothing else.
+   * colour is only correct where the switch itself sets call state.
    */
   tone?: LampState;
   id?: string;
@@ -31,10 +30,9 @@ export interface SwitchProps {
 /**
  * Switch with its label and sub-label as part of the component.
  *
- * The sub-label is not optional decoration: a switch that says "Dry run" tells
- * you what it is called, and one that also says "Nothing will be dialled" tells
- * you what it does. In a product that places real phone calls, the second line
- * is the one that matters.
+ * The sub-label is not optional decoration: it says what the switch actually
+ * does, not just what it's called — worth stating plainly in a product that
+ * places real phone calls.
  */
 export function Switch({
   checked,

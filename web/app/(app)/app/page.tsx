@@ -8,24 +8,34 @@ import { LampStrip } from "@/components/brand/lamp-strip";
 import { ConnectionBanner } from "@/components/app/connection-banner";
 import { EscalationCard } from "@/components/app/escalation-card";
 import { MaskedPhone } from "@/components/app/masked-phone";
+import { TeamControls } from "@/components/app/overview-org-section";
+import { AreaChart } from "@/components/ui/area-chart";
 import { LampBadge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { DonutChart } from "@/components/ui/donut-chart";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Eyebrow, Panel } from "@/components/ui/panel";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Sparkline, Stat } from "@/components/ui/stat";
-import { formatAge, formatDuration, formatPercent, formatTimestamp } from "@/lib/format";
-import { lampForOutcome } from "@/lib/lamp";
+import { formatAge, formatDuration, formatTimestamp } from "@/lib/format";
+import { lampForOutcome, type LampState } from "@/lib/lamp";
 import { useAppStore } from "@/lib/app-store";
+import { useSession } from "@/lib/hooks/use-session";
 import { FirstRunChecklist } from "./first-run-checklist";
+
+const DISPOSITION_LABELS: { state: LampState; label: string; match: (d: string) => boolean }[] = [
+  { state: "jade", label: "Auto-closed", match: (d) => d === "auto_closed" },
+  { state: "flare", label: "Needs a person", match: (d) => d === "escalated" || d === "unreachable" },
+  { state: "brass", label: "Retrying", match: (d) => d === "retry" },
+  { state: "off", label: "Skipped", match: (d) => d === "skipped" },
+];
 
 /** The strip shows the most recent calls. 100 is the design's stated window. */
 const STRIP_WINDOW = 100;
 
 export default function OverviewPage() {
   const router = useRouter();
-  const { phase, wakeSeconds, outcomes, runs, escalations, loadingRuns, campaigns } =
-    useAppStore();
+  const session = useSession();
+  const { phase, outcomes, runs, escalations, loadingRuns, campaigns } = useAppStore();
 
   const settled = useMemo(
     () => outcomes.filter((o) => o.disposition !== "in_flight"),
@@ -44,14 +54,9 @@ export default function OverviewPage() {
     );
   }, [settled]);
 
-  const autoClosedPct =
-    settled.length > 0
-      ? (settled.filter((o) => o.disposition === "auto_closed").length / settled.length) * 100
-      : null;
-
-  // Seven buckets of calls per day, oldest first. Derived from real timestamps rather
-  // than invented, so an account with no history gets no sparkline at all.
-  const sparkline = useMemo(() => {
+  // Seven day-labeled buckets, oldest first. Derived from real timestamps rather
+  // than invented, so an account with no history gets no chart at all.
+  const volumeSeries = useMemo(() => {
     if (settled.length === 0) return [];
     // Anchored to the most recent result rather than to `Date.now()`, which would
     // be an impure read during render. Buckets follow the data, not the clock.
@@ -60,20 +65,34 @@ export default function OverviewPage() {
     return Array.from({ length: 7 }, (_, i) => {
       const from = now - (6 - i + 1) * day;
       const to = now - (6 - i) * day;
-      return settled.filter((o) => {
+      const value = settled.filter((o) => {
         const at = new Date(o.created_at).getTime();
         return at >= from && at < to;
       }).length;
+      return {
+        label: new Date(to - 1).toLocaleDateString(undefined, { weekday: "narrow" }),
+        value,
+      };
     });
   }, [settled]);
+
+  const dispositionBreakdown = useMemo(
+    () =>
+      DISPOSITION_LABELS.map(({ state, label, match }) => ({
+        state,
+        label,
+        value: settled.filter((o) => match(o.disposition)).length,
+      })),
+    [settled],
+  );
 
   const hasAnything = settled.length > 0 || runs.length > 0;
 
   if (phase !== "up" && !hasAnything) {
     return (
       <div className="flex flex-col gap-6">
-        <PageTitle />
-        <ConnectionBanner phase={phase} wakeSeconds={wakeSeconds} />
+        <PageTitle session={session} />
+        <ConnectionBanner phase={phase} />
         {phase !== "down" ? <LoadingSkeleton /> : null}
       </div>
     );
@@ -83,7 +102,7 @@ export default function OverviewPage() {
   if (!loadingRuns && !hasAnything) {
     return (
       <div className="flex flex-col gap-6">
-        <PageTitle />
+        <PageTitle session={session} />
         <FirstRunChecklist hasCampaigns={campaigns.length > 0} />
       </div>
     );
@@ -91,38 +110,39 @@ export default function OverviewPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <PageTitle />
-      <ConnectionBanner phase={phase} wakeSeconds={wakeSeconds} />
+      <PageTitle session={session} />
+      <ConnectionBanner phase={phase} />
 
-      {/* ---- Stats ------------------------------------------------------- */}
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Stat
-          label="Calls this month"
-          value={settled.length}
-          detail={`${runs.length} ${runs.length === 1 ? "run" : "runs"}`}
-          sparkline={
-            sparkline.length > 0 ? (
-              <Sparkline values={sparkline} label="Calls per day over the last week" />
-            ) : undefined
-          }
-        />
-        <Stat
-          label="Auto-closed"
-          value={autoClosedPct == null ? "—" : formatPercent(autoClosedPct)}
-          detail="closed without a person"
-          lamp={autoClosedPct != null ? "jade" : undefined}
-        />
-        <Stat
-          label="Needs a person"
-          value={escalations.length}
-          detail={escalations.length > 0 ? "oldest first" : "nothing waiting"}
-          lamp={escalations.length > 0 ? "flare" : undefined}
-        />
-        <Stat
-          label="Average call"
-          value={formatDuration(avgDuration)}
-          detail="connected time"
-        />
+      {/* ---- Metrics. Deployment-wide today, not per-org — runs aren't
+          attributed to an org yet (ADR-1). */}
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Panel className="flex flex-col gap-2 p-4 sm:p-5">
+          <div className="flex items-baseline justify-between gap-2">
+            <Eyebrow>Volume, last 7 days</Eyebrow>
+            <span className="font-mono text-data tabular-nums text-text-mute">
+              {settled.length} total · {runs.length} {runs.length === 1 ? "run" : "runs"}
+            </span>
+          </div>
+          {volumeSeries.length > 0 ? (
+            <AreaChart data={volumeSeries} />
+          ) : (
+            <p className="py-6 text-center text-small text-text-dim">No calls yet</p>
+          )}
+        </Panel>
+
+        <Panel className="flex flex-col gap-2 p-4 sm:p-5">
+          <div className="flex items-baseline justify-between gap-2">
+            <Eyebrow>Disposition</Eyebrow>
+            <span className="font-mono text-data tabular-nums text-text-mute">
+              {formatDuration(avgDuration)} avg
+            </span>
+          </div>
+          {settled.length > 0 ? (
+            <DonutChart segments={dispositionBreakdown} />
+          ) : (
+            <p className="py-6 text-center text-small text-text-dim">No calls yet</p>
+          )}
+        </Panel>
       </div>
 
       {/* ---- Outcome distribution: the page's visual anchor -------------- */}
@@ -142,7 +162,7 @@ export default function OverviewPage() {
           <EmptyState
             icon={PhoneSlashIcon}
             title="Nothing has been dialled yet"
-            body="Add a few contacts and run a campaign in dry mode. It costs nothing and shows you exactly what would happen."
+            body="Add a few contacts and start a run — results appear here as calls settle."
             action={
               <Button asChild>
                 <Link href="/app/runs/new">Start a run</Link>
@@ -211,7 +231,7 @@ export default function OverviewPage() {
           {runs.length === 0 ? (
             <EmptyState
               title="No runs yet"
-              body="Runs are how contacts get called. Start one in dry mode to see the pipeline end to end."
+              body="Runs are how contacts get called. Start one to see the pipeline end to end."
               action={
                 <Button asChild size="sm">
                   <Link href="/app/runs/new">Start a run</Link>
@@ -229,7 +249,6 @@ export default function OverviewPage() {
                     <span className="min-w-0 flex-1 truncate text-small text-text">
                       {run.campaign_id}
                     </span>
-                    {run.dry_run ? <LampBadge state="ice">Dry run</LampBadge> : null}
                     <span className="font-mono text-data tabular-nums text-text-mute">
                       {run.completed}/{run.total}
                     </span>
@@ -279,12 +298,12 @@ export default function OverviewPage() {
   );
 }
 
-function PageTitle() {
+function PageTitle({ session }: { session: ReturnType<typeof useSession> }) {
   return (
-    <div className="flex flex-wrap items-end justify-between gap-3">
-      <div className="flex flex-col gap-1">
-        <Eyebrow>Overview</Eyebrow>
-        <h1 className="font-display text-h2 text-text">How the calling is going</h1>
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center gap-3">
+        <h1 className="font-display text-h2 text-text">Dashboard</h1>
+        <TeamControls session={session} />
       </div>
       <div className="flex gap-2">
         <Button asChild variant="secondary">

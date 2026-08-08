@@ -8,13 +8,10 @@ import { Eyebrow } from "@/components/ui/panel";
 const TABS = [
   { slug: "", label: "Organisation" },
   { slug: "team", label: "Team" },
-  { slug: "billing", label: "Billing" },
-  { slug: "numbers", label: "Numbers" },
-  { slug: "api-keys", label: "API keys" },
   { slug: "safety", label: "Safety" },
-  { slug: "compliance", label: "Compliance" },
+  { slug: "api-keys", label: "API keys" },
   { slug: "integrations", label: "Integrations" },
-  { slug: "notifications", label: "Notifications" },
+  { slug: "billing", label: "Billing" },
 ];
 
 export default function SettingsLayout({

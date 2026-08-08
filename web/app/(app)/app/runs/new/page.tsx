@@ -5,11 +5,6 @@ import { Suspense, useMemo, useState } from "react";
 import { cn } from "@/lib/cn";
 import { ConnectionBanner } from "@/components/app/connection-banner";
 import { ContactGrid } from "@/components/app/contact-grid";
-import {
-  DryRunSwitch,
-  ModeStrip,
-  modePanelClass,
-} from "@/components/app/dry-run-switch";
 import { guardsFromHealth, SafetyBar } from "@/components/app/safety-bar";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
@@ -48,11 +43,10 @@ function RunComposer() {
   const router = useRouter();
   const toast = useToast();
   const searchParams = useSearchParams();
-  const { campaigns, health, phase, wakeSeconds, refresh } = useAppStore();
+  const { campaigns, health, phase, refresh } = useAppStore();
 
   const [rows, setRows] = useState<ParsedRow[]>([]);
   const [chosenId, setChosenId] = useState<string | null>(null);
-  const [dryRun, setDryRun] = useState(true);
   const [starting, setStarting] = useState(false);
 
   /**
@@ -93,7 +87,7 @@ function RunComposer() {
   }, [health, settings]);
 
   const ceiling = health?.max_calls_per_run ?? null;
-  const overCeiling = !dryRun && ceiling !== null && validRows.length > ceiling;
+  const overCeiling = ceiling !== null && validRows.length > ceiling;
 
   /** Exactly why Start is blocked. Never a generic complaint. */
   const blocker = useMemo<string | null>(() => {
@@ -104,26 +98,21 @@ function RunComposer() {
         ? "Add at least one contact."
         : "Every row has a problem. Fix one, or remove the invalid rows.";
     }
-    if (!dryRun && !health?.api_key_configured) {
-      return "No Voice API key is configured, so live calls can't be placed. Dry run still works.";
+    if (!health?.api_key_configured) {
+      return "No Voice API key is configured — calls can't be placed yet.";
     }
     if (overCeiling) {
       return `This run has ${validRows.length} contacts but the per-run ceiling is ${ceiling}. Raise the ceiling in Settings → Safety, or remove some rows.`;
     }
     return null;
-  }, [phase, campaignId, validRows.length, rows.length, dryRun, health, overCeiling, ceiling]);
+  }, [phase, campaignId, validRows.length, rows.length, health, overCeiling, ceiling]);
 
   async function start() {
     if (blocker) return;
     setStarting(true);
     try {
-      const { run_id } = await api.startRun(campaignId, contacts, dryRun);
-      // The verb matches the button that produced it.
-      toast({
-        tone: "success",
-        title: "Run started",
-        body: dryRun ? "Dry run — nothing is being dialled." : undefined,
-      });
+      const { run_id } = await api.startRun(campaignId, contacts);
+      toast({ tone: "success", title: "Run started" });
       refresh();
       router.push(`/app/runs/${run_id}`);
     } catch (error) {
@@ -147,7 +136,7 @@ function RunComposer() {
         <h1 className="font-display text-h2 text-text">Start a run</h1>
       </div>
 
-      <ConnectionBanner phase={phase} wakeSeconds={wakeSeconds} />
+      <ConnectionBanner phase={phase} />
 
       {/* ---- 1 · Contacts ------------------------------------------------ */}
       <Step n="01" title="Contacts" detail="Every row is validated before anything is dialled.">
@@ -196,31 +185,12 @@ function RunComposer() {
 
       {/* ---- 3 · Run ---------------------------------------------------- */}
       <Step n="03" title="Run" detail="The guards below apply to every call in this run.">
-        <div className={cn("flex flex-col gap-4 pl-4", modePanelClass(dryRun))}>
+        <div className="flex flex-col gap-4 pl-4 border-l-2 border-l-rule-strong">
           <SafetyBar guards={guards} />
-          <ModeStrip dryRun={dryRun} />
-
-          <DryRunSwitch
-            dryRun={dryRun}
-            onChange={setDryRun}
-            details={{
-              contacts: validRows.length,
-              // A dry run spends nothing; a live run spends one credit per contact.
-              estimatedCredits: validRows.length,
-              windowStart: settings.window.start,
-              windowEnd: settings.window.end,
-              timezone: shortZone(settings.window.timezone),
-              allowlistOn: Boolean(health?.allowlist_active),
-            }}
-          />
 
           <dl className="flex flex-wrap gap-x-8 gap-y-2 border-t border-rule pt-4">
             <Estimate label="Contacts" value={String(validRows.length)} />
-            <Estimate
-              label="Credits"
-              value={dryRun ? "0" : String(validRows.length)}
-              detail={dryRun ? "dry run spends nothing" : undefined}
-            />
+            <Estimate label="Credits" value={String(validRows.length)} />
             {ceiling !== null ? (
               <Estimate
                 label="Per-run ceiling"

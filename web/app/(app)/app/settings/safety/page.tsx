@@ -7,7 +7,6 @@ import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/components/ui/toast";
 import { TIMEZONES } from "@/lib/campaign-draft";
 import { formatNumber } from "@/lib/format";
@@ -31,7 +30,6 @@ export default function SafetySettingsPage() {
   const [windowStart, setWindowStart] = useState("09:00");
   const [windowEnd, setWindowEnd] = useState("20:00");
   const [timezone, setTimezone] = useState("Asia/Kolkata");
-  const [dryRunDefault, setDryRunDefault] = useState(health?.dry_run_default ?? true);
 
   const allowlistCount = allowlist
     .split(",")
@@ -53,29 +51,6 @@ export default function SafetySettingsPage() {
         description="This is the same bar shown above every run composer."
       >
         <SafetyBar guards={guardsFromHealth(health)} />
-      </SettingsSection>
-
-      <SettingsSection
-        title="Dry run"
-        description="Whether new runs start in dry mode."
-        effect={
-          dryRunDefault
-            ? "New runs start in dry mode. Turning dry run off on a run requires a confirmation showing the contact count and credit estimate."
-            : "New runs start live. Real calls will be placed as soon as someone presses Start run."
-        }
-        footer={
-          <Button size="sm" onClick={notSaved}>
-            Save changes
-          </Button>
-        }
-      >
-        <Switch
-          checked={dryRunDefault}
-          onCheckedChange={setDryRunDefault}
-          label="Start new runs in dry mode"
-          subLabel="Strongly recommended. Nothing is dialled until it's turned off."
-          tone={dryRunDefault ? "ice" : "brass"}
-        />
       </SettingsSection>
 
       <SettingsSection

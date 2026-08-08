@@ -98,7 +98,6 @@ export function LampStrip({
           <Count state="jade" n={c.closed} label="closed" />
           <Count state="brass" n={c.retry} label="retry" pulse />
           <Count state="flare" n={c.needsPerson} label="need a person" />
-          {c.dryRun > 0 ? <Count state="ice" n={c.dryRun} label="simulated" /> : null}
         </div>
       ) : null}
     </div>

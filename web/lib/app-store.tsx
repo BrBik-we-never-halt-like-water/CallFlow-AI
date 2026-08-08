@@ -102,7 +102,7 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
   const escalations = useMemo(
     () =>
       outcomes
-        .filter((outcome) => outcome.disposition === "escalated" && !outcome.dry_run)
+        .filter((outcome) => outcome.disposition === "escalated")
         // Oldest first: the oldest escalation is the most expensive one.
         .sort((a, b) => a.created_at.localeCompare(b.created_at)),
     [outcomes],

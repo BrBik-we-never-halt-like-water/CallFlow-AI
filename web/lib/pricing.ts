@@ -57,7 +57,7 @@ export const PLANS: Plan[] = [
     overageInr: null,
     overageUsd: null,
     features: [
-      "Unlimited dry runs",
+      "Free daily call budget, no card required",
       "All starter campaign templates",
       "Typed results and sentiment on every call",
       "Escalation queue",
@@ -192,11 +192,6 @@ export const FEATURE_MATRIX: MatrixCategory[] = [
     name: "Calling",
     rows: [
       {
-        label: "Dry runs",
-        hint: "A full pipeline rehearsal that never dials and never spends a credit.",
-        values: { free: "Unlimited", starter: "Unlimited", growth: "Unlimited", scale: "Unlimited" },
-      },
-      {
         label: "Live calls included",
         values: { free: false, starter: null, growth: null, scale: null },
       },
@@ -248,11 +243,6 @@ export const FEATURE_MATRIX: MatrixCategory[] = [
   {
     name: "Safety and compliance",
     rows: [
-      {
-        label: "Dry run on by default",
-        hint: "Every new run starts in dry mode. Turning it off takes a deliberate confirmation.",
-        values: { free: true, starter: true, growth: true, scale: true },
-      },
       {
         label: "Allowlist, per-run ceiling, rate limit",
         values: { free: true, starter: true, growth: true, scale: true },
@@ -356,10 +346,6 @@ export const PRICING_FAQ: { q: string; a: string }[] = [
   {
     q: "What counts as a billable call?",
     a: "A call is billable once it connects and the conversation starts. Busy signals, unanswered rings, and numbers blocked by your safety guards are not billable. A call that reaches voicemail is billable only if the agent leaves the message you asked it to leave.",
-  },
-  {
-    q: "Do dry runs cost anything?",
-    a: "No. Dry runs are free on every plan, including Free, and they are unlimited. A dry run walks the whole pipeline — row validation, the safety gates, the rendered goal, and a sample typed result — without dialling. Nothing about a dry run touches your call volume.",
   },
   {
     q: "What happens when I go over my included volume?",

@@ -12,14 +12,14 @@ import { useAppStore } from "@/lib/app-store";
 export default function EditCampaignPage() {
   const params = useParams<{ id: string }>();
   const id = typeof params?.id === "string" ? params.id : "";
-  const { campaigns, phase, wakeSeconds } = useAppStore();
+  const { campaigns, phase } = useAppStore();
 
   const campaign = campaigns.find((c) => c.id === id);
 
   if (phase !== "up") {
     return (
       <div className="flex flex-col gap-6">
-        <ConnectionBanner phase={phase} wakeSeconds={wakeSeconds} />
+        <ConnectionBanner phase={phase} />
         {phase !== "down" ? (
           <div className="grid gap-6 lg:grid-cols-[55fr_45fr]">
             <div className="flex flex-col gap-4">

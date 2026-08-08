@@ -35,9 +35,8 @@ export function PricingClient() {
             Start free, pay when you dial.
           </h1>
           <p className="measure text-body-l text-text-dim">
-            Dry runs are free and unlimited on every plan. You only spend on calls that
-            actually connect, and a call blocked by one of your safety guards is never
-            billable.
+            Every plan, including Free, only bills for calls that actually connect. A
+            call blocked by one of your safety guards is never billable.
           </p>
         </div>
 

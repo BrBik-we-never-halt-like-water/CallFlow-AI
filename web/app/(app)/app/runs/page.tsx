@@ -7,7 +7,7 @@ import { useMemo, useState } from "react";
 import { LampStrip } from "@/components/brand/lamp-strip";
 import { ConnectionBanner } from "@/components/app/connection-banner";
 import { DataTable, type Column, type SortState } from "@/components/app/data-table";
-import { LampBadge, Tag } from "@/components/ui/badge";
+import { LampBadge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Eyebrow } from "@/components/ui/panel";
@@ -18,7 +18,7 @@ import { useAppStore } from "@/lib/app-store";
 
 export default function RunsPage() {
   const router = useRouter();
-  const { runs, hydratedRuns, campaigns, phase, wakeSeconds, loadingRuns } = useAppStore();
+  const { runs, hydratedRuns, campaigns, phase, loadingRuns } = useAppStore();
   const [sort, setSort] = useState<SortState>({ id: "started_at", dir: "desc" });
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
@@ -64,7 +64,6 @@ export default function RunsPage() {
       cell: (run) => (
         <span className="flex items-center gap-2">
           <span className="truncate">{campaignName(run.campaign_id)}</span>
-          {run.dry_run ? <Tag>Dry</Tag> : null}
         </span>
       ),
       value: (run) => campaignName(run.campaign_id),
@@ -130,7 +129,7 @@ export default function RunsPage() {
         </Button>
       </div>
 
-      <ConnectionBanner phase={phase} wakeSeconds={wakeSeconds} />
+      <ConnectionBanner phase={phase} />
 
       <DataTable
         caption="Runs, with the campaign, outcome distribution, status, and start time."
@@ -156,7 +155,6 @@ export default function RunsPage() {
               <span className="min-w-0 flex-1 truncate text-small font-medium text-text">
                 {campaignName(run.campaign_id)}
               </span>
-              {run.dry_run ? <Tag>Dry</Tag> : null}
             </div>
             <div className="flex items-center gap-3">
               <span className="font-mono text-data tabular-nums text-text-mute">
@@ -172,7 +170,7 @@ export default function RunsPage() {
           <EmptyState
             icon={BroadcastIcon}
             title="No runs yet"
-            body="Runs are how contacts get called. Start one in dry mode to see the pipeline end to end."
+            body="Runs are how contacts get called. Start one to see the pipeline end to end."
             action={
               <Button asChild>
                 <Link href="/app/runs/new">Start a run</Link>

@@ -134,12 +134,12 @@ export function StatusBoard() {
         />
         <Row
           label="Live calling"
-          lamp={health?.api_key_configured ? "jade" : "brass"}
-          value={health?.api_key_configured ? "Available" : "Dry run only"}
+          lamp={health?.api_key_configured ? "jade" : "flare"}
+          value={health?.api_key_configured ? "Available" : "Unavailable"}
           detail={
             health?.api_key_configured
-              ? "A Voice API key is configured, so live runs can dial."
-              : "No Voice API key configured on this deployment. Dry runs are unaffected."
+              ? "A Voice API key is configured, so runs can dial."
+              : "No Voice API key configured on this deployment. Runs can't place calls."
           }
         />
         <Row
@@ -154,7 +154,7 @@ export function StatusBoard() {
         />
         {health?.limits ? (
           <Row
-            label="Daily live-call budget"
+            label="Daily call budget"
             lamp={
               health.limits.used_today >= health.limits.daily_budget
                 ? "flare"
@@ -163,7 +163,7 @@ export function StatusBoard() {
                   : "jade"
             }
             value={`${health.limits.used_today} of ${health.limits.daily_budget} used`}
-            detail="Shared across everyone on this deployment. Dry runs don't count."
+            detail="Shared across everyone on this deployment."
           />
         ) : null}
       </Panel>

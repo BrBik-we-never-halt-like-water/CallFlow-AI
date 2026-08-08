@@ -38,7 +38,6 @@ your CRM learns not to contact that person again through any other channel.
     "disposition_reason": "Completed with no escalation signal",
     "sentiment": "positive",
     "duration_seconds": 161,
-    "dry_run": false,
     "extracted": { "destination": "Dubai", "party_size": 4 }
   }
 }
@@ -46,9 +45,6 @@ your CRM learns not to contact that person again through any other channel.
 
 The number is masked in the payload, the same as everywhere else. If your system needs
 the full number, you already have it — it is the one you uploaded.
-
-Dry-run calls fire webhooks too, with `dry_run: true`. Check that field before writing
-to production tables; a simulated result is not a call.
 
 ## Verifying a delivery
 

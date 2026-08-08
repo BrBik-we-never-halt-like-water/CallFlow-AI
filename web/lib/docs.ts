@@ -26,7 +26,7 @@ export const DOC_SECTIONS: DocSection[] = [
         slug: "getting-started",
         title: "Getting started",
         summary:
-          "From an empty account to a dry run with typed results, in about five minutes.",
+          "From an empty account to a real call with typed results, in about five minutes.",
       },
       {
         slug: "writing-a-good-goal",
@@ -58,7 +58,7 @@ export const DOC_SECTIONS: DocSection[] = [
       {
         slug: "safety-configuration",
         title: "Safety configuration",
-        summary: "Dry run, the allowlist, the per-run ceiling, rate limits, and calling windows.",
+        summary: "The allowlist, the per-run ceiling, rate limits, calling windows, and suppression.",
       },
       {
         slug: "api-reference",

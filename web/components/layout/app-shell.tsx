@@ -12,6 +12,8 @@ import { VRule } from "@/components/ui/rule";
 import { useAppStore } from "@/lib/app-store";
 import { AppNav, AppTabBar, NAV_ITEMS } from "./app-nav";
 import { CommandSearch } from "./command-search";
+import { UserMenu } from "./user-menu";
+import { type SessionProfile, useSession } from "@/lib/hooks/use-session";
 
 const COLLAPSE_KEY = "callflow.nav.collapsed";
 
@@ -23,6 +25,8 @@ const COLLAPSE_KEY = "callflow.nav.collapsed";
  */
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { escalations } = useAppStore();
+  const session = useSession();
+  const profile = session.status === "signed-in" ? session.profile : null;
   const [stored, setStored] = useStoredString(COLLAPSE_KEY, "false");
   const collapsed = stored === "true";
 
@@ -41,10 +45,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           collapsed={collapsed}
           onToggleCollapsed={toggleCollapsed}
           escalationCount={escalations.length}
+          profile={profile}
+          refreshSession={session.refresh}
         />
 
         <div className="flex min-w-0 flex-1 flex-col">
-          <AppTopBar />
+          <AppTopBar
+            profile={profile}
+            loading={session.status === "loading"}
+          />
 
           <main
             id="app-main"
@@ -60,7 +69,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   );
 }
 
-function AppTopBar() {
+function AppTopBar({
+  profile,
+  loading,
+}: {
+  profile: SessionProfile | null;
+  loading: boolean;
+}) {
   return (
     <header className="sticky top-0 z-30 flex h-(--h-app-topbar) shrink-0 items-center gap-3 border-b border-rule bg-surface-raised px-4 sm:px-6">
       {/* The lockup lives in the top bar on mobile, where the left nav is absent. */}
@@ -84,6 +99,7 @@ function AppTopBar() {
             <QuestionIcon aria-hidden className="size-4" />
           </Link>
         </Tooltip>
+        <UserMenu profile={profile} loading={loading} />
       </div>
     </header>
   );
@@ -158,12 +174,12 @@ function CreditBalance() {
     <Tooltip
       content={
         remaining === 0
-          ? "You're out of live calls for today. Dry runs are still unlimited."
-          : `${remaining} of ${limits.daily_budget} live calls left today. Dry runs don't count.`
+          ? "You're out of calls for today. Resets tomorrow."
+          : `${remaining} of ${limits.daily_budget} calls left today.`
       }
     >
       <Link
-        href="/app/settings/billing"
+        href="/app/settings/safety"
         className={cn(
           "hidden items-center gap-1.5 rounded-sm px-2 py-1 sm:inline-flex",
           "font-mono text-data tabular-nums transition-colors hover:bg-surface-hover",

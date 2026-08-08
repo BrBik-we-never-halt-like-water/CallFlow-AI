@@ -237,7 +237,6 @@ documents each one. Backend env is `.env.example` at the repo root.
 
 ```
 NEXT_PUBLIC_API_URL    where the browser reaches the calling API
-API_URL                server-side, for the /api/wake keep-alive route
 NEXT_PUBLIC_SITE_URL   absolute site URL, for canonical links and social cards
 ```
 

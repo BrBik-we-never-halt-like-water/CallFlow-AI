@@ -30,6 +30,7 @@ export function Dialog({
   footer,
   className,
   size = "md",
+  dismissible = true,
 }: {
   title: string;
   /** Read out with the title. Omit only if the body is self-explanatory. */
@@ -38,6 +39,8 @@ export function Dialog({
   footer?: React.ReactNode;
   className?: string;
   size?: "sm" | "md" | "lg";
+  /** False for a mandatory step: no close button, no Esc, no click-outside. */
+  dismissible?: boolean;
 }) {
   const width = { sm: "max-w-sm", md: "max-w-lg", lg: "max-w-2xl" }[size];
 
@@ -45,6 +48,9 @@ export function Dialog({
     <RadixDialog.Portal>
       <Overlay />
       <RadixDialog.Content
+        onEscapeKeyDown={(e) => !dismissible && e.preventDefault()}
+        onPointerDownOutside={(e) => !dismissible && e.preventDefault()}
+        onInteractOutside={(e) => !dismissible && e.preventDefault()}
         className={cn(
           "fixed left-1/2 top-1/2 z-50 w-[calc(100vw-32px)] -translate-x-1/2 -translate-y-1/2",
           "max-h-[calc(100dvh-64px)] overflow-y-auto rounded-md border border-rule-strong bg-surface-raised shadow-overlay",
@@ -63,12 +69,14 @@ export function Dialog({
               </RadixDialog.Description>
             ) : null}
           </div>
-          <RadixDialog.Close
-            aria-label="Close"
-            className="-m-1.5 flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-sm text-text-mute transition-colors hover:bg-surface-hover hover:text-text"
-          >
-            <XIcon aria-hidden className="size-4" />
-          </RadixDialog.Close>
+          {dismissible ? (
+            <RadixDialog.Close
+              aria-label="Close"
+              className="-m-1.5 flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-sm text-text-mute transition-colors hover:bg-surface-hover hover:text-text"
+            >
+              <XIcon aria-hidden className="size-4" />
+            </RadixDialog.Close>
+          ) : null}
         </div>
 
         {children ? <div className="p-5">{children}</div> : null}

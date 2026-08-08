@@ -24,7 +24,7 @@ type SortOrder = "oldest" | "newest";
  * exactly the item that most needs attention.
  */
 export default function EscalationsPage() {
-  const { escalations, campaigns, phase, wakeSeconds, loadingRuns } = useAppStore();
+  const { escalations, campaigns, phase, loadingRuns } = useAppStore();
   const [sortOrder, setSortOrder] = useState<SortOrder>("oldest");
   const [campaignFilter, setCampaignFilter] = useState("all");
   const [reasonFilter, setReasonFilter] = useState("all");
@@ -68,7 +68,7 @@ export default function EscalationsPage() {
         </div>
       </div>
 
-      <ConnectionBanner phase={phase} wakeSeconds={wakeSeconds} />
+      <ConnectionBanner phase={phase} />
 
       {escalations.length > 0 ? (
         <div className="flex flex-wrap items-end gap-3">

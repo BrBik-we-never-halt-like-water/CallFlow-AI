@@ -39,7 +39,6 @@ export function TranscriptView({ outcome }: { outcome: Outcome }) {
           <LampBadge state={lamp.state} pulse={lamp.pulse}>
             {lamp.label}
           </LampBadge>
-          {outcome.dry_run ? <Tag>Dry run</Tag> : null}
           {outcome.status ? <Tag>{outcome.status}</Tag> : null}
         </div>
 
@@ -108,9 +107,7 @@ function Conversation({ turns, outcome }: { turns: Turn[]; outcome: Outcome }) {
       <div className="flex flex-col gap-3">
         <Eyebrow>Conversation</Eyebrow>
         <p className="text-small text-text-dim">
-          {outcome.dry_run
-            ? "Dry runs don't produce a transcript — nothing was said, because nothing was dialled."
-            : "No transcript was recorded for this call."}
+          No transcript was recorded for this call.
         </p>
         {outcome.summary ? (
           <Panel sunken className="p-3">

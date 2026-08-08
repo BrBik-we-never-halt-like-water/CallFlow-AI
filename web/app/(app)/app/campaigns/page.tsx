@@ -20,7 +20,7 @@ import { CAMPAIGN_DRAFT_KEY } from "@/lib/campaign-draft";
 export default function CampaignsPage() {
   const router = useRouter();
   const toast = useToast();
-  const { campaigns, hydratedRuns, phase, wakeSeconds, refresh } = useAppStore();
+  const { campaigns, hydratedRuns, phase, refresh } = useAppStore();
   const [filter, setFilter] = useState("all");
   const [pendingDelete, setPendingDelete] = useState<Campaign | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -98,7 +98,7 @@ export default function CampaignsPage() {
         </Button>
       </div>
 
-      <ConnectionBanner phase={phase} wakeSeconds={wakeSeconds} />
+      <ConnectionBanner phase={phase} />
 
       <Tabs
         value={filter}
@@ -110,7 +110,7 @@ export default function CampaignsPage() {
         ]}
       >
         <TabPanel value={filter} className="pt-6">
-          {phase === "connecting" || phase === "waking" ? (
+          {phase === "connecting" ? (
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
               {Array.from({ length: 3 }, (_, i) => (
                 <Panel key={i} className="flex flex-col gap-3 p-4">

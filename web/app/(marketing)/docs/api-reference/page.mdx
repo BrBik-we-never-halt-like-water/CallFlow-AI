@@ -16,23 +16,21 @@ at creation and stored hashed, so if you lose one, revoke it and make another.
 | Endpoint | Purpose |
 |---|---|
 | `GET /api/health` | Service status and the active safety settings. |
-| `GET /api/campaigns` | List campaigns. |
-| `POST /api/campaigns` | Create a campaign with custom extraction fields. |
-| `DELETE /api/campaigns/{id}` | Remove a campaign you created. |
-| `POST /api/preview` | Render goals without dialling. Free and instant. |
-| `POST /api/runs` | Start a run. Returns immediately; the run proceeds in the background. |
-| `GET /api/runs` | List runs. |
-| `GET /api/runs/{id}` | Poll status, outcomes, and stats. |
+| `GET /api/v1/campaigns` | List campaigns for the active organisation. |
+| `POST /api/v1/campaigns` | Create a campaign with custom extraction fields. |
+| `DELETE /api/v1/campaigns/{id}` | Remove a campaign you created. |
+| `POST /api/v1/campaigns/preview` | Render goals without dialling. Free and instant. |
+| `POST /api/v1/runs` | Start a run. Every run dials for real. Returns immediately; the run proceeds in the background. |
+| `GET /api/v1/runs` | List runs for the active organisation. |
+| `GET /api/v1/runs/{id}` | Poll status, outcomes, and stats. |
 
 ## Health
 
-Returns the guards that are currently in force. Worth calling before a live run if you
-are automating one.
+Returns the guards that are currently in force. Worth calling before automating a run.
 
 ```json
 {
   "ok": true,
-  "dry_run_default": true,
   "api_key_configured": true,
   "max_calls_per_run": 3,
   "allowlist_active": true,
@@ -59,14 +57,13 @@ failing the whole request, so you can show the operator which row is wrong.
 
 ## Starting a run
 
-`dry_run` defaults to the service's own setting, which is `true` unless it has been
-deliberately changed. **Send `false` explicitly to dial.** That asymmetry is on purpose:
-forgetting a field should never be what causes a phone to ring.
+Every run dials for real as soon as it starts — there is no simulated mode. The
+allowlist, per-run ceiling, rate limit, daily budget, and suppression list are all
+checked before each call goes out, and any of them can stop a contact from being dialled.
 
 ```json
 {
   "campaign_id": "travel-discovery",
-  "dry_run": true,
   "contacts": [
     { "name": "Aditi", "phone": "+15555550100", "context": { "enquiry_note": "Bali in December" } }
   ]
@@ -76,12 +73,12 @@ forgetting a field should never be what causes a phone to ring.
 Response:
 
 ```json
-{ "run_id": "run_8f2a1c", "dry_run": true, "total": 1 }
+{ "run_id": "run_8f2a1c", "total": 1 }
 ```
 
 ## Polling a run
 
-`GET /api/runs/{id}` returns the run with every outcome recorded so far, plus stats.
+`GET /api/v1/runs/{id}` returns the run with every outcome recorded so far, plus stats.
 
 A row appears as soon as a call is placed, so an in-flight call is visible while it
 happens. `stats.completed` counts only calls that have actually resolved — an
@@ -102,4 +99,4 @@ Errors come back with a `detail` string written for a person, not a code to look
 | `429` | A rate limit or the daily budget. Honour `Retry-After`. |
 
 A `400` on a run is usually one of three things: no contacts, a number that is not
-E.164, or a live run requested with no Voice API key configured.
+E.164, or a run requested with no Voice API key configured.

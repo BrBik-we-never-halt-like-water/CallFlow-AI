@@ -7,6 +7,20 @@ export const metadata = {
 
 Newest first. Dates are the day a change reached production.
 
+## 2026-08-07 — Dry run removed, runs are persisted
+
+Every run now dials for real from the first one — there is no longer a simulated mode.
+
+- **Dry run is gone.** The switch, the confirmation dialog, and the simulated lamp
+  state are removed from the product. The guards that were already real — the
+  allowlist, the per-run ceiling, rate limiting, the daily budget, and calling
+  windows — are unchanged and are what protects you now.
+- **The suppression list is enforced in the dial path,** not just shown in the
+  interface. An opted-out number is rejected before a call is ever placed, on every
+  run.
+- **Campaigns and runs are persisted per organisation,** in place of the in-memory
+  store used until now. Nothing is lost on a restart or a deploy.
+
 ## 2026-08-05 — Interface rebuild
 
 The whole interface was rebuilt around one idea: a completed call tells you nothing, so

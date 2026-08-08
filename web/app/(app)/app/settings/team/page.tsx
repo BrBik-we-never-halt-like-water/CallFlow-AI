@@ -1,39 +1,58 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { NotWiredNotice, SettingsSection } from "@/components/app/settings-section";
+import { SessionGate } from "@/components/app/session-gate";
+import { InviteDialog, ROLES } from "@/components/app/invite-dialog";
 import { Tag } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogRoot } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Field } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
-import { Select } from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
-
-const ROLES = [
-  {
-    value: "admin",
-    label: "Admin",
-    hint: "Everything, including billing, safety, and going live",
-  },
-  {
-    value: "operator",
-    label: "Operator",
-    hint: "Start runs, edit campaigns, resolve escalations",
-  },
-  {
-    value: "viewer",
-    label: "Viewer",
-    hint: "Read results only — cannot start a run",
-  },
-];
+import { formatAge, formatTimestamp } from "@/lib/format";
+import { api, type Member, type PendingInvite, type Team } from "@/lib/api";
+import { useSession, type SessionProfile } from "@/lib/hooks/use-session";
 
 export default function TeamSettingsPage() {
+  const session = useSession();
+  return (
+    <SessionGate session={session}>
+      {(profile) => <TeamSettingsContent profile={profile} />}
+    </SessionGate>
+  );
+}
+
+function TeamSettingsContent({ profile }: { profile: SessionProfile }) {
   const toast = useToast();
+
+  const [team, setTeam] = useState<Team | null>(null);
+  const [loading, setLoading] = useState(true);
   const [inviting, setInviting] = useState(false);
-  const [email, setEmail] = useState("");
-  const [role, setRole] = useState("operator");
+
+  function load() {
+    api
+      .listMembers()
+      .then(setTeam)
+      .catch(() =>
+        toast({ tone: "error", title: "Couldn't load the team" }),
+      )
+      .finally(() => setLoading(false));
+  }
+
+  useEffect(() => {
+    void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile.active.org_id]);
+
+  const canInvite = profile.permissions.includes("team:invite");
+  const canRemove = profile.permissions.includes("team:remove");
+  const canSetRole = profile.permissions.includes("team:set_role");
 
   return (
     <div className="flex flex-col gap-4">
@@ -41,15 +60,40 @@ export default function TeamSettingsPage() {
         title="Members"
         description="Who can get into this organisation, and what they're allowed to do."
         footer={
-          <Button size="sm" onClick={() => setInviting(true)}>
-            Invite a teammate
-          </Button>
+          canInvite ? (
+            <Button size="sm" onClick={() => setInviting(true)}>
+              Invite a teammate
+            </Button>
+          ) : undefined
         }
       >
-        <EmptyState
-          title="It's just you"
-          body="Invite the people who triage escalations. Give them Operator, not Admin — only Admins can switch a run to live."
-        />
+        {loading ? (
+          <div className="flex flex-col gap-2">
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-10 w-full" />
+          </div>
+        ) : !team || (team.members.length === 0 && team.pending.length === 0) ? (
+          <EmptyState
+            title="It's just you"
+            body="Invite the people who triage escalations. Give them Operator, and reserve Admin for whoever manages billing and safety settings."
+          />
+        ) : (
+          <ul className="flex flex-col divide-y divide-rule">
+            {team.members.map((member) => (
+              <MemberRow
+                key={member.user_id}
+                member={member}
+                self={member.user_id === profile.user_id}
+                canRemove={canRemove}
+                canSetRole={canSetRole}
+                onChanged={load}
+              />
+            ))}
+            {team.pending.map((invite) => (
+              <PendingRow key={invite.id} invite={invite} canRevoke={canInvite} onChanged={load} />
+            ))}
+          </ul>
+        )}
       </SettingsSection>
 
       <SettingsSection
@@ -66,57 +110,158 @@ export default function TeamSettingsPage() {
                 <span className="text-small font-medium text-text">{r.label}</span>
                 <span className="text-small text-text-dim">{r.hint}</span>
               </div>
-              {r.value === "admin" ? <Tag>Can go live</Tag> : null}
+              {r.value === "admin" ? <Tag>Billing &amp; safety</Tag> : null}
             </li>
           ))}
         </ul>
       </SettingsSection>
 
       <NotWiredNotice>
-        Inviting teammates and enforcing roles needs an account service, which this
-        deployment does not have. Everything in the dashboard is currently open.
+        Owners get every permission, including deleting the organisation and
+        transferring ownership. There is no dedicated &ldquo;Owner&rdquo; row above because
+        it can&apos;t be granted here — it moves with the organisation.
       </NotWiredNotice>
 
-      <DialogRoot open={inviting} onOpenChange={setInviting}>
-        <Dialog
-          title="Invite a teammate"
-          description="They'll get an email with a link. Nothing happens on their account until they set a password."
-          size="sm"
-          footer={
-            <>
-              <Button variant="secondary" onClick={() => setInviting(false)}>
-                Cancel
-              </Button>
-              <Button
-                onClick={() => {
-                  setInviting(false);
-                  toast({
-                    tone: "info",
-                    title: "No invitation was sent",
-                    body: "Invitations need an account service, which this deployment doesn't have yet.",
-                  });
-                }}
-              >
-                Send invitation
-              </Button>
-            </>
-          }
-        >
-          <div className="flex flex-col gap-4">
-            <Field label="Work email" required>
-              <Input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                autoFocus
-              />
-            </Field>
-            <Field label="Role" help="Operators can run campaigns but not change billing.">
-              <Select value={role} onValueChange={setRole} options={ROLES} />
-            </Field>
-          </div>
-        </Dialog>
-      </DialogRoot>
+      <InviteDialog open={inviting} onOpenChange={setInviting} onInvited={load} />
     </div>
+  );
+}
+
+function MemberRow({
+  member,
+  self,
+  canRemove,
+  canSetRole,
+  onChanged,
+}: {
+  member: Member;
+  self: boolean;
+  canRemove: boolean;
+  canSetRole: boolean;
+  onChanged: () => void;
+}) {
+  const toast = useToast();
+  const [busy, setBusy] = useState(false);
+  const canAct = (canRemove || self) && !busy;
+  const isOwner = member.role === "owner";
+
+  async function remove() {
+    setBusy(true);
+    try {
+      await api.removeMember(member.user_id);
+      toast({
+        tone: "success",
+        title: self ? "You left the organisation" : "Teammate removed",
+      });
+      onChanged();
+    } catch (error) {
+      toast({
+        tone: "error",
+        title: "Couldn't remove",
+        body: error instanceof Error ? error.message : undefined,
+      });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function setRole(role: string) {
+    setBusy(true);
+    try {
+      await api.setMemberRole(member.user_id, role);
+      toast({ tone: "success", title: "Role updated" });
+      onChanged();
+    } catch (error) {
+      toast({
+        tone: "error",
+        title: "Couldn't update the role",
+        body: error instanceof Error ? error.message : undefined,
+      });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <li className="flex flex-wrap items-center justify-between gap-3 py-3">
+      <div className="flex min-w-0 flex-col gap-0.5">
+        <span className="truncate text-small font-medium text-text">
+          {member.name?.trim() || member.email}
+          {self ? " (you)" : ""}
+        </span>
+        <span className="truncate text-small text-text-dim">{member.email}</span>
+      </div>
+      <div className="flex items-center gap-2">
+        <Tag>{member.role}</Tag>
+        {(canRemove || (canSetRole && !isOwner) || self) && !isOwner ? (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="sm" disabled={!canAct}>
+                Manage
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              {canSetRole && !self
+                ? ROLES.map((r) => (
+                    <DropdownMenuItem key={r.value} onSelect={() => setRole(r.value)}>
+                      Make {r.label}
+                    </DropdownMenuItem>
+                  ))
+                : null}
+              {canRemove || self ? (
+                <DropdownMenuItem destructive onSelect={remove}>
+                  {self ? "Leave organisation" : "Remove"}
+                </DropdownMenuItem>
+              ) : null}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : null}
+      </div>
+    </li>
+  );
+}
+
+function PendingRow({
+  invite,
+  canRevoke,
+  onChanged,
+}: {
+  invite: PendingInvite;
+  canRevoke: boolean;
+  onChanged: () => void;
+}) {
+  const toast = useToast();
+  const [revoking, setRevoking] = useState(false);
+
+  async function revoke() {
+    setRevoking(true);
+    try {
+      await api.revokeInvitation(invite.id);
+      toast({ tone: "info", title: "Invitation revoked" });
+      onChanged();
+    } catch {
+      toast({ tone: "error", title: "Couldn't revoke the invitation" });
+    } finally {
+      setRevoking(false);
+    }
+  }
+
+  return (
+    <li className="flex flex-wrap items-center justify-between gap-3 py-3">
+      <div className="flex min-w-0 flex-col gap-0.5">
+        <span className="truncate text-small font-medium text-text">{invite.email}</span>
+        <span className="truncate text-small text-text-dim">
+          Invited {formatAge(invite.created_at)} · expires {formatTimestamp(invite.expires_at)}
+        </span>
+      </div>
+      <div className="flex items-center gap-2">
+        <Tag>{invite.role}</Tag>
+        {canRevoke ? (
+          <Button variant="ghost" size="sm" onClick={revoke} loading={revoking}>
+            Revoke
+          </Button>
+        ) : null}
+      </div>
+    </li>
   );
 }

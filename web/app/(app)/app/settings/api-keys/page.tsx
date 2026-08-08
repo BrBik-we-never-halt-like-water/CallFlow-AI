@@ -1,142 +1,264 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { NotWiredNotice, SettingsSection } from "@/components/app/settings-section";
-import { LampBadge, Tag } from "@/components/ui/badge";
+import { SessionGate } from "@/components/app/session-gate";
 import { Button } from "@/components/ui/button";
+import { CodeBlock } from "@/components/ui/code-block";
 import { Dialog, DialogRoot } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Panel } from "@/components/ui/panel";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
-import { useAppStore } from "@/lib/app-store";
-
-const SCOPES = [
-  { id: "campaigns:read", label: "Read campaigns" },
-  { id: "campaigns:write", label: "Create and edit campaigns" },
-  { id: "runs:read", label: "Read runs and results" },
-  { id: "runs:write", label: "Start runs (can place live calls)" },
-];
+import { formatAge } from "@/lib/format";
+import { api, type ApiKey } from "@/lib/api";
+import { useSession, type SessionProfile } from "@/lib/hooks/use-session";
 
 export default function ApiKeysSettingsPage() {
+  const session = useSession();
+  return (
+    <SessionGate session={session}>
+      {(profile) => <ApiKeysContent profile={profile} />}
+    </SessionGate>
+  );
+}
+
+function ApiKeysContent({ profile }: { profile: SessionProfile }) {
   const toast = useToast();
-  const { health } = useAppStore();
+  const canRead = profile.permissions.includes("api_keys:read");
+  const canWrite = profile.permissions.includes("api_keys:write");
+
+  const [keys, setKeys] = useState<ApiKey[] | null>(null);
   const [creating, setCreating] = useState(false);
-  const [name, setName] = useState("");
-  const [scopes, setScopes] = useState<Set<string>>(new Set(["runs:read"]));
+  const [justCreated, setJustCreated] = useState<{ name: string; key: string } | null>(null);
+
+  function load() {
+    if (!canRead) return;
+    api
+      .listApiKeys()
+      .then(setKeys)
+      .catch(() => toast({ tone: "error", title: "Couldn't load API keys" }));
+  }
+
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile.active.org_id]);
+
+  if (!canRead) {
+    return (
+      <NotWiredNotice>
+        API keys are visible to owners and admins only. Ask one in your organisation
+        if you need programmatic access.
+      </NotWiredNotice>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-4">
-      {/* The voice credential is labelled by what it does, never by the vendor that
-          issues it. The environment variable keeps its own name in code. */}
       <SettingsSection
-        title="Voice API key"
-        description="The credential the service uses to place calls. Without it, only dry runs are possible."
-        effect={
-          health?.api_key_configured
-            ? "A Voice API key is configured, so live calls can be placed once dry run is turned off."
-            : "No Voice API key is configured. Dry runs work; live runs will be refused with an explanation."
-        }
-      >
-        <div className="flex flex-wrap items-center gap-3">
-          <LampBadge state={health?.api_key_configured ? "jade" : "brass"}>
-            {health?.api_key_configured ? "Configured" : "Not configured"}
-          </LampBadge>
-          <p className="text-small text-text-mute">
-            Set on the server, never shown in the interface.
-          </p>
-        </div>
-      </SettingsSection>
-
-      <SettingsSection
-        title="Your API keys"
-        description="For calling CallFlow from your own systems. Shown once at creation, then stored hashed."
+        title="API keys"
+        description="Authenticate requests to CallFlow's own API without a user session — send one as a bearer token: Authorization: Bearer cfk_..."
         footer={
-          <Button size="sm" onClick={() => setCreating(true)}>
-            Create a key
-          </Button>
+          canWrite ? (
+            <Button size="sm" onClick={() => setCreating(true)}>
+              Create key
+            </Button>
+          ) : undefined
         }
       >
-        <EmptyState
-          title="No keys yet"
-          body="Create one to start runs or read results from your own code. Give each system its own key so you can revoke one without breaking the others."
-        />
+        {keys === null ? (
+          <div className="flex flex-col gap-2">
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-10 w-full" />
+          </div>
+        ) : keys.length === 0 ? (
+          <EmptyState
+            title="No API keys yet"
+            body="Create one to call CallFlow's API from a script, a cron job, or another service."
+          />
+        ) : (
+          <ul className="flex flex-col divide-y divide-rule">
+            {keys.map((key) => (
+              <ApiKeyRow key={key.id} apiKey={key} canRevoke={canWrite} onChanged={load} />
+            ))}
+          </ul>
+        )}
       </SettingsSection>
 
-      <NotWiredNotice>
-        Issuing and revoking API keys needs an account service, which this deployment does
-        not have. The Voice API key status above is real — it is read from the calling
-        service.
-      </NotWiredNotice>
+      <CreateKeyDialog
+        open={creating}
+        onOpenChange={setCreating}
+        onCreated={(name, key) => {
+          setJustCreated({ name, key });
+          load();
+        }}
+      />
 
-      <DialogRoot open={creating} onOpenChange={setCreating}>
+      <RevealKeyDialog
+        created={justCreated}
+        onClose={() => setJustCreated(null)}
+      />
+    </div>
+  );
+}
+
+function ApiKeyRow({
+  apiKey,
+  canRevoke,
+  onChanged,
+}: {
+  apiKey: ApiKey;
+  canRevoke: boolean;
+  onChanged: () => void;
+}) {
+  const toast = useToast();
+  const [revoking, setRevoking] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+
+  async function revoke() {
+    setRevoking(true);
+    try {
+      await api.revokeApiKey(apiKey.id);
+      toast({ tone: "info", title: "Key revoked" });
+      setConfirming(false);
+      onChanged();
+    } catch (error) {
+      toast({
+        tone: "error",
+        title: "Couldn't revoke the key",
+        body: error instanceof Error ? error.message : undefined,
+      });
+    } finally {
+      setRevoking(false);
+    }
+  }
+
+  return (
+    <li className="flex flex-wrap items-center justify-between gap-3 py-3">
+      <div className="flex min-w-0 flex-col gap-0.5">
+        <span className="truncate text-small font-medium text-text">{apiKey.name}</span>
+        <span className="truncate font-mono text-data text-text-mute">
+          {apiKey.key_prefix}… · created {formatAge(apiKey.created_at)} ·{" "}
+          {apiKey.last_used_at
+            ? `last used ${formatAge(apiKey.last_used_at)}`
+            : "never used"}
+        </span>
+      </div>
+      {canRevoke ? (
+        <>
+          <Button variant="ghost" size="sm" onClick={() => setConfirming(true)}>
+            Revoke
+          </Button>
+          <DialogRoot open={confirming} onOpenChange={setConfirming}>
+            <Dialog
+              title={`Revoke "${apiKey.name}"?`}
+              description="Any request using this key stops working immediately. This can't be undone."
+              size="sm"
+              footer={
+                <>
+                  <Button variant="secondary" onClick={() => setConfirming(false)}>
+                    Keep it
+                  </Button>
+                  <Button variant="danger" onClick={revoke} loading={revoking}>
+                    Revoke key
+                  </Button>
+                </>
+              }
+            />
+          </DialogRoot>
+        </>
+      ) : null}
+    </li>
+  );
+}
+
+function CreateKeyDialog({
+  open,
+  onOpenChange,
+  onCreated,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onCreated: (name: string, key: string) => void;
+}) {
+  const toast = useToast();
+  const [name, setName] = useState("");
+  const [creating, setCreating] = useState(false);
+
+  async function submit() {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    setCreating(true);
+    try {
+      const created = await api.createApiKey(trimmed);
+      onOpenChange(false);
+      setName("");
+      onCreated(created.name, created.key);
+    } catch (error) {
+      toast({
+        tone: "error",
+        title: "Couldn't create the key",
+        body: error instanceof Error ? error.message : undefined,
+      });
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  return (
+    <DialogRoot open={open} onOpenChange={onOpenChange}>
+      <Dialog
+        title="Create an API key"
+        description="Name it after what will use it — you'll only see the full key once."
+        size="sm"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => onOpenChange(false)}>
+              Cancel
+            </Button>
+            <Button onClick={submit} loading={creating} disabled={!name.trim()}>
+              Create key
+            </Button>
+          </>
+        }
+      >
+        <Field label="Name">
+          <Input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="CI pipeline"
+            autoFocus
+            maxLength={120}
+          />
+        </Field>
+      </Dialog>
+    </DialogRoot>
+  );
+}
+
+function RevealKeyDialog({
+  created,
+  onClose,
+}: {
+  created: { name: string; key: string } | null;
+  onClose: () => void;
+}) {
+  return (
+    <DialogRoot open={created !== null} onOpenChange={(open) => !open && onClose()}>
+      {created ? (
         <Dialog
-          title="Create an API key"
-          description="Pick the narrowest set of scopes that does the job. A key with runs:write can place real calls."
+          title={`"${created.name}" is ready`}
+          description="Copy it now — this is the only time it's shown. If you lose it, revoke the key and create another."
+          size="sm"
           footer={
-            <>
-              <Button variant="secondary" onClick={() => setCreating(false)}>
-                Cancel
-              </Button>
-              <Button
-                onClick={() => {
-                  setCreating(false);
-                  toast({
-                    tone: "info",
-                    title: "No key was created",
-                    body: "Key issuing needs an account service, which this deployment doesn't have yet.",
-                  });
-                }}
-              >
-                Create key
-              </Button>
-            </>
+            <Button onClick={onClose}>Done — I&apos;ve saved it</Button>
           }
         >
-          <div className="flex flex-col gap-4">
-            <Field label="What is this key for" hint="A name you'll recognise in six months.">
-              <Input
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="CRM sync (production)"
-                autoFocus
-              />
-            </Field>
-
-            <fieldset className="flex flex-col gap-2">
-              <legend className="text-small font-medium text-text">Scopes</legend>
-              {SCOPES.map((scope) => (
-                <Checkbox
-                  key={scope.id}
-                  id={scope.id}
-                  checked={scopes.has(scope.id)}
-                  onCheckedChange={(next) =>
-                    setScopes((current) => {
-                      const updated = new Set(current);
-                      if (next) updated.add(scope.id);
-                      else updated.delete(scope.id);
-                      return updated;
-                    })
-                  }
-                  label={scope.label}
-                />
-              ))}
-            </fieldset>
-
-            <Panel sunken className="flex items-center justify-between gap-3 p-3">
-              <div className="flex min-w-0 flex-col">
-                <span className="text-small text-text-dim">You&apos;ll see the key once</span>
-                <span className="truncate font-mono text-data text-text-mute">
-                  cf_live_••••••••••••••••
-                </span>
-              </div>
-              <Tag>Reveal once</Tag>
-            </Panel>
-          </div>
+          <CodeBlock code={created.key} language="text" />
         </Dialog>
-      </DialogRoot>
-    </div>
+      ) : null}
+    </DialogRoot>
   );
 }

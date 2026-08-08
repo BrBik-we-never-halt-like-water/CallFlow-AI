@@ -1,49 +1,89 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { AuthCard } from "@/components/layout/auth-card";
-import { AuthNotice, GoogleButton } from "@/components/layout/auth-notice";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import {
-  isPasswordValid,
-  PasswordStrength,
-} from "@/components/ui/password-strength";
-import { Rule } from "@/components/ui/rule";
+import { isPasswordValid, PasswordStrength } from "@/components/ui/password-strength";
+import { useToast } from "@/components/ui/toast";
+import { signUpWithPassword } from "@/lib/auth/actions";
 
-const FREE_EMAIL_DOMAINS = ["gmail.com", "yahoo.com", "outlook.com", "hotmail.com", "icloud.com"];
+const FREE_EMAIL_DOMAINS = [
+  "gmail.com",
+  "yahoo.com",
+  "outlook.com",
+  "hotmail.com",
+  "icloud.com",
+];
+
+interface FieldErrors {
+  name?: string;
+  email?: string;
+  password?: string;
+}
 
 export default function SignupPage() {
+  const router = useRouter();
+  const toast = useToast();
+
+  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
-  const [submitted, setSubmitted] = useState(false);
+  const [errors, setErrors] = useState<FieldErrors>({});
+  const [formError, setFormError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   const domain = email.split("@")[1]?.toLowerCase() ?? "";
-  // A nudge, not a rule. Plenty of legitimate small businesses run on a free mailbox,
-  // and blocking them at the door to satisfy a lead-scoring preference is a bad trade.
-  const showWorkEmailNudge = FREE_EMAIL_DOMAINS.includes(domain);
+  // A nudge, not a rule. Plenty of real businesses run on a free mailbox, and
+  // blocking them at the door to satisfy lead scoring is a bad trade.
+  const suggestWorkEmail = FREE_EMAIL_DOMAINS.includes(domain);
 
-  function submit(event: React.FormEvent) {
-    event.preventDefault();
-    const next: typeof errors = {};
-    if (!email.trim()) next.email = "Add an email address.";
+  function validate(): FieldErrors {
+    const found: FieldErrors = {};
+    if (!name.trim()) found.name = "Add your name so teammates can recognise you.";
+    if (!email.trim()) found.email = "Add an email address.";
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
-      next.email = "That doesn't look like an email address.";
+      found.email = "That doesn't look like an email address.";
     }
     if (!isPasswordValid(password)) {
-      next.password = "Meet all four requirements below before continuing.";
+      found.password = "Meet all four requirements below before continuing.";
     }
-    setErrors(next);
-    if (Object.keys(next).length === 0) setSubmitted(true);
+    return found;
+  }
+
+  async function submit(event: React.FormEvent) {
+    event.preventDefault();
+
+    const found = validate();
+    setErrors(found);
+    setFormError(null);
+    if (Object.keys(found).length > 0) return;
+
+    setSubmitting(true);
+    const result = await signUpWithPassword(email, password, name);
+
+    if (!result.ok) {
+      setFormError(result.error ?? "That didn't work.");
+      setSubmitting(false);
+      return;
+    }
+
+    toast({ tone: "success", title: "Account created" });
+
+    // Confirmation is disabled on this project, so signup returns a session and the
+    // user goes straight into the dashboard rather than a "check your inbox" dead end.
+    // OnboardingGate shows the mandatory org-setup modal over it immediately.
+    router.replace("/app");
+    router.refresh();
   }
 
   return (
     <AuthCard
       title="Start free"
-      description="Unlimited dry runs, no card. Nothing is dialled until you turn dry run off."
+      description="No card required. Start with a free daily call budget."
       footer={
         <>
           Already have an account?{" "}
@@ -56,65 +96,64 @@ export default function SignupPage() {
         </>
       }
     >
-      {submitted ? (
-        <AuthNotice />
-      ) : (
-        <form onSubmit={submit} noValidate className="flex flex-col gap-4">
-          <GoogleButton label="Continue with Google" />
+      <form onSubmit={submit} noValidate className="flex flex-col gap-4">
+        <Field label="Your name" error={errors.name} required>
+          <Input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            autoComplete="name"
+            autoFocus
+            disabled={submitting}
+          />
+        </Field>
 
-          <div className="flex items-center gap-3">
-            <Rule className="flex-1" />
-            <span className="eyebrow text-text-mute">or</span>
-            <Rule className="flex-1" />
-          </div>
+        <Field
+          label="Work email"
+          error={errors.email ?? formError}
+          help={
+            suggestWorkEmail
+              ? "A work address names your organisation automatically — but this one is fine."
+              : undefined
+          }
+          required
+        >
+          <Input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            autoComplete="email"
+            disabled={submitting}
+          />
+        </Field>
 
-          <Field
-            label="Work email"
-            error={errors.email}
-            help={
-              showWorkEmailNudge
-                ? "A work address makes it easier to add teammates later — but this one is fine."
-                : undefined
-            }
-            required
-          >
-            <Input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              autoComplete="email"
-              autoFocus
-            />
-          </Field>
+        <Field label="Password" error={errors.password} required>
+          <Input
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            autoComplete="new-password"
+            disabled={submitting}
+          />
+        </Field>
 
-          <Field label="Password" error={errors.password} required>
-            <Input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              autoComplete="new-password"
-            />
-          </Field>
+        <PasswordStrength value={password} />
 
-          <PasswordStrength value={password} />
+        <Button type="submit" size="lg" className="w-full" loading={submitting}>
+          Start free
+        </Button>
 
-          <Button type="submit" size="lg" className="w-full">
-            Start free
-          </Button>
-
-          <p className="text-small text-text-mute">
-            By continuing you agree to the{" "}
-            <Link href="/trust" className="underline decoration-rule-strong underline-offset-2">
-              terms
-            </Link>{" "}
-            and{" "}
-            <Link href="/trust" className="underline decoration-rule-strong underline-offset-2">
-              privacy policy
-            </Link>
-            .
-          </p>
-        </form>
-      )}
+        <p className="text-small text-text-mute">
+          By continuing you agree to the{" "}
+          <Link href="/trust" className="underline decoration-rule-strong underline-offset-2">
+            terms
+          </Link>{" "}
+          and{" "}
+          <Link href="/trust" className="underline decoration-rule-strong underline-offset-2">
+            privacy policy
+          </Link>
+          .
+        </p>
+      </form>
     </AuthCard>
   );
 }

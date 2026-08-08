@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { AppShell } from "@/components/layout/app-shell";
+import { OnboardingGate } from "@/components/app/onboarding-gate";
 import { AppStoreProvider } from "@/lib/app-store";
 
 export const metadata: Metadata = {
@@ -17,7 +18,9 @@ export default function AppLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <AppStoreProvider>
-      <AppShell>{children}</AppShell>
+      <OnboardingGate>
+        <AppShell>{children}</AppShell>
+      </OnboardingGate>
     </AppStoreProvider>
   );
 }

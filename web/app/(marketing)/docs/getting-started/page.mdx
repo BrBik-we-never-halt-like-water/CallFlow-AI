@@ -1,13 +1,14 @@
 export const metadata = {
   title: "Getting started",
   description:
-    "From an empty account to a dry run with typed results, in about five minutes. Nothing here dials anyone.",
+    "From an empty account to a real call with a typed result, in about five minutes.",
 };
 
 # Getting started
 
-This walkthrough ends with you looking at a typed result from a call that was never
-placed. Nothing in it spends a credit or rings a phone.
+This walkthrough ends with you looking at a typed result from a real call. Every run
+dials for real, so the first two steps below are about protecting yourself before you
+start one.
 
 ## 1. Add a few contacts
 
@@ -42,42 +43,34 @@ edited in place — duplicate one if you want to change it. Reading a template's
 is also the fastest way to understand what a good goal looks like; see
 [Writing a good goal](/docs/writing-a-good-goal).
 
-## 3. Run it in dry mode
+## 3. Set your guards before the first run
 
-Go to **Runs → New run**. Dry run is already on, and the panel says so:
-`DRY RUN · NO CREDITS SPENT`.
-
-A dry run walks the entire pipeline:
-
-- every row is validated
-- the safety gate runs, exactly as it would on a live call
-- the goal is rendered with each contact substituted in, so you see the actual words
-- a sample result is passed through the real triage logic
-
-What you get back has the same shape a live call produces. The lamps are ice, because
-ice means simulated.
-
-## 4. Read the result
-
-Open any row. You get the conversation on the left and, on the right, the extracted
-fields plus the triage decision as a short chain — `Frustration detected → Needs a
-person`.
-
-That chain reads from typed fields, never from prose. It is the guarantee the product
-makes: the reason a call was escalated is a value you can check, not a sentence
-somebody wrote.
-
-## 5. Going live
-
-When you are ready, turn the dry-run switch off. It is the only switch in the product
-that asks you to confirm, and the confirmation tells you how many contacts are in the
-run, the estimated credits, your calling window, and whether the allowlist is on.
-
-Before that first live run, do two things:
+Every run dials for real, so do two things before you start one:
 
 1. Put **your own number** on the allowlist. While the allowlist has anything on it,
    nothing else can be dialled.
 2. Set the **per-run ceiling** low — three or five. You can raise it once you have
    seen a real call go through.
 
-Both live in [Safety configuration](/docs/safety-configuration).
+Both live in [Safety configuration](/docs/safety-configuration), and both are also
+visible as mono chips on the run composer, above the button that starts the run.
+
+## 4. Start the run
+
+Go to **Runs → New run**, review the guards on the panel, and press Start. Each
+contact is:
+
+- validated before anything else happens
+- checked against the safety gate, including the allowlist and the suppression list
+- called with the goal rendered and each contact's details substituted in
+- passed through the real triage logic as the call ends
+
+## 5. Read the result
+
+Open any row as results land. You get the conversation on the left and, on the right,
+the extracted fields plus the triage decision as a short chain — `Frustration detected
+→ Needs a person`.
+
+That chain reads from typed fields, never from prose. It is the guarantee the product
+makes: the reason a call was escalated is a value you can check, not a sentence
+somebody wrote.

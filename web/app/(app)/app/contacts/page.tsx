@@ -37,7 +37,7 @@ interface ContactRecord {
 
 export default function ContactsPage() {
   const toast = useToast();
-  const { outcomes, phase, wakeSeconds, loadingRuns } = useAppStore();
+  const { outcomes, phase, loadingRuns } = useAppStore();
   const [tab, setTab] = useState("all");
   const [query, setQuery] = useState("");
   const [addOpen, setAddOpen] = useState(false);
@@ -99,7 +99,7 @@ export default function ContactsPage() {
         </div>
       </div>
 
-      <ConnectionBanner phase={phase} wakeSeconds={wakeSeconds} />
+      <ConnectionBanner phase={phase} />
 
       <Tabs
         value={tab}

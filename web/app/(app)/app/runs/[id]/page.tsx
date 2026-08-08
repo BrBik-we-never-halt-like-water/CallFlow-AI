@@ -32,7 +32,7 @@ export default function RunDetailPage() {
   const params = useParams<{ id: string }>();
   const runId = typeof params?.id === "string" ? params.id : null;
   const toast = useToast();
-  const { phase, wakeSeconds, campaigns } = useAppStore();
+  const { phase, campaigns } = useAppStore();
 
   const [paused, setPaused] = useState(false);
   const [stopping, setStopping] = useState(false);
@@ -67,7 +67,7 @@ export default function RunDetailPage() {
   if (!run && phase !== "up") {
     return (
       <div className="flex flex-col gap-6">
-        <ConnectionBanner phase={phase} wakeSeconds={wakeSeconds} />
+        <ConnectionBanner phase={phase} />
       </div>
     );
   }
@@ -111,7 +111,6 @@ export default function RunDetailPage() {
           </h1>
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-mono text-data text-text-mute">{run.id}</span>
-            {run.dry_run ? <Tag>Dry run</Tag> : null}
             <Tag>{run.status}</Tag>
             <span className="font-mono text-data text-text-mute">
               {formatTimestamp(run.started_at)}
@@ -133,16 +132,9 @@ export default function RunDetailPage() {
       </div>
 
       {/* ---- Progress ---------------------------------------------------- */}
-      <Panel
-        className={cn(
-          "flex flex-col gap-4 p-4 pl-4 sm:p-5",
-          run.dry_run
-            ? "border-l-2 border-l-[var(--lamp-ice)]"
-            : "border-l-2 border-l-[var(--lamp-brass)]",
-        )}
-      >
+      <Panel className={cn("flex flex-col gap-4 p-4 pl-4 sm:p-5", "border-l-2 border-l-lamp-brass")}>
         <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <Eyebrow>{run.dry_run ? "Dry run · No credits spent" : "Live · Real calls"}</Eyebrow>
+          <Eyebrow>Live · Real calls</Eyebrow>
           {live ? (
             <span className="font-mono text-data tabular-nums text-text-mute">
               {formatDuration(elapsed)} elapsed
@@ -150,7 +142,7 @@ export default function RunDetailPage() {
           ) : null}
         </div>
 
-        {/* Cold start: lamps in sequence, captioned. Never a spinner. */}
+        {/* Before the first outcome lands: lamps in sequence, captioned. Never a spinner. */}
         {run.outcomes.length === 0 && live ? (
           <div className="flex flex-col gap-2">
             <LampStrip
@@ -160,7 +152,7 @@ export default function RunDetailPage() {
               }))}
               size="md"
             />
-            <p className="font-mono text-data text-text-dim">Waking the service…</p>
+            <p className="font-mono text-data text-text-dim">Dialling the first contacts…</p>
           </div>
         ) : (
           <LampStrip lamps={lamps} size="md" wrap counts />

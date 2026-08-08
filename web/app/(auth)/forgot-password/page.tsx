@@ -3,24 +3,48 @@
 import Link from "next/link";
 import { useState } from "react";
 import { AuthCard } from "@/components/layout/auth-card";
-import { AuthNotice } from "@/components/layout/auth-notice";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { useToast } from "@/components/ui/toast";
+import { requestPasswordReset } from "@/lib/auth/actions";
 
 export default function ForgotPasswordPage() {
+  const toast = useToast();
   const [email, setEmail] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [submitted, setSubmitted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [sent, setSent] = useState(false);
 
-  function submit(event: React.FormEvent) {
+  async function submit(event: React.FormEvent) {
     event.preventDefault();
+
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
       setError("Enter the email address on your account.");
       return;
     }
+
+    setSubmitting(true);
     setError(null);
-    setSubmitted(true);
+
+    const result = await requestPasswordReset(email);
+
+    // Rate limiting is worth surfacing — the user can act on it by waiting. Anything
+    // else is swallowed: reporting "no such account" here would turn this form into a
+    // way to discover which addresses are registered.
+    if (!result.ok && result.error?.includes("emails have been sent")) {
+      setError(result.error);
+      setSubmitting(false);
+      return;
+    }
+
+    setSubmitting(false);
+    setSent(true);
+    toast({
+      tone: "success",
+      title: "Reset link sent",
+      body: "Check spam if it doesn't arrive in a minute or two.",
+    });
   }
 
   return (
@@ -36,28 +60,22 @@ export default function ForgotPasswordPage() {
         </Link>
       }
     >
-      {submitted ? (
-        <AuthNotice heading="Password reset isn't connected yet">
-          There is no account service on this deployment, so no email was sent. Nothing
-          about your account has changed.
-        </AuthNotice>
-      ) : (
-        <form onSubmit={submit} noValidate className="flex flex-col gap-4">
-          <Field label="Email" error={error} required>
-            <Input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              autoComplete="email"
-              autoFocus
-            />
-          </Field>
+      <form onSubmit={submit} noValidate className="flex flex-col gap-4">
+        <Field label="Email" error={error} required>
+          <Input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            autoComplete="email"
+            autoFocus
+            disabled={submitting || sent}
+          />
+        </Field>
 
-          <Button type="submit" size="lg" className="w-full">
-            Send reset link
-          </Button>
-        </form>
-      )}
+        <Button type="submit" size="lg" className="w-full" loading={submitting} disabled={sent}>
+          {sent ? "Link sent" : "Send reset link"}
+        </Button>
+      </form>
     </AuthCard>
   );
 }
