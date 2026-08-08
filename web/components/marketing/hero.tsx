@@ -38,6 +38,12 @@ const RESULT_FIELDS: ResultField[] = [
 /** Shared easing for the bloom — a soft, water-like ease-out. */
 const EASE_OUT = [0.22, 1, 0.36, 1] as const;
 
+/** Staggered entrance for the headline stack. */
+const RISE = {
+  hidden: { opacity: 0, y: 22 },
+  show: { opacity: 1, y: 0, transition: { duration: 0.55, ease: EASE_OUT } },
+};
+
 function spokenLine(name: string): string {
   const who = name.trim() || "there";
   return `Hi ${who}, this is CallFlow calling about your holiday enquiry. Is now a good time?`;
@@ -52,7 +58,7 @@ export function Hero() {
   // voice and the data feel like they are arriving, not racing. Beat one: the
   // line the contact hears. Beat two: the data that comes back.
   const heard = useTypewriter(SPOKEN, {
-    delayMs: 1500,
+    delayMs: 1000,
     durationMs: 2200,
     instant: reduced,
   });
@@ -71,37 +77,39 @@ export function Hero() {
           the only parallax on the site, off under prefers-reduced-motion. */}
       <ParallaxGrid />
 
-      <div className="relative mx-auto max-w-(--container-marketing) px-4 pb-(--space-section) pt-10 sm:px-6 sm:pt-16">
+      <div className="relative mx-auto max-w-(--container-marketing) px-4 pt-10 pb-8 sm:px-6 sm:pt-16">
         <div className="grid items-center gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,460px)] lg:gap-16">
-          {/* ---- Argument ---------------------------------------------------- */}
-          <div className="flex flex-col gap-6">
-            <h1 className="measure-display font-display text-display-xl text-text">
+          {/* ---- Argument: rises in as a staggered stack --------------------- */}
+          <motion.div
+            className="flex flex-col gap-6"
+            initial={reduced ? false : "hidden"}
+            animate="show"
+            // Begin mid-way through the loader's fade so the headline is nearly
+            // risen the instant the splash clears (~1.45s) — closes the gap while
+            // still finishing in view, not behind the loader.
+            variants={{ show: { transition: { staggerChildren: 0.1, delayChildren: 0.55 } } }}
+          >
+            <motion.h1
+              variants={RISE}
+              className="measure-display font-display text-display-xl text-text"
+            >
               Every call comes back as data.
-            </h1>
+            </motion.h1>
 
-            <p className="measure text-body-l text-text-dim">
-              CallFlow dials your list, holds a real conversation, and returns typed
-              results. Only the calls that need a person reach one.
-            </p>
+            <motion.p variants={RISE} className="measure text-body-l text-text-dim">
+              Dial your whole list. Get typed results back. Only the calls that need a
+              person reach one.
+            </motion.p>
 
-            <div className="flex flex-wrap items-center gap-3 pt-1">
+            <motion.div variants={RISE} className="flex flex-wrap items-center gap-3 pt-1">
               <Button asChild size="lg">
                 <Link href="/signup">Start free</Link>
               </Button>
               <Button asChild variant="secondary" size="lg">
                 <Link href="/demo">Book a 15-min demo</Link>
               </Button>
-            </div>
-
-            {/* A quiet proof row — what the product does, in three beats. */}
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 pt-2 text-small text-text-mute">
-              <span>Real conversations</span>
-              <span aria-hidden className="h-3.5 w-px bg-rule" />
-              <span>Typed results</span>
-              <span aria-hidden className="h-3.5 w-px bg-rule" />
-              <span>Human handoff when needed</span>
-            </div>
-          </div>
+            </motion.div>
+          </motion.div>
 
           {/* ---- The proof: opens as the voice signal, then blooms into the
                   typed result — expanding up and down from the centre so the

@@ -72,7 +72,7 @@ export function PricingClient() {
       </section>
 
       <Divider />
-      <CostComparison currency={currency} />
+      <CostComparison />
 
       <Divider />
       <section className="mx-auto max-w-(--container-marketing) px-4 sm:px-6">

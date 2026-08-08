@@ -18,9 +18,8 @@ export function ProblemCompare() {
           A completed call tells you nothing.
         </h2>
         <p className="text-body-l text-text-dim">
-          Here’s one call the moment it hangs up — scored by hand on the left, understood
-          by CallFlow on the right. Same conversation. Two completely different places to
-          start your day.
+          The same call, the moment it ends — scored by hand on the left, understood by
+          CallFlow on the right.
         </p>
       </Reveal>
 

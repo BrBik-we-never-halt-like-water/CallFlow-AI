@@ -3,7 +3,6 @@
 import { CheckIcon, MinusIcon } from "@phosphor-icons/react/dist/ssr";
 import Link from "next/link";
 import { cn } from "@/lib/cn";
-import { Tag } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
 import type { Currency } from "@/lib/format";
@@ -80,6 +79,44 @@ export function SegmentedToggle<T extends string>({
 /* Plan cards                                                                  */
 /* -------------------------------------------------------------------------- */
 
+/** The recommended plan's emphasis — a neutral gradient and ring, never colour
+    (colour on this page means call state) and no vertical lift (it must stay in
+    line with the other cards). */
+const FEATURED_CARD = {
+  background:
+    "linear-gradient(180deg, color-mix(in oklab, var(--text) 5%, var(--surface-raised)) 0%, var(--surface-raised) 55%)",
+  boxShadow:
+    "0 0 0 1px color-mix(in oklab, var(--text) 14%, transparent), 0 18px 40px -22px rgba(11, 15, 18, 0.3)",
+};
+
+function FeaturedAccent() {
+  return (
+    <span
+      aria-hidden
+      className="absolute inset-x-0 top-0 h-0.5"
+      style={{
+        background: "linear-gradient(90deg, transparent, var(--text) 35%, var(--text) 65%, transparent)",
+      }}
+    />
+  );
+}
+
+function FeaturedBadge() {
+  return (
+    <span className="rounded-full bg-text px-2.5 py-1 text-label uppercase tracking-[0.12em] text-surface">
+      Most chosen
+    </span>
+  );
+}
+
+function FeatureCheck() {
+  return (
+    <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full bg-surface-sunken">
+      <CheckIcon aria-hidden weight="bold" className="size-2.5 text-text-mute" />
+    </span>
+  );
+}
+
 export function PlanCards({
   currency,
   period,
@@ -89,20 +126,21 @@ export function PlanCards({
 }) {
   return (
     <>
-      <div className="grid gap-4 lg:grid-cols-4">
+      <div className="grid items-stretch gap-4 lg:grid-cols-4">
         {PLANS.map((plan) => {
           const price = monthlyEquivalent(plan, currency, period);
+          const featured = !!plan.mostChosen;
           return (
             <div
               key={plan.id}
-              className={cn(
-                "surface-flow flex flex-col gap-4 p-5",
-                plan.mostChosen ? "shadow-md" : "shadow-sm",
-              )}
+              className="surface-flow relative flex h-full flex-col gap-4 overflow-hidden rounded-2xl p-5"
+              style={featured ? FEATURED_CARD : undefined}
             >
+              {featured ? <FeaturedAccent /> : null}
+
               <div className="flex items-center justify-between gap-2">
                 <h3 className="text-h4 font-medium text-text">{plan.name}</h3>
-                {plan.mostChosen ? <Tag>Most chosen</Tag> : null}
+                {featured ? <FeaturedBadge /> : null}
               </div>
 
               <div className="flex flex-col gap-1">
@@ -129,24 +167,16 @@ export function PlanCards({
                 />
               </div>
 
-              <ul className="flex flex-col gap-1.5">
+              <ul className="flex flex-1 flex-col gap-2.5">
                 {plan.features.map((feature) => (
-                  <li key={feature} className="flex items-start gap-2 text-small text-text-dim">
-                    <CheckIcon
-                      aria-hidden
-                      weight="bold"
-                      className="mt-1 size-3 shrink-0 text-text-mute"
-                    />
+                  <li key={feature} className="flex items-start gap-2.5 text-small text-text-dim">
+                    <FeatureCheck />
                     {feature}
                   </li>
                 ))}
               </ul>
 
-              <Button
-                asChild
-                variant={plan.mostChosen ? "primary" : "secondary"}
-                className="mt-auto"
-              >
+              <Button asChild variant={featured ? "primary" : "secondary"} className="mt-auto">
                 <Link href={plan.ctaHref}>{plan.cta}</Link>
               </Button>
             </div>
@@ -155,20 +185,16 @@ export function PlanCards({
       </div>
 
       {/* Enterprise as a full-width band: it is a conversation, not a column. */}
-      <div className="surface-flow mt-4 flex flex-col gap-5 p-5 shadow-sm lg:flex-row lg:items-center lg:justify-between">
+      <div className="surface-flow mt-4 flex flex-col gap-5 rounded-2xl p-5 shadow-sm lg:flex-row lg:items-center lg:justify-between">
         <div className="flex flex-col gap-2">
           <h3 className="text-h4 font-medium text-text">{ENTERPRISE.name}</h3>
           <p className="text-small text-text-dim">{ENTERPRISE.tagline}</p>
         </div>
 
-        <ul className="grid gap-1.5 sm:grid-cols-2 lg:max-w-xl lg:flex-1">
+        <ul className="grid gap-2.5 sm:grid-cols-2 lg:max-w-xl lg:flex-1">
           {ENTERPRISE.features.map((feature) => (
-            <li key={feature} className="flex items-start gap-2 text-small text-text-dim">
-              <CheckIcon
-                aria-hidden
-                weight="bold"
-                className="mt-1 size-3 shrink-0 text-text-mute"
-              />
+            <li key={feature} className="flex items-start gap-2.5 text-small text-text-dim">
+              <FeatureCheck />
               {feature}
             </li>
           ))}

@@ -4,8 +4,9 @@ import { useEffect, useState } from "react";
 import { BrandLockup } from "@/components/brand/wordmark";
 
 const BARS = 14;
-/** Hard ceiling: the overlay is removed from the DOM by now no matter what. */
-const DISMISS_MS = 1700;
+/** Hard ceiling: the overlay is removed from the DOM by now no matter what.
+    Matches the CSS fade (starts 0.55s, done ~1.0s) plus a small margin. */
+const DISMISS_MS = 1150;
 
 /**
  * First-paint brand loader: the CallFlow wordmark over a voice waveform that
