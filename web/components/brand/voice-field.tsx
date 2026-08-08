@@ -5,120 +5,104 @@ import { useCanvasAnimation } from "@/lib/hooks/use-canvas-animation";
 import { cn } from "@/lib/cn";
 
 /**
- * The hero's atmosphere: voice becoming structure, over and over.
+ * The hero's atmosphere: waves of voice, drawn in particles, never repeating.
  *
- * A single particle field cycles between two states forever — a flowing stream
- * (the voice) and an ordered lattice of rows and columns (the typed record).
- * It never rests in either. Calls keep arriving, so the field keeps working,
- * which is the honest picture of a system that is always running.
+ * Three bands drift across the width, and the shape of each is a sum of three
+ * sine components whose frequency, amplitude and phase are themselves modulated
+ * on slow, mutually prime cycles. The result never settles into a loop you can
+ * catch — the wave keeps becoming a different wave, which is the honest picture
+ * of a line that is always carrying a different call.
  *
- * Structure comes from the lattice being real: columns are evenly spaced and
- * rows are on a fixed rhythm, so the ordered state reads as a grid of records
- * rather than a cloud that happens to be tidier. Each particle keeps its own
- * slot, so the same shape assembles every cycle instead of shimmering.
+ * Particles rather than a stroke so the bands can overlap into denser regions
+ * the way layered translucency does, and so the field reads as made of many
+ * small events rather than one drawn line.
  *
- * Cheap on purpose — a few hundred 2px rects, no blur, no shadow, and the whole
- * loop is a single interpolation between two precomputed positions.
+ * Sits above centre. Weight low in the frame fights the headline for the
+ * bottom half of the hero, where the copy and the buttons live.
  */
 
 interface P {
-  /** Stream position along the width, 0–1. */
-  sx: number;
-  /** Vertical offset within its stream band. */
-  sj: number;
-  /** Which stream band it rides. */
+  /** Position along the width, 0–1. */
+  u: number;
+  /** Which band it rides. */
   band: number;
-  /** Lattice slot. */
-  col: number;
-  row: number;
-  /** Per-particle lag, so the field assembles raggedly rather than as one block. */
-  lag: number;
+  /** Vertical jitter within the band, so bands have thickness. */
+  j: number;
+  /** Per-particle drift rate. */
   speed: number;
 }
 
 const BANDS = 3;
-const ROWS = 5;
-const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v));
-const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
-const ease = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
 
 export function VoiceField({ className }: { className?: string }) {
   const particles = useRef<P[] | null>(null);
 
   const ref = useCanvasAnimation(
     ({ ctx, w, h, t, reduced }) => {
-      const cols = Math.max(14, Math.min(34, Math.round(w / 44)));
-      const count = cols * ROWS;
+      // Density is what makes a particle wave read as a wave rather than as
+      // scatter: below roughly one particle every 2px of band, the eye gets
+      // dots instead of a line.
+      const count = Math.round(Math.min(2400, Math.max(900, w * 1.6)));
 
       if (!particles.current || particles.current.length !== count) {
-        // Deterministic rather than random: the same field every load, and the
-        // lattice always assembles into the same grid.
+        // Deterministic: the same field on every load, no hydration flicker.
         particles.current = Array.from({ length: count }, (_, i) => {
-          const col = i % cols;
-          const row = Math.floor(i / cols) % ROWS;
           const n = (i * 2654435761) % 1000;
           return {
-            sx: ((i * 37) % 1000) / 1000,
-            sj: (n / 1000 - 0.5) * 1.6,
+            u: i / count,
             band: i % BANDS,
-            col,
-            row,
-            lag: (n % 260) / 1000,
-            speed: 0.6 + (n % 400) / 1000,
+            j: (n / 1000 - 0.5) * 1.7,
+            speed: 0.55 + (n % 500) / 1000,
           };
         });
       }
 
       ctx.clearRect(0, 0, w, h);
 
-      // 0 → stream, 1 → lattice, and back. Held briefly at each end so both
-      // states are legible rather than permanently mid-morph.
-      const CYCLE = 11;
-      const p = reduced ? 0.62 : (t % CYCLE) / CYCLE;
-      const phase =
-        p < 0.34 ? ease(clamp(p / 0.34, 0, 1)) : p < 0.62 ? 1 : 1 - ease(clamp((p - 0.62) / 0.3, 0, 1));
-
-      const time = reduced ? 0 : t;
-      const midY = h * 0.5;
-      const latticeW = Math.min(w * 0.62, 760);
-      const latticeX = (w - latticeW) / 2;
-      const rowGap = Math.min(26, h * 0.045);
-      const latticeY = midY - ((ROWS - 1) * rowGap) / 2;
+      const time = reduced ? 3.6 : t;
+      // Above centre: the lower half of the hero belongs to the copy.
+      const midY = h * 0.38;
+      const amp = h * 0.1;
 
       for (const q of particles.current) {
-        const k = ease(clamp((phase - q.lag) / (1 - q.lag || 1), 0, 1));
+        // Horizontal drift, wrapped — the band is always travelling.
+        const u = (q.u + time * 0.014 * q.speed) % 1;
+        const x = u * w;
 
-        // Stream: drifting bands of voice.
-        const drift = (q.sx + time * 0.02 * q.speed) % 1;
-        const env = Math.sin(drift * Math.PI);
-        const bandY = midY + (q.band - (BANDS - 1) / 2) * h * 0.13;
-        const sx = drift * w;
-        const sy =
-          bandY +
-          Math.sin(drift * 14 + q.band * 2 + time * 0.7) * h * 0.07 * env +
-          q.sj * h * 0.02;
+        // Taper at both ends so the bands dissolve rather than being cut off.
+        const env = Math.sin(u * Math.PI) ** 0.8;
 
-        // Lattice: an even grid of records.
-        const lx = latticeX + (q.col / Math.max(1, cols - 1)) * latticeW;
-        const ly = latticeY + q.row * rowGap;
+        // Three components, each with its own slowly modulated frequency and
+        // amplitude. Mutually prime periods mean the combined shape does not
+        // return to itself on any short cycle.
+        const bandPhase = q.band * 2.1;
+        const f1 = 3.1 + Math.sin(time * 0.07 + bandPhase) * 1.4;
+        const f2 = 6.7 + Math.cos(time * 0.043 + bandPhase) * 2.2;
+        const f3 = 11.3 + Math.sin(time * 0.031 - bandPhase) * 3.1;
 
-        const x = lerp(sx, lx, k);
-        const y = lerp(sy, ly, k);
+        const a1 = 1 + Math.sin(time * 0.053 + bandPhase) * 0.45;
+        const a2 = 0.55 + Math.cos(time * 0.037 + bandPhase * 1.7) * 0.3;
+        const a3 = 0.22 + Math.sin(time * 0.029 + bandPhase * 0.6) * 0.14;
 
-        // Ordered particles warm toward the primary; streaming ones stay ink.
-        // The ordered state carries more weight than the stream, so the moment
-        // the field resolves is the moment it is most visible.
-        const a = 0.09 + k * 0.17;
+        const shape =
+          Math.sin(u * f1 * Math.PI + time * 0.5 + bandPhase) * a1 +
+          Math.sin(u * f2 * Math.PI - time * 0.33 + bandPhase) * a2 +
+          Math.sin(u * f3 * Math.PI + time * 0.21) * a3;
+
+        const bandOffset = (q.band - (BANDS - 1) / 2) * h * 0.1;
+        const y = midY + bandOffset + shape * amp * env + q.j * h * 0.005;
+
+        // Crests carry more weight than troughs, so the wave has a lit edge.
+        const crest = Math.max(0, shape / 1.8);
+        const a = (0.07 + crest * 0.2) * (0.3 + env * 0.7);
         ctx.fillStyle =
-          k > 0.55
-            ? `rgba(59, 47, 217, ${(a * 1.2).toFixed(3)})`
+          q.band === 1
+            ? `rgba(59, 47, 217, ${(a * 0.85).toFixed(3)})`
             : `rgba(14, 17, 20, ${a.toFixed(3)})`;
-        // Ordered particles square up slightly, which reads as structure.
-        const s = 2 + k;
-        ctx.fillRect(x, y, s, s);
+        ctx.fillRect(x, y, 2, 2);
       }
     },
-    { staticAt: 7 },
+    { staticAt: 3.6 },
   );
 
   return <canvas ref={ref} aria-hidden className={cn("block h-full w-full", className)} />;
