@@ -1,7 +1,8 @@
 import { CheckIcon } from "@phosphor-icons/react/dist/ssr";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { Panel, SectionHeading } from "@/components/ui/panel";
+import { SectionHeading } from "@/components/ui/panel";
+import { cn } from "@/lib/cn";
 import { Reveal } from "@/components/ui/reveal";
 import { PLANS } from "@/lib/pricing";
 import { PriceValue, VolumeValue } from "./price-value";
@@ -28,38 +29,17 @@ export function PricingPreview() {
         />
       </Reveal>
 
-      <div className="mt-10 grid items-stretch gap-4 md:grid-cols-3">
+      <div className="mt-8 grid items-stretch gap-4 md:grid-cols-3">
         {shown.map((plan, i) => {
           const featured = !!plan.mostChosen;
           return (
             <Reveal key={plan.id} delayMs={i * 60} className="h-full">
-              <Panel
-                className="relative flex h-full flex-col gap-5 overflow-hidden rounded-2xl p-6"
-                style={
-                  featured
-                    ? {
-                        background:
-                          "linear-gradient(180deg, color-mix(in oklab, var(--text) 5%, var(--surface-raised)) 0%, var(--surface-raised) 55%)",
-                        // The featured ring + shadow, applied directly so the card
-                        // keeps its emphasis WITHOUT plan-featured's translateY,
-                        // which lifted it out of line with the others.
-                        boxShadow:
-                          "0 0 0 1px color-mix(in oklab, var(--text) 14%, transparent), 0 18px 40px -22px rgba(11, 15, 18, 0.3)",
-                      }
-                    : undefined
-                }
+              <div
+                className={cn(
+                  "relative flex h-full flex-col gap-4 overflow-hidden p-5",
+                  featured ? "card-feature" : "card-raised",
+                )}
               >
-                {featured ? (
-                  <span
-                    aria-hidden
-                    className="absolute inset-x-0 top-0 h-0.5"
-                    style={{
-                      background:
-                        "linear-gradient(90deg, transparent, var(--text) 35%, var(--text) 65%, transparent)",
-                    }}
-                  />
-                ) : null}
-
                 <div className="flex items-center justify-between gap-2">
                   <h3 className="text-h4 font-medium text-text">{plan.name}</h3>
                   {featured ? (
@@ -79,7 +59,7 @@ export function PricingPreview() {
                 <div aria-hidden className="h-px bg-rule" />
 
                 <ul className="flex flex-1 flex-col gap-2.5">
-                  {plan.features.slice(0, 5).map((feature) => (
+                  {plan.features.slice(0, 2).map((feature) => (
                     <li key={feature} className="flex items-start gap-2.5 text-small text-text-dim">
                       <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full bg-surface-sunken">
                         <CheckIcon aria-hidden weight="bold" className="size-2.5 text-text-mute" />
@@ -92,7 +72,7 @@ export function PricingPreview() {
                 <Button asChild variant={featured ? "primary" : "secondary"} className="mt-auto">
                   <Link href={plan.ctaHref}>{plan.cta}</Link>
                 </Button>
-              </Panel>
+              </div>
             </Reveal>
           );
         })}

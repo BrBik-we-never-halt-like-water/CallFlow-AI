@@ -1,89 +1,125 @@
 "use client";
 
+import { useRef } from "react";
 import { useCanvasAnimation } from "@/lib/hooks/use-canvas-animation";
 import { cn } from "@/lib/cn";
 
 /**
- * The hero's atmosphere: layered ribbons of voice, flowing.
+ * The hero's atmosphere: voice becoming structure, over and over.
  *
- * A bar-chart waveform is a *reading* of a voice — a flat measurement. This is
- * the thing itself: five translucent ribbons at different depths, each drifting
- * at its own speed and phase, overlapping into something that moves like breath
- * rather than ticking like a meter.
+ * A single particle field cycles between two states forever — a flowing stream
+ * (the voice) and an ordered lattice of rows and columns (the typed record).
+ * It never rests in either. Calls keep arriving, so the field keeps working,
+ * which is the honest picture of a system that is always running.
  *
- * Depth comes from three cues layered together, which is what stops it reading
- * as a flat squiggle: further ribbons are slower, fainter and shorter in
- * amplitude, and the near ones cross in front of them.
+ * Structure comes from the lattice being real: columns are evenly spaced and
+ * rows are on a fixed rhythm, so the ordered state reads as a grid of records
+ * rather than a cloud that happens to be tidier. Each particle keeps its own
+ * slot, so the same shape assembles every cycle instead of shimmering.
  *
- * Filled shapes rather than strokes, at low alpha, so overlaps accumulate into
- * denser bands the way real layered translucency does. Reduced motion gets one
- * still frame of the same composition, not an empty box.
+ * Cheap on purpose — a few hundred 2px rects, no blur, no shadow, and the whole
+ * loop is a single interpolation between two precomputed positions.
  */
 
-interface Ribbon {
-  /** 0 = furthest back, 1 = nearest. Drives speed, alpha and amplitude. */
-  depth: number;
-  phase: number;
-  freq: number;
-  drift: number;
+interface P {
+  /** Stream position along the width, 0–1. */
+  sx: number;
+  /** Vertical offset within its stream band. */
+  sj: number;
+  /** Which stream band it rides. */
+  band: number;
+  /** Lattice slot. */
+  col: number;
+  row: number;
+  /** Per-particle lag, so the field assembles raggedly rather than as one block. */
+  lag: number;
+  speed: number;
 }
 
-const RIBBONS: Ribbon[] = [
-  { depth: 0.15, phase: 0.0, freq: 1.7, drift: 0.055 },
-  { depth: 0.35, phase: 1.9, freq: 2.4, drift: 0.085 },
-  { depth: 0.55, phase: 3.4, freq: 1.3, drift: 0.12 },
-  { depth: 0.78, phase: 5.1, freq: 2.9, drift: 0.17 },
-  { depth: 1.0, phase: 2.3, freq: 1.9, drift: 0.24 },
-];
+const BANDS = 3;
+const ROWS = 5;
+const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v));
+const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+const ease = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
 
 export function VoiceField({ className }: { className?: string }) {
+  const particles = useRef<P[] | null>(null);
+
   const ref = useCanvasAnimation(
     ({ ctx, w, h, t, reduced }) => {
+      const cols = Math.max(14, Math.min(34, Math.round(w / 44)));
+      const count = cols * ROWS;
+
+      if (!particles.current || particles.current.length !== count) {
+        // Deterministic rather than random: the same field every load, and the
+        // lattice always assembles into the same grid.
+        particles.current = Array.from({ length: count }, (_, i) => {
+          const col = i % cols;
+          const row = Math.floor(i / cols) % ROWS;
+          const n = (i * 2654435761) % 1000;
+          return {
+            sx: ((i * 37) % 1000) / 1000,
+            sj: (n / 1000 - 0.5) * 1.6,
+            band: i % BANDS,
+            col,
+            row,
+            lag: (n % 260) / 1000,
+            speed: 0.6 + (n % 400) / 1000,
+          };
+        });
+      }
+
       ctx.clearRect(0, 0, w, h);
-      const time = reduced ? 4.2 : t;
 
-      for (const r of RIBBONS) {
-        const mid = h * (0.44 + (1 - r.depth) * 0.06);
-        const amp = h * (0.06 + r.depth * 0.2);
-        const thickness = h * (0.02 + r.depth * 0.075);
-        const speed = time * r.drift;
+      // 0 → stream, 1 → lattice, and back. Held briefly at each end so both
+      // states are legible rather than permanently mid-morph.
+      const CYCLE = 11;
+      const p = reduced ? 0.62 : (t % CYCLE) / CYCLE;
+      const phase =
+        p < 0.34 ? ease(clamp(p / 0.34, 0, 1)) : p < 0.62 ? 1 : 1 - ease(clamp((p - 0.62) / 0.3, 0, 1));
 
-        // The ribbon is one closed shape: a top edge out, a bottom edge back.
-        const edge = (x: number, side: 1 | -1) => {
-          const u = x / w;
-          const env = Math.sin(u * Math.PI) ** 0.7; // tapers at both ends
-          const body =
-            Math.sin(u * Math.PI * 2 * r.freq + r.phase + speed * 6) *
-              amp *
-              env +
-            Math.sin(u * Math.PI * 2 * (r.freq * 2.3) - speed * 4) * amp * 0.28 * env;
-          return mid + body + (side * thickness * env) / 2;
-        };
+      const time = reduced ? 0 : t;
+      const midY = h * 0.5;
+      const latticeW = Math.min(w * 0.62, 760);
+      const latticeX = (w - latticeW) / 2;
+      const rowGap = Math.min(26, h * 0.045);
+      const latticeY = midY - ((ROWS - 1) * rowGap) / 2;
 
-        ctx.beginPath();
-        for (let x = 0; x <= w; x += 6) ctx.lineTo(x, edge(x, 1));
-        for (let x = w; x >= 0; x -= 6) ctx.lineTo(x, edge(x, -1));
-        ctx.closePath();
+      for (const q of particles.current) {
+        const k = ease(clamp((phase - q.lag) / (1 - q.lag || 1), 0, 1));
 
-        // Near ribbons are warmer toward the primary, far ones stay neutral —
-        // a colour cue for depth on top of the geometric one.
-        const g = ctx.createLinearGradient(0, 0, w, 0);
-        const a = 0.05 + r.depth * 0.11;
-        g.addColorStop(0, `rgba(59, 47, 217, ${(a * 0.5).toFixed(3)})`);
-        g.addColorStop(0.45, `rgba(14, 17, 20, ${a.toFixed(3)})`);
-        g.addColorStop(1, `rgba(59, 47, 217, ${(a * 0.35).toFixed(3)})`);
-        ctx.fillStyle = g;
-        ctx.fill();
+        // Stream: drifting bands of voice.
+        const drift = (q.sx + time * 0.02 * q.speed) % 1;
+        const env = Math.sin(drift * Math.PI);
+        const bandY = midY + (q.band - (BANDS - 1) / 2) * h * 0.13;
+        const sx = drift * w;
+        const sy =
+          bandY +
+          Math.sin(drift * 14 + q.band * 2 + time * 0.7) * h * 0.07 * env +
+          q.sj * h * 0.02;
+
+        // Lattice: an even grid of records.
+        const lx = latticeX + (q.col / Math.max(1, cols - 1)) * latticeW;
+        const ly = latticeY + q.row * rowGap;
+
+        const x = lerp(sx, lx, k);
+        const y = lerp(sy, ly, k);
+
+        // Ordered particles warm toward the primary; streaming ones stay ink.
+        // The ordered state carries more weight than the stream, so the moment
+        // the field resolves is the moment it is most visible.
+        const a = 0.09 + k * 0.17;
+        ctx.fillStyle =
+          k > 0.55
+            ? `rgba(59, 47, 217, ${(a * 1.2).toFixed(3)})`
+            : `rgba(14, 17, 20, ${a.toFixed(3)})`;
+        // Ordered particles square up slightly, which reads as structure.
+        const s = 2 + k;
+        ctx.fillRect(x, y, s, s);
       }
     },
-    { staticAt: 4.2 },
+    { staticAt: 7 },
   );
 
-  return (
-    <canvas
-      ref={ref}
-      aria-hidden
-      className={cn("block h-full w-full", className)}
-    />
-  );
+  return <canvas ref={ref} aria-hidden className={cn("block h-full w-full", className)} />;
 }

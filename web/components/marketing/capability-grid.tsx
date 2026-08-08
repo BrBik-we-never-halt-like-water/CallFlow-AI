@@ -1,8 +1,6 @@
 import type { ReactNode } from "react";
 import type { Icon } from "@phosphor-icons/react";
 import {
-  ClockIcon,
-  PhoneCallIcon,
   ShieldCheckIcon,
   SlidersIcon,
   TableIcon,
@@ -11,10 +9,9 @@ import {
 import { SectionHeading } from "@/components/ui/panel";
 import { Reveal, RevealGroup, RevealItem } from "@/components/ui/reveal";
 import { Tag } from "@/components/ui/badge";
-import { WaveCanvas } from "@/components/brand/wave-canvas";
 
 /**
- * The six capabilities. Each names something the operator controls or receives,
+ * The four capabilities. Each names something the operator controls or receives,
  * never how the system is built — and carries a small proof: a scrap of the real
  * product (a waveform, typed fields, the escalation lamps, the guards) so the
  * card shows what you get, not just claims it. The proofs are muted and static;
@@ -63,23 +60,11 @@ const CAPABILITIES: { icon: Icon; title: string; body: string; proof: ReactNode 
       </span>
     ),
   },
-  {
-    icon: ClockIcon,
-    title: "Runs while you sleep",
-    body: "Campaigns work evenings and weekends, inside the window you set.",
-    proof: <span className="font-mono text-data text-text-mute">window · 09:00–20:00</span>,
-  },
-  {
-    icon: PhoneCallIcon,
-    title: "Real conversations",
-    body: "Dialling, speech, turn-taking, voicemail, and IVR — handled end to end.",
-    proof: (
-      <span className="block h-6 w-full opacity-70">
-        <WaveCanvas pitch={5} />
-      </span>
-    ),
-  },
 ];
+// Four, not six. Two were cut: "Runs while you sleep" asserted that calls are
+// held inside a calling window, which nothing enforces (ISSUES.md D1), and
+// "Real conversations" claimed table stakes every competitor also has. Six
+// cards also pushed this section past a screen, which is the other reason.
 
 function ProofLamp({ color, label }: { color: string; label: string }) {
   return (
@@ -101,7 +86,7 @@ export function CapabilityGrid() {
         />
       </Reveal>
 
-      <RevealGroup className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <RevealGroup className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {CAPABILITIES.map(({ icon: IconComponent, title, body, proof }) => (
           <RevealItem key={title} className="flex">
             <div className="card-raised card-interactive group flex h-full flex-col gap-3 p-5">

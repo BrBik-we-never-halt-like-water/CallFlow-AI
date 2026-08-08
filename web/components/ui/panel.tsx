@@ -1,4 +1,5 @@
 import { cn } from "@/lib/cn";
+import { KineticText } from "@/components/ui/kinetic-text";
 
 /**
  * A surface, at one of the three levels defined in globals.css.
@@ -91,7 +92,12 @@ export function SectionHeading({
         </div>
       ) : null}
 
-      <h2 className="measure-display font-display text-h2 text-text">{title}</h2>
+      {/* The title arrives word by word. Applied here rather than per section
+          so every heading on the site moves the same way — a motion rule, not a
+          one-off flourish on the sections someone remembered to decorate. */}
+      <h2 className="measure-display font-display text-h2 text-text">
+        {typeof title === "string" ? <KineticText text={title} /> : title}
+      </h2>
 
       {sub ? (
         <p

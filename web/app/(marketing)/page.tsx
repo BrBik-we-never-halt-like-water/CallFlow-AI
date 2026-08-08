@@ -3,7 +3,6 @@ import { FinalCta } from "@/components/marketing/final-cta";
 import { Hero } from "@/components/marketing/hero";
 import { Listening } from "@/components/marketing/listening";
 import { PricingPreview } from "@/components/marketing/pricing-preview";
-import { ProblemCompare } from "@/components/marketing/problem-compare";
 import { SafetySection } from "@/components/marketing/safety-section";
 import { Steps } from "@/components/marketing/steps";
 import { VerticalStrip } from "@/components/marketing/vertical-strip";
@@ -36,11 +35,7 @@ export default function HomePage() {
           </div>
         </DeckSection>
 
-        <DeckSection id="problem">
-          <ProblemCompare />
-        </DeckSection>
-
-        <DeckSection id="how" ground="sand">
+        <DeckSection id="how">
           <Steps />
         </DeckSection>
 
