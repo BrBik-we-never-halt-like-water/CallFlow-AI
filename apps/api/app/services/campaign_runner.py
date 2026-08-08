@@ -15,10 +15,43 @@ from collections.abc import Awaitable, Callable, Iterable
 from typing import Any
 
 from app.core.config import config
-from app.domain.entities import CallOutcome, Campaign, Contact, Disposition
+from app.domain.entities import CallOutcome, Campaign, Contact, DialFailure, Disposition
 from app.domain.safety import check_dial_allowed, mask, phone_hash
 from app.domain.triage import triage
-from app.integrations.voice.engine import TERMINAL, EngineGateway
+from app.integrations.voice.engine import (
+    TERMINAL,
+    EngineAPIError,
+    EngineConnectionError,
+    EngineGateway,
+    EngineTimeoutError,
+    classify_error,
+)
+
+# Failures worth trying again, not treating as "this number doesn't work": the
+# engine, or its downstream carrier, said this is a transient condition rather
+# than something wrong with the number or the request itself. This set governs
+# dial-time decisions (start_call, and a non-retryable poll failure) — a fresh
+# call attempt against a number/request that's genuinely invalid or blocked
+# should not be retried, per CLAUDE.md's fail-closed rule for anything that
+# spends a credit or places a call.
+_RETRYABLE_FAILURES = frozenset(
+    {DialFailure.RATE_LIMITED, DialFailure.PROVIDER_UNAVAILABLE, DialFailure.TIMED_OUT}
+)
+
+# A GET poll is a different question from "safe to dial again": it's an
+# idempotent read of a call that's already in flight, not a safety/credit/
+# permission decision, so CLAUDE.md's fail-closed rule doesn't apply to it the
+# way it does to _RETRYABLE_FAILURES above. Abandoning a live, possibly-already
+# -completed call because one status check hit `internal_error`, `not_found`
+# (the classic read-after-write race right after creation), or `call_not_ready`
+# is the lossy choice, not the conservative one — all three fall through
+# `classify_error`'s unmapped-code default to DialFailure.INTERNAL today, and
+# would otherwise sit outside _RETRYABLE_FAILURES. So every failure is worth
+# retrying here except one this account cannot recover from by waiting:
+# UNAUTHORIZED (covers both the engine's `unauthorized` and `forbidden` codes) —
+# if the credentials are bad, no amount of polling fixes that, and burning the
+# rest of the timeout on it delays the operator finding out.
+_POLL_RETRYABLE_FAILURES = frozenset(DialFailure) - {DialFailure.UNAUTHORIZED}
 
 log = logging.getLogger("app.services.campaign_runner")
 
@@ -56,8 +89,16 @@ def render_goal(campaign: Campaign, contact: Contact) -> str:
 def _extract_result(call: JsonObject) -> JsonObject:
     """Pull the engine's structured extraction out of the call payload.
 
-    The API has returned this under a few different keys across versions, so we
-    check the known candidates rather than assuming one shape.
+    Confirmed against the SDK's generated `CallTaskStructuredResultType0` model
+    (its own docstring: "Schema-valid structured result object extracted for
+    the whole call task using `result_schema`") — CampaignRunner always passes
+    a task-level `result_schema` to `start_call`, never `recipient_result_schema`,
+    so the real API always populates the top-level `structured_result` key,
+    which the first loop below checks. The other top-level keys, the one-level
+    nesting check, and the `recipients[0]` fallback are defensive rather than
+    confirmed-necessary: harmless if never hit, and `recipients[0].structured_result`
+    is a real, documented field (`CallTaskRecipient.structured_result`) that
+    would start mattering if `recipient_result_schema` is ever adopted instead.
     """
     for key in ("result", "structured_result", "results", "output", "data"):
         value = call.get(key)
@@ -81,20 +122,99 @@ def _extract_result(call: JsonObject) -> JsonObject:
     return {}
 
 
+def _has_transcript(attempt: JsonObject) -> bool:
+    turns = attempt.get("transcript_turns")
+    return isinstance(turns, list) and len(turns) > 0
+
+
+def _final_attempt(attempts: list[Any]) -> JsonObject | None:
+    """Pick the attempt whose transcript best represents what actually happened.
+
+    A recipient can be redialled, so `attempts` may hold more than one dial.
+    Picking by status alone isn't enough: the model documents `transcript_turns`
+    as "empty when no transcript is available" on *any* status, so a `completed`
+    final attempt can still have nothing to show while an earlier `failed` one
+    holds a real partial conversation — that's the exact case that would have
+    reproduced this fix's own symptom (a real conversation existing, but
+    nothing surfaced) if status were the only signal. So the actual transcript
+    content is what decides: prefer the most recent `completed` attempt that
+    has turns; if none, the most recent attempt of *any* status that has turns;
+    only if nothing has ever captured a turn does this fall back to the literal
+    most recent attempt (which will end up rendering as "no transcript").
+
+    "Most recent" is `started_at` order, not array position — the model
+    doesn't document `attempts` as chronologically ordered, and `started_at` is
+    already on every attempt (an ISO 8601 string, so it sorts correctly as
+    text with no parsing needed). Attempts with no `started_at` yet sort first.
+    """
+    dict_attempts = [a for a in attempts if isinstance(a, dict)]
+    if not dict_attempts:
+        return None
+
+    ordered = sorted(dict_attempts, key=lambda a: a.get("started_at") or "")
+
+    completed_with_transcript = [
+        a for a in ordered if _has_transcript(a) and str(a.get("status", "")).lower() == "completed"
+    ]
+    if completed_with_transcript:
+        return completed_with_transcript[-1]
+
+    any_with_transcript = [a for a in ordered if _has_transcript(a)]
+    if any_with_transcript:
+        return any_with_transcript[-1]
+
+    return ordered[-1]
+
+
 def _extract_transcript(call: JsonObject) -> str | None:
-    for key in ("transcript", "transcript_text", "asr_transcript"):
-        value = call.get(key)
-        if isinstance(value, str) and value.strip():
-            return value
-        if isinstance(value, list):
-            parts = [
-                f"{turn.get('speaker', turn.get('role', '?'))}: {turn.get('text', turn.get('content', ''))}"
-                for turn in value
-                if isinstance(turn, dict)
-            ]
-            if parts:
-                return "\n".join(parts)
-    return None
+    """Pull the transcript out of the call payload.
+
+    CALL-E's response has no top-level transcript field at all — confirmed
+    against the installed SDK's generated models (`CallTaskAttempt.transcript_turns`,
+    `CallTranscriptTurn`) and the public OpenAPI spec (CALLE.md). The real
+    location is nested two levels down: recipients[N].attempts[M].transcript_turns[],
+    where each turn is `{offset_seconds, speaker: "bot"|"user"|"unknown", text}`.
+
+    `_extract_result` above uses `recipients[0]` for its batch fallback, so the
+    same convention is followed here: this codebase only ever dials one contact
+    per call, so a real batch (recipients > 1) shouldn't occur in practice, but
+    if the engine ever returns more than one, the first is the one this call
+    was actually placed for.
+    """
+    recipients = call.get("recipients")
+    if not isinstance(recipients, list) or not recipients:
+        return None
+    first = recipients[0]
+    if not isinstance(first, dict):
+        return None
+
+    attempts = first.get("attempts")
+    if not isinstance(attempts, list):
+        return None
+    attempt = _final_attempt(attempts)
+    if attempt is None:
+        return None
+
+    turns = attempt.get("transcript_turns")
+    if not isinstance(turns, list) or not turns:
+        return None
+
+    parts: list[str] = []
+    for turn in turns:
+        if not isinstance(turn, dict):
+            continue
+        # `.get(key, default)` only falls back when the key is absent — a turn
+        # with `"text": null` (a real, permitted value on the model) still
+        # returns None here, which would otherwise render the literal string
+        # "None" to whoever reads the transcript. `or ""` catches that case
+        # too, and a turn with nothing real to say is skipped outright rather
+        # than rendered as an empty line.
+        text = (turn.get("text") or "").strip()
+        if not text:
+            continue
+        speaker = turn.get("speaker") or "?"
+        parts.append(f"{speaker}: {text}")
+    return "\n".join(parts) if parts else None
 
 
 class CampaignRunner:
@@ -105,6 +225,8 @@ class CampaignRunner:
         result_schema: JsonObject | None = None,
         webhook_url: str | None = None,
         suppressed_hashes: frozenset[str] = frozenset(),
+        max_calls_per_run: int | None = None,
+        allowlist: frozenset[str] | None = None,
     ) -> None:
         self.result_schema = result_schema
         self.webhook_url = webhook_url
@@ -112,6 +234,10 @@ class CampaignRunner:
         self._calls_made = 0
         # Resolved once per run (a single query) rather than once per contact.
         self._suppressed_hashes = suppressed_hashes
+        # An organisation's own Settings -> Safety override, or None to fall back
+        # to the deployment's env-var defaults inside check_dial_allowed itself.
+        self._max_calls_per_run = max_calls_per_run
+        self._allowlist = allowlist
 
     @property
     def gateway(self) -> EngineGateway:
@@ -150,12 +276,40 @@ class CampaignRunner:
         instead of a frozen spinner until it ends. The SDK itself is a blocking
         client, so each poll runs in a worker thread rather than on the event
         loop — otherwise one in-flight call would stall every other request.
+
+        At 2s between polls and up to `poll_timeout_seconds` (900s by default),
+        a single call can make on the order of 450 HTTP requests just to watch
+        it finish. A poll failing doesn't mean the phone call failed — CALL-E
+        keeps running the conversation regardless of whether we can currently
+        reach `GET /v1/calls/{id}` — so one flaky request must not end the
+        whole loop the way any other unhandled exception here would. Each
+        failure is classified with `_POLL_RETRYABLE_FAILURES` (deliberately
+        wider than `_RETRYABLE_FAILURES` — see its own comment for why a GET
+        poll gets a different, more forgiving answer than a dial decision):
+        retryable ones are logged and the loop tries again next tick; anything
+        still classified as non-retryable (an outright auth failure — polling
+        can't recover from that) is re-raised immediately rather than spending
+        the rest of the timeout on something that cannot succeed. No separate
+        consecutive-failure counter is needed for the retryable path — the
+        existing `deadline` is already a firm 900s ceiling, not an unbounded
+        retry.
         """
         deadline = time.monotonic() + config.poll_timeout_seconds
         last_status = ""
 
         while time.monotonic() < deadline:
-            call = await asyncio.to_thread(self.gateway.get_call, call_id)
+            try:
+                call = await asyncio.to_thread(self.gateway.get_call, call_id)
+            except (EngineAPIError, EngineTimeoutError, EngineConnectionError) as exc:
+                failure = classify_error(exc)
+                if failure not in _POLL_RETRYABLE_FAILURES:
+                    raise
+                log.warning(
+                    "transient poll failure for call %s: %s — retrying", call_id, failure.value
+                )
+                await asyncio.sleep(2.0)
+                continue
+
             status = str(call.get("status", "")).lower()
 
             if status in TERMINAL:
@@ -198,6 +352,8 @@ class CampaignRunner:
             contact.phone,
             self._calls_made,
             is_suppressed=phone_hash(contact.phone) in self._suppressed_hashes,
+            max_calls_per_run=self._max_calls_per_run,
+            allowlist=self._allowlist,
         )
         if not gate.allowed:
             return base.model_copy(
@@ -250,14 +406,59 @@ class CampaignRunner:
 
             final = await self._poll_until_done(call_id, on_status=on_status, base=base)
 
-        except Exception as exc:  # network, auth, timeout, API error
+        except (EngineAPIError, EngineTimeoutError, EngineConnectionError) as exc:
+            # Classified against the engine's own documented error taxonomy
+            # (CALLE.md §4), not left as a raw exception string — so an operator
+            # can tell "this number is bad, stop trying" apart from "we're rate
+            # limited, this will work on retry" instead of both reading as the
+            # same generic failure. `EngineConnectionError` (raised by the SDK
+            # when a request fails before any response arrives) is included
+            # here too — without it, a dropped connection during `start_call`
+            # would fall through to the generic `except Exception` below and
+            # be misclassified as a non-retryable internal error instead of
+            # the transient, worth-retrying failure it actually is.
+            failure = classify_error(exc)
+            log.exception("call failed for %s: %s", mask(contact.phone), failure.value)
+            retryable = failure in _RETRYABLE_FAILURES
+            return base.model_copy(
+                update={
+                    "status": "FAILED",
+                    "error": failure.value,
+                    "disposition": Disposition.RETRY if retryable else Disposition.UNREACHABLE,
+                    "disposition_reason": (
+                        f"Worth retrying — {failure.value.replace('_', ' ')}."
+                        if retryable
+                        else f"Call could not be completed: {failure.value.replace('_', ' ')}."
+                    ),
+                }
+            )
+        except TimeoutError:
+            # Raised by _poll_until_done itself when the call never reached a
+            # terminal status in time — not an engine error, so it can't go
+            # through classify_error(), but it's the same "transient, worth
+            # trying again" shape as PROVIDER_UNAVAILABLE/RATE_LIMITED.
+            log.exception("poll timed out for %s", mask(contact.phone))
+            return base.model_copy(
+                update={
+                    "status": "FAILED",
+                    "error": DialFailure.TIMED_OUT.value,
+                    "disposition": Disposition.RETRY,
+                    "disposition_reason": "Worth retrying — timed out waiting for a result.",
+                }
+            )
+        except Exception:  # network error, or anything else unclassified
+            # The exception's own message is logged (log.exception captures it
+            # in full) but never interpolated into a user-facing field — unlike
+            # a vendor error's DialFailure.value, a raw exception string is
+            # untrusted content that can carry hostnames, URLs, or other
+            # internal detail through to whoever views this run or escalation.
             log.exception("call failed for %s", mask(contact.phone))
             return base.model_copy(
                 update={
                     "status": "FAILED",
-                    "error": f"{type(exc).__name__}: {exc}",
+                    "error": DialFailure.INTERNAL.value,
                     "disposition": Disposition.UNREACHABLE,
-                    "disposition_reason": "Call could not be completed due to an error.",
+                    "disposition_reason": "Call could not be completed due to an internal error.",
                 }
             )
 
