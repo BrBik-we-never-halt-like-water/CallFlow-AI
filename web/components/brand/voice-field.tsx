@@ -1,158 +1,89 @@
 "use client";
 
-import { useRef } from "react";
 import { useCanvasAnimation } from "@/lib/hooks/use-canvas-animation";
 import { cn } from "@/lib/cn";
 
 /**
- * The hero's atmosphere: many small waves superimposing into one big messy
- * one, which periodically gathers into a grid and then breaks apart again.
+ * The hero's atmosphere: a surface of particles in perspective, rolling.
  *
- * The mess is made of order. Ten thin bands each carry their own simple wave,
- * with its own frequency, phase and drift; what looks complicated is those ten
- * simple things crossing. That is also why it never repeats — the components
- * are modulated on slow, mutually prime cycles, so the composite keeps
- * becoming a different shape.
+ * A true surface rather than stacked 2D lines. Particles occupy a grid in x and
+ * z, their height is a sum of travelling waves, and the whole thing is
+ * projected through a camera — so near rows are larger, brighter and further
+ * apart, distant rows compress toward the horizon, and the depth is real rather
+ * than implied by drawing some dots smaller.
  *
- * Dots do not overlap while waving. Within a band they are evenly spaced at a
- * pitch wider than the largest diameter, and they sit exactly on their band's
- * line with no jitter, so a band stays a legible row of separate dots rather
- * than collapsing into a smear. Only band crossings put dots near each other,
- * which is the intended texture rather than a pile.
+ * Drawn far rows first so nearer particles land on top, which removes the need
+ * to sort several thousand points every frame.
  *
- * The grid resolves upward from the waves' centre, taller than it is dense, so
- * the ordered state occupies the upper half of the hero where there is room
- * for it.
+ * Squares rather than circles: at this count `arc` costs several times more per
+ * point, and below about 3px the shape is indistinguishable anyway.
  */
 
-interface P {
-  /** Even position along its own band, 0–1. */
-  u: number;
-  band: number;
-  /** Radius in CSS pixels. */
-  r: number;
-  speed: number;
-  col: number;
-  row: number;
-  /** Per-particle lag so the field gathers raggedly, not as one block. */
-  lag: number;
-}
-
-const BANDS = 10;
-/** Horizontal pitch within a band, in CSS px. Must exceed the largest diameter. */
-const PITCH = 10;
-const R_MIN = 1.2;
-const R_MAX = 3.7;
+const COLS = 190;
+const ROWS = 46;
+/** Camera distance to the nearest row / the furthest row. */
+const Z_NEAR = 0.55;
+const Z_FAR = 4.2;
 
 const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v));
-const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
-const ease = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
-
-/** Seconds for one full waves → grid → waves pass. */
-const CYCLE = 17;
 
 export function VoiceField({ className }: { className?: string }) {
-  const particles = useRef<P[] | null>(null);
-
   const ref = useCanvasAnimation(
     ({ ctx, w, h, t, reduced }) => {
-      // Spacing is derived from the pitch, so widening the viewport adds dots
-      // rather than stretching the gaps between them.
-      const perBand = Math.max(40, Math.round(w / PITCH));
-      const count = perBand * BANDS;
-      const cols = Math.max(24, Math.min(52, Math.round(w / 26)));
-
-      if (!particles.current || particles.current.length !== count) {
-        particles.current = Array.from({ length: count }, (_, i) => {
-          const band = i % BANDS;
-          const idx = Math.floor(i / BANDS);
-          const m = (i * 40503) % 1000;
-          const n = (i * 2654435761) % 1000;
-          return {
-            // Even within the band — this is what keeps dots off each other.
-            u: idx / perBand,
-            band,
-            r: R_MIN + Math.pow(m / 1000, 1.7) * (R_MAX - R_MIN),
-            speed: 0.7 + (n % 400) / 1400,
-            col: i % cols,
-            row: Math.floor(i / cols),
-            lag: (m % 280) / 1000,
-          };
-        });
-      }
-
       ctx.clearRect(0, 0, w, h);
 
-      const time = reduced ? 4 : t;
-      const p = reduced ? 0 : (t % CYCLE) / CYCLE;
+      const time = reduced ? 5 : t;
 
-      const g =
-        p < 0.5
-          ? 0
-          : p < 0.62
-            ? ease(clamp((p - 0.5) / 0.12, 0, 1))
-            : p < 0.76
-              ? 1
-              : p < 0.88
-                ? 1 - ease(clamp((p - 0.76) / 0.12, 0, 1))
-                : 0;
+      // Camera. The horizon sits above the hero's centre so the surface
+      // recedes into the upper half and leaves the copy below it clear.
+      const focal = h * 1.15;
+      const horizonY = h * 0.31;
+      const camHeight = 0.3;
 
-      const midY = h * 0.4;
-      const rows = Math.ceil(count / cols);
-      const colGap = Math.min(w * 0.72, 880) / Math.max(1, cols - 1);
-      const rowGap = Math.min(13, h * 0.02);
-      const gridX = (w - colGap * (cols - 1)) / 2;
-      // Grow upward from the waves rather than around them: the bottom of the
-      // grid sits just under the wave centre and the rest climbs into the
-      // empty upper half.
-      const gridBottom = midY + h * 0.06;
-      const gridTop = gridBottom - rowGap * (rows - 1);
+      for (let zi = ROWS - 1; zi >= 0; zi--) {
+        // Non-linear in z so rows bunch toward the horizon the way real
+        // perspective does, rather than stepping evenly.
+        const zt = zi / (ROWS - 1);
+        const z = Z_NEAR + Math.pow(zt, 1.6) * (Z_FAR - Z_NEAR);
+        const scale = focal / z;
 
-      for (const q of particles.current) {
-        const k = ease(clamp((g - q.lag) / (1 - q.lag || 1), 0, 1));
+        // Rows fade out as they approach the horizon.
+        const fog = clamp(1 - Math.pow(zt, 1.4) * 0.92, 0, 1);
+        if (fog <= 0.02) continue;
 
-        // ---- wave -----------------------------------------------------------
-        const u = (q.u + time * 0.012 * q.speed) % 1;
-        const env = Math.sin(u * Math.PI) ** 0.7;
-        const ph = q.band * 1.31;
+        const size = Math.max(0.7, scale * 0.0022);
+        const drift = time * 0.42;
 
-        // Two components per band, kept simple. The complexity in the picture
-        // comes from ten bands crossing, not from one elaborate wave.
-        const f1 = 2.2 + Math.sin(time * 0.057 + ph) * 0.9;
-        const f2 = 4.6 + Math.cos(time * 0.039 + ph) * 1.5;
-        const a1 = 1 + Math.sin(time * 0.047 + ph) * 0.38;
-        const a2 = 0.42 + Math.cos(time * 0.031 + ph * 1.4) * 0.22;
+        for (let xi = 0; xi < COLS; xi++) {
+          const xt = xi / (COLS - 1);
+          const x = (xt - 0.5) * 5.2;
 
-        const shape =
-          Math.sin(u * f1 * Math.PI + time * 0.4 + ph) * a1 +
-          Math.sin(u * f2 * Math.PI - time * 0.27 + ph) * a2;
+          // Three travelling components. Their sum is the surface; the
+          // frequencies drift on slow, mutually prime cycles so the roll never
+          // repeats exactly.
+          const wave =
+            Math.sin(x * 1.7 + z * 0.9 - drift * 1.5 + Math.sin(time * 0.05) * 0.8) * 0.5 +
+            Math.sin(x * 3.1 - z * 1.6 + drift * 1.1) * 0.22 +
+            Math.sin(x * 0.8 + z * 2.4 + drift * 0.7 + Math.cos(time * 0.037) * 1.2) * 0.3;
 
-        const wx = u * w;
-        // No jitter: the dot sits exactly on its band's line.
-        const wy =
-          midY + (q.band - (BANDS - 1) / 2) * h * 0.042 + shape * h * 0.062 * env;
+          const y = wave * 0.34;
 
-        // ---- grid -----------------------------------------------------------
-        const gx = gridX + q.col * colGap;
-        const gy = gridTop + q.row * rowGap;
+          const sx = w * 0.5 + x * scale * 0.34;
+          const sy = horizonY + (camHeight - y) * scale * 0.34;
 
-        const x = lerp(wx, gx, k);
-        const y = lerp(wy, gy, k);
+          // Skip anything off-canvas before doing any paint work.
+          if (sx < -8 || sx > w + 8 || sy < -8 || sy > h + 8) continue;
 
-        const crest = Math.max(0, shape / 1.5);
-        const weight = 0.4 + ((q.r - R_MIN) / (R_MAX - R_MIN)) * 0.6;
-        const a = (0.09 + crest * 0.2 + k * 0.1) * weight * (0.35 + env * 0.65);
+          // Crests catch the light; troughs sink away.
+          const lit = clamp(0.5 + wave * 0.55, 0, 1);
+          const a = (0.05 + lit * 0.2) * fog;
 
-        ctx.beginPath();
-        ctx.arc(x, y, q.r, 0, Math.PI * 2);
-        ctx.fillStyle =
-          k > 0.5 || q.band % 4 === 1
-            ? `rgba(59, 47, 217, ${(a * 0.9).toFixed(3)})`
-            : `rgba(14, 17, 20, ${a.toFixed(3)})`;
-        ctx.fill();
+          ctx.fillStyle = `rgba(59, 47, 217, ${a.toFixed(3)})`;
+          ctx.fillRect(sx, sy, size, size);
+        }
       }
     },
-    { staticAt: 4 },
+    { staticAt: 5 },
   );
 
   return <canvas ref={ref} aria-hidden className={cn("block h-full w-full", className)} />;
