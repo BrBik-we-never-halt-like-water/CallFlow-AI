@@ -169,7 +169,7 @@ function MorphCard({ step, reduced }: { step: number; reduced: boolean }) {
   const forms = [<LoadForm key="l" />, <ChooseForm key="c" />, <RunForm key="r" />, <TriageForm key="t" />];
 
   return (
-    <div className="card-flow relative flex h-[16.5rem] flex-col justify-center overflow-hidden p-6 sm:p-8">
+    <div className="card-raised relative flex h-[16.5rem] flex-col justify-center overflow-hidden p-6 sm:p-8">
       <AnimatePresence mode="wait">
         <motion.div
           key={step}

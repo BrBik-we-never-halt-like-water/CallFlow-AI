@@ -82,12 +82,6 @@ export function SegmentedToggle<T extends string>({
 /** The recommended plan's emphasis — a neutral gradient and ring, never colour
     (colour on this page means call state) and no vertical lift (it must stay in
     line with the other cards). */
-const FEATURED_CARD = {
-  background:
-    "linear-gradient(180deg, color-mix(in oklab, var(--text) 5%, var(--surface-raised)) 0%, var(--surface-raised) 55%)",
-  boxShadow:
-    "0 0 0 1px color-mix(in oklab, var(--text) 14%, transparent), 0 18px 40px -22px rgba(11, 15, 18, 0.3)",
-};
 
 function FeaturedAccent() {
   return (
@@ -133,8 +127,10 @@ export function PlanCards({
           return (
             <div
               key={plan.id}
-              className="surface-flow relative flex h-full flex-col gap-4 overflow-hidden rounded-2xl p-5"
-              style={featured ? FEATURED_CARD : undefined}
+              className={cn(
+                "relative flex h-full flex-col gap-4 overflow-hidden p-5",
+                featured ? "card-feature" : "card-raised",
+              )}
             >
               {featured ? <FeaturedAccent /> : null}
 
@@ -185,7 +181,7 @@ export function PlanCards({
       </div>
 
       {/* Enterprise as a full-width band: it is a conversation, not a column. */}
-      <div className="surface-flow mt-4 flex flex-col gap-5 rounded-2xl p-5 shadow-sm lg:flex-row lg:items-center lg:justify-between">
+      <div className="card-raised mt-4 flex flex-col gap-5 p-5 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex flex-col gap-2">
           <h3 className="text-h4 font-medium text-text">{ENTERPRISE.name}</h3>
           <p className="text-small text-text-dim">{ENTERPRISE.tagline}</p>

@@ -77,7 +77,7 @@ export default async function SolutionPage({
           {vertical.pain.map((line, i) => (
             <li
               key={i}
-              className="surface-flow flex h-full flex-col gap-3 p-5 shadow-sm"
+              className="card-raised flex h-full flex-col gap-3 p-5"
             >
               <span className="font-display text-h3 leading-none text-text-mute">
                 {String(i + 1).padStart(2, "0")}
@@ -101,7 +101,7 @@ export default async function SolutionPage({
             left, the shape it returns flows back on the right, joined by a seam
             that fades at both ends. min-w-0 keeps the unwrapped JSON from pushing
             the columns past the viewport on mobile. */}
-        <div className="pool mt-10 grid gap-x-8 gap-y-10 p-5 sm:p-8 lg:grid-cols-[1.05fr_1fr] lg:gap-x-12">
+        <div className="card-sunken mt-10 grid gap-x-8 gap-y-10 p-5 sm:p-8 lg:grid-cols-[1.05fr_1fr] lg:gap-x-12">
           <div className="flex min-w-0 flex-col gap-4">
             <div className="flex flex-wrap items-center gap-2">
               <Eyebrow as="span">Goal template</Eyebrow>
@@ -174,7 +174,7 @@ export default async function SolutionPage({
             <li key={other.slug}>
               <Link
                 href={`/solutions/${other.slug}`}
-                className="group surface-flow flex items-center justify-between gap-3 p-4 shadow-sm transition-[box-shadow,transform] duration-(--dur-base) ease-(--ease-out) hover:-translate-y-0.5 hover:shadow-md"
+                className="group card-raised card-interactive flex items-center justify-between gap-3 p-4"
               >
                 <span className="min-w-0">
                   <span className="block text-body font-medium text-text">{other.name}</span>

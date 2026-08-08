@@ -83,7 +83,7 @@ export function SafetySection() {
             return (
               <div
                 key={guard.label}
-                className="surface-flow flex items-start gap-3 p-4 shadow-sm"
+                className="card-raised flex items-start gap-3 p-4"
               >
                 <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-surface-sunken text-text-dim">
                   <GuardIcon aria-hidden weight="light" className="size-5" />

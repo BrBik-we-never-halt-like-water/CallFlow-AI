@@ -104,7 +104,7 @@ export function CapabilityGrid() {
       <RevealGroup className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {CAPABILITIES.map(({ icon: IconComponent, title, body, proof }) => (
           <RevealItem key={title} className="flex">
-            <div className="surface-flow group flex h-full flex-col gap-3 p-5 shadow-sm transition-[box-shadow,transform] duration-(--dur-base) ease-(--ease-out) hover:-translate-y-0.5 hover:shadow-md">
+            <div className="card-raised card-interactive group flex h-full flex-col gap-3 p-5">
               <span className="flex size-10 items-center justify-center rounded-lg bg-surface-sunken text-text-dim transition-colors duration-(--dur-base) group-hover:text-text">
                 <IconComponent aria-hidden weight="light" className="size-5" />
               </span>

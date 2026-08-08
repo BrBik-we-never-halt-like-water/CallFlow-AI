@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Archivo, Inter_Tight, JetBrains_Mono } from "next/font/google";
+import { Ubuntu, JetBrains_Mono } from "next/font/google";
 import { NuqsAdapter } from "nuqs/adapters/next/app";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ToastProvider } from "@/components/ui/toast";
@@ -8,30 +8,30 @@ import { SiteLoader } from "@/components/layout/site-loader";
 import "./globals.css";
 
 /**
- * Display face. Archivo is variable on the width axis, and the design calls for
- * width 112 ("Expanded") — set via `font-variation-settings` in `.font-display`
- * rather than a static weight. This is the only preloaded face.
+ * The single text face, display and body both. Ubuntu has no variable cut, so
+ * the four static weights are loaded; 300 is unused at present but is what the
+ * large display sizes fall back to if the scale is ever loosened.
+ *
+ * Ubuntu reads soft at display sizes without tight tracking — that is set on
+ * the type scale in globals.css, not here.
  */
-const archivo = Archivo({
-  variable: "--font-archivo",
+const ubuntu = Ubuntu({
+  variable: "--font-ubuntu",
   subsets: ["latin"],
-  axes: ["wdth"],
+  weight: ["300", "400", "500", "700"],
   display: "swap",
   preload: true,
-});
-
-const interTight = Inter_Tight({
-  variable: "--font-inter-tight",
-  subsets: ["latin"],
-  weight: ["400", "500", "600"],
-  display: "swap",
-  preload: false,
 });
 
 /**
  * Data face. Load-bearing, not garnish: every piece of machine-produced value
  * in this product is set in mono, which is how a user learns at a glance what
  * came from the system versus what came from a person.
+ *
+ * Kept as JetBrains Mono rather than moving to Ubuntu Mono with the rest of the
+ * family. Ubuntu Mono is narrow and light, and this face carries every table
+ * header, phone number, duration and cost in the dashboard — legibility in
+ * dense data beats family coherence here.
  */
 const jetbrainsMono = JetBrains_Mono({
   variable: "--font-jetbrains-mono",
@@ -75,7 +75,7 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   // Light only — there is no dark theme, so the browser chrome should not
   // pretend there is one.
-  themeColor: "#F4F6F5",
+  themeColor: "#F5F6F6",
   colorScheme: "light",
 };
 
@@ -85,7 +85,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${archivo.variable} ${interTight.variable} ${jetbrainsMono.variable}`}
+      className={`${ubuntu.variable} ${jetbrainsMono.variable}`}
     >
       <body className="min-h-dvh bg-surface text-text">
         <NuqsAdapter>

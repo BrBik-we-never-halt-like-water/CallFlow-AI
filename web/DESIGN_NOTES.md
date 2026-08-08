@@ -30,42 +30,90 @@ Specifically reversed from the original brief:
 | "Cards do not have shadows" | A four-step soft shadow scale (`--shadow-xs` … `--shadow-lg`). Cards get `shadow-sm`, hover lifts to `shadow-md`. |
 | Parallax banned | One parallax layer: the hero's background grid, 60px of travel, compositor-driven, off under `prefers-reduced-motion`. |
 | Dashboard defaults to dark Panel | Dashboard is light, same surface as marketing. |
-| Radius: 2/4/8/12px | Slightly softer: 3/6/10/16/20px. Nothing is pill-shaped except lamps, badges, avatars. |
+| Radius: 2/4/8/12px | Slightly softer: 4/8/12/16/22px. Nothing is pill-shaped except lamps, badges, avatars. |
+
+### Second direction change — 2026-08-08
+
+A full redesign pass, spec'd in
+`docs/superpowers/specs/2026-08-08-design-system-redesign-design.md`:
+
+| Was | Now |
+|---|---|
+| Monochrome primary CTA | Indigo `--primary`. See §2 — the lamps still own state. |
+| Archivo + Inter Tight | Ubuntu, one family. JetBrains Mono kept for data. See §3. |
+| Five surface treatments (`.pool`, `.surface-flow`, `.panel-raised`, `.card-flow`, `.plan-featured`) | One card, three levels: `.card` / `.card-raised` / `.card-feature`, plus `.card-sunken`. |
+| `.seam-x`, `.seam-y`, `.wave-field`, `.plan-featured` | Deleted — they had no usages anywhere. |
+| Hero card at `0 40px 80px -32px` / 40% opacity | `--shadow-md`. The old shadow is what made the hero read as pasted on. |
+| Home sections separated by open space | Full-bleed bands, alternating ground; sand on the two explanatory sections. |
 
 **What survived unchanged, and should stay:** the lamp system, the copy deck, the
 mono-for-machine-data rule, the safety-first run composer, and the discipline rule below.
 
 ---
 
-## 2. The one rule worth protecting
+## 2. Colour — the rule, and how it changed
+
+**As of 2026-08-08 this rule has been deliberately relaxed.** It is recorded in full
+below because the reasoning still governs everything except the primary.
+
+### What it used to be
 
 **Colour with meaning is reserved for meaning.** The five lamp colours — `off`, `ice`,
-`brass`, `jade`, `flare` — communicate call state and nothing else. They are never used
-for buttons, links, headings, hovers, or decoration.
+`brass`, `jade`, `flare` — communicate call state and nothing else. They were never used
+for buttons, links, headings, hovers, or decoration, and the primary CTA was therefore
+**monochrome** (`--surface-inverse` on `--text-inverse`).
 
-Consequences that look odd until you know the rule:
+### What changed, and why it is still safe
 
-- The primary CTA is **monochrome** (`--surface-inverse` on `--text-inverse`), not brand-coloured.
+The product now has a brand primary — `--primary`, a deep indigo — used on CTAs, links,
+focus rings and active navigation. That was an explicit product decision, not a drift.
+
+The lamps keep their five colours and keep their exclusive hold on *state*. The primary
+was chosen specifically so it cannot be confused with any of them: call state occupies
+grey, blue, amber, green and red, and indigo is the furthest available hue from all
+five. A lit lamp still means something on a page that now has a brand colour, because
+nothing else on the page is anywhere near a lamp hue.
+
+**The test for any new colour is now:** is it a lamp hue, or adjacent to one? If yes,
+it cannot be used for anything that is not call state.
+
+### What did not change
+
 - JSON syntax highlighting in `CodeBlock` uses **weight and dimming, not hue** — a syntax
   palette would put arbitrary colour on screen.
 - Charts and sparklines are drawn in `--rule-strong`, with no series colours.
+- `--secondary` (warm sand) is a **surface only**. It never appears on a button or a
+  link, so it cannot be read as interactive or as state.
 
-Three deliberate exceptions, each because the thing being coloured *is* state:
+Three deliberate lamp exceptions remain, each because the thing being coloured *is* state:
 
 1. `Button variant="danger"` uses flare — a destructive action must not be misread.
 2. Toast tones use lamp colours — a toast reports what happened to a call.
 3. Form error borders use flare — a field that will block a run is call state.
 
-If you add a colour to this product, check it against that rule first.
+Two **undocumented** lamp uses exist and are logged as `ISSUES.md` D12, not sanctioned:
+`PasswordStrength` maps lamps to password strength, and `AuthCard` renders a lamp strip
+on pages with no call state.
 
 ---
 
 ## 3. Free-axis choices
 
-**Type.** Archivo (variable, `wdth` 112) for display, Inter Tight for body, JetBrains
-Mono for all machine-produced values. Only Archivo is preloaded. The mono rule is
-load-bearing: it is how a user learns at a glance what came from the system versus what
-came from a person. Enforce it.
+**Type.** **Ubuntu** for display and body — one family, four static weights, preloaded.
+Replaced Archivo (display) and Inter Tight (body) on 2026-08-08.
+
+Ubuntu reads soft at large sizes without help, so the display steps carry tight negative
+tracking (−0.035em at `display-xl`). That is set on the scale in `globals.css`, not per
+component; do not set display type without it.
+
+**JetBrains Mono stays** for all machine-produced values, and did not move to Ubuntu Mono
+with the rest of the family. The mono rule is load-bearing: it is how a user learns at a
+glance what came from the system versus what came from a person — and this face carries
+every table header, phone number, duration and cost in the dashboard. Ubuntu Mono is
+narrow and light; legibility in dense data beat family coherence. Enforce the mono rule.
+
+Every step of the scale is fluid. It previously froze `h3` and `h4` while the display
+sizes scaled, which compressed hierarchy between tablet and laptop.
 
 **The `Wordmark` is live text, not SVG paths.** The brief asked for inline SVG. Real text
 inherits `currentColor`, scales with the type system, stays selectable, and is read

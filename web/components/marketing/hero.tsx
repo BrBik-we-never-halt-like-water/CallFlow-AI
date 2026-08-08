@@ -77,7 +77,13 @@ export function Hero() {
           the only parallax on the site, off under prefers-reduced-motion. */}
       <ParallaxGrid />
 
-      <div className="relative mx-auto max-w-(--container-marketing) px-4 pt-10 pb-8 sm:px-6 sm:pt-16">
+      {/* Sized to leave the hero dominant on the first screen without ever
+          clipping: a MIN height, capped well under a tall viewport so the
+          content fills it rather than floating in the middle of it, and
+          collapsing to content on short screens. The cap is deliberately
+          short of the full viewport — a sliver of the next section showing
+          is what tells a reader there is more below. */}
+      <div className="relative mx-auto flex min-h-[min(calc(100svh-var(--h-site-header)),660px)] max-w-(--container-marketing) flex-col justify-center px-4 pt-8 pb-12 sm:px-6 sm:pt-10">
         <div className="grid items-center gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,460px)] lg:gap-16">
           {/* ---- Argument: rises in as a staggered stack --------------------- */}
           <motion.div
@@ -191,7 +197,7 @@ function PanelBlock({ label, children }: { label: string; children: React.ReactN
  * separated by air. Shared by the live card and the invisible sizer behind it.
  */
 function CardShell({ children }: { children: React.ReactNode }) {
-  return <div className="card-flow flex flex-col gap-6 p-6 sm:p-8">{children}</div>;
+  return <div className="card-feature flex flex-col gap-6 p-6 sm:p-8">{children}</div>;
 }
 
 /**

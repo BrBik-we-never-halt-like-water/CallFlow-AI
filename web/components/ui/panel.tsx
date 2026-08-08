@@ -2,12 +2,12 @@ import { cn } from "@/lib/cn";
 import { WaveLine } from "@/components/brand/wave-spine";
 
 /**
- * A surface: hairline border plus a soft shadow.
+ * A surface, at one of the three levels defined in globals.css.
  *
- * On a light page a border alone reads as flat and a shadow alone reads as floating, so
- * every raised surface gets both — the border gives it an edge, the shadow gives it
- * weight. `interactive` adds a hover lift, which is the only place anything in this
- * design moves on hover.
+ * `quiet` (flat) is a hairline with no shadow, for rows and nested panels; `raised`
+ * is the default; `feature` adds elevation and a primary edge for the one card in a
+ * group that should draw the eye. Marketing and the dashboard both render through
+ * this, which is what keeps them looking like one product.
  */
 export function Panel({
   as: Component = "div",
@@ -15,6 +15,8 @@ export function Panel({
   interactive = false,
   /** Drop the shadow — for a panel nested inside another panel. */
   flat = false,
+  /** The one card in a group that should draw the eye. */
+  feature = false,
   className,
   children,
   ...props
@@ -23,19 +25,15 @@ export function Panel({
   sunken?: boolean;
   interactive?: boolean;
   flat?: boolean;
+  feature?: boolean;
   className?: string;
   children?: React.ReactNode;
 } & React.HTMLAttributes<HTMLElement>) {
   return (
     <Component
       className={cn(
-        // Soft raised surface: faint hairline + top-lit gradient instead of a
-        // hard bordered box, so panels read as paper across the whole app.
-        "rounded-lg border border-rule/60",
-        sunken ? "bg-surface-sunken" : "panel-raised",
-        !sunken && !flat && "shadow-sm",
-        interactive &&
-          "transition-[box-shadow,transform,border-color] duration-(--dur-base) ease-(--ease-out) hover:-translate-y-0.5 hover:border-rule-strong hover:shadow-md",
+        sunken ? "card-sunken" : feature ? "card-feature" : flat ? "card" : "card-raised",
+        interactive && "card-interactive",
         className,
       )}
       {...props}

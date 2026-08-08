@@ -74,11 +74,12 @@ export function WaveCanvas({
       typeof window !== "undefined" &&
       window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 
+    // Canvas cannot read a CSS variable, so the token is resolved here. The
+    // literals are last-resort fallbacks only, and must track globals.css.
+    const token = tone === "inverse" ? "--text-inverse" : "--text";
     const color =
-      tone === "inverse"
-        ? "#ffffff"
-        : getComputedStyle(document.documentElement).getPropertyValue("--text").trim() ||
-          "#0b0f12";
+      getComputedStyle(document.documentElement).getPropertyValue(token).trim() ||
+      (tone === "inverse" ? "#ffffff" : "#0e1114");
 
     let dpr = 1;
     const size = () => {

@@ -139,7 +139,7 @@ function Lane({
 }) {
   const fill = tone === "jade" ? "var(--lamp-jade)" : "var(--text-mute)";
   return (
-    <div className="surface-flow flex flex-col gap-4 p-5 shadow-sm">
+    <div className="card-raised flex flex-col gap-4 p-5">
       <div className="flex items-center justify-between gap-3">
         <Eyebrow>{label}</Eyebrow>
         <span className="text-small text-text-mute">{tagline}</span>

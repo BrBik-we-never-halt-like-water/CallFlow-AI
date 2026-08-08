@@ -33,9 +33,6 @@ const TONE_TEXT: Record<LampState, string> = {
   flare: "text-lamp-flare-text",
 };
 
-const softRaised =
-  "linear-gradient(180deg, color-mix(in oklab, #ffffff 72%, var(--surface-raised)) 0%, var(--surface-raised) 100%)";
-
 function tint(tone?: LampState): string {
   return tone
     ? `color-mix(in oklab, var(--lamp-${tone}) 13%, var(--surface-raised))`
@@ -305,7 +302,7 @@ function CallCard({
   scanning = false,
 }: CallProps & { scanning?: boolean }) {
   return (
-    <div className="rounded-[1.75rem] p-5 shadow-sm" style={{ background: softRaised }}>
+    <div className="card-raised p-5">
       <div className="flex items-center justify-between gap-3">
         <span className="flex items-center gap-2.5">
           <LiveDot active={onCall && !reduced} />

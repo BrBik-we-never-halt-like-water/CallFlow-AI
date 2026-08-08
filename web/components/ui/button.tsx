@@ -3,21 +3,20 @@
 import { Slot } from "@radix-ui/react-slot";
 import { forwardRef } from "react";
 import { cn } from "@/lib/cn";
-import { Lamp } from "@/components/brand/lamp";
 
 export type ButtonVariant = "primary" | "secondary" | "ghost" | "danger";
 export type ButtonSize = "sm" | "md" | "lg";
 
 /**
- * The primary action is monochrome, not brand-coloured.
+ * The primary action is the brand indigo.
  *
- * That is deliberate and it is the most important rule in the design: lamp
- * colours are reserved for call state. Because a button is never brass or jade,
- * a lamp lighting on an otherwise ink-on-paper page carries real weight.
+ * Indigo sits deliberately far from all five lamp hues, so a lit lamp still
+ * reads as call state rather than as brand — the lamps remain the only thing
+ * on the page that means something by its colour.
  */
 const VARIANTS: Record<ButtonVariant, string> = {
   primary:
-    "btn-pulse bg-surface-inverse text-text-inverse hover:opacity-90 active:opacity-80 border border-transparent",
+    "bg-primary text-primary-on hover:bg-primary-hover active:bg-primary-active border border-transparent",
   secondary:
     "border border-rule-strong bg-transparent text-text hover:bg-surface-hover active:bg-surface-sunken",
   ghost: "border border-transparent bg-transparent text-text-dim hover:bg-surface-hover hover:text-text",
@@ -98,16 +97,22 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
 });
 
 /**
- * Loading indicator: lamps lighting in sequence, not a spinner. A spinner says
+ * Loading indicator: dots lighting in sequence, not a spinner. A spinner says
  * "wait"; a sequence says "something is progressing", which is what is true.
+ *
+ * Drawn in `currentColor` rather than a lamp colour — it inherits each variant's
+ * text colour, so it reads on indigo and on paper alike, and it does not spend a
+ * call-state colour on something that is not call state.
  */
 function LoadingLamps() {
   return (
     <span aria-hidden className="inline-flex items-center gap-1">
       {[0, 1, 2].map((i) => (
-        <span key={i} className="lamp-pulse" style={{ animationDelay: `${i * 200}ms` }}>
-          <Lamp state="brass" size="sm" />
-        </span>
+        <span
+          key={i}
+          className="lamp-pulse size-1.5 rounded-full bg-current"
+          style={{ animationDelay: `${i * 200}ms` }}
+        />
       ))}
     </span>
   );
