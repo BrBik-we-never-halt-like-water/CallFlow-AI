@@ -1,8 +1,8 @@
-"use client";
+'use client';
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from 'react';
 
-export { usePrefersReducedMotion } from "./use-external-store";
+export { usePrefersReducedMotion } from './use-external-store';
 
 export interface TypewriterOptions {
   /** Wait this long before the first character. */
@@ -28,9 +28,14 @@ export interface TypewriterOptions {
  */
 export function useTypewriter(
   text: string,
-  { delayMs = 0, durationMs = 1200, instant = false, enabled = true }: TypewriterOptions = {},
+  {
+    delayMs = 0,
+    durationMs = 1200,
+    instant = false,
+    enabled = true,
+  }: TypewriterOptions = {},
 ): { output: string; done: boolean } {
-  const finished = instant || !enabled ? (enabled ? text : "") : "";
+  const finished = instant || !enabled ? (enabled ? text : '') : '';
 
   const [state, setState] = useState(() => ({
     key: `${text}|${instant}|${enabled}`,
@@ -65,7 +70,7 @@ export function useTypewriter(
       const progress = Math.min(1, elapsed / total);
       const sliced = text.slice(0, Math.ceil(progress * text.length));
 
-      // Inside a rAF callback, not the effect body — this is the external clock
+      // Inside a rAF callback, not the effect body - this is the external clock
       // driving React, which is what an effect is for.
       setState({ key, output: sliced, done: progress >= 1 });
 

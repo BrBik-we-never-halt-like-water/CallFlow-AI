@@ -14,7 +14,7 @@ Three gaps this closes:
 * The signup trigger inlined its own slugify-and-dedupe loop. `unique_org_slug()`
   extracts it so the new "create organisation" endpoint gets the same collision
   handling instead of a second copy.
-* No public, unauthenticated way to resolve an invite token exists — and per
+* No public, unauthenticated way to resolve an invite token exists - and per
   CLAUDE.md, `privileged.acquire()` must never appear in a request handler, so the
   accept-invite preview goes through `database.anonymous()` calling a SECURITY
   DEFINER function instead, matching the `is_org_member`-style helpers already here.
@@ -61,7 +61,7 @@ $$;
 """
 
 # Replaces the trigger wholesale (as the previous revision did) so the slug loop
-# lives in one place — this function — rather than staying duplicated here.
+# lives in one place - this function - rather than staying duplicated here.
 SIGNUP_TRIGGER_USES_HELPER = """
 create or replace function public.handle_new_auth_user()
 returns trigger language plpgsql security definer

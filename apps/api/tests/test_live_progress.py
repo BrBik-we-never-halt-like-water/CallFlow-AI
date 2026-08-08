@@ -1,11 +1,11 @@
 """Live-call progress reporting.
 
 A conversation can run for minutes. Without intermediate updates the dashboard
-shows an empty table the whole time, which reads as a hang — so the row must
+shows an empty table the whole time, which reads as a hang - so the row must
 appear when the call is placed and update as the status changes.
 
 The upsert-by-contact behaviour that used to live in the in-memory `RunStore`
-now lives in `runs_repo.append_outcome`'s SQL (`ON CONFLICT ... DO UPDATE`) —
+now lives in `runs_repo.append_outcome`'s SQL (`ON CONFLICT ... DO UPDATE`) -
 that needs a real Postgres connection to exercise and isn't covered here; this
 file only tests `CampaignRunner`, which has no I/O of its own to fake.
 """

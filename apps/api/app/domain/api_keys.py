@@ -1,4 +1,4 @@
-"""Generating and hashing CallFlow API keys. Pure — no I/O, no database.
+"""Generating and hashing CallFlow API keys. Pure - no I/O, no database.
 
 Mirrors how `CALLFLOW_OWNER_KEY` is already checked elsewhere: never compare or
 store a plaintext key, only its hash.
@@ -11,7 +11,7 @@ import secrets
 from dataclasses import dataclass
 
 KEY_PREFIX = "cfk_"
-# "cfk_" plus 8 more characters — enough to tell two keys apart in a list,
+# "cfk_" plus 8 more characters - enough to tell two keys apart in a list,
 # nowhere near enough to guess the rest.
 PREFIX_DISPLAY_LEN = len(KEY_PREFIX) + 8
 

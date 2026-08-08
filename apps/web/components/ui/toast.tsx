@@ -1,13 +1,20 @@
-"use client";
+'use client';
 
-import * as RadixToast from "@radix-ui/react-toast";
-import { XIcon } from "@phosphor-icons/react/dist/ssr";
-import { createContext, useCallback, useContext, useMemo, useRef, useState } from "react";
-import { cn } from "@/lib/cn";
-import { Lamp } from "@/components/brand/lamp";
-import type { LampState } from "@/lib/lamp";
+import * as RadixToast from '@radix-ui/react-toast';
+import { XIcon } from '@phosphor-icons/react/dist/ssr';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+import { cn } from '@/lib/cn';
+import { Lamp } from '@/components/brand/lamp';
+import type { LampState } from '@/lib/lamp';
 
-export type ToastTone = "info" | "success" | "warning" | "error";
+export type ToastTone = 'info' | 'success' | 'warning' | 'error';
 
 /**
  * Toast tones borrow the lamp colours, which is consistent rather than a breach
@@ -15,10 +22,10 @@ export type ToastTone = "info" | "success" | "warning" | "error";
  * it is reporting state. The lamp is always paired with text.
  */
 const TONE_LAMP: Record<ToastTone, LampState> = {
-  info: "ice",
-  success: "jade",
-  warning: "brass",
-  error: "flare",
+  info: 'ice',
+  success: 'jade',
+  warning: 'brass',
+  error: 'flare',
 };
 
 export interface ToastOptions {
@@ -33,7 +40,9 @@ interface ToastRecord extends ToastOptions {
   id: number;
 }
 
-const ToastContext = createContext<((options: ToastOptions) => void) | null>(null);
+const ToastContext = createContext<((options: ToastOptions) => void) | null>(
+  null,
+);
 
 /** Maximum simultaneous toasts. Older ones are dropped, not queued. */
 const STACK_MAX = 3;
@@ -62,17 +71,21 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
         {children}
 
         {toasts.map((toast) => (
-          <ToastItem key={toast.id} toast={toast} onDismiss={() => dismiss(toast.id)} />
+          <ToastItem
+            key={toast.id}
+            toast={toast}
+            onDismiss={() => dismiss(toast.id)}
+          />
         ))}
 
         <RadixToast.Viewport
           className={cn(
-            "fixed right-0 top-0 z-100 flex w-[min(400px,calc(100vw-24px))] flex-col gap-2 p-3",
+            'fixed right-0 top-0 z-100 flex w-[min(400px,calc(100vw-24px))] flex-col gap-2 p-3',
             // Clip horizontally so a toast animating in/out from off-screen right
             // (translate-x-full) can't extend the document width and add a
             // horizontal scrollbar on mobile. `clip` (not `hidden`) keeps the
-            // vertical axis visible — no stray scrollbar on the viewport itself.
-            "overflow-x-clip outline-none",
+            // vertical axis visible - no stray scrollbar on the viewport itself.
+            'overflow-x-clip outline-none',
           )}
         />
       </RadixToast.Provider>
@@ -91,7 +104,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
 export function useToast(): (options: ToastOptions) => void {
   const context = useContext(ToastContext);
   if (!context) {
-    throw new Error("useToast must be used inside <ToastProvider>");
+    throw new Error('useToast must be used inside <ToastProvider>');
   }
   return context;
 }
@@ -103,8 +116,8 @@ function ToastItem({
   toast: ToastRecord;
   onDismiss: () => void;
 }) {
-  const tone = toast.tone ?? "info";
-  const isError = tone === "error";
+  const tone = toast.tone ?? 'info';
+  const isError = tone === 'error';
 
   return (
     <RadixToast.Root
@@ -112,11 +125,11 @@ function ToastItem({
         if (!open) onDismiss();
       }}
       // An error interrupts; everything else waits its turn in the reading order.
-      type={isError ? "foreground" : "background"}
+      type={isError ? 'foreground' : 'background'}
       duration={isError ? 10000 : 5000}
       className={cn(
-        "flex items-start gap-3 rounded-md border border-rule-strong bg-surface-raised p-3 shadow-overlay",
-        "data-[state=open]:animate-in data-[swipe=end]:translate-x-full",
+        'flex items-start gap-3 rounded-md border border-rule-strong bg-surface-raised p-3 shadow-overlay',
+        'data-[state=open]:animate-in data-[swipe=end]:translate-x-full',
       )}
     >
       <span className="mt-1">

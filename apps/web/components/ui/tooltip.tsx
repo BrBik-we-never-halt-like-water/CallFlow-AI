@@ -1,12 +1,12 @@
-"use client";
+'use client';
 
-import * as RadixTooltip from "@radix-ui/react-tooltip";
-import { cn } from "@/lib/cn";
+import * as RadixTooltip from '@radix-ui/react-tooltip';
+import { cn } from '@/lib/cn';
 
 /**
  * Tooltip. 400ms open delay, keyboard-reachable via the trigger's focus.
  *
- * A tooltip may explain, but it may never be the only place information lives —
+ * A tooltip may explain, but it may never be the only place information lives -
  * anything required to complete a task belongs in the layout. The one thing it
  * is genuinely responsible for: every disabled control in this product carries a
  * tooltip saying *why* it is disabled.
@@ -22,7 +22,7 @@ export function TooltipProvider({ children }: { children: React.ReactNode }) {
 export function Tooltip({
   content,
   children,
-  side = "top",
+  side = 'top',
   /** Wrap the trigger in a span. Needed when the trigger is disabled, since a
       disabled button emits no pointer events of its own. */
   wrapTrigger = false,
@@ -30,7 +30,7 @@ export function Tooltip({
 }: {
   content: React.ReactNode;
   children: React.ReactNode;
-  side?: "top" | "right" | "bottom" | "left";
+  side?: 'top' | 'right' | 'bottom' | 'left';
   wrapTrigger?: boolean;
   className?: string;
 }) {
@@ -51,9 +51,9 @@ export function Tooltip({
           sideOffset={6}
           collisionPadding={12}
           className={cn(
-            "z-50 max-w-64 rounded-sm border border-rule-strong bg-surface-raised px-2.5 py-1.5",
-            "text-small text-text shadow-overlay",
-            "data-[state=delayed-open]:animate-in",
+            'z-50 max-w-64 rounded-sm border border-rule-strong bg-surface-raised px-2.5 py-1.5',
+            'text-small text-text shadow-overlay',
+            'data-[state=delayed-open]:animate-in',
             className,
           )}
         >

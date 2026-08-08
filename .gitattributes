@@ -6,7 +6,7 @@
 # in git, and checked out however the platform prefers.
 * text=auto eol=lf
 
-# Files that must stay LF even on Windows — CRLF breaks the shebang line.
+# Files that must stay LF even on Windows - CRLF breaks the shebang line.
 *.sh text eol=lf
 .githooks/* text eol=lf
 

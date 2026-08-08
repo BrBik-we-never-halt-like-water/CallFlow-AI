@@ -1,8 +1,8 @@
 """Thin wrapper over the voice engine SDK.
 
 This module is the only place in the codebase that touches the upstream
-vendor SDK. Everything above it speaks in CallFlow terms — `EngineGateway`,
-`EngineAPIError` — so no vendor name reaches the API surface or the UI.
+vendor SDK. Everything above it speaks in CallFlow terms - `EngineGateway`,
+`EngineAPIError` - so no vendor name reaches the API surface or the UI.
 
 Contract verified against the pinned SDK version:
 
@@ -37,9 +37,9 @@ JsonObject = dict[str, Any]
 # Terminal statuses returned by GET /v1/calls/{id}.
 TERMINAL = {"completed", "failed", "canceled"}
 
-# The engine's own error codes (its full documented taxonomy — see CALLE.md §4),
-# mapped onto CallFlow's internal one. Anything not listed here — including any
-# new code the engine adds later — falls through to INTERNAL rather than raising
+# The engine's own error codes (its full documented taxonomy - see CALLE.md §4),
+# mapped onto CallFlow's internal one. Anything not listed here - including any
+# new code the engine adds later - falls through to INTERNAL rather than raising
 # a KeyError, per CLAUDE.md's fail-closed rule: an unmapped code should never be
 # treated as if it were a known, safe-to-retry failure.
 _ERROR_CODE_MAP: dict[str, DialFailure] = {
@@ -59,14 +59,14 @@ _ERROR_CODE_MAP: dict[str, DialFailure] = {
 
 
 def classify_error(exc: EngineAPIError | EngineConnectionError | EngineTimeoutError) -> DialFailure:
-    """The one place an engine error becomes a `DialFailure` — so retry policy,
+    """The one place an engine error becomes a `DialFailure` - so retry policy,
     the outcome's stored `error`, and any future second voice provider all agree
     on what a failure means, instead of each re-deriving it from a raw string."""
     if isinstance(exc, EngineTimeoutError):
         return DialFailure.TIMED_OUT
     if isinstance(exc, EngineConnectionError):
         # Raised by the SDK when the request fails before any response comes
-        # back (DNS failure, connection refused, TLS error) — there's no
+        # back (DNS failure, connection refused, TLS error) - there's no
         # vendor error code to look up because the vendor never answered.
         # That's a reachability problem, not evidence the number or the
         # request itself is bad, so it gets the same treatment as the
@@ -83,7 +83,7 @@ _SUPPORTED: frozenset[VoiceCapability] = frozenset(
 class EngineGateway:
     """Owns the voice-engine connection and translates it into CallFlow terms.
 
-    Conforms to `app.integrations.voice.protocol.VoiceProvider` structurally —
+    Conforms to `app.integrations.voice.protocol.VoiceProvider` structurally -
     CALL-E is the only implementation today (`VOICE_AGENT_PLATFORM.md` P1).
     """
 
@@ -104,7 +104,7 @@ class EngineGateway:
 
     def cancel_call(self, call_id: str) -> None:
         """CALL-E's SDK exposes `create`, `create_and_wait`, `get`,
-        `list_events`, and `wait_for_result` — no cancel. Raise rather than
+        `list_events`, and `wait_for_result` - no cancel. Raise rather than
         silently no-op, so a caller who didn't check `supports()` first finds
         out immediately instead of believing a call was cancelled when it
         wasn't."""
@@ -122,10 +122,10 @@ class EngineGateway:
         region: str | None = None,
         language: str | None = None,
     ) -> JsonObject:
-        """Create a call. This DIALS — every caller must pass the safety gate first.
+        """Create a call. This DIALS - every caller must pass the safety gate first.
 
         Recipient fields are `phones`, `region`, and `locale`. The API rejects
-        anything else with 422 extra_forbidden — notably `language`, which is
+        anything else with 422 extra_forbidden - notably `language`, which is
         NOT a valid key despite reading like one.
         """
         recipient: JsonObject = {"phone": phone}
@@ -161,7 +161,7 @@ class EngineGateway:
         )
 
     def list_events(self, call_id: str, *, limit: int | None = None) -> JsonObject:
-        """Event stream for a call — powers live dashboard progress."""
+        """Event stream for a call - powers live dashboard progress."""
         return self._client.calls.list_events(call_id, limit=limit)
 
 

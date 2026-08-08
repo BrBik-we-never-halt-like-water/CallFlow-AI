@@ -1,4 +1,4 @@
-"""An organisation's own overrides for the safety guards — the write side
+"""An organisation's own overrides for the safety guards - the write side
 `ISSUES.md` flagged as missing: every value in Settings -> Safety used to be the
 deployment's env vars, shared and unsaveable. `GET` also carries this
 organisation's real, live rate-limit usage, which `/api/health` can no longer

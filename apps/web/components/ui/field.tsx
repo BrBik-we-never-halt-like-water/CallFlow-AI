@@ -1,7 +1,7 @@
-"use client";
+'use client';
 
-import { createContext, useContext, useId } from "react";
-import { cn } from "@/lib/cn";
+import { createContext, useContext, useId } from 'react';
+import { cn } from '@/lib/cn';
 
 /**
  * Form field plumbing.
@@ -58,19 +58,20 @@ export function Field({
   const errorId = error ? `${base}-error` : undefined;
   const helpId = help && !error ? `${base}-help` : undefined;
 
-  const describedBy = [hintId, errorId, helpId].filter(Boolean).join(" ") || undefined;
+  const describedBy =
+    [hintId, errorId, helpId].filter(Boolean).join(' ') || undefined;
 
   return (
     <FieldContext.Provider
       value={{ inputId, describedBy, invalid: Boolean(error), disabled }}
     >
-      <div className={cn("flex flex-col gap-1.5", className)}>
+      <div className={cn('flex flex-col gap-1.5', className)}>
         <label
           htmlFor={inputId}
           className={cn(
-            "text-small font-medium text-text",
-            labelHidden && "sr-only",
-            disabled && "opacity-45",
+            'text-small font-medium text-text',
+            labelHidden && 'sr-only',
+            disabled && 'opacity-45',
           )}
         >
           {label}
@@ -131,13 +132,13 @@ export function ErrorSummary({
     <div
       role="alert"
       className={cn(
-        "rounded-md border border-[color-mix(in_oklab,var(--lamp-flare)_30%,transparent)] bg-[color-mix(in_oklab,var(--lamp-flare)_10%,transparent)] p-4",
+        'rounded-md border border-[color-mix(in_oklab,var(--lamp-flare)_30%,transparent)] bg-[color-mix(in_oklab,var(--lamp-flare)_10%,transparent)] p-4',
         className,
       )}
     >
       <h2 className="text-h4 font-medium text-lamp-flare-text">
         {errors.length === 1
-          ? "One field needs attention"
+          ? 'One field needs attention'
           : `${errors.length} fields need attention`}
       </h2>
       <ul className="mt-2 flex flex-col gap-1">
@@ -147,7 +148,7 @@ export function ErrorSummary({
               href={`#${e.id}`}
               className="text-small text-text underline decoration-rule-strong underline-offset-2 hover:decoration-current"
             >
-              <span className="font-medium">{e.label}</span> — {e.message}
+              <span className="font-medium">{e.label}</span> - {e.message}
             </a>
           </li>
         ))}

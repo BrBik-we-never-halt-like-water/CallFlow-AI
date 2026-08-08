@@ -1,11 +1,11 @@
-import { CapabilityGrid } from "@/components/marketing/capability-grid";
-import { FinalCta } from "@/components/marketing/final-cta";
-import { Hero } from "@/components/marketing/hero";
-import { PricingPreview } from "@/components/marketing/pricing-preview";
-import { ProblemCompare } from "@/components/marketing/problem-compare";
-import { SafetySection } from "@/components/marketing/safety-section";
-import { Steps } from "@/components/marketing/steps";
-import { VerticalStrip } from "@/components/marketing/vertical-strip";
+import { CapabilityGrid } from '@/components/marketing/capability-grid';
+import { FinalCta } from '@/components/marketing/final-cta';
+import { Hero } from '@/components/marketing/hero';
+import { PricingPreview } from '@/components/marketing/pricing-preview';
+import { ProblemCompare } from '@/components/marketing/problem-compare';
+import { SafetySection } from '@/components/marketing/safety-section';
+import { Steps } from '@/components/marketing/steps';
+import { VerticalStrip } from '@/components/marketing/vertical-strip';
 
 /**
  * The home page.
@@ -46,7 +46,7 @@ export default function HomePage() {
   );
 }
 
-/** Open space between sections — the page's only separator. */
+/** Open space between sections - the page's only separator. */
 function SpineDivider() {
   return <div aria-hidden className="h-(--space-section)" />;
 }

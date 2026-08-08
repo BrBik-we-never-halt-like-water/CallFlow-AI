@@ -1,7 +1,7 @@
 """Thin wrapper over the Resend HTTP API.
 
 This module is the only place in the codebase that speaks to Resend. Everything
-above it calls `EmailGateway.send_invitation` — no vendor endpoint or payload shape
+above it calls `EmailGateway.send_invitation` - no vendor endpoint or payload shape
 leaks past this file.
 """
 
@@ -34,7 +34,7 @@ class EmailAPIError(RuntimeError):
 
 
 class EmailNotConfigured(RuntimeError):
-    """No RESEND_API_KEY is set — sending would silently do nothing without this."""
+    """No RESEND_API_KEY is set - sending would silently do nothing without this."""
 
 
 class EmailGateway:
@@ -49,7 +49,7 @@ class EmailGateway:
     ) -> None:
         if not self._api_key:
             raise EmailNotConfigured(
-                "No Resend API key is set — RESEND_API_KEY must be configured before "
+                "No Resend API key is set - RESEND_API_KEY must be configured before "
                 "invitations can be sent."
             )
 
@@ -104,7 +104,7 @@ class EmailGateway:
                 self._from,
             )
             return (
-                f"Invitations can't be sent yet — the sender address ({self._from_domain()}) "
+                f"Invitations can't be sent yet - the sender address ({self._from_domain()}) "
                 "isn't a domain verified in Resend. In the Resend dashboard, go to Domains, "
                 "add and verify this domain (or point RESEND_FROM_EMAIL at one that's already "
                 "verified), then try again."
@@ -114,7 +114,7 @@ class EmailGateway:
         detail = message if isinstance(message, str) and message else response.text
         return (
             f"Could not send the invitation email: Resend rejected the request "
-            f"({response.status_code}) — {detail}"
+            f"({response.status_code}) - {detail}"
         )
 
     def _from_domain(self) -> str:

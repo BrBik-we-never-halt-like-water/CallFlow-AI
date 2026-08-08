@@ -1,14 +1,14 @@
-import type { Metadata } from "next";
-import Link from "next/link";
-import { notFound } from "next/navigation";
-import { RoiCalculator } from "@/components/marketing/roi-calculator";
-import { Tag } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { CodeBlock } from "@/components/ui/code-block";
-import { Accordion } from "@/components/ui/disclosure";
-import { Eyebrow, SectionHeading } from "@/components/ui/panel";
-import { Rule } from "@/components/ui/rule";
-import { getVertical, schemaToJson, VERTICALS } from "@/lib/verticals";
+import type { Metadata } from 'next';
+import Link from 'next/link';
+import { notFound } from 'next/navigation';
+import { RoiCalculator } from '@/components/marketing/roi-calculator';
+import { Tag } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { CodeBlock } from '@/components/ui/code-block';
+import { Accordion } from '@/components/ui/disclosure';
+import { Eyebrow, SectionHeading } from '@/components/ui/panel';
+import { Rule } from '@/components/ui/rule';
+import { getVertical, schemaToJson, VERTICALS } from '@/lib/verticals';
 
 export function generateStaticParams() {
   return VERTICALS.map((vertical) => ({ vertical: vertical.slug }));
@@ -71,11 +71,14 @@ export default async function SolutionPage({
       {/* ---- The pain ------------------------------------------------------ */}
       <Divider />
       <section className="mx-auto max-w-(--container-marketing) px-4 sm:px-6">
-        <SectionHeading eyebrow="The problem" title="What this actually costs you today." />
+        <SectionHeading
+          eyebrow="The problem"
+          title="What this actually costs you today."
+        />
         <ol className="mt-8 grid gap-6 border-t border-rule pt-8 md:grid-cols-3">
           {vertical.pain.map((line, i) => (
             <li key={i} className="flex flex-col gap-2">
-              <Eyebrow as="span">{String(i + 1).padStart(2, "0")}</Eyebrow>
+              <Eyebrow as="span">{String(i + 1).padStart(2, '0')}</Eyebrow>
               <p className="text-body text-text-dim">{line}</p>
             </li>
           ))}
@@ -88,7 +91,7 @@ export default async function SolutionPage({
         <SectionHeading
           eyebrow="The campaign"
           title="The exact goal, and the exact fields it returns."
-          sub="This is the whole template, not an excerpt. It is what the agent is told, verbatim — including what it must refuse to do."
+          sub="This is the whole template, not an excerpt. It is what the agent is told, verbatim - including what it must refuse to do."
         />
 
         {/* One basin, not two boxes: what the agent is told flows in on the
@@ -148,7 +151,10 @@ export default async function SolutionPage({
       {/* ---- Objections ---------------------------------------------------- */}
       <Divider />
       <section className="mx-auto max-w-(--container-marketing) px-4 sm:px-6">
-        <SectionHeading eyebrow="Fair questions" title="The two objections we hear most." />
+        <SectionHeading
+          eyebrow="Fair questions"
+          title="The two objections we hear most."
+        />
         <div className="mt-8 max-w-3xl">
           <Accordion
             items={vertical.objections.map((objection) => ({

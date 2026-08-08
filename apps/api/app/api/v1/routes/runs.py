@@ -1,12 +1,12 @@
-"""Starting and reading runs — org-scoped, persisted.
+"""Starting and reading runs - org-scoped, persisted.
 
-Every run dials for real. There is no dry-run mode (CLAUDE.md, ADR-3) — the
+Every run dials for real. There is no dry-run mode (CLAUDE.md, ADR-3) - the
 guards that actually stand between "started a run" and "rang a real phone" are
 the per-run ceiling, the allowlist, per-organisation rate limiting, that
 organisation's own daily budget, and the suppression list, all enforced in
 `check_dial_allowed()` and below. Every one of these can be overridden per
 organisation (`org_safety_settings`) or falls back to the deployment's env-var
-defaults — `resolve_safety_settings()` is the one place that merge happens.
+defaults - `resolve_safety_settings()` is the one place that merge happens.
 """
 
 from __future__ import annotations
@@ -117,7 +117,7 @@ async def start_run(
 
     if not config.api_key:
         raise HTTPException(
-            status_code=400, detail="No Voice API key is configured — cannot place calls."
+            status_code=400, detail="No Voice API key is configured - cannot place calls."
         )
 
     async with database.as_user(user.auth_user_id) as conn:

@@ -1,36 +1,39 @@
-"use client";
+'use client';
 
-import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useState } from "react";
-import { InviteDialog, ROLES } from "@/components/app/invite-dialog";
-import { SessionGate } from "@/components/app/session-gate";
-import { NotWiredNotice, SettingsSection } from "@/components/app/settings-section";
-import { Tag } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Dialog, DialogRoot } from "@/components/ui/dialog";
+import { useRouter, useSearchParams } from 'next/navigation';
+import { Suspense, useState } from 'react';
+import { InviteDialog, ROLES } from '@/components/app/invite-dialog';
+import { SessionGate } from '@/components/app/session-gate';
+import {
+  NotWiredNotice,
+  SettingsSection,
+} from '@/components/app/settings-section';
+import { Tag } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Dialog, DialogRoot } from '@/components/ui/dialog';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { EmptyState } from "@/components/ui/empty-state";
-import { Field } from "@/components/ui/field";
-import { ImageUpload } from "@/components/ui/image-upload";
-import { Input } from "@/components/ui/input";
-import { Skeleton } from "@/components/ui/skeleton";
-import { TabPanel, Tabs } from "@/components/ui/disclosure";
-import { useToast } from "@/components/ui/toast";
-import { api, type Member, type PendingInvite, type Team } from "@/lib/api";
-import { formatAge, formatTimestamp } from "@/lib/format";
-import { useActiveOrg } from "@/lib/hooks/use-active-org";
-import { useOrgScopedEffect } from "@/lib/hooks/use-org-scoped-effect";
-import { useSession, type SessionProfile } from "@/lib/hooks/use-session";
+} from '@/components/ui/dropdown-menu';
+import { EmptyState } from '@/components/ui/empty-state';
+import { Field } from '@/components/ui/field';
+import { ImageUpload } from '@/components/ui/image-upload';
+import { Input } from '@/components/ui/input';
+import { Skeleton } from '@/components/ui/skeleton';
+import { TabPanel, Tabs } from '@/components/ui/disclosure';
+import { useToast } from '@/components/ui/toast';
+import { api, type Member, type PendingInvite, type Team } from '@/lib/api';
+import { formatAge, formatTimestamp } from '@/lib/format';
+import { useActiveOrg } from '@/lib/hooks/use-active-org';
+import { useOrgScopedEffect } from '@/lib/hooks/use-org-scoped-effect';
+import { useSession, type SessionProfile } from '@/lib/hooks/use-session';
 
 /**
  * Managing this organisation and its team.
  *
- * A real page, not a dialog you navigate away from and lose your place in — this
+ * A real page, not a dialog you navigate away from and lose your place in - this
  * was a modal for one iteration and it read as a demotion of something that
  * deserves a proper screen: who's a member, what they can do, and the identity
  * calls introduce themselves with are all as consequential as anything in Settings.
@@ -46,7 +49,8 @@ export default function OrganisationPage() {
 function OrganisationPageContent() {
   const session = useSession();
   const searchParams = useSearchParams();
-  const initialTab = searchParams.get("tab") === "team" ? "team" : "organisation";
+  const initialTab =
+    searchParams.get('tab') === 'team' ? 'team' : 'organisation';
   const [tab, setTab] = useState(initialTab);
 
   return (
@@ -59,8 +63,8 @@ function OrganisationPageContent() {
           </SessionGate>
         </h1>
         <p className="measure text-small text-text-dim">
-          How this organisation introduces itself on every call, and who&apos;s allowed
-          inside it.
+          How this organisation introduces itself on every call, and who&apos;s
+          allowed inside it.
         </p>
       </div>
 
@@ -70,8 +74,8 @@ function OrganisationPageContent() {
             value={tab}
             onValueChange={setTab}
             tabs={[
-              { value: "organisation", label: "Organisation" },
-              { value: "team", label: "Team" },
+              { value: 'organisation', label: 'Organisation' },
+              { value: 'team', label: 'Team' },
             ]}
           >
             <TabPanel value="organisation" className="max-w-2xl pt-6">
@@ -109,8 +113,8 @@ function OrganisationPane({
   const [name, setName] = useState(profile.active.org_name);
   const [logoUrl, setLogoUrl] = useState(profile.active.org_logo_url);
 
-  const canUpdate = profile.permissions.includes("org:update");
-  const canDelete = profile.permissions.includes("org:delete");
+  const canUpdate = profile.permissions.includes('org:update');
+  const canDelete = profile.permissions.includes('org:delete');
 
   return (
     <div className="flex flex-col gap-4">
@@ -142,12 +146,18 @@ function OrganisationPane({
           </Field>
 
           <Field label="Organisation name">
-            <Input value={name} onChange={(e) => setName(e.target.value)} disabled={!canUpdate} />
+            <Input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              disabled={!canUpdate}
+            />
           </Field>
         </div>
       </SettingsSection>
 
-      {canDelete ? <DeleteOrgSection orgName={profile.active.org_name} /> : null}
+      {canDelete ? (
+        <DeleteOrgSection orgName={profile.active.org_name} />
+      ) : null}
     </div>
   );
 }
@@ -178,10 +188,10 @@ function SaveButton({
         logo_url: logoUrl && logoUrl !== initialLogoUrl ? logoUrl : undefined,
       });
       refresh();
-      toast({ tone: "success", title: "Organisation updated" });
+      toast({ tone: 'success', title: 'Organisation updated' });
     } catch (error) {
       toast({
-        tone: "error",
+        tone: 'error',
         title: "Couldn't save changes",
         body: error instanceof Error ? error.message : undefined,
       });
@@ -206,12 +216,20 @@ function DeleteOrgSection({ orgName }: { orgName: string }) {
         title="Delete this organisation"
         description="Removes everyone's access. Campaigns and runs made under it are gone for good."
         footer={
-          <Button variant="danger" size="sm" onClick={() => setConfirming(true)}>
+          <Button
+            variant="danger"
+            size="sm"
+            onClick={() => setConfirming(true)}
+          >
             Delete organisation
           </Button>
         }
       />
-      <DeleteOrgDialog open={confirming} onOpenChange={setConfirming} orgName={orgName} />
+      <DeleteOrgDialog
+        open={confirming}
+        onOpenChange={setConfirming}
+        orgName={orgName}
+      />
     </>
   );
 }
@@ -227,7 +245,7 @@ function DeleteOrgDialog({
 }) {
   const router = useRouter();
   const toast = useToast();
-  const [typed, setTyped] = useState("");
+  const [typed, setTyped] = useState('');
   const [deleting, setDeleting] = useState(false);
   const [, setActiveOrgId] = useActiveOrg();
 
@@ -235,14 +253,14 @@ function DeleteOrgDialog({
     setDeleting(true);
     try {
       await api.deleteActiveOrganisation();
-      setActiveOrgId("");
+      setActiveOrgId('');
       onOpenChange(false);
-      toast({ tone: "success", title: "Organisation deleted" });
-      router.replace("/app");
+      toast({ tone: 'success', title: 'Organisation deleted' });
+      router.replace('/app');
       router.refresh();
     } catch (error) {
       toast({
-        tone: "error",
+        tone: 'error',
         title: "Couldn't delete the organisation",
         body: error instanceof Error ? error.message : undefined,
       });
@@ -256,7 +274,7 @@ function DeleteOrgDialog({
       open={open}
       onOpenChange={(next) => {
         onOpenChange(next);
-        if (!next) setTyped("");
+        if (!next) setTyped('');
       }}
     >
       <Dialog
@@ -280,7 +298,11 @@ function DeleteOrgDialog({
         }
       >
         <Field label={`Type "${orgName}" to confirm`}>
-          <Input value={typed} onChange={(e) => setTyped(e.target.value)} autoFocus />
+          <Input
+            value={typed}
+            onChange={(e) => setTyped(e.target.value)}
+            autoFocus
+          />
         </Field>
       </Dialog>
     </DialogRoot>
@@ -297,7 +319,7 @@ function TeamPane({ profile }: { profile: SessionProfile }) {
     api
       .listMembers()
       .then(setTeam)
-      .catch(() => toast({ tone: "error", title: "Couldn't load the team" }))
+      .catch(() => toast({ tone: 'error', title: "Couldn't load the team" }))
       .finally(() => setLoading(false));
   }
 
@@ -305,9 +327,9 @@ function TeamPane({ profile }: { profile: SessionProfile }) {
     void load();
   });
 
-  const canInvite = profile.permissions.includes("team:invite");
-  const canRemove = profile.permissions.includes("team:remove");
-  const canSetRole = profile.permissions.includes("team:set_role");
+  const canInvite = profile.permissions.includes('team:invite');
+  const canRemove = profile.permissions.includes('team:remove');
+  const canSetRole = profile.permissions.includes('team:set_role');
 
   return (
     <div className="flex flex-col gap-4">
@@ -327,7 +349,8 @@ function TeamPane({ profile }: { profile: SessionProfile }) {
             <Skeleton className="h-10 w-full" />
             <Skeleton className="h-10 w-full" />
           </div>
-        ) : !team || (team.members.length === 0 && team.pending.length === 0) ? (
+        ) : !team ||
+          (team.members.length === 0 && team.pending.length === 0) ? (
           <EmptyState
             title="It's just you"
             body="Invite the people who triage escalations. Give them Operator, and reserve Admin for whoever manages billing and safety settings."
@@ -345,7 +368,12 @@ function TeamPane({ profile }: { profile: SessionProfile }) {
               />
             ))}
             {team.pending.map((invite) => (
-              <PendingRow key={invite.id} invite={invite} canRevoke={canInvite} onChanged={load} />
+              <PendingRow
+                key={invite.id}
+                invite={invite}
+                canRevoke={canInvite}
+                onChanged={load}
+              />
             ))}
           </ul>
         )}
@@ -362,10 +390,12 @@ function TeamPane({ profile }: { profile: SessionProfile }) {
               className="flex flex-wrap items-start justify-between gap-3 border-b border-rule py-3 last:border-0"
             >
               <div className="flex min-w-0 flex-col gap-0.5">
-                <span className="text-small font-medium text-text">{r.label}</span>
+                <span className="text-small font-medium text-text">
+                  {r.label}
+                </span>
                 <span className="text-small text-text-dim">{r.hint}</span>
               </div>
-              {r.value === "admin" ? <Tag>Billing &amp; safety</Tag> : null}
+              {r.value === 'admin' ? <Tag>Billing &amp; safety</Tag> : null}
             </li>
           ))}
         </ul>
@@ -373,11 +403,16 @@ function TeamPane({ profile }: { profile: SessionProfile }) {
 
       <NotWiredNotice>
         Owners get every permission, including deleting the organisation and
-        transferring ownership. There is no dedicated &ldquo;Owner&rdquo; row above because
-        it can&apos;t be granted here — it moves with the organisation.
+        transferring ownership. There is no dedicated &ldquo;Owner&rdquo; row
+        above because it can&apos;t be granted here - it moves with the
+        organisation.
       </NotWiredNotice>
 
-      <InviteDialog open={inviting} onOpenChange={setInviting} onInvited={load} />
+      <InviteDialog
+        open={inviting}
+        onOpenChange={setInviting}
+        onInvited={load}
+      />
     </div>
   );
 }
@@ -398,20 +433,20 @@ function MemberRow({
   const toast = useToast();
   const [busy, setBusy] = useState(false);
   const canAct = (canRemove || self) && !busy;
-  const isOwner = member.role === "owner";
+  const isOwner = member.role === 'owner';
 
   async function remove() {
     setBusy(true);
     try {
       await api.removeMember(member.user_id);
       toast({
-        tone: "success",
-        title: self ? "You left the organisation" : "Teammate removed",
+        tone: 'success',
+        title: self ? 'You left the organisation' : 'Teammate removed',
       });
       onChanged();
     } catch (error) {
       toast({
-        tone: "error",
+        tone: 'error',
         title: "Couldn't remove",
         body: error instanceof Error ? error.message : undefined,
       });
@@ -424,11 +459,11 @@ function MemberRow({
     setBusy(true);
     try {
       await api.setMemberRole(member.user_id, role);
-      toast({ tone: "success", title: "Role updated" });
+      toast({ tone: 'success', title: 'Role updated' });
       onChanged();
     } catch (error) {
       toast({
-        tone: "error",
+        tone: 'error',
         title: "Couldn't update the role",
         body: error instanceof Error ? error.message : undefined,
       });
@@ -442,9 +477,11 @@ function MemberRow({
       <div className="flex min-w-0 flex-col gap-0.5">
         <span className="truncate text-small font-medium text-text">
           {member.name?.trim() || member.email}
-          {self ? " (you)" : ""}
+          {self ? ' (you)' : ''}
         </span>
-        <span className="truncate text-small text-text-dim">{member.email}</span>
+        <span className="truncate text-small text-text-dim">
+          {member.email}
+        </span>
       </div>
       <div className="flex items-center gap-2">
         <Tag>{member.role}</Tag>
@@ -458,14 +495,17 @@ function MemberRow({
             <DropdownMenuContent align="end">
               {canSetRole && !self
                 ? ROLES.map((r) => (
-                    <DropdownMenuItem key={r.value} onSelect={() => setRole(r.value)}>
+                    <DropdownMenuItem
+                      key={r.value}
+                      onSelect={() => setRole(r.value)}
+                    >
                       Make {r.label}
                     </DropdownMenuItem>
                   ))
                 : null}
               {canRemove || self ? (
                 <DropdownMenuItem destructive onSelect={remove}>
-                  {self ? "Leave organisation" : "Remove"}
+                  {self ? 'Leave organisation' : 'Remove'}
                 </DropdownMenuItem>
               ) : null}
             </DropdownMenuContent>
@@ -492,10 +532,10 @@ function PendingRow({
     setRevoking(true);
     try {
       await api.revokeInvitation(invite.id);
-      toast({ tone: "info", title: "Invitation revoked" });
+      toast({ tone: 'info', title: 'Invitation revoked' });
       onChanged();
     } catch {
-      toast({ tone: "error", title: "Couldn't revoke the invitation" });
+      toast({ tone: 'error', title: "Couldn't revoke the invitation" });
     } finally {
       setRevoking(false);
     }
@@ -504,9 +544,12 @@ function PendingRow({
   return (
     <li className="flex flex-wrap items-center justify-between gap-3 py-3">
       <div className="flex min-w-0 flex-col gap-0.5">
-        <span className="truncate text-small font-medium text-text">{invite.email}</span>
+        <span className="truncate text-small font-medium text-text">
+          {invite.email}
+        </span>
         <span className="truncate text-small text-text-dim">
-          Invited {formatAge(invite.created_at)} · expires {formatTimestamp(invite.expires_at)}
+          Invited {formatAge(invite.created_at)} · expires{' '}
+          {formatTimestamp(invite.expires_at)}
         </span>
       </div>
       <div className="flex items-center gap-2">

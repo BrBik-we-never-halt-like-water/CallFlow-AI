@@ -1,45 +1,53 @@
-"use client";
+'use client';
 
-import { motion, useReducedMotion, useScroll, useTransform } from "framer-motion";
-import Link from "next/link";
-import { cn } from "@/lib/cn";
-import { Button } from "@/components/ui/button";
-import { Tag } from "@/components/ui/badge";
-import { Eyebrow } from "@/components/ui/panel";
-import { WaveCanvas } from "@/components/brand/wave-canvas";
-import { VoiceWave } from "./voice-wave";
-import { usePrefersReducedMotion, useTypewriter } from "@/lib/hooks/use-typewriter";
+import {
+  motion,
+  useReducedMotion,
+  useScroll,
+  useTransform,
+} from 'framer-motion';
+import Link from 'next/link';
+import { cn } from '@/lib/cn';
+import { Button } from '@/components/ui/button';
+import { Tag } from '@/components/ui/badge';
+import { Eyebrow } from '@/components/ui/panel';
+import { WaveCanvas } from '@/components/brand/wave-canvas';
+import { VoiceWave } from './voice-wave';
+import {
+  usePrefersReducedMotion,
+  useTypewriter,
+} from '@/lib/hooks/use-typewriter';
 
 /**
  * The hero pairs an argument with a proof.
  *
  * Left: the thesis and the two ways in. Right: a scripted call that plays once
  * on load. It starts as just the voice signal and the line being spoken; once
- * the line finishes, the card blooms open — expanding up and down from its
- * centre — to reveal the typed result. The bloom grows inside a reserved height,
+ * the line finishes, the card blooms open - expanding up and down from its
+ * centre - to reveal the typed result. The bloom grows inside a reserved height,
  * so the left column never moves.
  *
  * Under `prefers-reduced-motion` the whole card renders finished on first paint.
  */
 
-const DEFAULT_NAME = "Aditi";
+const DEFAULT_NAME = 'Aditi';
 
-/** The typed result the scripted run settles on — shown as labelled fields
+/** The typed result the scripted run settles on - shown as labelled fields
     rather than raw JSON, so the readout reads as data arriving, not a code
     dump. Categorical fields get a tag; plain facts stay text. */
 type ResultField = { label: string; value: string; tag?: boolean };
 const RESULT_FIELDS: ResultField[] = [
-  { label: "outcome", value: "interested", tag: true },
-  { label: "sentiment", value: "positive", tag: true },
-  { label: "destination", value: "Dubai" },
-  { label: "party size", value: "4" },
+  { label: 'outcome', value: 'interested', tag: true },
+  { label: 'sentiment', value: 'positive', tag: true },
+  { label: 'destination', value: 'Dubai' },
+  { label: 'party size', value: '4' },
 ];
 
-/** Shared easing for the bloom — a soft, water-like ease-out. */
+/** Shared easing for the bloom - a soft, water-like ease-out. */
 const EASE_OUT = [0.22, 1, 0.36, 1] as const;
 
 function spokenLine(name: string): string {
-  const who = name.trim() || "there";
+  const who = name.trim() || 'there';
   return `Hi ${who}, this is CallFlow calling about your holiday enquiry. Is now a good time?`;
 }
 
@@ -61,13 +69,13 @@ export function Hero() {
   const spokenProgress = SPOKEN.length
     ? Math.min(1, heard.output.length / SPOKEN.length)
     : 0;
-  // Only "speaking" once characters are actually landing — so the wave rests at
+  // Only "speaking" once characters are actually landing - so the wave rests at
   // its full shape during the wait, then sweeps as the line is spoken.
   const speaking = heard.output.length > 0 && !heard.done;
 
   return (
     <section className="relative overflow-hidden">
-      {/* A quiet draughtsman's grid, drifting a few pixels as the page scrolls —
+      {/* A quiet draughtsman's grid, drifting a few pixels as the page scrolls -
           the only parallax on the site, off under prefers-reduced-motion. */}
       <ParallaxGrid />
 
@@ -80,8 +88,8 @@ export function Hero() {
             </h1>
 
             <p className="measure text-body-l text-text-dim">
-              CallFlow dials your list, holds a real conversation, and returns typed
-              results. Only the calls that need a person reach one.
+              CallFlow dials your list, holds a real conversation, and returns
+              typed results. Only the calls that need a person reach one.
             </p>
 
             <div className="flex flex-wrap items-center gap-3 pt-1">
@@ -93,7 +101,7 @@ export function Hero() {
               </Button>
             </div>
 
-            {/* A quiet proof row — what the product does, in three beats. */}
+            {/* A quiet proof row - what the product does, in three beats. */}
             <div className="flex flex-wrap items-center gap-x-4 gap-y-2 pt-2 text-small text-text-mute">
               <span>Real conversations</span>
               <span aria-hidden className="h-3.5 w-px bg-rule" />
@@ -104,7 +112,7 @@ export function Hero() {
           </div>
 
           {/* ---- The proof: opens as the voice signal, then blooms into the
-                  typed result — expanding up and down from the centre so the
+                  typed result - expanding up and down from the centre so the
                   left column never moves. ------------------------------------ */}
           <div className="grid">
             {/* Invisible copy at final size: reserves the column height so the
@@ -116,7 +124,7 @@ export function Hero() {
               </CardShell>
             </div>
 
-            {/* The live card, centred in the reserved space — so added height
+            {/* The live card, centred in the reserved space - so added height
                 pushes its top up and its bottom down in equal measure. */}
             <div className="[grid-area:1/1] self-center">
               <CardShell>
@@ -149,9 +157,11 @@ function ParallaxGrid() {
   const { scrollY } = useScroll();
   const y = useTransform(scrollY, [0, 600], [0, 50]);
 
-  const band = <WaveCanvas pitch={10} className="h-full text-text opacity-40" />;
+  const band = (
+    <WaveCanvas pitch={10} className="h-full text-text opacity-40" />
+  );
   const cls =
-    "pointer-events-none absolute inset-x-0 top-0 h-64 [mask-image:linear-gradient(to_bottom,#000,transparent)] [-webkit-mask-image:linear-gradient(to_bottom,#000,transparent)]";
+    'pointer-events-none absolute inset-x-0 top-0 h-64 [mask-image:linear-gradient(to_bottom,#000,transparent)] [-webkit-mask-image:linear-gradient(to_bottom,#000,transparent)]';
 
   if (reduced) {
     return (
@@ -168,7 +178,13 @@ function ParallaxGrid() {
   );
 }
 
-function PanelBlock({ label, children }: { label: string; children: React.ReactNode }) {
+function PanelBlock({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
   return (
     <div className="flex flex-col gap-2.5">
       <Eyebrow>{label}</Eyebrow>
@@ -183,7 +199,9 @@ function PanelBlock({ label, children }: { label: string; children: React.ReactN
  * separated by air. Shared by the live card and the invisible sizer behind it.
  */
 function CardShell({ children }: { children: React.ReactNode }) {
-  return <div className="card-flow flex flex-col gap-6 p-6 sm:p-8">{children}</div>;
+  return (
+    <div className="card-flow flex flex-col gap-6 p-6 sm:p-8">{children}</div>
+  );
 }
 
 /**
@@ -216,11 +234,11 @@ function HeardBlock({
           </p>
           <p
             className={cn(
-              "absolute inset-0 text-body font-semibold text-text",
-              live && !done && "caret",
+              'absolute inset-0 text-body font-semibold text-text',
+              live && !done && 'caret',
             )}
           >
-            {output ? `“${output}${done ? "”" : ""}` : " "}
+            {output ? `“${output}${done ? '”' : ''}` : ' '}
           </p>
         </div>
       </div>
@@ -244,10 +262,16 @@ function ResultRow({ label, value, tag }: ResultField) {
 /**
  * Beat two: the typed fields the call returned, as labelled rows rather than raw
  * JSON. When `animate`, the block unfolds by height and opacity and the rows
- * arrive in sequence once `show` is true — the bloom that opens the card. The
+ * arrive in sequence once `show` is true - the bloom that opens the card. The
  * static form (no `animate`) is what the invisible sizer uses to reserve height.
  */
-function ResultBlock({ animate = false, show = true }: { animate?: boolean; show?: boolean }) {
+function ResultBlock({
+  animate = false,
+  show = true,
+}: {
+  animate?: boolean;
+  show?: boolean;
+}) {
   const header = <Eyebrow>What comes back</Eyebrow>;
 
   if (!animate) {
@@ -267,14 +291,16 @@ function ResultBlock({ animate = false, show = true }: { animate?: boolean; show
     <motion.div
       className="overflow-hidden"
       initial={{ height: 0, opacity: 0 }}
-      animate={{ height: show ? "auto" : 0, opacity: show ? 1 : 0 }}
+      animate={{ height: show ? 'auto' : 0, opacity: show ? 1 : 0 }}
       transition={{ duration: 0.5, ease: EASE_OUT }}
     >
       <motion.div
         className="flex flex-col gap-2.5"
         initial="hidden"
-        animate={show ? "show" : "hidden"}
-        variants={{ show: { transition: { staggerChildren: 0.07, delayChildren: 0.12 } } }}
+        animate={show ? 'show' : 'hidden'}
+        variants={{
+          show: { transition: { staggerChildren: 0.07, delayChildren: 0.12 } },
+        }}
       >
         {header}
         <div className="divide-y divide-rule">
@@ -283,7 +309,11 @@ function ResultBlock({ animate = false, show = true }: { animate?: boolean; show
               key={f.label}
               variants={{
                 hidden: { opacity: 0, y: 6 },
-                show: { opacity: 1, y: 0, transition: { duration: 0.3, ease: EASE_OUT } },
+                show: {
+                  opacity: 1,
+                  y: 0,
+                  transition: { duration: 0.3, ease: EASE_OUT },
+                },
               }}
             >
               <ResultRow {...f} />

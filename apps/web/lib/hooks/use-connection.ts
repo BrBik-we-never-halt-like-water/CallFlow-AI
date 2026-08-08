@@ -1,10 +1,10 @@
-"use client";
+'use client';
 
-import { useEffect, useState } from "react";
-import { api, type Campaign, type Health } from "@/lib/api";
-import { useOrgScopedEffect } from "@/lib/hooks/use-org-scoped-effect";
+import { useEffect, useState } from 'react';
+import { api, type Campaign, type Health } from '@/lib/api';
+import { useOrgScopedEffect } from '@/lib/hooks/use-org-scoped-effect';
 
-export type ConnectionPhase = "connecting" | "up" | "down";
+export type ConnectionPhase = 'connecting' | 'up' | 'down';
 
 export interface Connection {
   phase: ConnectionPhase;
@@ -20,17 +20,17 @@ const RETRY_DELAY_MS = 1500;
 /**
  * Establishes the connection to the service and loads what every app page needs.
  *
- * The service runs on an always-on VM, so there is no cold start to wait out — a
+ * The service runs on an always-on VM, so there is no cold start to wait out - a
  * failed request here means something is actually wrong, not asleep.
  */
 export function useConnection(): Connection {
-  const [phase, setPhase] = useState<ConnectionPhase>("connecting");
+  const [phase, setPhase] = useState<ConnectionPhase>('connecting');
   const [health, setHealth] = useState<Health | null>(null);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [healthNonce, setHealthNonce] = useState(0);
 
   // Campaigns are organisation-scoped, so this whole connect sequence re-runs on
-  // every org switch, not just on mount — otherwise switching orgs would keep
+  // every org switch, not just on mount - otherwise switching orgs would keep
   // showing the previous org's campaigns until a hard reload.
   useOrgScopedEffect(() => {
     let cancelled = false;
@@ -43,11 +43,15 @@ export function useConnection(): Connection {
       const nextCampaigns = await api.campaigns();
       if (cancelled) return;
       setCampaigns(nextCampaigns);
-      setPhase("up");
+      setPhase('up');
     }
 
     async function connect() {
-      for (let attempt = 0; attempt <= RETRY_ATTEMPTS && !cancelled; attempt++) {
+      for (
+        let attempt = 0;
+        attempt <= RETRY_ATTEMPTS && !cancelled;
+        attempt++
+      ) {
         try {
           await load();
           return;
@@ -59,7 +63,7 @@ export function useConnection(): Connection {
       }
 
       if (!cancelled) {
-        setPhase("down");
+        setPhase('down');
         setHealth(null);
       }
     }

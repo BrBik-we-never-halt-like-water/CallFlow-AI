@@ -1,27 +1,27 @@
-"use client";
+'use client';
 
-import { DotsThreeIcon } from "@phosphor-icons/react/dist/ssr";
-import Link from "next/link";
-import { LampStrip } from "@/components/brand/lamp-strip";
-import { Tag } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { DotsThreeIcon } from '@phosphor-icons/react/dist/ssr';
+import Link from 'next/link';
+import { LampStrip } from '@/components/brand/lamp-strip';
+import { Tag } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { Panel } from "@/components/ui/panel";
-import { Tooltip } from "@/components/ui/tooltip";
-import type { Campaign, Run } from "@/lib/api";
-import { formatTimestamp } from "@/lib/format";
-import { lampForOutcome, type LampSpec } from "@/lib/lamp";
+} from '@/components/ui/dropdown-menu';
+import { Panel } from '@/components/ui/panel';
+import { Tooltip } from '@/components/ui/tooltip';
+import type { Campaign, Run } from '@/lib/api';
+import { formatTimestamp } from '@/lib/format';
+import { lampForOutcome, type LampSpec } from '@/lib/lamp';
 
 /**
  * A campaign at a glance.
  *
  * The mini lamp strip shows how the last run of this campaign actually went, which is
- * the most useful thing a card can say about a campaign — a name and a goal tell you
+ * the most useful thing a card can say about a campaign - a name and a goal tell you
  * what it intends, and only the strip tells you whether it works.
  */
 export function CampaignCard({
@@ -43,20 +43,28 @@ export function CampaignCard({
       <div className="flex items-start justify-between gap-2">
         <div className="flex min-w-0 flex-col gap-1.5">
           <div className="flex flex-wrap items-center gap-2">
-            <h3 className="truncate text-h4 font-medium text-text">{campaign.name}</h3>
+            <h3 className="truncate text-h4 font-medium text-text">
+              {campaign.name}
+            </h3>
             {campaign.built_in ? (
               <Tooltip content="A starter template. Duplicate it to make changes.">
                 <Tag>Template</Tag>
               </Tooltip>
             ) : null}
           </div>
-          <p className="line-clamp-2 text-small text-text-dim">{campaign.goal_preview}</p>
+          <p className="line-clamp-2 text-small text-text-dim">
+            {campaign.goal_preview}
+          </p>
         </div>
 
         {/* Built-in templates have no destructive actions, because they cannot be
-            edited or deleted — offering the menu anyway would be a dead end. */}
+            edited or deleted - offering the menu anyway would be a dead end. */}
         {campaign.built_in ? (
-          <Button variant="ghost" size="sm" onClick={() => onDuplicate(campaign)}>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => onDuplicate(campaign)}
+          >
             Duplicate
           </Button>
         ) : (
@@ -111,13 +119,15 @@ export function CampaignCard({
 
         <div className="flex items-center justify-between gap-2">
           <span className="font-mono text-data text-text-mute">
-            {lastRun ? formatTimestamp(lastRun.started_at) : "—"}
+            {lastRun ? formatTimestamp(lastRun.started_at) : '-'}
           </span>
           <div className="flex items-center gap-1.5">
             {campaign.region ? <Tag>{campaign.region}</Tag> : null}
             {campaign.language ? <Tag>{campaign.language}</Tag> : null}
             <Button asChild size="sm">
-              <Link href={`/app/runs/new?campaign=${encodeURIComponent(campaign.id)}`}>
+              <Link
+                href={`/app/runs/new?campaign=${encodeURIComponent(campaign.id)}`}
+              >
                 Run
               </Link>
             </Button>

@@ -130,7 +130,7 @@ async def test_non_engine_exception_still_fails_closed() -> None:
 
     assert result.disposition is Disposition.UNREACHABLE
     assert result.error == "internal"
-    # The raw exception string must never reach a user-facing field — only the
+    # The raw exception string must never reach a user-facing field - only the
     # server log (log.exception, not asserted here) gets the real detail.
     assert "dns lookup failed" not in (result.disposition_reason or "")
 
@@ -201,8 +201,8 @@ async def test_run_processes_every_contact() -> None:
 
 
 async def test_progress_hook_fires_per_contact() -> None:
-    """Each contact fires at least once — a "dialing" event, then the resolved
-    outcome — and always in contact order, never interleaved."""
+    """Each contact fires at least once - a "dialing" event, then the resolved
+    outcome - and always in contact order, never interleaved."""
     seen: list[str] = []
     runner = CampaignRunner(gateway=FakeGateway())  # type: ignore[arg-type]
 
@@ -240,7 +240,7 @@ def _attempt(
     *,
     started_at: str | None = None,
 ) -> dict[str, Any]:
-    """A `CallTaskAttempt`-shaped fixture — every field the generated SDK
+    """A `CallTaskAttempt`-shaped fixture - every field the generated SDK
     model has, not just the ones today's assertions read, so a fixture that
     claims to match the real shape actually does."""
     return {
@@ -258,7 +258,7 @@ def _attempt(
 
 
 def test_extract_transcript_reads_nested_turns_from_recipients_attempts() -> None:
-    # The real, confirmed shape: recipients[N].attempts[M].transcript_turns[] —
+    # The real, confirmed shape: recipients[N].attempts[M].transcript_turns[] -
     # not a top-level `transcript` key, which is what the old (wrong) code checked.
     call = {
         "status": "completed",
@@ -332,8 +332,8 @@ def test_extract_transcript_uses_the_first_recipient_in_a_batch() -> None:
 
 def test_final_attempt_prefers_an_earlier_attempt_with_turns_over_an_empty_completed_one() -> None:
     """Reviewer-found gap: the last (and only completed) attempt has no
-    transcript_turns at all — a real, permitted shape per the model's own
-    docstring ("empty when no transcript is available") — while an earlier
+    transcript_turns at all - a real, permitted shape per the model's own
+    docstring ("empty when no transcript is available") - while an earlier
     failed attempt actually captured part of the conversation. Picking by
     status alone would return the empty one and silently lose that transcript,
     reproducing this fix's own symptom through a different path."""
@@ -376,7 +376,7 @@ def test_final_attempt_prefers_an_earlier_attempt_with_turns_when_none_completed
 
 def test_final_attempt_orders_by_started_at_not_array_position() -> None:
     """The model doesn't document `attempts` as chronologically ordered, so
-    array position alone isn't a safe proxy for "most recent" — `started_at`
+    array position alone isn't a safe proxy for "most recent" - `started_at`
     is. Here the truly later attempt (by timestamp) is placed first in the
     list; the earlier one, placed last, must still lose."""
     call = {
@@ -508,7 +508,7 @@ async def test_previously_unretryable_poll_codes_no_longer_fail_a_completing_cal
     """`internal_error`, `not_found` (the classic read-after-write race right
     after creation), and `call_not_ready` (literally "not ready yet, check
     again") all fall through classify_error's unmapped-code default to
-    DialFailure.INTERNAL — which the dial-time `_RETRYABLE_FAILURES` set
+    DialFailure.INTERNAL - which the dial-time `_RETRYABLE_FAILURES` set
     excludes on purpose. A GET poll is a different question: none of these
     three should abandon a call that goes on to complete successfully."""
     from app.integrations.voice.engine import EngineAPIError
@@ -540,11 +540,11 @@ async def test_previously_unretryable_poll_codes_no_longer_fail_a_completing_cal
 async def test_repeated_transient_poll_failures_eventually_time_out_as_retryable(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A connection that never recovers must not retry forever — it's bounded
+    """A connection that never recovers must not retry forever - it's bounded
     by the existing overall poll deadline, and ends up in the same RETRY
     bucket as any other poll timeout, not a hard failure. A small positive
     timeout (rather than 0) is used so the loop actually runs several
-    iterations — and therefore several retries — before the deadline hits,
+    iterations - and therefore several retries - before the deadline hits,
     proving the retry path is bounded rather than skipped altogether."""
     import dataclasses
 

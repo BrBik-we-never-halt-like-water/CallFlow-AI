@@ -20,7 +20,7 @@ JWKS_FETCH_TIMEOUT_SECONDS = 5
 
 # Tolerance for clock drift between this host and the auth server. Without it a
 # token whose `iat` is a second ahead of our clock is rejected as immature, which
-# is a real failure mode on any host that is not tightly NTP-synced — and it
+# is a real failure mode on any host that is not tightly NTP-synced - and it
 # presents as "valid credentials rejected", which is miserable to diagnose.
 # Applies to exp as well, so it is kept small.
 CLOCK_SKEW_LEEWAY = timedelta(seconds=30)
@@ -46,7 +46,7 @@ class TokenVerifier:
     verify against the project's public JWKS and the API holds no shared secret.
     Legacy HS256 projects fall back to SUPABASE_JWT_SECRET.
 
-    Audience and issuer are checked, not just the signature — a validly-signed token
+    Audience and issuer are checked, not just the signature - a validly-signed token
     from a different Supabase project must still be rejected.
     """
 

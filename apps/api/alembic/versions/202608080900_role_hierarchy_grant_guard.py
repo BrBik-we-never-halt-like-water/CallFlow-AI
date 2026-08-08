@@ -3,34 +3,34 @@
 Closes a privilege-escalation hole (found by the R5 audit): `PATCH
 /api/v1/organisations/me/members/{id}` and `POST
 /api/v1/organisations/me/invitations` were guarded only by
-`Permission.TEAM_SET_ROLE`/`TEAM_INVITE`, which Admin already holds — same as
+`Permission.TEAM_SET_ROLE`/`TEAM_INVITE`, which Admin already holds - same as
 Owner. Neither the API nor RLS checked *which* role was being granted, so an
 Admin could set their own role to `owner`, or invite a new email straight into
 `owner`, then use that to demote or remove the original owner (the last-owner
-guard only blocks removing the *last* owner, not a non-last one) — full
+guard only blocks removing the *last* owner, not a non-last one) - full
 account takeover from an Admin seat.
 
 This is the RLS half of the fix. `app/auth/permissions.py`
 (`can_grant_role()`) and `app/api/v1/routes/organisations.py`
 (`_ensure_can_grant()`) add the same check at the API layer, which is where a
-normal request is actually stopped — this migration is defense-in-depth per
+normal request is actually stopped - this migration is defense-in-depth per
 CLAUDE.md §4b's stated model of an API check *and* an RLS check, neither
 alone.
 
 `public.can_grant_role()` mirrors the Python function of the same name: Owner
-may grant any role, including owner itself — that's how ownership transfers.
+may grant any role, including owner itself - that's how ownership transfers.
 Every other role may only grant a role strictly below its own, so Admin gets
 operator/viewer only, never admin or owner, not even to itself.
 `public.current_org_role()` is a new `SECURITY DEFINER` helper, alongside the
 existing `has_org_role`, that returns the caller's own role in an organisation
-rather than a boolean — needed here to compare ranks instead of just testing
+rather than a boolean - needed here to compare ranks instead of just testing
 set membership.
 
 Three write paths get the check added to their `WITH CHECK`:
 
-* `memberships_update` — an owner/admin editing an existing row directly.
-* `memberships_insert`'s owner/admin branch — inserting one directly.
-* `invitations_insert` — creating the pending invite that an acceptance later
+* `memberships_update` - an owner/admin editing an existing row directly.
+* `memberships_insert`'s owner/admin branch - inserting one directly.
+* `invitations_insert` - creating the pending invite that an acceptance later
   turns into a membership row via `has_valid_invitation`. Gating this is what
   actually closes the invite-to-owner path: `has_valid_invitation` only checks
   that the invitation's role matches, not who was allowed to set that role in
@@ -53,8 +53,8 @@ branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 
-# Not security definer and touches no table, so — like `is_free_email_domain`/
-# `slugify` — no pinned search_path is needed; only definer functions carry
+# Not security definer and touches no table, so - like `is_free_email_domain`/
+# `slugify` - no pinned search_path is needed; only definer functions carry
 # that risk.
 RANK_AND_GRANT_HELPERS = """
 create or replace function public.org_role_rank(role public.org_role)

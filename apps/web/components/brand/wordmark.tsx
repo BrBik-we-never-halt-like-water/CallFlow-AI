@@ -1,19 +1,21 @@
-import { cn } from "@/lib/cn";
-import { Mark } from "./mark";
+import { cn } from '@/lib/cn';
+import { Mark } from './mark';
 
 /**
  * The wordmark: `CallFlow` in the display face, then `AI` in mono at 0.55em with
  * wide tracking, baseline-aligned and dimmed.
  *
  * Set as live text rather than inline SVG paths. The design calls for Archivo
- * Expanded 600 and JetBrains Mono 500 — both already loaded — and real text
+ * Expanded 600 and JetBrains Mono 500 - both already loaded - and real text
  * scales with the type system, stays selectable, gets read correctly by a screen
  * reader, and inherits `currentColor` for free. Outlining it to SVG would buy
  * nothing and lose all four.
  */
 export function Wordmark({ className }: { className?: string }) {
   return (
-    <span className={cn("inline-flex items-baseline whitespace-nowrap", className)}>
+    <span
+      className={cn('inline-flex items-baseline whitespace-nowrap', className)}
+    >
       <span className="font-display text-[1.0625em] leading-none tracking-[-0.02em]">
         CallFlow
       </span>
@@ -42,7 +44,7 @@ export function BrandLockup({
   markClassName?: string;
 }) {
   return (
-    <span className={cn("inline-flex items-center gap-2.5", className)}>
+    <span className={cn('inline-flex items-center gap-2.5', className)}>
       <Mark title={null} className={markClassName} />
       <Wordmark />
     </span>

@@ -1,9 +1,9 @@
-"use client";
+'use client';
 
-import { CheckIcon } from "@phosphor-icons/react/dist/ssr";
-import { cn } from "@/lib/cn";
-import { Lamp } from "@/components/brand/lamp";
-import type { LampState } from "@/lib/lamp";
+import { CheckIcon } from '@phosphor-icons/react/dist/ssr';
+import { cn } from '@/lib/cn';
+import { Lamp } from '@/components/brand/lamp';
+import type { LampState } from '@/lib/lamp';
 
 export interface PasswordRule {
   label: string;
@@ -11,15 +11,15 @@ export interface PasswordRule {
 }
 
 /**
- * Requirements are listed upfront and tick off as they are satisfied — never revealed
+ * Requirements are listed upfront and tick off as they are satisfied - never revealed
  * only on failure. Someone should be able to write a valid password on the first
  * attempt, which means telling them the rules before they type, not after.
  */
 export const PASSWORD_RULES: PasswordRule[] = [
-  { label: "At least 12 characters", test: (v) => v.length >= 12 },
-  { label: "One capital letter", test: (v) => /[A-Z]/.test(v) },
-  { label: "One number", test: (v) => /\d/.test(v) },
-  { label: "One symbol", test: (v) => /[^A-Za-z0-9]/.test(v) },
+  { label: 'At least 12 characters', test: (v) => v.length >= 12 },
+  { label: 'One capital letter', test: (v) => /[A-Z]/.test(v) },
+  { label: 'One number', test: (v) => /\d/.test(v) },
+  { label: 'One symbol', test: (v) => /[^A-Za-z0-9]/.test(v) },
 ];
 
 export function passwordScore(value: string): number {
@@ -31,7 +31,7 @@ export function isPasswordValid(value: string): boolean {
 }
 
 /** Four segments, four rules. The strip is the meter. */
-const SEGMENT_STATE: LampState[] = ["flare", "brass", "brass", "jade"];
+const SEGMENT_STATE: LampState[] = ['flare', 'brass', 'brass', 'jade'];
 
 export function PasswordStrength({
   value,
@@ -43,13 +43,13 @@ export function PasswordStrength({
   const score = passwordScore(value);
   const label =
     score === 0
-      ? "No requirements met yet"
+      ? 'No requirements met yet'
       : score === PASSWORD_RULES.length
-        ? "Strong"
+        ? 'Strong'
         : `${score} of ${PASSWORD_RULES.length} requirements met`;
 
   return (
-    <div className={cn("flex flex-col gap-2", className)}>
+    <div className={cn('flex flex-col gap-2', className)}>
       <div className="flex items-center gap-2">
         <div
           role="img"
@@ -61,7 +61,7 @@ export function PasswordStrength({
               key={i}
               // Every lit segment takes the colour of the level reached, so the strip
               // reads as one meter rather than four independent lamps.
-              state={i < score ? SEGMENT_STATE[score - 1] : "off"}
+              state={i < score ? SEGMENT_STATE[score - 1] : 'off'}
               size="sm"
             />
           ))}
@@ -76,8 +76,8 @@ export function PasswordStrength({
             <li
               key={rule.label}
               className={cn(
-                "flex items-center gap-1.5 text-small",
-                met ? "text-lamp-jade-text" : "text-text-mute",
+                'flex items-center gap-1.5 text-small',
+                met ? 'text-lamp-jade-text' : 'text-text-mute',
               )}
             >
               {met ? (
@@ -88,7 +88,9 @@ export function PasswordStrength({
                 </span>
               )}
               {rule.label}
-              <span className="sr-only">{met ? " — met" : " — not yet met"}</span>
+              <span className="sr-only">
+                {met ? ' - met' : ' - not yet met'}
+              </span>
             </li>
           );
         })}

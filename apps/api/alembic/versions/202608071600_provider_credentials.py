@@ -7,11 +7,11 @@ Token) rather than OAuth, so this is a simple encrypted-credential store, not an
 OAuth connection flow.
 
 `identifier` and `secret` are stored Fernet-encrypted (`app/core/crypto.py`),
-using `PROVIDER_CREDENTIALS_KEY` — a key that lives only in this process's
+using `PROVIDER_CREDENTIALS_KEY` - a key that lives only in this process's
 environment, the same sensitivity class as `SUPABASE_SECRET_KEY`. Unlike an API
 key, this can't just be a hash: the value has to be read back in plaintext to
 authenticate with the vendor when a call is actually placed over the org's own
-number (voice-agent platform work, not part of this change) — encryption, not
+number (voice-agent platform work, not part of this change) - encryption, not
 hashing, is the right primitive for a value that must be recoverable.
 
 One credential set per org per provider (`unique(org_id, provider)`); saving

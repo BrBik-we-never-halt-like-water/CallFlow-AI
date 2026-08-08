@@ -1,5 +1,5 @@
 /**
- * Lamp semantics — the mapping from what happened on a call to which lamp
+ * Lamp semantics - the mapping from what happened on a call to which lamp
  * lights.
  *
  * This mapping is the product's core promise made mechanical: in a normal call
@@ -12,16 +12,16 @@
  * headings, borders, hovers, or decoration.
  */
 
-import type { Disposition, Outcome } from "./api";
+import type { Disposition, Outcome } from './api';
 
-export type LampState = "off" | "ice" | "brass" | "jade" | "flare";
+export type LampState = 'off' | 'ice' | 'brass' | 'jade' | 'flare';
 
 export interface LampSpec {
   state: LampState;
   /**
    * A slow pulse for a state that is still moving: a run that hasn't
    * finished, or a call queued for retry. A settled or idle state never
-   * pulses — the animation itself is the claim that something is happening.
+   * pulses - the animation itself is the claim that something is happening.
    */
   pulse?: boolean;
   /** Human label. Always present, because colour is never the only carrier. */
@@ -31,13 +31,13 @@ export interface LampSpec {
 }
 
 export const LAMP_LABELS: Record<LampState, string> = {
-  // Not currently assigned by any disposition — reserved for a future
+  // Not currently assigned by any disposition - reserved for a future
   // "scheduled, not yet dialling" state rather than retired outright.
-  off: "Queued",
-  ice: "Scheduled",
-  brass: "In conversation",
-  jade: "Closed",
-  flare: "Needs a person",
+  off: 'Queued',
+  ice: 'Scheduled',
+  brass: 'In conversation',
+  jade: 'Closed',
+  flare: 'Needs a person',
 };
 
 /** Which lamp a settled outcome gets. */
@@ -47,30 +47,30 @@ export function lampForOutcome(outcome: Outcome): LampSpec {
 
 export function lampForDisposition(disposition: Disposition): LampSpec {
   switch (disposition) {
-    case "in_flight":
-      return { state: "brass", label: "In conversation" };
-    case "auto_closed":
-      return { state: "jade", label: "Auto-closed — clean outcome" };
-    case "escalated":
-      return { state: "flare", label: "Needs a person" };
-    case "retry":
-      return { state: "brass", pulse: true, label: "Queued for retry" };
-    case "unreachable":
-      return { state: "flare", label: "Couldn't be reached" };
-    case "skipped":
-      return { state: "off", label: "Skipped by a safety guard" };
+    case 'in_flight':
+      return { state: 'brass', label: 'In conversation' };
+    case 'auto_closed':
+      return { state: 'jade', label: 'Auto-closed - clean outcome' };
+    case 'escalated':
+      return { state: 'flare', label: 'Needs a person' };
+    case 'retry':
+      return { state: 'brass', pulse: true, label: 'Queued for retry' };
+    case 'unreachable':
+      return { state: 'flare', label: "Couldn't be reached" };
+    case 'skipped':
+      return { state: 'off', label: 'Skipped by a safety guard' };
     default:
-      return { state: "off", label: "Queued" };
+      return { state: 'off', label: 'Queued' };
   }
 }
 
-/** A run's own batch-level status — distinct from any one call's disposition. */
-export type RunStatus = "running" | "completed" | "failed";
+/** A run's own batch-level status - distinct from any one call's disposition. */
+export type RunStatus = 'running' | 'completed' | 'failed';
 
 const RUN_STATUS_LABELS: Record<RunStatus, string> = {
-  running: "Running",
-  completed: "Completed",
-  failed: "Failed",
+  running: 'Running',
+  completed: 'Completed',
+  failed: 'Failed',
 };
 
 /**
@@ -80,18 +80,18 @@ const RUN_STATUS_LABELS: Record<RunStatus, string> = {
  */
 export function lampForRunStatus(status: RunStatus): LampSpec {
   switch (status) {
-    case "running":
-      return { state: "brass", pulse: true, label: RUN_STATUS_LABELS.running };
-    case "failed":
-      return { state: "flare", label: RUN_STATUS_LABELS.failed };
-    case "completed":
-      return { state: "jade", label: RUN_STATUS_LABELS.completed };
+    case 'running':
+      return { state: 'brass', pulse: true, label: RUN_STATUS_LABELS.running };
+    case 'failed':
+      return { state: 'flare', label: RUN_STATUS_LABELS.failed };
+    case 'completed':
+      return { state: 'jade', label: RUN_STATUS_LABELS.completed };
   }
 }
 
 /**
  * Build the strip for a run: one lamp per contact, settled results first, then
- * dim lamps for everything still queued. The strip is the progress indicator —
+ * dim lamps for everything still queued. The strip is the progress indicator -
  * there is no progress bar anywhere in this product.
  */
 export function stripForRun(outcomes: Outcome[], total: number): LampSpec[] {
@@ -99,7 +99,10 @@ export function stripForRun(outcomes: Outcome[], total: number): LampSpec[] {
   const queued = Math.max(0, total - settled.length);
   return [
     ...settled,
-    ...Array.from({ length: queued }, () => ({ state: "off" as const, label: "Queued" })),
+    ...Array.from({ length: queued }, () => ({
+      state: 'off' as const,
+      label: 'Queued',
+    })),
   ];
 }
 
@@ -123,10 +126,10 @@ export function countLamps(lamps: LampSpec[]): LampCounts {
   };
 
   for (const lamp of lamps) {
-    if (lamp.state === "off") counts.queued += 1;
-    else if (lamp.state === "jade") counts.closed += 1;
-    else if (lamp.state === "flare") counts.needsPerson += 1;
-    else if (lamp.state === "brass" && lamp.pulse) counts.retry += 1;
+    if (lamp.state === 'off') counts.queued += 1;
+    else if (lamp.state === 'jade') counts.closed += 1;
+    else if (lamp.state === 'flare') counts.needsPerson += 1;
+    else if (lamp.state === 'brass' && lamp.pulse) counts.retry += 1;
   }
 
   counts.settled = counts.total - counts.queued;
@@ -136,7 +139,7 @@ export function countLamps(lamps: LampSpec[]): LampCounts {
 /**
  * One summarising sentence for the whole strip.
  *
- * A screen reader gets this, not twenty individual lamp labels — the strip is a
+ * A screen reader gets this, not twenty individual lamp labels - the strip is a
  * single piece of information, and reading it out lamp by lamp would make it
  * unusable.
  */
@@ -148,7 +151,7 @@ export function describeStrip(lamps: LampSpec[]): string {
   if (c.needsPerson) parts.push(`${c.needsPerson} need a person`);
   if (c.queued) parts.push(`${c.queued} not yet dialled`);
 
-  const noun = c.total === 1 ? "call" : "calls";
+  const noun = c.total === 1 ? 'call' : 'calls';
   if (parts.length === 0) return `${c.total} ${noun}`;
-  return `${c.total} ${noun}: ${parts.join(", ")}`;
+  return `${c.total} ${noun}: ${parts.join(', ')}`;
 }

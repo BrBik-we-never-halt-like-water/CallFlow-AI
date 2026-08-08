@@ -2,7 +2,7 @@
 
 Kept separate from the transport so the markup can be read and changed without
 touching the HTTP client, and so nothing here forgets to escape a user-controlled
-string — `org_name` is free text a person typed into Settings, not something this
+string - `org_name` is free text a person typed into Settings, not something this
 module can trust.
 
 Table-based layout with inline styles throughout: most email clients strip
@@ -41,7 +41,7 @@ def invitation_email(*, org_name: str, role: str, accept_url: str) -> tuple[str,
     role_hint = escape(_ROLE_HINT.get(role, "access to the organisation"))
     article = "an" if role[:1].lower() in "aeiou" else "a"
 
-    # The subject is a plain-text field, not HTML — html.escape() would make an
+    # The subject is a plain-text field, not HTML - html.escape() would make an
     # ordinary apostrophe in an org name show up as a literal "&#x27;" in the
     # recipient's inbox, a worse and more visible bug than the one being
     # guarded against here. Strip line breaks instead, so a multi-line org name

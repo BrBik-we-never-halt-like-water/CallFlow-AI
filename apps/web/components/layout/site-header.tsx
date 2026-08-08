@@ -1,49 +1,66 @@
-"use client";
+'use client';
 
-import * as RadixPopover from "@radix-ui/react-popover";
-import * as RadixDialog from "@radix-ui/react-dialog";
-import { CaretDownIcon, CaretRightIcon, ListIcon, XIcon } from "@phosphor-icons/react/dist/ssr";
-import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
-import { cn } from "@/lib/cn";
-import { BrandLockup } from "@/components/brand/wordmark";
-import { Button } from "@/components/ui/button";
+import * as RadixPopover from '@radix-ui/react-popover';
+import * as RadixDialog from '@radix-ui/react-dialog';
+import {
+  CaretDownIcon,
+  CaretRightIcon,
+  ListIcon,
+  XIcon,
+} from '@phosphor-icons/react/dist/ssr';
+import Link from 'next/link';
+import { useEffect, useRef, useState } from 'react';
+import { cn } from '@/lib/cn';
+import { BrandLockup } from '@/components/brand/wordmark';
+import { Button } from '@/components/ui/button';
 
 const PRODUCT_LINKS = [
-  { label: "How it works", href: "/#how-it-works", hint: "Four steps, spreadsheet to queue" },
-  { label: "Typed results", href: "/#capabilities", hint: "Schema-validated, not transcripts" },
-  { label: "Safety guards", href: "/#safety", hint: "Every guard fails closed" },
-  { label: "Docs", href: "/docs", hint: "Goals, schemas, webhooks" },
-  { label: "Changelog", href: "/docs/changelog", hint: "What shipped, when" },
+  {
+    label: 'How it works',
+    href: '/#how-it-works',
+    hint: 'Four steps, spreadsheet to queue',
+  },
+  {
+    label: 'Typed results',
+    href: '/#capabilities',
+    hint: 'Schema-validated, not transcripts',
+  },
+  {
+    label: 'Safety guards',
+    href: '/#safety',
+    hint: 'Every guard fails closed',
+  },
+  { label: 'Docs', href: '/docs', hint: 'Goals, schemas, webhooks' },
+  { label: 'Changelog', href: '/docs/changelog', hint: 'What shipped, when' },
 ];
 
 const SOLUTION_LINKS = [
   {
-    label: "Recruiting screening",
-    href: "/solutions/recruiting-screening",
-    hint: "Screen a shortlist overnight",
+    label: 'Recruiting screening',
+    href: '/solutions/recruiting-screening',
+    hint: 'Screen a shortlist overnight',
   },
   {
-    label: "Appointment recovery",
-    href: "/solutions/appointment-recovery",
-    hint: "Fill the slots that went quiet",
+    label: 'Appointment recovery',
+    href: '/solutions/appointment-recovery',
+    hint: 'Fill the slots that went quiet',
   },
   {
-    label: "Admissions follow-up",
-    href: "/solutions/admissions-followup",
-    hint: "Reach every enquiry once",
+    label: 'Admissions follow-up',
+    href: '/solutions/admissions-followup',
+    hint: 'Reach every enquiry once',
   },
   {
-    label: "Lead qualification",
-    href: "/solutions/lead-qualification",
-    hint: "Only talk to the ones worth talking to",
+    label: 'Lead qualification',
+    href: '/solutions/lead-qualification',
+    hint: 'Only talk to the ones worth talking to',
   },
 ];
 
 const FLAT_LINKS = [
-  { label: "Pricing", href: "/pricing" },
-  { label: "Docs", href: "/docs" },
-  { label: "Trust", href: "/trust" },
+  { label: 'Pricing', href: '/pricing' },
+  { label: 'Docs', href: '/docs' },
+  { label: 'Trust', href: '/trust' },
 ];
 
 export function SiteHeader() {
@@ -54,8 +71,8 @@ export function SiteHeader() {
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 24);
     onScroll();
-    window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
   }, []);
 
   // One open-menu at a time, owned here rather than per-menu: hovering Solutions
@@ -84,8 +101,8 @@ export function SiteHeader() {
     // leave close the menu the pointer is now sitting on. Whichever menu part is
     // actually hovered wins; if none is, the menus close.
     closeTimer.current = setTimeout(() => {
-      const hovered = document.querySelector("[data-menu]:hover");
-      setOpenMenu(hovered ? hovered.getAttribute("data-menu") : null);
+      const hovered = document.querySelector('[data-menu]:hover');
+      setOpenMenu(hovered ? hovered.getAttribute('data-menu') : null);
     }, 140);
   };
   useEffect(() => cancelClose, []);
@@ -93,13 +110,13 @@ export function SiteHeader() {
   return (
     <header
       className={cn(
-        "sticky top-0 z-40 h-16 border-b bg-surface",
-        "transition-[border-color,box-shadow] duration-(--dur-base) ease-(--ease-out)",
+        'sticky top-0 z-40 h-16 border-b bg-surface',
+        'transition-[border-color,box-shadow] duration-(--dur-base) ease-(--ease-out)',
         // Solid, not frosted: the page and the header share --surface, so at the
         // top the header reads as flush with the hero. On scroll a hairline and a
-        // soft shadow ease in to lift it above the content passing underneath —
+        // soft shadow ease in to lift it above the content passing underneath -
         // an opaque bar never lets text ghost through the way a translucent one does.
-        scrolled ? "border-rule shadow-sm" : "border-transparent",
+        scrolled ? 'border-rule shadow-sm' : 'border-transparent',
       )}
     >
       <div className="mx-auto flex h-full max-w-(--container-marketing) items-center justify-between gap-4 px-4 sm:px-6">
@@ -115,18 +132,22 @@ export function SiteHeader() {
           <MegaMenu
             label="Product"
             links={PRODUCT_LINKS}
-            open={openMenu === "Product"}
-            onOpen={() => openMenuNow("Product")}
+            open={openMenu === 'Product'}
+            onOpen={() => openMenuNow('Product')}
             onScheduleClose={scheduleClose}
-            onOpenChange={(next) => (next ? openMenuNow("Product") : scheduleClose())}
+            onOpenChange={(next) =>
+              next ? openMenuNow('Product') : scheduleClose()
+            }
           />
           <MegaMenu
             label="Solutions"
             links={SOLUTION_LINKS}
-            open={openMenu === "Solutions"}
-            onOpen={() => openMenuNow("Solutions")}
+            open={openMenu === 'Solutions'}
+            onOpen={() => openMenuNow('Solutions')}
             onScheduleClose={scheduleClose}
-            onOpenChange={(next) => (next ? openMenuNow("Solutions") : scheduleClose())}
+            onOpenChange={(next) =>
+              next ? openMenuNow('Solutions') : scheduleClose()
+            }
           />
           {FLAT_LINKS.map((link) => (
             <Link
@@ -140,7 +161,12 @@ export function SiteHeader() {
         </nav>
 
         <div className="flex items-center gap-2">
-          <Button asChild variant="ghost" size="sm" className="hidden sm:inline-flex">
+          <Button
+            asChild
+            variant="ghost"
+            size="sm"
+            className="hidden sm:inline-flex"
+          >
             <Link href="/login">Sign in</Link>
           </Button>
           <Button asChild size="sm">
@@ -155,7 +181,7 @@ export function SiteHeader() {
 
 /**
  * A single-column dropdown: label + one line of context per link, with a caret
- * that slides in on hover. Deliberately just the links — the panel is a way to
+ * that slides in on hover. Deliberately just the links - the panel is a way to
  * reach a page, not a place to make the argument twice.
  */
 function MegaMenu({
@@ -170,9 +196,9 @@ function MegaMenu({
   links: { label: string; href: string; hint: string }[];
   /** Controlled by SiteHeader so only one menu is ever open. */
   open: boolean;
-  /** Pointer entered the trigger or panel — open now, cancelling any close. */
+  /** Pointer entered the trigger or panel - open now, cancelling any close. */
   onOpen: () => void;
-  /** Pointer left — start the grace timer before closing. */
+  /** Pointer left - start the grace timer before closing. */
   onScheduleClose: () => void;
   /** Radix's own open/close (click, Escape, outside-click, keyboard). */
   onOpenChange: (open: boolean) => void;
@@ -209,7 +235,7 @@ function MegaMenu({
           // Don't yank focus/scroll when the menu opens under the pointer;
           // keyboard users still Tab straight into the links.
           onOpenAutoFocus={(e) => e.preventDefault()}
-          // Don't return focus to the trigger on close either — otherwise a
+          // Don't return focus to the trigger on close either - otherwise a
           // hover-opened menu leaves a focus-ring box sitting on the trigger
           // after the pointer moves away.
           onCloseAutoFocus={(e) => e.preventDefault()}
@@ -224,8 +250,12 @@ function MegaMenu({
                     className="group/row flex items-center justify-between gap-3 rounded-md px-3 py-2.5 transition-colors duration-(--dur-micro) hover:bg-surface-hover"
                   >
                     <span className="flex min-w-0 flex-col gap-0.5">
-                      <span className="text-small font-medium text-text">{link.label}</span>
-                      <span className="text-small text-text-mute">{link.hint}</span>
+                      <span className="text-small font-medium text-text">
+                        {link.label}
+                      </span>
+                      <span className="text-small text-text-mute">
+                        {link.hint}
+                      </span>
                     </span>
                     <CaretRightIcon
                       aria-hidden
@@ -248,7 +278,7 @@ function MobileNav() {
   const all = [
     ...PRODUCT_LINKS.map((l) => l),
     ...SOLUTION_LINKS.map((l) => l),
-    ...FLAT_LINKS.map((l) => ({ ...l, hint: "" })),
+    ...FLAT_LINKS.map((l) => ({ ...l, hint: '' })),
   ];
 
   return (
@@ -277,7 +307,10 @@ function MobileNav() {
             </RadixDialog.Close>
           </div>
 
-          <nav aria-label="Main" className="min-h-0 flex-1 overflow-y-auto px-4 py-6">
+          <nav
+            aria-label="Main"
+            className="min-h-0 flex-1 overflow-y-auto px-4 py-6"
+          >
             <ul className="flex flex-col gap-1">
               {all.map((link) => (
                 <li key={`${link.href}-${link.label}`}>

@@ -4,8 +4,8 @@ Adds a server-verified onboarding signal to `organisations`, replacing what woul
 otherwise be a client-only (`localStorage`) dismiss flag for the mandatory first-run
 org setup screen.
 
-A freshly-created organisation — whether from the signup trigger or the "create
-another organisation" endpoint — gets a real name at creation time in the latter
+A freshly-created organisation - whether from the signup trigger or the "create
+another organisation" endpoint - gets a real name at creation time in the latter
 case, but only an auto-generated placeholder (the email's local part or domain) in
 the former. `onboarded_at` distinguishes "a person confirmed this name" from
 "still whatever the trigger guessed." Existing organisations are backfilled to
@@ -36,7 +36,7 @@ def upgrade() -> None:
         sa.Column("onboarded_at", sa.DateTime(timezone=True), nullable=True),
         schema="public",
     )
-    # Grandfather every organisation that already exists — onboarding is a gate for
+    # Grandfather every organisation that already exists - onboarding is a gate for
     # first-time setup, not a retroactive chore for accounts already in use.
     op.execute(
         "update public.organisations set onboarded_at = created_at where onboarded_at is null"

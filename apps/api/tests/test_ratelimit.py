@@ -3,7 +3,7 @@
 These caps are the only thing standing between a signed-in caller and draining
 the engine balance or dialling a number too fast, so they are tested like the
 safety gate: fail closed, no off-by-one. Also pinned here: two different keys
-(organisations) must never share a bucket — they used to, when this was IP-keyed
+(organisations) must never share a bucket - they used to, when this was IP-keyed
 with one process-global daily counter (`ISSUES.md`), and two unrelated paying
 organisations on the same deployment could rate-limit each other.
 """
@@ -59,7 +59,7 @@ def test_keys_are_independent(limited: RateLimiter) -> None:
 def test_daily_budget_caps_its_own_key(limited: RateLimiter) -> None:
     # Budget is 5/day; five calls from the same key exhausts that key's own budget.
     # Override the per-window ceiling (2) so it isn't what actually refuses the 5th
-    # call — this test is about the daily bucket, not the window one.
+    # call - this test is about the daily bucket, not the window one.
     for _ in range(5):
         assert limited.check("org-a", calls=1, rate_limit_calls=99).allowed is True
     verdict = limited.check("org-a", calls=1, rate_limit_calls=99)
@@ -69,7 +69,7 @@ def test_daily_budget_caps_its_own_key(limited: RateLimiter) -> None:
 
 def test_daily_budget_is_not_shared_across_keys(limited: RateLimiter) -> None:
     # A different key (organisation) gets its own budget, not what's left of
-    # someone else's — the bug this used to have when the bucket was global.
+    # someone else's - the bug this used to have when the bucket was global.
     for _ in range(5):
         limited.check("org-a", calls=1, rate_limit_calls=99)
     assert limited.check("org-a", calls=1, rate_limit_calls=99).allowed is False

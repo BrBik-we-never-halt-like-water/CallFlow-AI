@@ -1,12 +1,12 @@
-import { Panel } from "@/components/ui/panel";
-import { Rule } from "@/components/ui/rule";
+import { Panel } from '@/components/ui/panel';
+import { Rule } from '@/components/ui/rule';
 
 /**
  * The auth card.
  *
  * A single `Rule withLamps` sits above the form. It is the one decorative use of the
  * lamp strip anywhere in the product, and it is justified because signing in is the
- * doorway to a surface where lamps carry meaning — it reads as the instrument
+ * doorway to a surface where lamps carry meaning - it reads as the instrument
  * powering on rather than as ornament.
  */
 export function AuthCard({
@@ -35,7 +35,9 @@ export function AuthCard({
       {children}
 
       {footer ? (
-        <div className="border-t border-rule pt-4 text-small text-text-dim">{footer}</div>
+        <div className="border-t border-rule pt-4 text-small text-text-dim">
+          {footer}
+        </div>
       ) : null}
     </Panel>
   );

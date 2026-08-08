@@ -1,13 +1,13 @@
-"use client";
+'use client';
 
-import { useState } from "react";
-import { Field } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
-import { Eyebrow, Panel } from "@/components/ui/panel";
-import { SegmentedToggle } from "./pricing-table";
-import { formatCurrency, formatNumber, type Currency } from "@/lib/format";
-import { ROI_DEFAULTS } from "@/lib/pricing";
-import type { Vertical } from "@/lib/verticals";
+import { useState } from 'react';
+import { Field } from '@/components/ui/field';
+import { Input } from '@/components/ui/input';
+import { Eyebrow, Panel } from '@/components/ui/panel';
+import { SegmentedToggle } from './pricing-table';
+import { formatCurrency, formatNumber, type Currency } from '@/lib/format';
+import { ROI_DEFAULTS } from '@/lib/pricing';
+import type { Vertical } from '@/lib/verticals';
 
 /**
  * ROI calculator for a solution page.
@@ -18,17 +18,23 @@ import type { Vertical } from "@/lib/verticals";
  * afternoon goes, and that is the number they can act on today.
  */
 export function RoiCalculator({ vertical }: { vertical: Vertical }) {
-  const [currency, setCurrency] = useState<Currency>("INR");
+  const [currency, setCurrency] = useState<Currency>('INR');
   const [contacts, setContacts] = useState(vertical.roi.contactsPerMonth);
-  const [minutesPerCall, setMinutesPerCall] = useState(vertical.roi.minutesPerCall);
+  const [minutesPerCall, setMinutesPerCall] = useState(
+    vertical.roi.minutesPerCall,
+  );
   const [costPerCall, setCostPerCall] = useState<number>(
-    currency === "INR" ? ROI_DEFAULTS.costPerHumanCallInr : ROI_DEFAULTS.costPerHumanCallUsd,
+    currency === 'INR'
+      ? ROI_DEFAULTS.costPerHumanCallInr
+      : ROI_DEFAULTS.costPerHumanCallUsd,
   );
 
   function switchCurrency(next: Currency) {
     setCurrency(next);
     setCostPerCall(
-      next === "INR" ? ROI_DEFAULTS.costPerHumanCallInr : ROI_DEFAULTS.costPerHumanCallUsd,
+      next === 'INR'
+        ? ROI_DEFAULTS.costPerHumanCallInr
+        : ROI_DEFAULTS.costPerHumanCallUsd,
     );
   }
 
@@ -39,7 +45,7 @@ export function RoiCalculator({ vertical }: { vertical: Vertical }) {
   const humanCost = attempts * costPerCall;
 
   // The share of calls that settle without anyone reading them. Conservative on
-  // purpose — the remainder still needs a person, and the page should assume so.
+  // purpose - the remainder still needs a person, and the page should assume so.
   const autoClosedShare = 0.72;
   const hoursSaved = humanHours * autoClosedShare;
   const costAvoided = humanCost * autoClosedShare;
@@ -50,15 +56,17 @@ export function RoiCalculator({ vertical }: { vertical: Vertical }) {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex flex-col gap-1">
           <Eyebrow>Your numbers</Eyebrow>
-          <h3 className="font-display text-h3 text-text">What this frees up.</h3>
+          <h3 className="font-display text-h3 text-text">
+            What this frees up.
+          </h3>
         </div>
         <SegmentedToggle
           label="Currency"
           value={currency}
           onChange={switchCurrency}
           options={[
-            { value: "INR", label: "INR" },
-            { value: "USD", label: "USD" },
+            { value: 'INR', label: 'INR' },
+            { value: 'USD', label: 'USD' },
           ]}
         />
       </div>
@@ -78,7 +86,9 @@ export function RoiCalculator({ vertical }: { vertical: Vertical }) {
             type="number"
             min={1}
             value={minutesPerCall}
-            onChange={(e) => setMinutesPerCall(Math.max(1, Number(e.target.value)))}
+            onChange={(e) =>
+              setMinutesPerCall(Math.max(1, Number(e.target.value)))
+            }
             className="font-mono tabular-nums"
           />
         </Field>
@@ -88,7 +98,9 @@ export function RoiCalculator({ vertical }: { vertical: Vertical }) {
             min={0}
             step="0.01"
             value={costPerCall}
-            onChange={(e) => setCostPerCall(Math.max(0, Number(e.target.value)))}
+            onChange={(e) =>
+              setCostPerCall(Math.max(0, Number(e.target.value)))
+            }
             className="font-mono tabular-nums"
           />
         </Field>
@@ -102,7 +114,9 @@ export function RoiCalculator({ vertical }: { vertical: Vertical }) {
         />
         <Output
           label="Cost avoided"
-          value={formatCurrency(Math.round(costAvoided), currency, { compact: true })}
+          value={formatCurrency(Math.round(costAvoided), currency, {
+            compact: true,
+          })}
           detail="before CallFlow's own cost"
         />
         <Output
@@ -113,10 +127,11 @@ export function RoiCalculator({ vertical }: { vertical: Vertical }) {
       </dl>
 
       <p className="text-small text-text-mute">
-        Assumes {formatNumber(attempts)} attempts to reach {formatNumber(contacts)} contacts,
-        and that {Math.round(autoClosedShare * 100)}% of calls settle without anyone reading
-        them. Subtract your plan cost for the net figure — the last column is the point:
-        the work that needs judgement still gets it.
+        Assumes {formatNumber(attempts)} attempts to reach{' '}
+        {formatNumber(contacts)} contacts, and that{' '}
+        {Math.round(autoClosedShare * 100)}% of calls settle without anyone
+        reading them. Subtract your plan cost for the net figure - the last
+        column is the point: the work that needs judgement still gets it.
       </p>
     </Panel>
   );
@@ -134,7 +149,9 @@ function Output({
   return (
     <div className="flex flex-col gap-1">
       <dt className="eyebrow text-text-mute">{label}</dt>
-      <dd className="font-display text-[2rem] leading-none tabular-nums text-text">{value}</dd>
+      <dd className="font-display text-[2rem] leading-none tabular-nums text-text">
+        {value}
+      </dd>
       <p className="text-small text-text-mute">{detail}</p>
     </div>
   );

@@ -3,7 +3,7 @@
 `CLAUDE.md` calls a policy that looks right and permits a cross-tenant read the most
 expensive bug this product can ship, so these tests talk to Postgres directly rather
 than mocking anything. They exercise the same role switch the API uses, which is the
-only configuration where RLS is actually in force — `postgres` holds BYPASSRLS, so a
+only configuration where RLS is actually in force - `postgres` holds BYPASSRLS, so a
 plain connection proves nothing.
 
 Skipped when DIRECT_URL is unset, so the suite still runs offline.
@@ -372,7 +372,7 @@ async def test_resolve_api_key_reflects_live_membership_not_a_cached_role(
     """The design claim in `dependencies.py`'s docstring, pinned so it can't regress.
 
     A key is issued by a second member of tenant b's organisation (not its owner).
-    Removing that membership must break the key immediately — nothing about the
+    Removing that membership must break the key immediately - nothing about the
     key's own row should keep it working once its creator is no longer a member.
     """
     _, b = tenants
@@ -459,7 +459,7 @@ async def test_only_owner_or_admin_can_write_provider_credentials(
 # --- Role-hierarchy grant guard (admin-to-owner privilege escalation, R5 audit) --
 #
 # `set_member_role`/`invite` (app/api/v1/routes/organisations.py) stop an Admin's
-# escalation attempt before it reaches the database — see
+# escalation attempt before it reaches the database - see
 # `tests/test_organisations_routes.py` for that half. These tests are the RLS half:
 # CLAUDE.md's stated model is an API check *and* an RLS check, neither alone, so a
 # direct write that skipped the API layer entirely must still be refused
@@ -470,7 +470,7 @@ async def test_admin_cannot_promote_an_operator_to_owner_via_direct_update(
     db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
 ) -> None:
     """The genuine promotion attempt: target is a non-owner member, so this
-    exercises `memberships_update`'s `WITH CHECK` (the granted-role guard) —
+    exercises `memberships_update`'s `WITH CHECK` (the granted-role guard) -
     not the target-role guard (`test_admin_cannot_demote_or_remove_an_owner_*`
     below), which fires earlier, silently, for an already-owner target."""
     a, _ = tenants
@@ -573,7 +573,7 @@ async def test_admin_cannot_self_promote_to_owner_via_direct_update(
 async def test_admin_cannot_insert_a_membership_directly_as_owner(
     db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
 ) -> None:
-    """The insert-side twin of the update test above — same rank check, `memberships_insert`."""
+    """The insert-side twin of the update test above - same rank check, `memberships_insert`."""
     a, _ = tenants
     await _as_postgres(db)
 
@@ -715,13 +715,13 @@ async def test_owner_can_still_promote_a_member_to_admin_via_direct_update(
 
 # --- Target-role guard (migration `d94b2c8f1a67`) --------------------------
 #
-# `can_grant_role` alone only checks the role being *granted* — an Admin could
+# `can_grant_role` alone only checks the role being *granted* - an Admin could
 # still demote or remove an existing Owner in a multi-owner org, since neither
 # `memberships_update` nor `memberships_delete` looked at the row's *current*
 # role at all. `public.can_act_on_member()` closes that: added to both
 # policies' `USING` clause (which is exactly where Postgres evaluates a row's
-# pre-write state), it fails silently — the write matches zero rows, same
-# pattern as `test_cannot_update_another_tenants_organisation` — rather than
+# pre-write state), it fails silently - the write matches zero rows, same
+# pattern as `test_cannot_update_another_tenants_organisation` - rather than
 # raising, since `USING` filters rows rather than validating a proposed one.
 
 
@@ -758,7 +758,7 @@ async def test_admin_cannot_demote_an_owner_via_direct_update(
         a.org_id,
         co_owner.user_id,
     )
-    assert role == "owner", "Admin demoted an Owner — the target-role guard did not hold"
+    assert role == "owner", "Admin demoted an Owner - the target-role guard did not hold"
 
     await db.execute(
         "delete from auth.users where id = any($1::uuid[])",
@@ -800,7 +800,7 @@ async def test_admin_cannot_remove_an_owner_via_direct_delete(
         a.org_id,
         co_owner.user_id,
     )
-    assert still_there, "Admin removed an Owner — the target-role guard did not hold"
+    assert still_there, "Admin removed an Owner - the target-role guard did not hold"
 
     await db.execute(
         "delete from auth.users where id = any($1::uuid[])",
@@ -846,7 +846,7 @@ async def test_owner_can_still_demote_a_co_owner_via_direct_update(
 # --- Invitation-mutation guard (migration `d94b2c8f1a67`) -------------------
 #
 # `invitations_update_own` lets the invitee update their own pending invite
-# (to accept it) but never restricted *which* column — an invitee legitimately
+# (to accept it) but never restricted *which* column - an invitee legitimately
 # invited as viewer could rewrite their own invitation's `role` to `owner`
 # before accepting, with no Admin or Owner action at all. Column-level GRANT
 # is the actual fix (`authenticated` can only ever write `accepted_at`); RLS
@@ -894,7 +894,7 @@ async def test_invitee_cannot_escalate_their_own_pending_invitations_role(
 # --- Invitation-acceptance user_id guard (migration `d94b2c8f1a67`) --------
 #
 # `has_valid_invitation(org_id, role)` only ever checked that *the caller* has
-# a matching pending invitation — never that the `user_id` being inserted into
+# a matching pending invitation - never that the `user_id` being inserted into
 # `memberships` was the caller's own. A caller holding any valid invitation
 # for an org+role could insert a membership row for an arbitrary other user.
 
@@ -953,10 +953,10 @@ async def test_valid_invitation_cannot_seat_someone_else(
 # `invitations` broke `org_repo.create_invitation()` outright: its
 # `insert ... on conflict ... do update` needs UPDATE privilege on the columns
 # in the `do update set` list for the *whole statement* to plan, regardless of
-# whether a conflict occurs at runtime — so a first-time invite failed
+# whether a conflict occurs at runtime - so a first-time invite failed
 # identically to a re-invite. `test_admin_can_still_invite_as_operator_or_viewer`
 # (`test_organisations_routes.py`) mocks `create_invitation` entirely and so
-# never exercised the real SQL — exactly the coverage gap that let this
+# never exercised the real SQL - exactly the coverage gap that let this
 # regression through undetected. These call `org_repo.create_invitation()`
 # itself, for real, against the database.
 
@@ -1035,7 +1035,7 @@ async def test_admin_cannot_create_an_owner_invitation_through_the_repository(
     db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
 ) -> None:
     """The escalation check now lives inside `create_or_refresh_invitation()`
-    itself (it bypasses RLS, so it must enforce `can_grant_role` internally) —
+    itself (it bypasses RLS, so it must enforce `can_grant_role` internally) -
     this proves that check holds when called through the real application
     code path, not just via a raw `INSERT` against `invitations_insert`
     (`test_admin_cannot_create_an_owner_invitation`, above)."""

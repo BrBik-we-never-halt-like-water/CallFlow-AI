@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 
 # Resolved from this file rather than the working directory. The API is started
 # from apps/api by pm2, from the repo root by some tooling, and from apps/api by
-# pytest — a CWD-relative lookup silently finds nothing in at least one of those.
+# pytest - a CWD-relative lookup silently finds nothing in at least one of those.
 _REPO_ROOT = Path(__file__).resolve().parents[4]
 load_dotenv(_REPO_ROOT / ".env")
 
@@ -30,7 +30,7 @@ def _origins(name: str) -> list[str]:
     """Parse CORS origins, tolerating Render's bare-hostname form.
 
     `fromService … property: host` yields "callflow-web.onrender.com" with no
-    scheme, but CORS matching is exact — a missing scheme silently blocks every
+    scheme, but CORS matching is exact - a missing scheme silently blocks every
     request. Add https:// when absent and strip any trailing slash.
     """
     out: list[str] = []
@@ -112,7 +112,7 @@ class Config:
     )
 
     # Symmetric key for org-owned third-party provider credentials (Twilio/Plivo
-    # auth tokens). Same sensitivity class as SUPABASE_SECRET_KEY — never enters
+    # auth tokens). Same sensitivity class as SUPABASE_SECRET_KEY - never enters
     # the database, only this process's environment. A Fernet key: 32 url-safe
     # base64-encoded bytes, e.g. `Fernet.generate_key()`.
     provider_credentials_key: str = field(

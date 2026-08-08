@@ -6,16 +6,16 @@ invitee-can-mutate-their-own-role hole) broke *every* invitation, not just a
 re-invite. `create_invitation()`'s
 `insert ... on conflict (...) do update set role = excluded.role, ...` needs
 UPDATE privilege on those columns for the whole statement to plan, checked at
-executor start regardless of whether a conflict actually occurs at runtime —
+executor start regardless of whether a conflict actually occurs at runtime -
 so a first-time invite (no conflict) failed identically to a re-invite,
 `InsufficientPrivilegeError: permission denied for table invitations`.
 
-Re-granting broader UPDATE is not an option — that reopens the original hole
+Re-granting broader UPDATE is not an option - that reopens the original hole
 verbatim. The fix is the same shape as `create_organisation()`
 (migration `a7c2e5f9b184`): a `SECURITY DEFINER` function that does the write
 with the function owner's privileges (the migration-running role, which holds
-`BYPASSRLS` and full table access) rather than the caller's, and — because it
-bypasses both RLS and the column grant — enforces the equivalent checks
+`BYPASSRLS` and full table access) rather than the caller's, and - because it
+bypasses both RLS and the column grant - enforces the equivalent checks
 itself instead of leaning on either: `has_org_role` (may this caller manage
 invitations at all) and `can_grant_role` (may this caller invite at this
 specific role). `authenticated` keeps its `accepted_at`-only grant; nothing
@@ -24,7 +24,7 @@ about the finding-1 fix changes.
 This also fixes `ISSUES.md` #44 (a genuine, separate pre-existing bug found
 while verifying finding 1, not something finding 1 caused): re-inviting an
 already-pending email always failed under RLS because Postgres applies a
-table's UPDATE policies — not its INSERT policies — to the `DO UPDATE` branch
+table's UPDATE policies - not its INSERT policies - to the `DO UPDATE` branch
 of an upsert, and the only UPDATE policy on `invitations` is
 `invitations_update_own`, scoped to the invitee's own email, never the
 inviter's. Moving the whole upsert inside a definer function sidesteps that

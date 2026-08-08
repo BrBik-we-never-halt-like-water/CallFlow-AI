@@ -1,12 +1,12 @@
-import { CaretRightIcon } from "@phosphor-icons/react/dist/ssr";
-import Link from "next/link";
-import { SectionHeading } from "@/components/ui/panel";
-import { Reveal } from "@/components/ui/reveal";
-import { WaveCanvas } from "@/components/brand/wave-canvas";
-import { VERTICALS } from "@/lib/verticals";
+import { CaretRightIcon } from '@phosphor-icons/react/dist/ssr';
+import Link from 'next/link';
+import { SectionHeading } from '@/components/ui/panel';
+import { Reveal } from '@/components/ui/reveal';
+import { WaveCanvas } from '@/components/brand/wave-canvas';
+import { VERTICALS } from '@/lib/verticals';
 
 /**
- * Built for — the four solution pages.
+ * Built for - the four solution pages.
  *
  * Rendered as rows, not cards. This is a list of four things, and a list should
  * look like one; three-across cards would give each vertical more visual weight
@@ -45,7 +45,11 @@ export function VerticalStrip() {
                   aria-hidden
                   className="hidden h-5 w-24 shrink-0 opacity-0 transition-opacity duration-(--dur-base) ease-(--ease-out) group-hover:opacity-100 lg:block"
                 >
-                  <WaveCanvas seed={i * 1.3} pitch={6} className="h-full text-text-mute" />
+                  <WaveCanvas
+                    seed={i * 1.3}
+                    pitch={6}
+                    className="h-full text-text-mute"
+                  />
                 </span>
 
                 <span className="hidden max-w-xs text-small text-text-dim sm:block">

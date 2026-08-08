@@ -1,5 +1,5 @@
 """SQL for org-owned campaigns. Built-in campaigns are Python constants
-(app/domain/campaigns.py) and never live here — see the migration docstring
+(app/domain/campaigns.py) and never live here - see the migration docstring
 for why."""
 
 from __future__ import annotations
@@ -87,7 +87,7 @@ async def update_campaign(
     language: str | None,
     escalate_on_negative: bool,
 ) -> asyncpg.Record | None:
-    """The id/slug never changes on update — only what a run reads."""
+    """The id/slug never changes on update - only what a run reads."""
     return await conn.fetchrow(
         """
         update public.campaigns

@@ -1,11 +1,11 @@
-"use client";
+'use client';
 
-import { CheckIcon, CopyIcon } from "@phosphor-icons/react/dist/ssr";
-import { useEffect, useRef, useState } from "react";
-import { cn } from "@/lib/cn";
+import { CheckIcon, CopyIcon } from '@phosphor-icons/react/dist/ssr';
+import { useEffect, useRef, useState } from 'react';
+import { cn } from '@/lib/cn';
 
 /**
- * Monospace block for machine output — JSON results, schemas, payloads.
+ * Monospace block for machine output - JSON results, schemas, payloads.
  *
  * The JSON colouring is monochrome on purpose: it separates tokens by weight and
  * dimming rather than by hue. Introducing a syntax palette would put arbitrary
@@ -14,7 +14,7 @@ import { cn } from "@/lib/cn";
  */
 export function CodeBlock({
   code,
-  language = "json",
+  language = 'json',
   /** Caption above the block, in mono. */
   label,
   copyable = true,
@@ -23,7 +23,7 @@ export function CodeBlock({
   maxHeight,
 }: {
   code: string;
-  language?: "json" | "text";
+  language?: 'json' | 'text';
   label?: string;
   copyable?: boolean;
   /** Drop the border and background so the block can sit inside another surface. */
@@ -33,13 +33,13 @@ export function CodeBlock({
   maxHeight?: string;
 }) {
   return (
-    <div className={cn("flex flex-col gap-1.5", className)}>
+    <div className={cn('flex flex-col gap-1.5', className)}>
       {label ? <p className="eyebrow text-text-mute">{label}</p> : null}
 
       <div
         className={cn(
-          "relative",
-          bare ? "" : "rounded-md border border-rule bg-surface-sunken",
+          'relative',
+          bare ? '' : 'rounded-md border border-rule bg-surface-sunken',
         )}
       >
         {copyable ? (
@@ -50,12 +50,12 @@ export function CodeBlock({
 
         <pre
           className={cn(
-            "overflow-x-auto p-3 font-mono text-data text-text",
-            copyable && "pr-12",
+            'overflow-x-auto p-3 font-mono text-data text-text',
+            copyable && 'pr-12',
             maxHeight && `${maxHeight} overflow-y-auto`,
           )}
         >
-          <code>{language === "json" ? <Json code={code} /> : code}</code>
+          <code>{language === 'json' ? <Json code={code} /> : code}</code>
         </pre>
       </div>
     </div>
@@ -79,10 +79,12 @@ function Json({ code }: { code: string }) {
 
         // A quoted string followed by a colon is a key.
         if (/^"(?:\\.|[^"\\])*"\s*:$/.test(token)) {
-          const colonAt = token.lastIndexOf(":");
+          const colonAt = token.lastIndexOf(':');
           return (
             <span key={i}>
-              <span className="font-medium text-text">{token.slice(0, colonAt)}</span>
+              <span className="font-medium text-text">
+                {token.slice(0, colonAt)}
+              </span>
               <span className="text-text-mute">{token.slice(colonAt)}</span>
             </span>
           );
@@ -98,7 +100,10 @@ function Json({ code }: { code: string }) {
 
         if (/^(-?\d|true$|false$|null$)/i.test(token)) {
           return (
-            <span key={i} className="text-text underline decoration-rule-strong decoration-dotted underline-offset-2">
+            <span
+              key={i}
+              className="text-text underline decoration-rule-strong decoration-dotted underline-offset-2"
+            >
               {token}
             </span>
           );
@@ -123,7 +128,7 @@ function Json({ code }: { code: string }) {
  */
 export function CopyButton({
   value,
-  label = "Copy",
+  label = 'Copy',
   className,
 }: {
   value: string;
@@ -133,9 +138,12 @@ export function CopyButton({
   const [copied, setCopied] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  useEffect(() => () => {
-    if (timer.current) clearTimeout(timer.current);
-  }, []);
+  useEffect(
+    () => () => {
+      if (timer.current) clearTimeout(timer.current);
+    },
+    [],
+  );
 
   async function copy() {
     try {
@@ -155,9 +163,9 @@ export function CopyButton({
       type="button"
       onClick={copy}
       className={cn(
-        "inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-sm border border-rule bg-surface-raised px-2",
-        "font-mono text-label uppercase tracking-[0.14em] text-text-dim",
-        "transition-colors duration-(--dur-micro) hover:bg-surface-hover hover:text-text",
+        'inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-sm border border-rule bg-surface-raised px-2',
+        'font-mono text-label uppercase tracking-[0.14em] text-text-dim',
+        'transition-colors duration-(--dur-micro) hover:bg-surface-hover hover:text-text',
         className,
       )}
     >
@@ -166,7 +174,7 @@ export function CopyButton({
       ) : (
         <CopyIcon aria-hidden className="size-3.5" />
       )}
-      <span aria-live="polite">{copied ? "Copied" : label}</span>
+      <span aria-live="polite">{copied ? 'Copied' : label}</span>
     </button>
   );
 }

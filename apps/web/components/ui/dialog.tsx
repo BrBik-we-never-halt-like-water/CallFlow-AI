@@ -1,11 +1,11 @@
-"use client";
+'use client';
 
-import * as RadixDialog from "@radix-ui/react-dialog";
-import { XIcon } from "@phosphor-icons/react/dist/ssr";
-import { cn } from "@/lib/cn";
+import * as RadixDialog from '@radix-ui/react-dialog';
+import { XIcon } from '@phosphor-icons/react/dist/ssr';
+import { cn } from '@/lib/cn';
 
 /**
- * Dialog and Sheet, both on Radix Dialog — so both get a focus trap, `Esc` to
+ * Dialog and Sheet, both on Radix Dialog - so both get a focus trap, `Esc` to
  * close, and focus returned to the trigger on close without us reimplementing
  * any of it.
  *
@@ -29,7 +29,7 @@ export function Dialog({
   children,
   footer,
   className,
-  size = "md",
+  size = 'md',
   dismissible = true,
 }: {
   title: string;
@@ -38,11 +38,11 @@ export function Dialog({
   children?: React.ReactNode;
   footer?: React.ReactNode;
   className?: string;
-  size?: "sm" | "md" | "lg";
+  size?: 'sm' | 'md' | 'lg';
   /** False for a mandatory step: no close button, no Esc, no click-outside. */
   dismissible?: boolean;
 }) {
-  const width = { sm: "max-w-sm", md: "max-w-lg", lg: "max-w-2xl" }[size];
+  const width = { sm: 'max-w-sm', md: 'max-w-lg', lg: 'max-w-2xl' }[size];
 
   return (
     <RadixDialog.Portal>
@@ -52,8 +52,8 @@ export function Dialog({
         onPointerDownOutside={(e) => !dismissible && e.preventDefault()}
         onInteractOutside={(e) => !dismissible && e.preventDefault()}
         className={cn(
-          "fixed left-1/2 top-1/2 z-50 w-[calc(100vw-32px)] -translate-x-1/2 -translate-y-1/2",
-          "max-h-[calc(100dvh-64px)] overflow-y-auto rounded-md border border-rule-strong bg-surface-raised shadow-overlay",
+          'fixed left-1/2 top-1/2 z-50 w-[calc(100vw-32px)] -translate-x-1/2 -translate-y-1/2',
+          'max-h-[calc(100dvh-64px)] overflow-y-auto rounded-md border border-rule-strong bg-surface-raised shadow-overlay',
           width,
           className,
         )}
@@ -115,8 +115,8 @@ export function Sheet({
       <Overlay />
       <RadixDialog.Content
         className={cn(
-          "fixed inset-0 z-50 flex flex-col bg-surface-raised shadow-overlay",
-          "md:inset-y-0 md:left-auto md:right-0 md:w-[min(720px,92vw)] md:border-l md:border-rule-strong",
+          'fixed inset-0 z-50 flex flex-col bg-surface-raised shadow-overlay',
+          'md:inset-y-0 md:left-auto md:right-0 md:w-[min(720px,92vw)] md:border-l md:border-rule-strong',
           className,
         )}
       >

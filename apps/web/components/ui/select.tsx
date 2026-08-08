@@ -1,9 +1,9 @@
-"use client";
+'use client';
 
-import * as RadixSelect from "@radix-ui/react-select";
-import { CaretDownIcon, CheckIcon } from "@phosphor-icons/react/dist/ssr";
-import { cn } from "@/lib/cn";
-import { useField } from "./field";
+import * as RadixSelect from '@radix-ui/react-select';
+import { CaretDownIcon, CheckIcon } from '@phosphor-icons/react/dist/ssr';
+import { cn } from '@/lib/cn';
+import { useField } from './field';
 
 export interface SelectOption {
   value: string;
@@ -13,7 +13,7 @@ export interface SelectOption {
 }
 
 /**
- * Select built on Radix, which brings keyboard navigation and typeahead — both
+ * Select built on Radix, which brings keyboard navigation and typeahead - both
  * of which matter here because the longest selects in this product (timezone,
  * calling region) are ones a keyboard user will want to type into.
  */
@@ -21,7 +21,7 @@ export function Select({
   value,
   onValueChange,
   options,
-  placeholder = "Select…",
+  placeholder = 'Select…',
   disabled,
   id,
   ariaLabel,
@@ -44,28 +44,35 @@ export function Select({
   const field = useField();
 
   return (
-    <RadixSelect.Root value={value} onValueChange={onValueChange} disabled={disabled ?? field?.disabled}>
+    <RadixSelect.Root
+      value={value}
+      onValueChange={onValueChange}
+      disabled={disabled ?? field?.disabled}
+    >
       <RadixSelect.Trigger
         id={id ?? field?.inputId}
         aria-label={ariaLabel}
         aria-describedby={field?.describedBy}
         aria-invalid={field?.invalid || undefined}
         className={cn(
-          "inline-flex h-10 w-full cursor-pointer items-center justify-between gap-2 rounded-sm border bg-surface-raised px-3",
-          "text-body text-text transition-colors duration-(--dur-micro)",
-          "data-[placeholder]:text-text-mute",
-          "disabled:cursor-not-allowed disabled:opacity-45",
+          'inline-flex h-10 w-full cursor-pointer items-center justify-between gap-2 rounded-sm border bg-surface-raised px-3',
+          'text-body text-text transition-colors duration-(--dur-micro)',
+          'data-[placeholder]:text-text-mute',
+          'disabled:cursor-not-allowed disabled:opacity-45',
           field?.invalid
-            ? "border-[var(--lamp-flare)]"
-            : "border-rule hover:border-rule-strong",
-          mono && "font-mono text-data",
+            ? 'border-[var(--lamp-flare)]'
+            : 'border-rule hover:border-rule-strong',
+          mono && 'font-mono text-data',
           className,
           triggerClassName,
         )}
       >
         <RadixSelect.Value placeholder={placeholder} />
         <RadixSelect.Icon>
-          <CaretDownIcon aria-hidden className="size-4 shrink-0 text-text-mute" />
+          <CaretDownIcon
+            aria-hidden
+            className="size-4 shrink-0 text-text-mute"
+          />
         </RadixSelect.Icon>
       </RadixSelect.Trigger>
 
@@ -74,8 +81,8 @@ export function Select({
           position="popper"
           sideOffset={4}
           className={cn(
-            "z-50 max-h-72 min-w-[var(--radix-select-trigger-width)] overflow-hidden rounded-md",
-            "border border-rule-strong bg-surface-raised shadow-overlay",
+            'z-50 max-h-72 min-w-[var(--radix-select-trigger-width)] overflow-hidden rounded-md',
+            'border border-rule-strong bg-surface-raised shadow-overlay',
           )}
         >
           <RadixSelect.Viewport className="p-1">
@@ -85,10 +92,10 @@ export function Select({
                 value={option.value}
                 disabled={option.disabled}
                 className={cn(
-                  "relative flex cursor-pointer select-none items-start gap-2 rounded-sm py-1.5 pl-7 pr-3",
-                  "text-small text-text outline-none",
-                  "data-highlighted:bg-surface-hover",
-                  "data-disabled:pointer-events-none data-disabled:opacity-45",
+                  'relative flex cursor-pointer select-none items-start gap-2 rounded-sm py-1.5 pl-7 pr-3',
+                  'text-small text-text outline-none',
+                  'data-highlighted:bg-surface-hover',
+                  'data-disabled:pointer-events-none data-disabled:opacity-45',
                 )}
               >
                 <RadixSelect.ItemIndicator className="absolute left-2 top-2">
@@ -97,7 +104,9 @@ export function Select({
                 <span className="flex flex-col">
                   <RadixSelect.ItemText>{option.label}</RadixSelect.ItemText>
                   {option.hint ? (
-                    <span className="text-small text-text-mute">{option.hint}</span>
+                    <span className="text-small text-text-mute">
+                      {option.hint}
+                    </span>
                   ) : null}
                 </span>
               </RadixSelect.Item>

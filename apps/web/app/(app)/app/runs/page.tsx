@@ -1,27 +1,35 @@
-"use client";
+'use client';
 
-import { BroadcastIcon } from "@phosphor-icons/react/dist/ssr";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
-import { ConnectionBanner } from "@/components/app/connection-banner";
-import { DataTable, type Column, type SortState } from "@/components/app/data-table";
-import { LampBadge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { EmptyState } from "@/components/ui/empty-state";
-import type { RunSummary } from "@/lib/api";
-import { formatTimestamp } from "@/lib/format";
-import { lampForRunStatus } from "@/lib/lamp";
-import { useAppStore } from "@/lib/app-store";
+import { BroadcastIcon } from '@phosphor-icons/react/dist/ssr';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { useMemo, useState } from 'react';
+import { ConnectionBanner } from '@/components/app/connection-banner';
+import {
+  DataTable,
+  type Column,
+  type SortState,
+} from '@/components/app/data-table';
+import { LampBadge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { EmptyState } from '@/components/ui/empty-state';
+import type { RunSummary } from '@/lib/api';
+import { formatTimestamp } from '@/lib/format';
+import { lampForRunStatus } from '@/lib/lamp';
+import { useAppStore } from '@/lib/app-store';
 
 export default function RunsPage() {
   const router = useRouter();
   const { runs, campaigns, phase, loadingRuns } = useAppStore();
-  const [sort, setSort] = useState<SortState>({ id: "started_at", dir: "desc" });
+  const [sort, setSort] = useState<SortState>({
+    id: 'started_at',
+    dir: 'desc',
+  });
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
 
-  const campaignName = (id: string) => campaigns.find((c) => c.id === id)?.name ?? id;
+  const campaignName = (id: string) =>
+    campaigns.find((c) => c.id === id)?.name ?? id;
 
   /**
    * Sorting and pagination are done here rather than server-side because the runs
@@ -31,15 +39,19 @@ export default function RunsPage() {
   const sorted = useMemo(() => {
     const list = [...runs];
     list.sort((a, b) => {
-      const dir = sort.dir === "asc" ? 1 : -1;
+      const dir = sort.dir === 'asc' ? 1 : -1;
       switch (sort.id) {
-        case "campaign":
-          return campaignName(a.campaign_id).localeCompare(campaignName(b.campaign_id)) * dir;
-        case "total":
+        case 'campaign':
+          return (
+            campaignName(a.campaign_id).localeCompare(
+              campaignName(b.campaign_id),
+            ) * dir
+          );
+        case 'total':
           return (a.total - b.total) * dir;
-        case "completed":
+        case 'completed':
           return (a.completed - b.completed) * dir;
-        case "status":
+        case 'status':
           return a.status.localeCompare(b.status) * dir;
         default:
           return a.started_at.localeCompare(b.started_at) * dir;
@@ -56,8 +68,8 @@ export default function RunsPage() {
 
   const columns: Column<RunSummary>[] = [
     {
-      id: "campaign",
-      header: "Campaign",
+      id: 'campaign',
+      header: 'Campaign',
       sortable: true,
       cell: (run) => (
         <span className="flex items-center gap-2">
@@ -67,8 +79,8 @@ export default function RunsPage() {
       value: (run) => campaignName(run.campaign_id),
     },
     {
-      id: "status",
-      header: "Status",
+      id: 'status',
+      header: 'Status',
       sortable: true,
       cell: (run) => {
         const lamp = lampForRunStatus(run.status);
@@ -81,18 +93,18 @@ export default function RunsPage() {
       value: (run) => run.status,
     },
     {
-      id: "completed",
-      header: "Settled",
-      align: "right",
+      id: 'completed',
+      header: 'Settled',
+      align: 'right',
       mono: true,
       sortable: true,
       cell: (run) => `${run.completed}/${run.total}`,
       value: (run) => run.completed,
     },
     {
-      id: "started_at",
-      header: "Started",
-      align: "right",
+      id: 'started_at',
+      header: 'Started',
+      align: 'right',
       mono: true,
       sortable: true,
       cell: (run) => formatTimestamp(run.started_at),
@@ -105,10 +117,12 @@ export default function RunsPage() {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex flex-col gap-1">
           <p className="text-small font-bold text-text-mute">Runs</p>
-          <h1 className="font-display text-h2 text-text">Every run, newest first</h1>
+          <h1 className="font-display text-h2 text-text">
+            Every run, newest first
+          </h1>
           <p className="measure text-small text-text-dim">
-            One row per batch of contacts dialled toward a single goal — outcomes update
-            as calls settle.
+            One row per batch of contacts dialled toward a single goal -
+            outcomes update as calls settle.
           </p>
         </div>
         <Button asChild>

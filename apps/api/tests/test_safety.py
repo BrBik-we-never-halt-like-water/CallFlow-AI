@@ -86,7 +86,7 @@ def test_gate_respects_allowlist(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_resolve_safety_settings_falls_back_when_org_never_configured() -> None:
     """`None` (no `org_safety_settings` row at all) means "use the deployment
-    default" — the one case this function is actually meant to fall back on."""
+    default" - the one case this function is actually meant to fall back on."""
     effective = resolve_safety_settings(
         allowlist=None,
         max_calls_per_run=None,
@@ -102,7 +102,7 @@ def test_resolve_safety_settings_falls_back_when_org_never_configured() -> None:
 def test_resolve_safety_settings_an_explicitly_cleared_allowlist_stays_cleared(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """An org that clears its own allowlist means "no restriction" — it must
+    """An org that clears its own allowlist means "no restriction" - it must
     not silently fall back to the deployment's `CALLFLOW_ALLOWLIST`. Regression
     for a bug where `[] if allowlist else config.allowlist` treated an
     explicitly emptied override the same as "never configured"."""

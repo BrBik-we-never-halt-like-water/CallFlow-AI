@@ -36,7 +36,7 @@ async def append_outcome(
     """Insert or update a contact's row.
 
     A live call reports several times as it progresses (queued → ringing →
-    completed), so this matches on the contact rather than appending — one call
+    completed), so this matches on the contact rather than appending - one call
     produces one row across all its status transitions, not a row per change.
     """
     await conn.execute(

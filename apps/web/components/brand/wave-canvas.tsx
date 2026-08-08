@@ -1,10 +1,10 @@
-"use client";
+'use client';
 
-import { useEffect, useRef } from "react";
-import { cn } from "@/lib/cn";
+import { useEffect, useRef } from 'react';
+import { cn } from '@/lib/cn';
 
 /**
- * A live voice waveform on a canvas — the bold, structural counterpart to the
+ * A live voice waveform on a canvas - the bold, structural counterpart to the
  * CSS spine. Used as card mastheads, call-row voices, and section bands.
  *
  * All instances share ONE requestAnimationFrame loop (registered below), so a
@@ -40,7 +40,7 @@ function unregister(cb: Draw) {
   }
 }
 
-/** Layered travelling sine — loudest in the centre, tapering to the ends. */
+/** Layered travelling sine - loudest in the centre, tapering to the ends. */
 function amp(x: number, t: number, seed: number) {
   const env = Math.sin(Math.PI * x);
   const w =
@@ -51,13 +51,13 @@ function amp(x: number, t: number, seed: number) {
 }
 
 export function WaveCanvas({
-  tone = "ink",
+  tone = 'ink',
   seed = 0,
   /** Bar pitch in CSS px; smaller = denser. */
   pitch = 8,
   className,
 }: {
-  tone?: "ink" | "inverse";
+  tone?: 'ink' | 'inverse';
   seed?: number;
   pitch?: number;
   className?: string;
@@ -67,18 +67,19 @@ export function WaveCanvas({
   useEffect(() => {
     const canvas = ref.current;
     if (!canvas) return;
-    const ctx = canvas.getContext("2d");
+    const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
     const reduce =
-      typeof window !== "undefined" &&
-      window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+      typeof window !== 'undefined' &&
+      window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 
     const color =
-      tone === "inverse"
-        ? "#ffffff"
-        : getComputedStyle(document.documentElement).getPropertyValue("--text").trim() ||
-          "#0b0f12";
+      tone === 'inverse'
+        ? '#ffffff'
+        : getComputedStyle(document.documentElement)
+            .getPropertyValue('--text')
+            .trim() || '#0b0f12';
 
     let dpr = 1;
     const size = () => {
@@ -114,7 +115,7 @@ export function WaveCanvas({
         }
       }
       ctx.globalAlpha = 1;
-    }
+    };
 
     // A resize can arrive before the first frame; draw once immediately so the
     // waveform is never blank, then either animate or rest.
@@ -129,5 +130,11 @@ export function WaveCanvas({
     };
   }, [tone, seed, pitch]);
 
-  return <canvas ref={ref} aria-hidden className={cn("block h-full w-full", className)} />;
+  return (
+    <canvas
+      ref={ref}
+      aria-hidden
+      className={cn('block h-full w-full', className)}
+    />
+  );
 }

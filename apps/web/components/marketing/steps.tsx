@@ -1,13 +1,13 @@
-import { LampStrip } from "@/components/brand/lamp-strip";
-import { LiveLamp } from "./live-lamp";
-import { Eyebrow, SectionHeading } from "@/components/ui/panel";
-import { Reveal } from "@/components/ui/reveal";
-import { Tag } from "@/components/ui/badge";
+import { LampStrip } from '@/components/brand/lamp-strip';
+import { LiveLamp } from './live-lamp';
+import { Eyebrow, SectionHeading } from '@/components/ui/panel';
+import { Reveal } from '@/components/ui/reveal';
+import { Tag } from '@/components/ui/badge';
 
 /**
  * How it works, in four steps.
  *
- * Numbering is justified here because this is a genuine sequence — you cannot
+ * Numbering is justified here because this is a genuine sequence - you cannot
  * triage before you run, or run before you have contacts. Each step shows a small
  * panel of real UI built from the same components as the product, not a
  * screenshot: a screenshot goes stale the first time a button moves.
@@ -15,34 +15,37 @@ import { Tag } from "@/components/ui/badge";
 
 const STEPS = [
   {
-    n: "01",
-    title: "Load your contacts",
-    body: "Paste them in or drop a CSV. Every row is validated before anything is dialled.",
+    n: '01',
+    title: 'Load your contacts',
+    body: 'Paste them in or drop a CSV. Every row is validated before anything is dialled.',
     panel: <ContactsPanel />,
   },
   {
-    n: "02",
-    title: "Choose a campaign",
-    body: "Use a starter template or write your own goal and pick exactly which fields to extract.",
+    n: '02',
+    title: 'Choose a campaign',
+    body: 'Use a starter template or write your own goal and pick exactly which fields to extract.',
     panel: <CampaignPanel />,
   },
   {
-    n: "03",
-    title: "Run it",
-    body: "Press start and it dials. Results arrive as each call ends, in real time.",
+    n: '03',
+    title: 'Run it',
+    body: 'Press start and it dials. Results arrive as each call ends, in real time.',
     panel: <RunPanel />,
   },
   {
-    n: "04",
-    title: "Triage what matters",
-    body: "Clean outcomes close themselves. Only frustration, opt-outs, and requests for a person reach your team.",
+    n: '04',
+    title: 'Triage what matters',
+    body: 'Clean outcomes close themselves. Only frustration, opt-outs, and requests for a person reach your team.',
     panel: <TriagePanel />,
   },
 ];
 
 export function Steps() {
   return (
-    <section id="how-it-works" className="mx-auto max-w-(--container-marketing) px-4 sm:px-6">
+    <section
+      id="how-it-works"
+      className="mx-auto max-w-(--container-marketing) px-4 sm:px-6"
+    >
       <Reveal>
         <SectionHeading
           eyebrow="How it works"
@@ -73,7 +76,9 @@ export function Steps() {
                 <h3 className="text-h4 font-medium text-text">{step.title}</h3>
                 {/* Fixed heights at desktop so the four cards line up top and
                     bottom into a symmetric row; natural height when stacked. */}
-                <p className="text-small text-text-dim lg:min-h-[3.5rem]">{step.body}</p>
+                <p className="text-small text-text-dim lg:min-h-[3.5rem]">
+                  {step.body}
+                </p>
                 <div className="surface-flow mt-1 flex flex-col justify-center overflow-hidden p-4 shadow-sm transition-[box-shadow,transform] duration-(--dur-base) ease-(--ease-out) hover:-translate-y-0.5 hover:shadow-md lg:min-h-[8rem]">
                   {step.panel}
                 </div>
@@ -88,28 +93,32 @@ export function Steps() {
 
 function ContactsPanel() {
   const rows = [
-    { name: "Aditi Sharma", phone: "+91*******210", ok: true },
-    { name: "Rahul Verma", phone: "+91*******884", ok: true },
-    { name: "Priya Nair", phone: "98765", ok: false },
+    { name: 'Aditi Sharma', phone: '+91*******210', ok: true },
+    { name: 'Rahul Verma', phone: '+91*******884', ok: true },
+    { name: 'Priya Nair', phone: '98765', ok: false },
   ];
 
   return (
     <div className="flex flex-col gap-1.5">
       {rows.map((row) => (
         <div key={row.name} className="flex items-center gap-2">
-          <span className="min-w-0 flex-1 truncate text-small text-text">{row.name}</span>
+          <span className="min-w-0 flex-1 truncate text-small text-text">
+            {row.name}
+          </span>
           <span
             className={
               row.ok
-                ? "font-mono text-data tabular-nums text-text-mute"
-                : "font-mono text-data tabular-nums text-lamp-flare-text"
+                ? 'font-mono text-data tabular-nums text-text-mute'
+                : 'font-mono text-data tabular-nums text-lamp-flare-text'
             }
           >
             {row.phone}
           </span>
         </div>
       ))}
-      <p className="pt-1 text-small text-lamp-flare-text">1 row needs a country code.</p>
+      <p className="pt-1 text-small text-lamp-flare-text">
+        1 row needs a country code.
+      </p>
     </div>
   );
 }
@@ -134,11 +143,11 @@ function RunPanel() {
       <p className="eyebrow text-lamp-brass-text">Live · Real calls</p>
       <LampStrip
         lamps={[
-          { state: "jade", label: "Closed" },
-          { state: "jade", label: "Closed" },
-          { state: "brass", label: "Dialling", pulse: true },
-          { state: "off", label: "Queued" },
-          { state: "off", label: "Queued" },
+          { state: 'jade', label: 'Closed' },
+          { state: 'jade', label: 'Closed' },
+          { state: 'brass', label: 'Dialling', pulse: true },
+          { state: 'off', label: 'Queued' },
+          { state: 'off', label: 'Queued' },
         ]}
         size="sm"
       />

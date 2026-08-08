@@ -24,7 +24,7 @@ class CurrentUser:
     """The authenticated caller, scoped to one organisation.
 
     `id` is `public.users.id`. `auth_user_id` is the provider's id and exists only
-    so the database layer can install the JWT claims that RLS reads — application
+    so the database layer can install the JWT claims that RLS reads - application
     code should use `id`.
     """
 
@@ -74,9 +74,9 @@ async def current_user(
     """Resolve the bearer token to a user and one of their organisations.
 
     Two kinds of bearer token are accepted: a Supabase access token (the web
-    client, always) or a CallFlow API key (`cfk_...`, programmatic access —
+    client, always) or a CallFlow API key (`cfk_...`, programmatic access -
     Settings → API keys). They resolve through different queries but produce the
-    same `CurrentUser`, so everything downstream — permissions, RLS, routes —
+    same `CurrentUser`, so everything downstream - permissions, RLS, routes -
     is identical either way.
     """
     token = _bearer_token(authorization)
@@ -101,7 +101,7 @@ async def _resolve_supabase_session(
 
     The lookup runs through the RLS-scoped connection rather than a privileged one:
     the policies already let a user see themselves and their own memberships, so if
-    this query returns nothing the caller genuinely has no access — which is the
+    this query returns nothing the caller genuinely has no access - which is the
     answer we want rather than one we have to remember to check.
     """
     requested_org = _parse_org_header(x_org_id)
@@ -164,7 +164,7 @@ async def _resolve_supabase_session(
 
 async def _resolve_api_key(token: str) -> CurrentUser:
     """An API key's path: no Supabase session at all, so a no-identity connection
-    is what resolves it — the same shape as the public invitation-preview lookup.
+    is what resolves it - the same shape as the public invitation-preview lookup.
 
     The key is permanently bound to the organisation and user it was created
     under, but the *role* is re-checked live on every call (`resolve_api_key()`
@@ -230,7 +230,7 @@ class RequirePermission:
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=(
                     f"Your role ({user.role.value}) cannot do this. "
-                    f"It requires the {self._permission.value} permission — "
+                    f"It requires the {self._permission.value} permission - "
                     "ask an owner or admin in your organisation."
                 ),
             )

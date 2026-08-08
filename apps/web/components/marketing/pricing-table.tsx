@@ -1,12 +1,12 @@
-"use client";
+'use client';
 
-import { CheckIcon, MinusIcon } from "@phosphor-icons/react/dist/ssr";
-import Link from "next/link";
-import { cn } from "@/lib/cn";
-import { Tag } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Tooltip } from "@/components/ui/tooltip";
-import type { Currency } from "@/lib/format";
+import { CheckIcon, MinusIcon } from '@phosphor-icons/react/dist/ssr';
+import Link from 'next/link';
+import { cn } from '@/lib/cn';
+import { Tag } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Tooltip } from '@/components/ui/tooltip';
+import type { Currency } from '@/lib/format';
 import {
   ANNUAL_MONTHS_FREE,
   ENTERPRISE,
@@ -16,8 +16,8 @@ import {
   type BillingPeriod,
   type MatrixValue,
   type PlanId,
-} from "@/lib/pricing";
-import { PriceValue, RateValue, TodoChip, VolumeValue } from "./price-value";
+} from '@/lib/pricing';
+import { PriceValue, RateValue, TodoChip, VolumeValue } from './price-value';
 
 /* -------------------------------------------------------------------------- */
 /* Toggles                                                                     */
@@ -56,16 +56,21 @@ export function SegmentedToggle<T extends string>({
             aria-checked={active}
             onClick={() => onChange(option.value)}
             className={cn(
-              "inline-flex cursor-pointer items-center gap-1.5 rounded-xs px-3 py-1.5 text-small font-medium",
-              "transition-colors duration-(--dur-micro)",
+              'inline-flex cursor-pointer items-center gap-1.5 rounded-xs px-3 py-1.5 text-small font-medium',
+              'transition-colors duration-(--dur-micro)',
               active
-                ? "bg-surface-inverse text-text-inverse"
-                : "text-text-dim hover:text-text",
+                ? 'bg-surface-inverse text-text-inverse'
+                : 'text-text-dim hover:text-text',
             )}
           >
             {option.label}
             {option.hint ? (
-              <span className={cn("font-mono text-label", active ? "opacity-80" : "text-text-mute")}>
+              <span
+                className={cn(
+                  'font-mono text-label',
+                  active ? 'opacity-80' : 'text-text-mute',
+                )}
+              >
                 {option.hint}
               </span>
             ) : null}
@@ -96,8 +101,8 @@ export function PlanCards({
             <div
               key={plan.id}
               className={cn(
-                "surface-flow flex flex-col gap-4 p-5",
-                plan.mostChosen ? "shadow-md" : "shadow-sm",
+                'surface-flow flex flex-col gap-4 p-5',
+                plan.mostChosen ? 'shadow-md' : 'shadow-sm',
               )}
             >
               <div className="flex items-center justify-between gap-2">
@@ -109,9 +114,9 @@ export function PlanCards({
                 <PriceValue
                   amount={price}
                   currency={currency}
-                  suffix={price === 0 ? undefined : "/ month"}
+                  suffix={price === 0 ? undefined : '/ month'}
                 />
-                {period === "annual" && price !== 0 ? (
+                {period === 'annual' && price !== 0 ? (
                   <span className="text-small text-text-mute">
                     billed annually, {ANNUAL_MONTHS_FREE} months free
                   </span>
@@ -123,7 +128,9 @@ export function PlanCards({
               <div className="flex flex-col gap-1 border-y border-rule py-3">
                 <VolumeValue calls={plan.includedCalls} />
                 <RateValue
-                  amount={currency === "INR" ? plan.overageInr : plan.overageUsd}
+                  amount={
+                    currency === 'INR' ? plan.overageInr : plan.overageUsd
+                  }
                   currency={currency}
                   suffix="per call after that"
                 />
@@ -131,7 +138,10 @@ export function PlanCards({
 
               <ul className="flex flex-col gap-1.5">
                 {plan.features.map((feature) => (
-                  <li key={feature} className="flex items-start gap-2 text-small text-text-dim">
+                  <li
+                    key={feature}
+                    className="flex items-start gap-2 text-small text-text-dim"
+                  >
                     <CheckIcon
                       aria-hidden
                       weight="bold"
@@ -144,7 +154,7 @@ export function PlanCards({
 
               <Button
                 asChild
-                variant={plan.mostChosen ? "primary" : "secondary"}
+                variant={plan.mostChosen ? 'primary' : 'secondary'}
                 className="mt-auto"
               >
                 <Link href={plan.ctaHref}>{plan.cta}</Link>
@@ -163,7 +173,10 @@ export function PlanCards({
 
         <ul className="grid gap-1.5 sm:grid-cols-2 lg:max-w-xl lg:flex-1">
           {ENTERPRISE.features.map((feature) => (
-            <li key={feature} className="flex items-start gap-2 text-small text-text-dim">
+            <li
+              key={feature}
+              className="flex items-start gap-2 text-small text-text-dim"
+            >
               <CheckIcon
                 aria-hidden
                 weight="bold"
@@ -186,13 +199,13 @@ export function PlanCards({
 /* Feature matrix                                                              */
 /* -------------------------------------------------------------------------- */
 
-const PLAN_IDS: PlanId[] = ["free", "starter", "growth", "scale"];
+const PLAN_IDS: PlanId[] = ['free', 'starter', 'growth', 'scale'];
 
 /**
  * Full comparison, grouped by category with sticky plan headers.
  *
  * A real table with `scope` on every header, because this is exactly the content a
- * screen-reader user needs to navigate cell by cell — and a grid of divs would make
+ * screen-reader user needs to navigate cell by cell - and a grid of divs would make
  * that impossible.
  */
 export function FeatureMatrix() {
@@ -211,7 +224,9 @@ export function FeatureMatrix() {
             {PLANS.map((plan) => (
               <th key={plan.id} scope="col" className="px-4 py-3">
                 <span className="flex flex-col gap-0.5">
-                  <span className="text-small font-medium text-text">{plan.name}</span>
+                  <span className="text-small font-medium text-text">
+                    {plan.name}
+                  </span>
                   {plan.mostChosen ? (
                     <span className="eyebrow text-text-mute">Most chosen</span>
                   ) : null}
@@ -234,8 +249,14 @@ export function FeatureMatrix() {
             </tr>
 
             {category.rows.map((row) => (
-              <tr key={row.label} className="border-b border-rule last:border-0">
-                <th scope="row" className="px-4 py-2.5 text-small font-normal text-text">
+              <tr
+                key={row.label}
+                className="border-b border-rule last:border-0"
+              >
+                <th
+                  scope="row"
+                  className="px-4 py-2.5 text-small font-normal text-text"
+                >
                   {row.hint ? (
                     <Tooltip content={row.hint}>
                       <span className="cursor-help underline decoration-rule-strong decoration-dotted underline-offset-4">
@@ -248,7 +269,11 @@ export function FeatureMatrix() {
                 </th>
                 {PLAN_IDS.map((planId) => (
                   <td key={planId} className="px-4 py-2.5">
-                    <MatrixCell value={row.values[planId]} label={row.label} plan={planId} />
+                    <MatrixCell
+                      value={row.values[planId]}
+                      label={row.label}
+                      plan={planId}
+                    />
                   </td>
                 ))}
               </tr>
@@ -269,7 +294,7 @@ function MatrixCell({
   label: string;
   plan: PlanId;
 }) {
-  // `null` means the number has not been set yet — same TODO treatment as prices,
+  // `null` means the number has not been set yet - same TODO treatment as prices,
   // so an unfinished commercial decision is never mistaken for a real limit.
   if (value === null) return <TodoChip />;
 
@@ -291,5 +316,7 @@ function MatrixCell({
     );
   }
 
-  return <span className="font-mono text-data tabular-nums text-text">{value}</span>;
+  return (
+    <span className="font-mono text-data tabular-nums text-text">{value}</span>
+  );
 }

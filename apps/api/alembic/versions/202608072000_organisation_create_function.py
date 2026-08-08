@@ -9,8 +9,8 @@ null`) was satisfied.
 The actual cause is `RETURNING` on an RLS-protected, force-enabled table: Postgres
 re-checks the newly inserted row against the table's `SELECT` policy
 (`organisations_select`, which requires `is_org_member(id)`) before it can hand the row
-back via `RETURNING`. `org_repo.create()` inserted into `organisations` — with
-`RETURNING` — *before* the follow-up insert into `memberships` that would make the
+back via `RETURNING`. `org_repo.create()` inserted into `organisations` - with
+`RETURNING` - *before* the follow-up insert into `memberships` that would make the
 caller an actual member. At the moment of that first `RETURNING`, no membership row
 exists yet for the brand-new org, so `is_org_member(id)` is false and Postgres raises
 rather than silently returning nothing.

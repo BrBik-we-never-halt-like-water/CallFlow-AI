@@ -1,9 +1,9 @@
 """Per-organisation rate limiting.
 
 Two limits, both fail closed:
-  * per-window — stops one organisation's burst of runs from draining the
+  * per-window - stops one organisation's burst of runs from draining the
                  engine balance or dialling a number too fast
-  * per-day    — a daily ceiling on real calls, per organisation
+  * per-day    - a daily ceiling on real calls, per organisation
 
 Both buckets are keyed by organisation, not by IP: this used to be IP-keyed with
 one process-global daily bucket, from when the product was an unauthenticated

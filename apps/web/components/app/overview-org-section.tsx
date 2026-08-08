@@ -14,12 +14,12 @@ import { useOrgScopedEffect } from '@/lib/hooks/use-org-scoped-effect';
 import type { SessionProfile, SessionState } from '@/lib/hooks/use-session';
 
 /**
- * The dashboard's team roster popover — who else is in this organisation.
+ * The dashboard's team roster popover - who else is in this organisation.
  *
  * Switching organisations lives in exactly one place now: `HeaderOrgSwitcher`
  * in `components/layout/app-shell.tsx`. This used to also render its own
  * org-switching dropdown here,
- * which — alongside a third copy inside the user menu — meant three controls
+ * which - alongside a third copy inside the user menu - meant three controls
  * for one job. This popover's only job is "who's on the team."
  */
 export function TeamControls({

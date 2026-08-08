@@ -1,4 +1,4 @@
-"""The do-not-call list — CRUD for `public.suppressions`, the table
+"""The do-not-call list - CRUD for `public.suppressions`, the table
 `check_dial_allowed()` actually consults (see ISSUES.md #3). Before this route
 existed, the table had no writer anywhere in the app: a run resolved a real
 verdict against it, but nothing had ever put a row there.

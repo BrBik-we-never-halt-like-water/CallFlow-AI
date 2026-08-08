@@ -36,7 +36,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     try:
         await database.connect()
     except Exception:
-        log.exception("database unavailable at startup — auth endpoints will fail")
+        log.exception("database unavailable at startup - auth endpoints will fail")
 
     yield
 
@@ -86,7 +86,7 @@ def root() -> dict[str, str]:
 
 @app.get("/api/health")
 def health() -> dict[str, Any]:
-    """Unauthenticated, so this can only report the deployment's own defaults —
+    """Unauthenticated, so this can only report the deployment's own defaults -
     not any organisation's live usage or override. `GET /api/v1/safety` (signed
     in) is where a real `used_today` lives now that the limiter is org-scoped."""
     return {

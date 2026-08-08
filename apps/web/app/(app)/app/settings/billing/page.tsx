@@ -1,12 +1,15 @@
-"use client";
+'use client';
 
-import { NotWiredNotice, SettingsSection } from "@/components/app/settings-section";
-import { SessionGate } from "@/components/app/session-gate";
-import { Skeleton } from "@/components/ui/skeleton";
-import { formatNumber } from "@/lib/format";
-import { PLANS } from "@/lib/pricing";
-import { useAppStore } from "@/lib/app-store";
-import { useSession, type SessionProfile } from "@/lib/hooks/use-session";
+import {
+  NotWiredNotice,
+  SettingsSection,
+} from '@/components/app/settings-section';
+import { SessionGate } from '@/components/app/session-gate';
+import { Skeleton } from '@/components/ui/skeleton';
+import { formatNumber } from '@/lib/format';
+import { PLANS } from '@/lib/pricing';
+import { useAppStore } from '@/lib/app-store';
+import { useSession, type SessionProfile } from '@/lib/hooks/use-session';
 
 export default function BillingSettingsPage() {
   const session = useSession();
@@ -31,13 +34,15 @@ function BillingContent({ profile }: { profile: SessionProfile }) {
           <span className="text-h3 font-medium text-text">
             {plan?.name ?? profile.active.plan_id}
           </span>
-          {plan ? <span className="text-small text-text-dim">{plan.tagline}</span> : null}
+          {plan ? (
+            <span className="text-small text-text-dim">{plan.tagline}</span>
+          ) : null}
         </div>
       </SettingsSection>
 
       <SettingsSection
         title="Usage today"
-        description="The same limiter every run passes through — nothing here is estimated."
+        description="The same limiter every run passes through - nothing here is estimated."
       >
         {!safetySettings ? (
           <div className="flex flex-col gap-2">
@@ -63,7 +68,7 @@ function BillingContent({ profile }: { profile: SessionProfile }) {
               />
             </div>
             <p className="text-small text-text-mute">
-              Resets daily. Paced at {safetySettings.calls_per_window} calls per{" "}
+              Resets daily. Paced at {safetySettings.calls_per_window} calls per{' '}
               {Math.round(safetySettings.window_minutes)} minutes.
             </p>
           </div>
@@ -71,9 +76,10 @@ function BillingContent({ profile }: { profile: SessionProfile }) {
       </SettingsSection>
 
       <NotWiredNotice>
-        There&apos;s no payment processor connected on this deployment yet — upgrading,
-        downgrading, and adding a payment method aren&apos;t wired up. What&apos;s shown above
-        is real usage against your organisation&apos;s actual daily budget.
+        There&apos;s no payment processor connected on this deployment yet -
+        upgrading, downgrading, and adding a payment method aren&apos;t wired
+        up. What&apos;s shown above is real usage against your
+        organisation&apos;s actual daily budget.
       </NotWiredNotice>
     </div>
   );

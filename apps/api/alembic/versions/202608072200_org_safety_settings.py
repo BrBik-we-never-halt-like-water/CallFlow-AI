@@ -1,14 +1,14 @@
 """org_safety_settings
 
 Real, org-scoped persistence for the four safety controls Settings -> Safety
-already displays but could never save (`notSaved()` on every button — the values
+already displays but could never save (`notSaved()` on every button - the values
 were always the deployment's env vars, shared by every organisation on it).
 
 That sharing was also a real cross-tenant bug, not just an honesty gap: the daily
 call budget lived in one process-global counter keyed by nothing but IP address,
 so two unrelated organisations on the same deployment drained the same budget and
 could rate-limit each other. This gives every organisation its own row, with every
-column nullable — null means "use the deployment default", so an org that has never
+column nullable - null means "use the deployment default", so an org that has never
 touched Safety behaves exactly as before.
 
 Revision ID: b9d4f1a6c832

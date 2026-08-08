@@ -1,21 +1,21 @@
-"use client";
+'use client';
 
-import { useRef } from "react";
-import { useInView, useReducedMotion } from "framer-motion";
-import { Lamp, type LampSize } from "@/components/brand/lamp";
-import type { LampState } from "@/lib/lamp";
+import { useRef } from 'react';
+import { useInView, useReducedMotion } from 'framer-motion';
+import { Lamp, type LampSize } from '@/components/brand/lamp';
+import type { LampState } from '@/lib/lamp';
 
 /**
  * A lamp that lights up as it scrolls into view.
  *
  * It starts unlit and runs its relay-settle the moment it enters the viewport,
- * so a row reads as coming alive with meaning rather than arriving pre-lit —
+ * so a row reads as coming alive with meaning rather than arriving pre-lit -
  * the product's signature moment, on the marketing page. Lit immediately (no
  * flicker) under prefers-reduced-motion.
  */
 export function LiveLamp({
   state,
-  size = "md",
+  size = 'md',
   pulse = false,
   label,
 }: {
@@ -31,7 +31,12 @@ export function LiveLamp({
 
   return (
     <span ref={ref} className="inline-flex">
-      <Lamp state={lit ? state : "off"} size={size} pulse={pulse} label={label} />
+      <Lamp
+        state={lit ? state : 'off'}
+        size={size}
+        pulse={pulse}
+        label={label}
+      />
     </span>
   );
 }

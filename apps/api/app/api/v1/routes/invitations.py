@@ -31,7 +31,7 @@ class AcceptedOut(BaseModel):
 
 @router.get("/{token}", response_model=InvitationPreviewOut)
 async def preview(token: str) -> InvitationPreviewOut:
-    """Public — an invitee hasn't signed in yet when they open this link."""
+    """Public - an invitee hasn't signed in yet when they open this link."""
     async with database.anonymous() as conn:
         row = await invitations_repo.lookup_public(conn, token)
     return InvitationPreviewOut(
@@ -52,7 +52,7 @@ async def accept(
     if row is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="This invitation isn't valid — it may have expired, already been "
+            detail="This invitation isn't valid - it may have expired, already been "
             "used, or been sent to a different email address.",
         )
     return AcceptedOut(

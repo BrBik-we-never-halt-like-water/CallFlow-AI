@@ -1,17 +1,16 @@
-import type { Metadata } from "next";
-import Link from "next/link";
-import { Button } from "@/components/ui/button";
-import { Eyebrow } from "@/components/ui/panel";
-import { Rule } from "@/components/ui/rule";
+import type { Metadata } from 'next';
+import Link from 'next/link';
+import { Button } from '@/components/ui/button';
+import { Eyebrow } from '@/components/ui/panel';
+import { Rule } from '@/components/ui/rule';
 
 export const metadata: Metadata = {
-  title: "About",
-  description:
-    "What CallFlow is for, who builds it, and how to reach them.",
+  title: 'About',
+  description: 'What CallFlow is for, who builds it, and how to reach them.',
 };
 
 /**
- * About — deliberately short.
+ * About - deliberately short.
  *
  * This is also where the author credit lives. It was previously in the site footer,
  * which put a personal byline on every page of a product that is asking businesses
@@ -30,25 +29,27 @@ export default function AboutPage() {
 
       <div className="mt-10 flex flex-col gap-5">
         <p className="text-body-l text-text-dim">
-          CallFlow exists because of one specific frustration: a call log tells you a
-          call happened, and almost nothing else. A delighted customer and a furious one
-          both read <span className="font-mono text-data">completed</span>, and the
-          difference only surfaces when someone escalates — by which point it is a
-          complaint rather than a conversation.
+          CallFlow exists because of one specific frustration: a call log tells
+          you a call happened, and almost nothing else. A delighted customer and
+          a furious one both read{' '}
+          <span className="font-mono text-data">completed</span>, and the
+          difference only surfaces when someone escalates - by which point it is
+          a complaint rather than a conversation.
         </p>
         <p className="text-body text-text-dim">
-          The people who feel this hardest are not developers. They are recruiting
-          coordinators, clinic managers, admissions teams, and agency owners — the
-          person who owns a spreadsheet of numbers and is judged on what happens to it.
-          They are choosing between hiring another tele-caller and finding another way,
-          and almost every tool aimed at them is sold to their engineering team instead.
+          The people who feel this hardest are not developers. They are
+          recruiting coordinators, clinic managers, admissions teams, and agency
+          owners - the person who owns a spreadsheet of numbers and is judged on
+          what happens to it. They are choosing between hiring another
+          tele-caller and finding another way, and almost every tool aimed at
+          them is sold to their engineering team instead.
         </p>
         <p className="text-body text-text-dim">
-          So this is built as an operations tool, not an API with a dashboard bolted on.
-          You write the goal in plain English, you see exactly what each contact would
-          hear before anything is dialled, and every call comes back as typed fields you
-          can act on. The calls that need judgement reach a person. The rest close
-          themselves.
+          So this is built as an operations tool, not an API with a dashboard
+          bolted on. You write the goal in plain English, you see exactly what
+          each contact would hear before anything is dialled, and every call
+          comes back as typed fields you can act on. The calls that need
+          judgement reach a person. The rest close themselves.
         </p>
       </div>
 
@@ -57,7 +58,7 @@ export default function AboutPage() {
       <section className="flex flex-col gap-4">
         <h2 className="font-display text-h3 text-text">Who builds it</h2>
         <p className="text-body text-text-dim">
-          CallFlow is built by{" "}
+          CallFlow is built by{' '}
           <a
             href="https://github.com/mohdcodes"
             target="_blank"
@@ -66,15 +67,15 @@ export default function AboutPage() {
           >
             mohdcodes
           </a>
-          . If something here is wrong, slow, or missing, that is the person to tell —
-          and the fastest way to get it changed is to say which screen you were on and
-          what you expected to happen.
+          . If something here is wrong, slow, or missing, that is the person to
+          tell - and the fastest way to get it changed is to say which screen
+          you were on and what you expected to happen.
         </p>
         <ul className="flex flex-wrap gap-x-6 gap-y-2">
           {[
-            { label: "GitHub", href: "https://github.com/mohdcodes" },
-            { label: "LinkedIn", href: "https://linkedin.com/in/mohdcodes" },
-            { label: "Website", href: "https://mohdcodess.onrender.com" },
+            { label: 'GitHub', href: 'https://github.com/mohdcodes' },
+            { label: 'LinkedIn', href: 'https://linkedin.com/in/mohdcodes' },
+            { label: 'Website', href: 'https://mohdcodess.onrender.com' },
           ].map((link) => (
             <li key={link.label}>
               <a
@@ -97,33 +98,40 @@ export default function AboutPage() {
         <dl className="flex flex-col gap-3">
           {[
             {
-              term: "Sales and demos",
-              detail: "Book a 15-minute call and bring your own list — we'll run a few calls from it for real.",
-              href: "/demo",
-              cta: "Book a demo",
+              term: 'Sales and demos',
+              detail:
+                "Book a 15-minute call and bring your own list - we'll run a few calls from it for real.",
+              href: '/demo',
+              cta: 'Book a demo',
             },
             {
-              term: "Support",
-              detail: "support@callflow.ai. Include the run ID from the URL and we can see exactly what you saw.",
+              term: 'Support',
+              detail:
+                'support@callflow.ai. Include the run ID from the URL and we can see exactly what you saw.',
             },
             {
-              term: "Security",
-              detail: "security@callflow.ai. Acknowledged within two business days.",
+              term: 'Security',
+              detail:
+                'security@callflow.ai. Acknowledged within two business days.',
             },
             {
-              term: "Legal and DPA",
-              detail: "legal@callflow.ai, or request the agreement from the trust page.",
-              href: "/trust#dpa",
-              cta: "Request the DPA",
+              term: 'Legal and DPA',
+              detail:
+                'legal@callflow.ai, or request the agreement from the trust page.',
+              href: '/trust#dpa',
+              cta: 'Request the DPA',
             },
           ].map((item) => (
-            <div key={item.term} className="flex flex-col gap-1 border-b border-rule pb-3 last:border-0">
+            <div
+              key={item.term}
+              className="flex flex-col gap-1 border-b border-rule pb-3 last:border-0"
+            >
               <dt className="text-small font-medium text-text">{item.term}</dt>
               <dd className="text-small text-text-dim">
                 {item.detail}
                 {item.href ? (
                   <>
-                    {" "}
+                    {' '}
                     <Link
                       href={item.href}
                       className="font-medium text-text underline decoration-rule-strong underline-offset-2 hover:decoration-current"

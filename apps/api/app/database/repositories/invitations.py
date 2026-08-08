@@ -8,7 +8,7 @@ import asyncpg
 async def lookup_public(conn: asyncpg.Connection, token: str) -> asyncpg.Record:
     """Unauthenticated preview, via the SECURITY DEFINER `lookup_invitation` function.
 
-    Runs on a `database.anonymous()` connection — there is no user yet, so this is
+    Runs on a `database.anonymous()` connection - there is no user yet, so this is
     the one place a plain table SELECT would not work even with the right grants.
     """
     return await conn.fetchrow(
@@ -21,7 +21,7 @@ async def accept(conn: asyncpg.Connection, token: str) -> asyncpg.Record | None:
     """Insert the caller's own membership and mark the invitation accepted.
 
     Returns `None` when the token doesn't exist, is already used, or the invitation
-    is expired / addressed to a different email — the last two surface as an RLS
+    is expired / addressed to a different email - the last two surface as an RLS
     violation on the INSERT (`memberships_insert`'s invitation branch failing its
     `WITH CHECK`) rather than a silently-filtered row, so that's caught here and
     folded into the same "couldn't accept" outcome the route reports.

@@ -29,7 +29,7 @@ class Database:
     `postgres` holds the BYPASSRLS attribute, which means a plain connection sees
     every organisation's rows and `FORCE ROW LEVEL SECURITY` does not change that.
     Row-level security is therefore only real when a request drops to a role that
-    lacks the attribute — which is what `as_user` does.
+    lacks the attribute - which is what `as_user` does.
     """
 
     def __init__(self) -> None:
@@ -79,7 +79,7 @@ class Database:
     async def _register_codecs(connection: asyncpg.Connection) -> None:
         """Round-trip `jsonb` as plain Python dicts/lists.
 
-        Runs once per physical connection (not per acquire) — asyncpg has no
+        Runs once per physical connection (not per acquire) - asyncpg has no
         opinion on JSON by default, so every jsonb column would otherwise come
         back as a raw string a caller has to remember to `json.loads`.
         """
@@ -111,7 +111,7 @@ class Database:
             yield connection
             # Only on the way out clean: if the body raised, the transaction is
             # already rolling back (or aborted), and this `SET LOCAL` reset would
-            # itself fail with `InFailedSQLTransactionError` — replacing whatever
+            # itself fail with `InFailedSQLTransactionError` - replacing whatever
             # real error the body raised with a confusing one about the cleanup
             # instead. The rollback already discards the `SET LOCAL` role for us.
             await self._release(connection)

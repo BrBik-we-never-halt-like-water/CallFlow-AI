@@ -1,21 +1,21 @@
-"use client";
+'use client';
 
-import { cn } from "@/lib/cn";
-import { Lamp } from "@/components/brand/lamp";
-import { Button } from "@/components/ui/button";
-import { Tag } from "@/components/ui/badge";
-import { Panel } from "@/components/ui/panel";
-import { useToast } from "@/components/ui/toast";
-import { MaskedPhone } from "./masked-phone";
-import type { Outcome } from "@/lib/api";
-import { useAppStore } from "@/lib/app-store";
-import { formatAge, formatDuration } from "@/lib/format";
+import { cn } from '@/lib/cn';
+import { Lamp } from '@/components/brand/lamp';
+import { Button } from '@/components/ui/button';
+import { Tag } from '@/components/ui/badge';
+import { Panel } from '@/components/ui/panel';
+import { useToast } from '@/components/ui/toast';
+import { MaskedPhone } from './masked-phone';
+import type { Outcome } from '@/lib/api';
+import { useAppStore } from '@/lib/app-store';
+import { formatAge, formatDuration } from '@/lib/format';
 
 /**
  * One item in the escalation worklist.
  *
- * The reason is rendered as a chain read from typed fields — `Frustration detected →
- * Needs a person` — not as a sentence someone wrote. That is the product's guarantee
+ * The reason is rendered as a chain read from typed fields - `Frustration detected →
+ * Needs a person` - not as a sentence someone wrote. That is the product's guarantee
  * made visible: the operator can see which value drove the decision, so disagreeing
  * with it is a two-second check rather than an argument.
  */
@@ -33,14 +33,16 @@ export function EscalationCard({
 
   const chain = buildChain(outcome);
 
-  // The dashboard's condensed preview reads as a list — hairline dividers
-  // between rows, like the rest of that column — not a stack of boxed cards.
+  // The dashboard's condensed preview reads as a list - hairline dividers
+  // between rows, like the rest of that column - not a stack of boxed cards.
   // The dedicated /app/escalations worklist keeps the full card: there, each
   // item is the thing being acted on, not a row in a summary.
-  const Wrapper = compact ? "div" : Panel;
+  const Wrapper = compact ? 'div' : Panel;
   const wrapperClassName = cn(
-    "flex flex-col gap-3",
-    compact ? "border-b border-rule pb-4 last:border-0 last:pb-0" : "p-3 sm:p-4",
+    'flex flex-col gap-3',
+    compact
+      ? 'border-b border-rule pb-4 last:border-0 last:pb-0'
+      : 'p-3 sm:p-4',
   );
 
   return (
@@ -70,21 +72,24 @@ export function EscalationCard({
 
       {/* The reasoning chain. Tag's own `whitespace-nowrap` is right for a short
           role/template label, but disposition_reason/sentiment_reason are full
-          sentences — overridden back to wrapping here so a long one wraps
+          sentences - overridden back to wrapping here so a long one wraps
           inside the card instead of pushing past its edge. */}
       <ol className="flex flex-wrap items-start gap-1.5">
         {chain.map((step, i) => (
           <li key={i} className="flex min-w-0 max-w-full items-center gap-1.5">
             {i > 0 ? (
-              <span aria-hidden className="shrink-0 font-mono text-data text-text-mute">
+              <span
+                aria-hidden
+                className="shrink-0 font-mono text-data text-text-mute"
+              >
                 →
               </span>
             ) : null}
             <Tag
               mono={false}
               className={cn(
-                "min-w-0 whitespace-normal break-words",
-                i === chain.length - 1 && "text-lamp-flare-text",
+                'min-w-0 whitespace-normal break-words',
+                i === chain.length - 1 && 'text-lamp-flare-text',
               )}
             >
               {step}
@@ -114,9 +119,9 @@ export function EscalationCard({
           size="sm"
           onClick={() =>
             toast({
-              tone: "info",
+              tone: 'info',
               title: "Calling back isn't wired up yet",
-              body: `Dial ${outcome.contact_name} from your own phone — the number is on this card.`,
+              body: `Dial ${outcome.contact_name} from your own phone - the number is on this card.`,
             })
           }
         >
@@ -127,9 +132,9 @@ export function EscalationCard({
           size="sm"
           onClick={() =>
             toast({
-              tone: "info",
+              tone: 'info',
               title: "Assignment isn't wired up yet",
-              body: "Team assignment arrives with multi-seat accounts.",
+              body: 'Team assignment arrives with multi-seat accounts.',
             })
           }
         >
@@ -139,18 +144,18 @@ export function EscalationCard({
           variant="ghost"
           size="sm"
           onClick={() => {
-            // Resolution isn't persisted anywhere yet (ISSUES.md #7) — `resolveEscalation`
+            // Resolution isn't persisted anywhere yet (ISSUES.md #7) - `resolveEscalation`
             // only drops this outcome from the shared `escalations` list for the rest of
             // this session, which is what actually makes the worklist, the dashboard
             // panel, and the nav badge update immediately. The toast says exactly that
             // instead of implying it was saved, matching "Call back myself"/"Reassign"
-            // above — and there is no "Resolved" state to show here afterward, since this
+            // above - and there is no "Resolved" state to show here afterward, since this
             // card unmounts the moment its outcome drops out of that list.
             resolveEscalation(outcome);
             toast({
-              tone: "info",
-              title: "Hidden for now, not saved",
-              body: "This comes back if you reload — resolution tracking isn't wired up yet.",
+              tone: 'info',
+              title: 'Hidden for now, not saved',
+              body: "This comes back if you reload - resolution tracking isn't wired up yet.",
             });
           }}
         >
@@ -170,22 +175,25 @@ export function EscalationCard({
 function buildChain(outcome: Outcome): string[] {
   const chain: string[] = [];
 
-  if (outcome.sentiment && outcome.sentiment !== "unknown") {
+  if (outcome.sentiment && outcome.sentiment !== 'unknown') {
     chain.push(`Sentiment: ${outcome.sentiment}`);
   }
   if (outcome.disposition_reason) {
     chain.push(outcome.disposition_reason);
   }
-  if (outcome.sentiment_reason && outcome.sentiment_reason !== outcome.disposition_reason) {
+  if (
+    outcome.sentiment_reason &&
+    outcome.sentiment_reason !== outcome.disposition_reason
+  ) {
     chain.push(outcome.sentiment_reason);
   }
-  chain.push("Needs a person");
+  chain.push('Needs a person');
 
   return chain;
 }
 
 /** The last few turns, which is where the trigger almost always is. */
 function excerpt(transcript: string): string {
-  const turns = transcript.split("\n").filter(Boolean);
-  return turns.slice(-3).join("\n");
+  const turns = transcript.split('\n').filter(Boolean);
+  return turns.slice(-3).join('\n');
 }

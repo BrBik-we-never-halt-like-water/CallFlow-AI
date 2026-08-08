@@ -1,7 +1,7 @@
-"use client";
+'use client';
 
-import { useEffect, useRef, useState } from "react";
-import { api, type Run } from "@/lib/api";
+import { useEffect, useRef, useState } from 'react';
+import { api, type Run } from '@/lib/api';
 
 const POLL_MS = 2500;
 
@@ -24,11 +24,14 @@ interface PollState {
 /**
  * Polls a run until it settles.
  *
- * Progress is announced to assistive tech once per meaningful change, not once per row —
+ * Progress is announced to assistive tech once per meaningful change, not once per row -
  * see `useProgressAnnouncement`. A screen reader reading out twenty individual rows as
  * they land is worse than no announcement at all.
  */
-export function useRunPoll(runId: string | null, { paused = false } = {}): RunPoll {
+export function useRunPoll(
+  runId: string | null,
+  { paused = false } = {},
+): RunPoll {
   const [state, setState] = useState<PollState>({
     runId,
     run: null,
@@ -63,9 +66,11 @@ export function useRunPoll(runId: string | null, { paused = false } = {}): RunPo
         const latest = await api.getRun(runId!);
         if (cancelled) return;
         setState((current) =>
-          current.runId === runId ? { ...current, run: latest, error: null } : current,
+          current.runId === runId
+            ? { ...current, run: latest, error: null }
+            : current,
         );
-        if (latest.status !== "running") {
+        if (latest.status !== 'running') {
           if (timer.current) {
             clearInterval(timer.current);
             timer.current = null;
@@ -74,7 +79,8 @@ export function useRunPoll(runId: string | null, { paused = false } = {}): RunPo
         }
       } catch (e) {
         if (cancelled) return;
-        const message = e instanceof Error ? e.message : "The service didn't respond.";
+        const message =
+          e instanceof Error ? e.message : "The service didn't respond.";
         setState((current) =>
           current.runId === runId ? { ...current, error: message } : current,
         );
@@ -97,7 +103,7 @@ export function useRunPoll(runId: string | null, { paused = false } = {}): RunPo
   return {
     run: state.run,
     error: state.error,
-    live: state.run?.status === "running",
+    live: state.run?.status === 'running',
     elapsed: state.elapsed,
   };
 }
@@ -106,10 +112,13 @@ export function useRunPoll(runId: string | null, { paused = false } = {}): RunPo
  * Debounced progress message for an `aria-live="polite"` region.
  *
  * Returns a sentence only when the settled count has actually moved and has then held
- * still briefly — so a burst of results produces one announcement rather than five.
+ * still briefly - so a burst of results produces one announcement rather than five.
  */
-export function useProgressAnnouncement(settled: number, total: number): string {
-  const [message, setMessage] = useState("");
+export function useProgressAnnouncement(
+  settled: number,
+  total: number,
+): string {
+  const [message, setMessage] = useState('');
   const lastAnnounced = useRef(-1);
 
   useEffect(() => {

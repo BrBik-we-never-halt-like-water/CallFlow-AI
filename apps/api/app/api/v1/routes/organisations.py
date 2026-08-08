@@ -1,4 +1,4 @@
-"""Organisations the caller belongs to: create, switch, edit, delete — and the team
+"""Organisations the caller belongs to: create, switch, edit, delete - and the team
 inside the active one: members, roles, invitations."""
 
 from __future__ import annotations
@@ -104,7 +104,7 @@ def _validate_role(role: str) -> str:
 
 
 def _ensure_can_grant(user: CurrentUser, role: str) -> None:
-    """Block a grant that would outrank the caller — the admin-to-owner hole.
+    """Block a grant that would outrank the caller - the admin-to-owner hole.
 
     `Permission.TEAM_SET_ROLE`/`TEAM_INVITE` only gate that a role can be
     changed at all; Admin holds both, same as Owner. This is the check for
@@ -116,16 +116,16 @@ def _ensure_can_grant(user: CurrentUser, role: str) -> None:
         status_code=status.HTTP_403_FORBIDDEN,
         detail=(
             f"Your role ({user.role.value}) can't grant '{role}'. "
-            "You can only grant a role below your own — ask an owner to make this change."
+            "You can only grant a role below your own - ask an owner to make this change."
         ),
     )
 
 
 def _ensure_can_act_on(user: CurrentUser, target_current_role: str) -> None:
-    """Block acting on a member who outranks the caller — the companion gap
+    """Block acting on a member who outranks the caller - the companion gap
     to `_ensure_can_grant`: an Admin who can't grant `owner`/`admin` shouldn't
     be able to demote or remove someone who already holds it, either. Never
-    called for the caller's own row — self-service is `_ensure_can_grant`'s
+    called for the caller's own row - self-service is `_ensure_can_grant`'s
     job alone.
     """
     if can_act_on_member(user.role, OrgRole(target_current_role)):
@@ -180,7 +180,7 @@ async def complete_onboarding(
 ) -> OrganisationOut:
     """Confirm the org's name, ending the mandatory first-run setup gate.
 
-    Whoever completes this is the org's owner in the realistic case — a fresh
+    Whoever completes this is the org's owner in the realistic case - a fresh
     signup is always the owner of the organisation the signup trigger just
     created for them.
     """
@@ -320,14 +320,14 @@ async def set_member_role(
 async def remove_member(
     member_user_id: UUID, user: Annotated[CurrentUser, Depends(current_user)]
 ) -> None:
-    # Leaving your own organisation needs no special permission — the RLS delete
+    # Leaving your own organisation needs no special permission - the RLS delete
     # policy already allows it. Removing someone else does.
     if member_user_id != user.id and not user.can(Permission.TEAM_REMOVE):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=(
                 f"Your role ({user.role.value}) cannot remove other teammates. "
-                "It requires the team:remove permission — ask an owner or admin."
+                "It requires the team:remove permission - ask an owner or admin."
             ),
         )
     async with database.as_user(user.auth_user_id) as conn:

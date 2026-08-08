@@ -17,7 +17,7 @@ class PrivilegedAccess:
     """RLS-bypassing connections for work that has no user.
 
     `postgres` holds BYPASSRLS, so a connection from here sees every organisation's
-    data. Occasionally necessary — a retention purge, a reconciliation job — and also
+    data. Occasionally necessary - a retention purge, a reconciliation job - and also
     the easiest way to ship a cross-tenant leak, so the bypass is deliberately
     awkward: one module, a mandatory reason, and a log line every time.
 

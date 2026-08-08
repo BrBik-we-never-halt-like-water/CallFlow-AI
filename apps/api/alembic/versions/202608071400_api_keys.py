@@ -1,6 +1,6 @@
 """api_keys
 
-Org-scoped API keys for programmatic access to CallFlow's own API — not a voice
+Org-scoped API keys for programmatic access to CallFlow's own API - not a voice
 provider credential. Only a SHA-256 hash of the key is ever stored (mirrors the
 `CALLFLOW_OWNER_KEY` comparison already used elsewhere: `secrets.compare_digest`
 against a hash, never the plaintext). `key_prefix` is the first few characters,

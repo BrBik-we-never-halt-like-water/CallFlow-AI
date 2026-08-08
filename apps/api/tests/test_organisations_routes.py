@@ -2,27 +2,27 @@
 route handlers rather than through the permission matrix.
 
 `Permission.TEAM_SET_ROLE`/`TEAM_INVITE`/`TEAM_REMOVE` alone would say an
-Admin may call any of these endpoints — Admin holds all three, same as Owner.
+Admin may call any of these endpoints - Admin holds all three, same as Owner.
 That was never the bug: the bug is that none of them checked *which* role was
 being granted (`_ensure_can_grant`) or *whose* row was being touched
 (`_ensure_can_act_on`), so an Admin could set their own role to `owner`,
 invite a new email straight into `owner`, or demote/remove an existing Owner
 in a multi-owner org. These tests call `organisations.set_member_role`,
-`organisations.invite`, and `organisations.remove_member` directly — the
+`organisations.invite`, and `organisations.remove_member` directly - the
 actual FastAPI path functions FastAPI would dispatch to, not a
-re-implementation of either check — and assert the 403, per the brief's
+re-implementation of either check - and assert the 403, per the brief's
 requirement to hit the real behaviour rather than just ask
 `role_has()`/`permissions_for()` whether Admin holds the permission (it does;
 that was never in question).
 
 Every denial below fires before the DB write itself runs (`_ensure_can_grant`
 and `_ensure_can_act_on` both run ahead of the mutating call in the route),
-which is why these tests need no live database — see
+which is why these tests need no live database - see
 `tests/test_rls_isolation.py` for the matching defense-in-depth proof at the
 RLS layer, which does need one. The non-regression cases prove Admin's
 existing, legitimate actions (grants to/removal of operator/viewer, and
-self-service) and Owner's full range still work — these are hierarchy fixes,
-not permission removals — by stubbing only the DB/email I/O, never either
+self-service) and Owner's full range still work - these are hierarchy fixes,
+not permission removals - by stubbing only the DB/email I/O, never either
 hierarchy check itself.
 """
 
@@ -65,12 +65,12 @@ async def _fake_as_user(auth_user_id: str) -> Any:
 
 
 def _forbid_db_access(monkeypatch: pytest.MonkeyPatch, *, what: str) -> None:
-    """Fails loudly if the route reaches the database — proof the 403 is the
+    """Fails loudly if the route reaches the database - proof the 403 is the
     *reason* nothing was written, not a coincidence of a missing connection."""
 
     @asynccontextmanager
     async def _fail(_auth_user_id: str) -> Any:
-        raise AssertionError(f"reached the database — the hierarchy check did not block {what}")
+        raise AssertionError(f"reached the database - the hierarchy check did not block {what}")
         yield  # pragma: no cover - unreachable, keeps this an async generator
 
     monkeypatch.setattr(organisations.database, "as_user", _fail)
@@ -80,7 +80,7 @@ def _stub_db(monkeypatch: pytest.MonkeyPatch, *, current_role: str | None) -> As
     """Wires a fake connection plus a `get_member_role` stub returning
     `current_role` (the value `_ensure_can_act_on` is checked against), and
     returns the `set_member_role`/`remove_member` mock so the caller can
-    assert on it. `current_role=None` mirrors "not a member" — the same as a
+    assert on it. `current_role=None` mirrors "not a member" - the same as a
     self-targeted call, which never even reaches `get_member_role`."""
     monkeypatch.setattr(organisations.database, "as_user", _fake_as_user)
     monkeypatch.setattr(
@@ -220,7 +220,7 @@ async def test_admin_can_still_remove_an_operator_or_viewer(monkeypatch: pytest.
 
 
 async def test_admin_can_still_step_themselves_down(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Self-targeting skips `_ensure_can_act_on` entirely — confirmed here by
+    """Self-targeting skips `_ensure_can_act_on` entirely - confirmed here by
     never stubbing `get_member_role` at all; a call would be an AttributeError
     on the fake connection, so this also proves the route never reaches it."""
     monkeypatch.setattr(organisations.database, "as_user", _fake_as_user)
@@ -244,7 +244,7 @@ async def test_removing_yourself_needs_no_permission_and_skips_the_act_on_check(
     monkeypatch.setattr(organisations.database, "as_user", _fake_as_user)
     remove = AsyncMock()
     monkeypatch.setattr(organisations.org_repo, "remove_member", remove)
-    # A viewer holds neither team:remove nor team:set_role — leaving is still allowed.
+    # A viewer holds neither team:remove nor team:set_role - leaving is still allowed.
     viewer = _current_user(OrgRole.VIEWER)
 
     await organisations.remove_member(member_user_id=viewer.id, user=viewer)

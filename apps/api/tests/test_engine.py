@@ -40,11 +40,11 @@ def test_cancel_call_raises_not_implemented(gateway: EngineGateway) -> None:
 
 
 class StubVoiceProvider:
-    """A second, deliberately different `VoiceProvider` — no vendor behind it,
+    """A second, deliberately different `VoiceProvider` - no vendor behind it,
     just enough to prove the protocol is a real interface rather than a
     description of `EngineGateway`'s own shape. CLAUDE.md's Substitutability
     section calls for exactly this ("write the second adapter, even if it is
-    only a stub for tests") — this is that stub, not a third vendor adapter.
+    only a stub for tests") - this is that stub, not a third vendor adapter.
     Its capabilities are the inverse of `EngineGateway`'s on purpose, so a test
     written against `VoiceProvider` can't accidentally pass by assuming
     CALL-E's specific `True`/`False` pattern.
@@ -68,7 +68,7 @@ class StubVoiceProvider:
 
 def _accepts_any_voice_provider(provider: VoiceProvider) -> bool:
     """Exists only so both fixtures below can be passed through one
-    protocol-typed parameter — the actual point of the test."""
+    protocol-typed parameter - the actual point of the test."""
     return provider.supports(VoiceCapability.STRUCTURED_EXTRACTION)
 
 
@@ -82,7 +82,7 @@ def test_both_providers_satisfy_the_same_protocol(gateway: EngineGateway) -> Non
 
 def test_classify_error_maps_connection_error_to_provider_unavailable() -> None:
     # CalleConnectionError (raised by the SDK when a request fails before any
-    # response comes back — DNS failure, connection refused, TLS error) has no
+    # response comes back - DNS failure, connection refused, TLS error) has no
     # `.code` to look up, unlike CalleAPIError. It must still be classified as
     # a transient, worth-retrying failure rather than falling through to
     # DialFailure.INTERNAL, which retry policy treats as permanent.

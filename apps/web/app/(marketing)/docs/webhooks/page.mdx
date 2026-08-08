@@ -1,7 +1,7 @@
 export const metadata = {
-  title: "Webhooks",
+  title: 'Webhooks',
   description:
-    "Receiving results as they land, with a delivery log and replay. Available from the Growth plan.",
+    'Receiving results as they land, with a delivery log and replay. Available from the Growth plan.',
 };
 
 # Webhooks
@@ -13,14 +13,14 @@ Configure endpoints in **Settings → Integrations**. Available from the Growth 
 
 ## Events
 
-| Event | Fires when |
-|---|---|
-| `call.settled` | A call reached a terminal disposition. The one most integrations need. |
-| `call.escalated` | A call was routed to a person. Fires alongside `call.settled`. |
-| `run.finished` | Every contact in a run has settled. |
-| `contact.suppressed` | Someone opted out and was added to the suppression list. |
+| Event                | Fires when                                                             |
+| -------------------- | ---------------------------------------------------------------------- |
+| `call.settled`       | A call reached a terminal disposition. The one most integrations need. |
+| `call.escalated`     | A call was routed to a person. Fires alongside `call.settled`.         |
+| `run.finished`       | Every contact in a run has settled.                                    |
+| `contact.suppressed` | Someone opted out and was added to the suppression list.               |
 
-`contact.suppressed` is the one worth wiring even if you wire nothing else — it is how
+`contact.suppressed` is the one worth wiring even if you wire nothing else - it is how
 your CRM learns not to contact that person again through any other channel.
 
 ## Payload
@@ -44,7 +44,7 @@ your CRM learns not to contact that person again through any other channel.
 ```
 
 The number is masked in the payload, the same as everywhere else. If your system needs
-the full number, you already have it — it is the one you uploaded.
+the full number, you already have it - it is the one you uploaded.
 
 ## Verifying a delivery
 
@@ -64,7 +64,7 @@ request being replayed at you.
 
 A non-2xx response is retried with exponential backoff for up to 24 hours. Respond
 `2xx` as soon as you have persisted the payload and do the rest of your work
-afterwards — a slow handler looks like a failure and gets sent the same event again.
+afterwards - a slow handler looks like a failure and gets sent the same event again.
 
 Every attempt is recorded in the delivery log with the status, the response body, and
 the timing. Any delivery can be replayed by hand from there, which is the fastest way

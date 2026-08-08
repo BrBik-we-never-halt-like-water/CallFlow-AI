@@ -1,4 +1,4 @@
-"""Org-scoped overrides for the safety guards. Every column is nullable — null
+"""Org-scoped overrides for the safety guards. Every column is nullable - null
 means "use the deployment default" (`app/core/config.py`), so an org that has
 never touched Safety behaves exactly as it did before this table existed."""
 

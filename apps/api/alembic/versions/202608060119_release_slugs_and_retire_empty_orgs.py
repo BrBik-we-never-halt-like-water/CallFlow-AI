@@ -1,7 +1,7 @@
 """release_slugs_and_retire_empty_orgs
 
 Fixes ISSUES.md #17. An organisation was never removed when its last member left,
-so dead organisations accumulated — and because the slug was globally unique, they
+so dead organisations accumulated - and because the slug was globally unique, they
 held their names forever. A customer who deleted their account and signed up again
 from the same domain got `acme-2`.
 

@@ -1,23 +1,23 @@
-"use client";
+'use client';
 
-import { PlusIcon, TrashIcon } from "@phosphor-icons/react/dist/ssr";
-import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
-import { cn } from "@/lib/cn";
-import { NotWiredNotice } from "@/components/app/settings-section";
-import { Tag } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
-import { CodeBlock } from "@/components/ui/code-block";
-import { Field } from "@/components/ui/field";
-import { Input, MinLengthCounter, Textarea } from "@/components/ui/input";
-import { Panel } from "@/components/ui/panel";
-import { Select } from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
-import { Tooltip } from "@/components/ui/tooltip";
-import { useToast } from "@/components/ui/toast";
-import { api, type Campaign } from "@/lib/api";
-import { useAppStore } from "@/lib/app-store";
+import { PlusIcon, TrashIcon } from '@phosphor-icons/react/dist/ssr';
+import { useRouter } from 'next/navigation';
+import { useEffect, useMemo, useState } from 'react';
+import { cn } from '@/lib/cn';
+import { NotWiredNotice } from '@/components/app/settings-section';
+import { Tag } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import { CodeBlock } from '@/components/ui/code-block';
+import { Field } from '@/components/ui/field';
+import { Input, MinLengthCounter, Textarea } from '@/components/ui/input';
+import { Panel } from '@/components/ui/panel';
+import { Select } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
+import { Tooltip } from '@/components/ui/tooltip';
+import { useToast } from '@/components/ui/toast';
+import { api, type Campaign } from '@/lib/api';
+import { useAppStore } from '@/lib/app-store';
 import {
   EDITOR_FIELD_TYPES,
   fieldKeyError,
@@ -30,7 +30,7 @@ import {
   toWireFields,
   type EditorField,
   type EditorFieldType,
-} from "@/lib/campaign-fields";
+} from '@/lib/campaign-fields';
 import {
   CAMPAIGN_DRAFT_KEY,
   DEFAULT_SETTINGS,
@@ -40,8 +40,8 @@ import {
   settingsKey,
   TIMEZONES,
   type LocalCampaignSettings,
-} from "@/lib/campaign-draft";
-import { useStoredJson } from "@/lib/hooks/use-external-store";
+} from '@/lib/campaign-draft';
+import { useStoredJson } from '@/lib/hooks/use-external-store';
 
 /**
  * The campaign editor. Two panes: compose on the left, live preview on the right.
@@ -49,7 +49,7 @@ import { useStoredJson } from "@/lib/hooks/use-external-store";
  * The preview is the point of the layout. A goal is a piece of writing whose effect is
  * invisible until it is rendered with a real contact substituted in, so the rendered
  * version and the schema it will return sit permanently beside the field you are
- * typing into — not behind a "preview" button nobody presses.
+ * typing into - not behind a "preview" button nobody presses.
  */
 export function CampaignEditor({ existing }: { existing?: Campaign }) {
   const router = useRouter();
@@ -57,12 +57,14 @@ export function CampaignEditor({ existing }: { existing?: Campaign }) {
   const { outcomes } = useAppStore();
 
   // `existing` is available on the first render, so everything it seeds is a lazy
-  // initialiser rather than an effect — the editor is never briefly empty.
-  const [name, setName] = useState(existing?.name ?? "");
-  const [goal, setGoal] = useState(existing?.goal_template ?? "");
-  const [region, setRegion] = useState(existing?.region ?? "IN");
-  const [language, setLanguage] = useState(existing?.language ?? "en");
-  const [fields, setFields] = useState<EditorField[]>(() => fieldsFrom(existing));
+  // initialiser rather than an effect - the editor is never briefly empty.
+  const [name, setName] = useState(existing?.name ?? '');
+  const [goal, setGoal] = useState(existing?.goal_template ?? '');
+  const [region, setRegion] = useState(existing?.region ?? 'IN');
+  const [language, setLanguage] = useState(existing?.language ?? 'en');
+  const [fields, setFields] = useState<EditorField[]>(() =>
+    fieldsFrom(existing),
+  );
   const [previewIndex, setPreviewIndex] = useState(0);
   const [saving, setSaving] = useState(false);
   const [nextId, setNextId] = useState(
@@ -71,7 +73,7 @@ export function CampaignEditor({ existing }: { existing?: Campaign }) {
 
   // Subscribed, so the calling window and retry policy are correct on first paint.
   const [settings, setSettings] = useStoredJson<LocalCampaignSettings>(
-    settingsKey(existing?.id ?? ""),
+    settingsKey(existing?.id ?? ''),
     DEFAULT_SETTINGS,
   );
 
@@ -81,7 +83,7 @@ export function CampaignEditor({ existing }: { existing?: Campaign }) {
    * Pick up a duplicate handed over in sessionStorage.
    *
    * This is a genuine one-shot read of an external store that also has to *clear* the
-   * handoff, so it cannot be a subscription or a lazy initialiser — a lazy initialiser
+   * handoff, so it cannot be a subscription or a lazy initialiser - a lazy initialiser
    * would run during SSR where sessionStorage does not exist, and would disagree with
    * the client on hydration.
    */
@@ -110,7 +112,7 @@ export function CampaignEditor({ existing }: { existing?: Campaign }) {
           Object.entries(draft.outcome_fields).map(([key, description], i) => ({
             id: `dup-${i}`,
             key,
-            type: "string" as EditorFieldType,
+            type: 'string' as EditorFieldType,
             description,
             options: [],
             required: false,
@@ -126,12 +128,15 @@ export function CampaignEditor({ existing }: { existing?: Campaign }) {
 
   const variables = useMemo(() => templateVariables(goal), [goal]);
 
-  // Real contacts only — someone this org has actually called — so the preview
+  // Real contacts only - someone this org has actually called - so the preview
   // never passes off a scripted name as what a real call sounds like. Outcomes
   // carry no input context, so a real contact still renders `{context.*}` empty;
   // that is the same "missing key" behaviour a live call would hit.
   const realContacts = useMemo(() => {
-    const byKey = new Map<string, { name: string; phoneMasked: string; lastCalled: string }>();
+    const byKey = new Map<
+      string,
+      { name: string; phoneMasked: string; lastCalled: string }
+    >();
     for (const outcome of outcomes) {
       const key = `${outcome.contact_name}|${outcome.phone_masked}`;
       const seen = byKey.get(key);
@@ -143,12 +148,16 @@ export function CampaignEditor({ existing }: { existing?: Campaign }) {
         });
       }
     }
-    return [...byKey.values()].sort((a, b) => b.lastCalled.localeCompare(a.lastCalled));
+    return [...byKey.values()].sort((a, b) =>
+      b.lastCalled.localeCompare(a.lastCalled),
+    );
   }, [outcomes]);
   const previewContact = realContacts[previewIndex] ?? null;
   const renderedGoal = useMemo(
     () =>
-      previewContact ? renderGoalPreview(goal, { name: previewContact.name, context: {} }) : goal,
+      previewContact
+        ? renderGoalPreview(goal, { name: previewContact.name, context: {} })
+        : goal,
     [goal, previewContact],
   );
   const schema = useMemo(() => previewSchema(fields), [fields]);
@@ -156,26 +165,32 @@ export function CampaignEditor({ existing }: { existing?: Campaign }) {
   /**
    * Exactly why saving is blocked, as one sentence.
    *
-   * Never "please fill all fields" — the operator should not have to hunt for which
+   * Never "please fill all fields" - the operator should not have to hunt for which
    * one. This string becomes the disabled button's tooltip.
    */
   const blocker = useMemo<string | null>(() => {
-    if (readOnly) return "This is a starter template. Duplicate it to make changes.";
-    if (name.trim().length < 2) return "Give the campaign a name of at least 2 characters.";
+    if (readOnly)
+      return 'This is a starter template. Duplicate it to make changes.';
+    if (name.trim().length < 2)
+      return 'Give the campaign a name of at least 2 characters.';
     if (goal.trim().length < GOAL_MIN_LENGTH) {
-      return `The goal needs at least ${GOAL_MIN_LENGTH} characters — it has ${goal.trim().length}.`;
+      return `The goal needs at least ${GOAL_MIN_LENGTH} characters - it has ${goal.trim().length}.`;
     }
     const badField = fields.find((f) => f.key.trim() && fieldKeyError(f.key));
     if (badField) return `The field “${badField.key}” has an invalid name.`;
-    const emptyEnum = fields.find((f) => f.type === "enum" && f.options.length === 0);
+    const emptyEnum = fields.find(
+      (f) => f.type === 'enum' && f.options.length === 0,
+    );
     if (emptyEnum) {
-      return `The choice field “${emptyEnum.key || "unnamed"}” needs at least one option.`;
+      return `The choice field “${emptyEnum.key || 'unnamed'}” needs at least one option.`;
     }
     return null;
   }, [readOnly, name, goal, fields]);
 
   function updateField(id: string, patch: Partial<EditorField>) {
-    setFields((current) => current.map((f) => (f.id === id ? { ...f, ...patch } : f)));
+    setFields((current) =>
+      current.map((f) => (f.id === id ? { ...f, ...patch } : f)),
+    );
   }
 
   function addField() {
@@ -200,13 +215,16 @@ export function CampaignEditor({ existing }: { existing?: Campaign }) {
           ? await api.updateCampaign(existing.id, draft)
           : await api.createCampaign(draft);
       saveLocalSettings(saved.id, settings);
-      toast({ tone: "success", title: "Campaign saved" });
-      router.push("/app/campaigns");
+      toast({ tone: 'success', title: 'Campaign saved' });
+      router.push('/app/campaigns');
     } catch (error) {
       toast({
-        tone: "error",
+        tone: 'error',
         title: "That campaign wasn't saved",
-        body: error instanceof Error ? error.message : "The service didn't respond.",
+        body:
+          error instanceof Error
+            ? error.message
+            : "The service didn't respond.",
       });
     } finally {
       setSaving(false);
@@ -221,8 +239,8 @@ export function CampaignEditor({ existing }: { existing?: Campaign }) {
           <Panel sunken className="flex flex-col gap-2 p-4">
             <p className="text-small font-bold text-text-mute">Read only</p>
             <p className="text-small text-text-dim">
-              This is a starter template. Duplicate it from the campaigns list to make a
-              version you can change.
+              This is a starter template. Duplicate it from the campaigns list
+              to make a version you can change.
             </p>
           </Panel>
         ) : null}
@@ -248,19 +266,26 @@ export function CampaignEditor({ existing }: { existing?: Campaign }) {
               rows={14}
               mono
               disabled={readOnly}
-              placeholder={"You are calling {name} about…"}
+              placeholder={'You are calling {name} about…'}
             />
           </Field>
 
-          <MinLengthCounter value={goal} min={GOAL_MIN_LENGTH} reason={GOAL_MIN_REASON} />
+          <MinLengthCounter
+            value={goal}
+            min={GOAL_MIN_LENGTH}
+            reason={GOAL_MIN_REASON}
+          />
 
           {/* Variables the template actually references, so a typo in a context key is
               visible rather than silently rendering empty at call time. */}
           <div className="flex flex-wrap items-center gap-1.5">
-            <span className="text-small font-bold text-text-mute">Variables</span>
+            <span className="text-small font-bold text-text-mute">
+              Variables
+            </span>
             {variables.length === 0 ? (
               <span className="text-small text-text-mute">
-                none yet — try <code className="font-mono text-data">{"{name}"}</code>
+                none yet - try{' '}
+                <code className="font-mono text-data">{'{name}'}</code>
               </span>
             ) : (
               variables.map((variable) => <Tag key={variable}>{variable}</Tag>)
@@ -290,7 +315,9 @@ export function CampaignEditor({ existing }: { existing?: Campaign }) {
         {/* ---- Calling window ------------------------------------------- */}
         <Panel className="flex flex-col gap-4 p-4">
           <div className="flex flex-col gap-1">
-            <p className="text-small font-bold text-text-mute">Calling window</p>
+            <p className="text-small font-bold text-text-mute">
+              Calling window
+            </p>
             <p className="text-small text-text-dim">
               The hours you intend to call within.
             </p>
@@ -302,7 +329,10 @@ export function CampaignEditor({ existing }: { existing?: Campaign }) {
                 type="time"
                 value={settings.window.start}
                 onChange={(e) =>
-                  setSettings((s) => ({ ...s, window: { ...s.window, start: e.target.value } }))
+                  setSettings((s) => ({
+                    ...s,
+                    window: { ...s.window, start: e.target.value },
+                  }))
                 }
                 disabled={readOnly}
                 className="font-mono tabular-nums"
@@ -313,7 +343,10 @@ export function CampaignEditor({ existing }: { existing?: Campaign }) {
                 type="time"
                 value={settings.window.end}
                 onChange={(e) =>
-                  setSettings((s) => ({ ...s, window: { ...s.window, end: e.target.value } }))
+                  setSettings((s) => ({
+                    ...s,
+                    window: { ...s.window, end: e.target.value },
+                  }))
                 }
                 disabled={readOnly}
                 className="font-mono tabular-nums"
@@ -323,7 +356,10 @@ export function CampaignEditor({ existing }: { existing?: Campaign }) {
               <Select
                 value={settings.window.timezone}
                 onValueChange={(tz) =>
-                  setSettings((s) => ({ ...s, window: { ...s.window, timezone: tz } }))
+                  setSettings((s) => ({
+                    ...s,
+                    window: { ...s.window, timezone: tz },
+                  }))
                 }
                 options={TIMEZONES}
                 disabled={readOnly}
@@ -332,8 +368,8 @@ export function CampaignEditor({ existing }: { existing?: Campaign }) {
           </div>
 
           <NotWiredNotice>
-            Not enforced yet — this is saved locally for your own reference, but a run
-            can still dial outside these hours.
+            Not enforced yet - this is saved locally for your own reference, but
+            a run can still dial outside these hours.
           </NotWiredNotice>
         </Panel>
 
@@ -342,8 +378,8 @@ export function CampaignEditor({ existing }: { existing?: Campaign }) {
           <div className="flex flex-col gap-1">
             <p className="text-small font-bold text-text-mute">Retry policy</p>
             <p className="text-small text-text-dim">
-              A bad time isn&apos;t a bad mood — unavailable contacts and bad-time calls
-              are marked for retry rather than escalated.
+              A bad time isn&apos;t a bad mood - unavailable contacts and
+              bad-time calls are marked for retry rather than escalated.
             </p>
           </div>
 
@@ -352,11 +388,14 @@ export function CampaignEditor({ existing }: { existing?: Campaign }) {
               <Select
                 value={String(settings.retry.attempts)}
                 onValueChange={(v) =>
-                  setSettings((s) => ({ ...s, retry: { ...s.retry, attempts: Number(v) } }))
+                  setSettings((s) => ({
+                    ...s,
+                    retry: { ...s.retry, attempts: Number(v) },
+                  }))
                 }
-                options={["0", "1", "2", "3"].map((n) => ({
+                options={['0', '1', '2', '3'].map((n) => ({
                   value: n,
-                  label: n === "0" ? "Don't retry" : `${n} more`,
+                  label: n === '0' ? "Don't retry" : `${n} more`,
                 }))}
                 disabled={readOnly}
                 mono
@@ -366,13 +405,16 @@ export function CampaignEditor({ existing }: { existing?: Campaign }) {
               <Select
                 value={String(settings.retry.spacingHours)}
                 onValueChange={(v) =>
-                  setSettings((s) => ({ ...s, retry: { ...s.retry, spacingHours: Number(v) } }))
+                  setSettings((s) => ({
+                    ...s,
+                    retry: { ...s.retry, spacingHours: Number(v) },
+                  }))
                 }
                 options={[
-                  { value: "4", label: "4 hours" },
-                  { value: "24", label: "1 day" },
-                  { value: "48", label: "2 days" },
-                  { value: "168", label: "1 week" },
+                  { value: '4', label: '4 hours' },
+                  { value: '24', label: '1 day' },
+                  { value: '48', label: '2 days' },
+                  { value: '168', label: '1 week' },
                 ]}
                 disabled={readOnly}
                 mono
@@ -381,14 +423,16 @@ export function CampaignEditor({ existing }: { existing?: Campaign }) {
           </div>
 
           <NotWiredNotice>
-            The disposition is real — a bad-time call is genuinely marked for retry.
-            Automatically acting on these attempt and spacing settings isn&apos;t built
-            yet, so retrying today is a manual second run.
+            The disposition is real - a bad-time call is genuinely marked for
+            retry. Automatically acting on these attempt and spacing settings
+            isn&apos;t built yet, so retrying today is a manual second run.
           </NotWiredNotice>
 
           <Switch
             checked={settings.escalateOnNegative}
-            onCheckedChange={(v) => setSettings((s) => ({ ...s, escalateOnNegative: v }))}
+            onCheckedChange={(v) =>
+              setSettings((s) => ({ ...s, escalateOnNegative: v }))
+            }
             label="Escalate frustrated calls to a person"
             subLabel="Opt-outs and requests for a human always escalate regardless."
             disabled={readOnly}
@@ -399,13 +443,20 @@ export function CampaignEditor({ existing }: { existing?: Campaign }) {
         <Panel className="flex flex-col gap-4 p-4">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="flex flex-col gap-1">
-              <p className="text-small font-bold text-text-mute">Fields to extract</p>
+              <p className="text-small font-bold text-text-mute">
+                Fields to extract
+              </p>
               <p className="text-small text-text-dim">
-                Every call returns outcome and sentiment. These are the fields on top of
-                that.
+                Every call returns outcome and sentiment. These are the fields
+                on top of that.
               </p>
             </div>
-            <Button variant="secondary" size="sm" onClick={addField} disabled={readOnly}>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={addField}
+              disabled={readOnly}
+            >
               <PlusIcon aria-hidden className="size-4" />
               Add field
             </Button>
@@ -413,12 +464,15 @@ export function CampaignEditor({ existing }: { existing?: Campaign }) {
 
           {fields.length === 0 ? (
             <p className="text-small text-text-mute">
-              No extra fields yet. Outcome and sentiment come back on every call anyway.
+              No extra fields yet. Outcome and sentiment come back on every call
+              anyway.
             </p>
           ) : (
             <ul className="flex flex-col gap-4">
               {fields.map((field) => {
-                const keyError = field.key.trim() ? fieldKeyError(field.key) : null;
+                const keyError = field.key.trim()
+                  ? fieldKeyError(field.key)
+                  : null;
                 return (
                   <li
                     key={field.id}
@@ -428,7 +482,9 @@ export function CampaignEditor({ existing }: { existing?: Campaign }) {
                       <Field label="Field name" error={keyError} labelHidden>
                         <Input
                           value={field.key}
-                          onChange={(e) => updateField(field.id, { key: e.target.value })}
+                          onChange={(e) =>
+                            updateField(field.id, { key: e.target.value })
+                          }
                           placeholder="party_size"
                           disabled={readOnly}
                           className="font-mono text-data"
@@ -443,16 +499,18 @@ export function CampaignEditor({ existing }: { existing?: Campaign }) {
                         }
                         options={EDITOR_FIELD_TYPES}
                         disabled={readOnly}
-                        ariaLabel={`Type for ${field.key || "the new field"}`}
+                        ariaLabel={`Type for ${field.key || 'the new field'}`}
                       />
 
                       <Button
                         variant="ghost"
                         size="md"
-                        aria-label={`Remove ${field.key || "this field"}`}
+                        aria-label={`Remove ${field.key || 'this field'}`}
                         disabled={readOnly}
                         onClick={() =>
-                          setFields((current) => current.filter((f) => f.id !== field.id))
+                          setFields((current) =>
+                            current.filter((f) => f.id !== field.id),
+                          )
                         }
                       >
                         <TrashIcon aria-hidden className="size-4" />
@@ -471,21 +529,21 @@ export function CampaignEditor({ existing }: { existing?: Campaign }) {
                         }
                         placeholder="Number of people travelling, including children"
                         disabled={readOnly}
-                        aria-label={`What to capture for ${field.key || "the new field"}`}
+                        aria-label={`What to capture for ${field.key || 'the new field'}`}
                       />
                     </Field>
 
-                    {field.type === "enum" ? (
+                    {field.type === 'enum' ? (
                       <Field
                         label="Options"
                         hint="Comma separated. The answer must be one of these."
                       >
                         <Input
-                          value={field.options.join(", ")}
+                          value={field.options.join(', ')}
                           onChange={(e) =>
                             updateField(field.id, {
                               options: e.target.value
-                                .split(",")
+                                .split(',')
                                 .map((o) => o.trim())
                                 .filter(Boolean),
                             })
@@ -499,8 +557,10 @@ export function CampaignEditor({ existing }: { existing?: Campaign }) {
 
                     <Checkbox
                       checked={field.required}
-                      onCheckedChange={(v) => updateField(field.id, { required: v })}
-                      label="Required — the call isn't complete without it"
+                      onCheckedChange={(v) =>
+                        updateField(field.id, { required: v })
+                      }
+                      label="Required - the call isn't complete without it"
                       id={`required-${field.id}`}
                       disabled={readOnly}
                     />
@@ -523,7 +583,10 @@ export function CampaignEditor({ existing }: { existing?: Campaign }) {
               Save campaign
             </Button>
           )}
-          <Button variant="secondary" onClick={() => router.push("/app/campaigns")}>
+          <Button
+            variant="secondary"
+            onClick={() => router.push('/app/campaigns')}
+          >
             Cancel
           </Button>
         </div>
@@ -553,16 +616,17 @@ export function CampaignEditor({ existing }: { existing?: Campaign }) {
           <div className="flex flex-col gap-2 p-4">
             {previewContact ? (
               <p className="text-small font-bold text-text-mute">
-                What {previewContact.name.split(" ")[0]} would hear
+                What {previewContact.name.split(' ')[0]} would hear
               </p>
             ) : null}
             <div
               className={cn(
-                "min-h-40 overflow-x-auto whitespace-pre-wrap font-mono text-data",
-                renderedGoal.trim() ? "text-text" : "text-text-mute",
+                'min-h-40 overflow-x-auto whitespace-pre-wrap font-mono text-data',
+                renderedGoal.trim() ? 'text-text' : 'text-text-mute',
               )}
             >
-              {renderedGoal.trim() || "Start writing the goal and it will render here."}
+              {renderedGoal.trim() ||
+                'Start writing the goal and it will render here.'}
             </div>
           </div>
 
@@ -579,7 +643,8 @@ export function CampaignEditor({ existing }: { existing?: Campaign }) {
 
         <p className="text-small text-text-mute">
           A missing context key renders empty rather than failing the run. Once
-          you&apos;ve made a real call, preview with that contact to check the wording.
+          you&apos;ve made a real call, preview with that contact to check the
+          wording.
         </p>
       </div>
     </div>
@@ -589,12 +654,14 @@ export function CampaignEditor({ existing }: { existing?: Campaign }) {
 /** Turn a saved campaign's outcome fields into editor rows. */
 function fieldsFrom(existing?: Campaign): EditorField[] {
   if (!existing) return [];
-  return Object.entries(existing.outcome_fields).map(([key, description], i) => ({
-    id: `existing-${i}`,
-    key,
-    type: "string" as EditorFieldType,
-    description,
-    options: [],
-    required: false,
-  }));
+  return Object.entries(existing.outcome_fields).map(
+    ([key, description], i) => ({
+      id: `existing-${i}`,
+      key,
+      type: 'string' as EditorFieldType,
+      description,
+      options: [],
+      required: false,
+    }),
+  );
 }

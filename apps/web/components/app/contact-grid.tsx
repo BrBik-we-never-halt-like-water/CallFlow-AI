@@ -1,14 +1,23 @@
-"use client";
+'use client';
 
-import { PlusIcon, TrashIcon, UploadSimpleIcon } from "@phosphor-icons/react/dist/ssr";
-import { useRef, useState } from "react";
-import { cn } from "@/lib/cn";
-import { Button } from "@/components/ui/button";
-import { Panel } from "@/components/ui/panel";
-import { Tag } from "@/components/ui/badge";
-import { useToast } from "@/components/ui/toast";
-import { normalisePhone } from "@/lib/format/phone";
-import { parseSheet, SAMPLE_CSV, validateRow, type ParsedRow } from "@/lib/contacts";
+import {
+  PlusIcon,
+  TrashIcon,
+  UploadSimpleIcon,
+} from '@phosphor-icons/react/dist/ssr';
+import { useRef, useState } from 'react';
+import { cn } from '@/lib/cn';
+import { Button } from '@/components/ui/button';
+import { Panel } from '@/components/ui/panel';
+import { Tag } from '@/components/ui/badge';
+import { useToast } from '@/components/ui/toast';
+import { normalisePhone } from '@/lib/format/phone';
+import {
+  parseSheet,
+  SAMPLE_CSV,
+  validateRow,
+  type ParsedRow,
+} from '@/lib/contacts';
 
 /**
  * Spreadsheet-style contact editor.
@@ -17,7 +26,7 @@ import { parseSheet, SAMPLE_CSV, validateRow, type ParsedRow } from "@/lib/conta
  *
  *  - An invalid row is flagged in place with the reason, never dropped. A dropped row
  *    is a person who never got called and nobody ever finds out why.
- *  - The reason is specific. "Not a valid E.164 number — try +919876543210" tells you
+ *  - The reason is specific. "Not a valid E.164 number - try +919876543210" tells you
  *    what to type; "invalid" does not.
  *  - Paste works. Almost every real list starts life in a spreadsheet, and making
  *    someone retype it is how a tool gets abandoned on day one.
@@ -36,7 +45,7 @@ export function ContactGrid({
   const invalid = rows.filter((r) => !r.valid);
   const valid = rows.filter((r) => r.valid);
 
-  function renumber(next: Omit<ParsedRow, "row">[]): ParsedRow[] {
+  function renumber(next: Omit<ParsedRow, 'row'>[]): ParsedRow[] {
     return next.map((row, i) => ({ ...row, row: i + 1 }));
   }
 
@@ -44,9 +53,9 @@ export function ContactGrid({
     const parsed = parseSheet(text);
     if (parsed.length === 0) {
       toast({
-        tone: "warning",
-        title: "Nothing to import",
-        body: "Expected columns name, phone, and note — with or without a header row.",
+        tone: 'warning',
+        title: 'Nothing to import',
+        body: 'Expected columns name, phone, and note - with or without a header row.',
       });
       return;
     }
@@ -55,11 +64,11 @@ export function ContactGrid({
 
     const bad = parsed.filter((r) => !r.valid).length;
     toast({
-      tone: bad > 0 ? "warning" : "success",
-      title: `${parsed.length} ${parsed.length === 1 ? "row" : "rows"} imported`,
+      tone: bad > 0 ? 'warning' : 'success',
+      title: `${parsed.length} ${parsed.length === 1 ? 'row' : 'rows'} imported`,
       body:
         bad > 0
-          ? `${bad} ${bad === 1 ? "row needs" : "rows need"} fixing before the run can start.`
+          ? `${bad} ${bad === 1 ? 'row needs' : 'rows need'} fixing before the run can start.`
           : undefined,
     });
   }
@@ -84,9 +93,9 @@ export function ContactGrid({
       ingest(await file.text(), { append: rows.length > 0 });
     } catch {
       toast({
-        tone: "error",
+        tone: 'error',
         title: "That file couldn't be read",
-        body: "Export it again as CSV and try once more.",
+        body: 'Export it again as CSV and try once more.',
       });
     }
   }
@@ -106,13 +115,15 @@ export function ContactGrid({
           void onFiles(e.dataTransfer.files);
         }}
         className={cn(
-          "flex flex-wrap items-center justify-between gap-3 rounded-md border border-dashed p-4",
-          "transition-colors duration-(--dur-micro)",
-          dragging ? "border-rule-strong bg-surface-hover" : "border-rule",
+          'flex flex-wrap items-center justify-between gap-3 rounded-md border border-dashed p-4',
+          'transition-colors duration-(--dur-micro)',
+          dragging ? 'border-rule-strong bg-surface-hover' : 'border-rule',
         )}
       >
         <div className="flex flex-col gap-1">
-          <p className="text-small text-text">Drop a CSV here, or paste from a spreadsheet</p>
+          <p className="text-small text-text">
+            Drop a CSV here, or paste from a spreadsheet
+          </p>
           <p className="text-small text-text-mute">
             Columns: name, phone, note. A header row is optional.
           </p>
@@ -126,7 +137,11 @@ export function ContactGrid({
             className="sr-only"
             onChange={(e) => void onFiles(e.target.files)}
           />
-          <Button variant="secondary" size="sm" onClick={() => fileInput.current?.click()}>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => fileInput.current?.click()}
+          >
             <UploadSimpleIcon aria-hidden className="size-4" />
             Import CSV
           </Button>
@@ -139,14 +154,14 @@ export function ContactGrid({
                 if (text.trim()) ingest(text, { append: rows.length > 0 });
                 else
                   toast({
-                    tone: "warning",
-                    title: "Your clipboard is empty",
-                    body: "Copy the rows from your spreadsheet first.",
+                    tone: 'warning',
+                    title: 'Your clipboard is empty',
+                    body: 'Copy the rows from your spreadsheet first.',
                   });
               } catch {
                 toast({
-                  tone: "warning",
-                  title: "Paste from your keyboard instead",
+                  tone: 'warning',
+                  title: 'Paste from your keyboard instead',
                   body: "This browser won't let a page read the clipboard. Click a cell and press Ctrl+V.",
                 });
               }
@@ -154,7 +169,11 @@ export function ContactGrid({
           >
             Paste
           </Button>
-          <Button variant="ghost" size="sm" onClick={() => ingest(SAMPLE_CSV, { append: false })}>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => ingest(SAMPLE_CSV, { append: false })}
+          >
             Use sample
           </Button>
         </div>
@@ -174,12 +193,12 @@ export function ContactGrid({
               onChange([
                 {
                   row: 1,
-                  name: "",
-                  phone: "",
-                  note: "",
+                  name: '',
+                  phone: '',
+                  note: '',
                   valid: false,
-                  error: "Add a name for this row.",
-                  errorField: "name",
+                  error: 'Add a name for this row.',
+                  errorField: 'name',
                 },
               ])
             }
@@ -196,16 +215,28 @@ export function ContactGrid({
             </caption>
             <thead className="bg-surface-sunken">
               <tr className="border-b border-rule">
-                <th scope="col" className="text-small font-bold w-10 px-3 py-2 text-text-mute">
+                <th
+                  scope="col"
+                  className="text-small font-bold w-10 px-3 py-2 text-text-mute"
+                >
                   #
                 </th>
-                <th scope="col" className="text-small font-bold px-3 py-2 text-text-mute">
+                <th
+                  scope="col"
+                  className="text-small font-bold px-3 py-2 text-text-mute"
+                >
                   Name
                 </th>
-                <th scope="col" className="text-small font-bold px-3 py-2 text-text-mute">
+                <th
+                  scope="col"
+                  className="text-small font-bold px-3 py-2 text-text-mute"
+                >
                   Phone
                 </th>
-                <th scope="col" className="text-small font-bold px-3 py-2 text-text-mute">
+                <th
+                  scope="col"
+                  className="text-small font-bold px-3 py-2 text-text-mute"
+                >
                   Note
                 </th>
                 <th scope="col" className="w-10 px-3 py-2">
@@ -215,7 +246,7 @@ export function ContactGrid({
             </thead>
             <tbody>
               {rows.map((row, index) => {
-                // A freshly added, completely empty row is obviously incomplete —
+                // A freshly added, completely empty row is obviously incomplete -
                 // it doesn't need a red border and an error message to say so
                 // before anyone has typed a single character into it. Once any
                 // field has content, show real validation feedback on whichever
@@ -227,8 +258,9 @@ export function ContactGrid({
                   <tr
                     key={index}
                     className={cn(
-                      "border-b border-rule last:border-0",
-                      flagged && "bg-[color-mix(in_oklab,var(--lamp-flare)_6%,transparent)]",
+                      'border-b border-rule last:border-0',
+                      flagged &&
+                        'bg-[color-mix(in_oklab,var(--lamp-flare)_6%,transparent)]',
                     )}
                   >
                     <td className="px-3 py-1.5 font-mono text-data tabular-nums text-text-mute">
@@ -240,19 +272,25 @@ export function ContactGrid({
                         onChange={(value) => updateCell(index, { name: value })}
                         placeholder="Aditi Sharma"
                         label={`Name, row ${row.row}`}
-                        invalid={flagged && row.errorField === "name"}
-                        error={row.errorField === "name" ? row.error : undefined}
+                        invalid={flagged && row.errorField === 'name'}
+                        error={
+                          row.errorField === 'name' ? row.error : undefined
+                        }
                       />
                     </td>
                     <td className="px-2 py-1.5">
                       <GridInput
                         value={row.phone}
-                        onChange={(value) => updateCell(index, { phone: value })}
+                        onChange={(value) =>
+                          updateCell(index, { phone: value })
+                        }
                         placeholder="+919876543210"
                         label={`Phone, row ${row.row}`}
                         mono
-                        invalid={flagged && row.errorField === "phone"}
-                        error={row.errorField === "phone" ? row.error : undefined}
+                        invalid={flagged && row.errorField === 'phone'}
+                        error={
+                          row.errorField === 'phone' ? row.error : undefined
+                        }
                       />
                     </td>
                     <td className="px-2 py-1.5">
@@ -292,7 +330,8 @@ export function ContactGrid({
             </span>
             {invalid.length > 0 ? (
               <Tag mono={false} className="text-lamp-flare-text">
-                {invalid.length} {invalid.length === 1 ? "row needs" : "rows need"} fixing
+                {invalid.length}{' '}
+                {invalid.length === 1 ? 'row needs' : 'rows need'} fixing
               </Tag>
             ) : null}
           </div>
@@ -306,12 +345,12 @@ export function ContactGrid({
                   renumber([
                     ...rows,
                     {
-                      name: "",
-                      phone: "",
-                      note: "",
+                      name: '',
+                      phone: '',
+                      note: '',
                       valid: false,
-                      error: "Add a name for this row.",
-                      errorField: "name",
+                      error: 'Add a name for this row.',
+                      errorField: 'name',
                     },
                   ]),
                 )
@@ -366,12 +405,13 @@ function GridInput({
         aria-label={label}
         aria-invalid={invalid || undefined}
         className={cn(
-          "w-full rounded-sm border border-transparent bg-transparent px-2 py-1.5",
-          "text-small text-text placeholder:text-text-mute",
-          "hover:border-rule focus:border-rule-strong focus:bg-surface-raised",
-          "transition-colors duration-(--dur-micro)",
-          mono && "font-mono text-data tabular-nums",
-          invalid && "border-[color-mix(in_oklab,var(--lamp-flare)_40%,transparent)]",
+          'w-full rounded-sm border border-transparent bg-transparent px-2 py-1.5',
+          'text-small text-text placeholder:text-text-mute',
+          'hover:border-rule focus:border-rule-strong focus:bg-surface-raised',
+          'transition-colors duration-(--dur-micro)',
+          mono && 'font-mono text-data tabular-nums',
+          invalid &&
+            'border-[color-mix(in_oklab,var(--lamp-flare)_40%,transparent)]',
         )}
       />
       {invalid && error ? (

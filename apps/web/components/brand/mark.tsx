@@ -1,10 +1,10 @@
-import { cn } from "@/lib/cn";
+import { cn } from '@/lib/cn';
 
 /**
  * The logo mark: three lamps in a row, set into a 1px-rule capsule.
  *
  * The capsule inherits `currentColor` so the mark works on any surface without
- * a variant. The lamps keep their own tokens — jade, brass, flare — because the
+ * a variant. The lamps keep their own tokens - jade, brass, flare - because the
  * mark is a miniature of the product's one idea: three calls, three different
  * things that happened, visible at a glance.
  *
@@ -13,7 +13,7 @@ import { cn } from "@/lib/cn";
  */
 export function Mark({
   className,
-  title = "CallFlow AI",
+  title = 'CallFlow AI',
 }: {
   className?: string;
   /** Pass `null` for a decorative mark sitting next to the wordmark. */
@@ -23,10 +23,10 @@ export function Mark({
     <svg
       viewBox="0 0 44 20"
       fill="none"
-      className={cn("h-5 w-auto", className)}
+      className={cn('h-5 w-auto', className)}
       {...(title
-        ? { role: "img", "aria-label": title }
-        : { "aria-hidden": true as const, focusable: false as const })}
+        ? { role: 'img', 'aria-label': title }
+        : { 'aria-hidden': true as const, focusable: false as const })}
     >
       <rect
         x="0.75"

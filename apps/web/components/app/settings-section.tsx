@@ -1,11 +1,11 @@
-import { Panel } from "@/components/ui/panel";
+import { Panel } from '@/components/ui/panel';
 
 /**
  * A settings group: heading, one line of explanation, then the controls.
  *
  * `effect` is the important prop. Every safety control in this product shows its current
- * effect in plain language underneath it — "Only 1 number can be dialled" rather than
- * just an allowlist field — because a guard whose consequence you have to infer is a
+ * effect in plain language underneath it - "Only 1 number can be dialled" rather than
+ * just an allowlist field - because a guard whose consequence you have to infer is a
  * guard people set wrong.
  */
 export function SettingsSection({
@@ -34,12 +34,16 @@ export function SettingsSection({
 
       {effect ? (
         <div className="flex flex-col gap-1 border-t border-rule pt-3">
-          <p className="text-small font-bold text-text-mute">What this means right now</p>
+          <p className="text-small font-bold text-text-mute">
+            What this means right now
+          </p>
           <p className="text-small text-text-dim">{effect}</p>
         </div>
       ) : null}
 
-      {footer ? <div className="border-t border-rule pt-3">{footer}</div> : null}
+      {footer ? (
+        <div className="border-t border-rule pt-3">{footer}</div>
+      ) : null}
     </Panel>
   );
 }

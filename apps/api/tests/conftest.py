@@ -1,6 +1,6 @@
 """Test isolation.
 
-The suite must not depend on whatever is in a developer's local .env — an
+The suite must not depend on whatever is in a developer's local .env - an
 allowlist set for real-call testing would otherwise fail unrelated tests.
 """
 

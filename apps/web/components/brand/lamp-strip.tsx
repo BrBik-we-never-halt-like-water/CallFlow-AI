@@ -1,14 +1,23 @@
-"use client";
+'use client';
 
-import { cn } from "@/lib/cn";
-import { countLamps, describeStrip, type LampSpec, type LampState } from "@/lib/lamp";
-import { Lamp, type LampSize } from "./lamp";
+import { cn } from '@/lib/cn';
+import {
+  countLamps,
+  describeStrip,
+  type LampSpec,
+  type LampState,
+} from '@/lib/lamp';
+import { Lamp, type LampSize } from './lamp';
 
 /** Stagger, and the point past which a sequence reveals as a group instead. */
 const STAGGER_MS = 60;
 const STAGGER_CAP = 12;
 
-const GAP: Record<LampSize, string> = { sm: "gap-1.5", md: "gap-2", lg: "gap-2.5" };
+const GAP: Record<LampSize, string> = {
+  sm: 'gap-1.5',
+  md: 'gap-2',
+  lg: 'gap-2.5',
+};
 
 export interface LampStripProps {
   lamps: LampSpec[];
@@ -19,7 +28,7 @@ export interface LampStripProps {
   counts?: boolean;
   /** Run the left-to-right entrance. Off for strips that are already settled. */
   animateIn?: boolean;
-  /** Allow the row to wrap — used for the 100-call overview strip. */
+  /** Allow the row to wrap - used for the 100-call overview strip. */
   wrap?: boolean;
   /** Makes each lamp a button. Used where a lamp opens the call it represents. */
   onSelect?: (index: number, lamp: LampSpec) => void;
@@ -40,7 +49,7 @@ export interface LampStripProps {
  */
 export function LampStrip({
   lamps,
-  size = "md",
+  size = 'md',
   caption,
   counts = false,
   animateIn = false,
@@ -53,15 +62,13 @@ export function LampStrip({
   const staggered = animateIn && lamps.length <= STAGGER_CAP;
 
   return (
-    <div className={cn("flex flex-col gap-2", className)}>
-      {caption ? (
-        <p className="eyebrow text-text-mute">{caption}</p>
-      ) : null}
+    <div className={cn('flex flex-col gap-2', className)}>
+      {caption ? <p className="eyebrow text-text-mute">{caption}</p> : null}
 
       <div
         role="img"
         aria-label={summary}
-        className={cn("flex items-center", GAP[size], wrap && "flex-wrap")}
+        className={cn('flex items-center', GAP[size], wrap && 'flex-wrap')}
       >
         {lamps.map((lamp, i) => {
           const lampEl = (
@@ -105,11 +112,11 @@ export function LampStrip({
 }
 
 const COUNT_TEXT: Record<LampState, string> = {
-  off: "text-lamp-off-text",
-  ice: "text-lamp-ice-text",
-  brass: "text-lamp-brass-text",
-  jade: "text-lamp-jade-text",
-  flare: "text-lamp-flare-text",
+  off: 'text-lamp-off-text',
+  ice: 'text-lamp-ice-text',
+  brass: 'text-lamp-brass-text',
+  jade: 'text-lamp-jade-text',
+  flare: 'text-lamp-flare-text',
 };
 
 function Count({
@@ -128,8 +135,13 @@ function Count({
   const isZero = n === 0;
   return (
     <span className="inline-flex items-center gap-1.5">
-      <Lamp state={isZero ? "off" : state} size="sm" pulse={!isZero && pulse} />
-      <span className={cn("tabular-nums", isZero ? "text-text-mute" : COUNT_TEXT[state])}>
+      <Lamp state={isZero ? 'off' : state} size="sm" pulse={!isZero && pulse} />
+      <span
+        className={cn(
+          'tabular-nums',
+          isZero ? 'text-text-mute' : COUNT_TEXT[state],
+        )}
+      >
         {n} {label}
       </span>
     </span>

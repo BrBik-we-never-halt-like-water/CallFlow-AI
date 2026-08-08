@@ -1,21 +1,24 @@
-"use client";
+'use client';
 
-import { useRouter } from "next/navigation";
-import { useState } from "react";
-import { SessionGate } from "@/components/app/session-gate";
-import { Button } from "@/components/ui/button";
-import { Field } from "@/components/ui/field";
-import { ImageUpload } from "@/components/ui/image-upload";
-import { Input } from "@/components/ui/input";
-import { Panel } from "@/components/ui/panel";
-import { isPasswordValid, PasswordStrength } from "@/components/ui/password-strength";
-import { useToast } from "@/components/ui/toast";
-import { api } from "@/lib/api";
-import { signOut, updatePassword } from "@/lib/auth/actions";
-import { useSession, type SessionProfile } from "@/lib/hooks/use-session";
+import { useRouter } from 'next/navigation';
+import { useState } from 'react';
+import { SessionGate } from '@/components/app/session-gate';
+import { Button } from '@/components/ui/button';
+import { Field } from '@/components/ui/field';
+import { ImageUpload } from '@/components/ui/image-upload';
+import { Input } from '@/components/ui/input';
+import { Panel } from '@/components/ui/panel';
+import {
+  isPasswordValid,
+  PasswordStrength,
+} from '@/components/ui/password-strength';
+import { useToast } from '@/components/ui/toast';
+import { api } from '@/lib/api';
+import { signOut, updatePassword } from '@/lib/auth/actions';
+import { useSession, type SessionProfile } from '@/lib/hooks/use-session';
 
 /**
- * Your profile — deliberately not a Settings tab.
+ * Your profile - deliberately not a Settings tab.
  *
  * Settings configures the organisation; this page is about the one person
  * signed in. Splitting them means neither surface has to explain why a personal
@@ -46,8 +49,8 @@ function Header() {
       <p className="text-small font-bold text-text-mute">Account</p>
       <h1 className="font-display text-h2 text-text">Your profile</h1>
       <p className="measure text-small text-text-dim">
-        Your name, your photo, and the password only you use — these follow you into
-        every organisation you belong to, not just this one.
+        Your name, your photo, and the password only you use - these follow you
+        into every organisation you belong to, not just this one.
       </p>
     </div>
   );
@@ -61,24 +64,26 @@ function ProfileDetails({
   refresh: () => void;
 }) {
   const toast = useToast();
-  const [name, setName] = useState(profile.name ?? "");
+  const [name, setName] = useState(profile.name ?? '');
   const [avatarUrl, setAvatarUrl] = useState(profile.avatar_url);
   const [saving, setSaving] = useState(false);
 
-  const dirty = name.trim() !== (profile.name ?? "") || avatarUrl !== profile.avatar_url;
+  const dirty =
+    name.trim() !== (profile.name ?? '') || avatarUrl !== profile.avatar_url;
 
   async function save() {
     setSaving(true);
     try {
       await api.updateProfile({
         name: name.trim() !== profile.name ? name.trim() : undefined,
-        avatar_url: avatarUrl && avatarUrl !== profile.avatar_url ? avatarUrl : undefined,
+        avatar_url:
+          avatarUrl && avatarUrl !== profile.avatar_url ? avatarUrl : undefined,
       });
       refresh();
-      toast({ tone: "success", title: "Profile updated" });
+      toast({ tone: 'success', title: 'Profile updated' });
     } catch (error) {
       toast({
-        tone: "error",
+        tone: 'error',
         title: "Couldn't save changes",
         body: error instanceof Error ? error.message : undefined,
       });
@@ -125,16 +130,18 @@ function ProfileDetails({
 
 function ChangePasswordPanel() {
   const toast = useToast();
-  const [password, setPassword] = useState("");
-  const [confirm, setConfirm] = useState("");
-  const [errors, setErrors] = useState<{ password?: string; confirm?: string }>({});
+  const [password, setPassword] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [errors, setErrors] = useState<{ password?: string; confirm?: string }>(
+    {},
+  );
   const [saving, setSaving] = useState(false);
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     const found: typeof errors = {};
     if (!isPasswordValid(password)) {
-      found.password = "Meet all four requirements below before continuing.";
+      found.password = 'Meet all four requirements below before continuing.';
     }
     if (confirm !== password) found.confirm = "These two don't match.";
     setErrors(found);
@@ -147,10 +154,10 @@ function ChangePasswordPanel() {
       setSaving(false);
       return;
     }
-    setPassword("");
-    setConfirm("");
+    setPassword('');
+    setConfirm('');
     setSaving(false);
-    toast({ tone: "success", title: "Password updated" });
+    toast({ tone: 'success', title: 'Password updated' });
   }
 
   return (
@@ -202,7 +209,7 @@ function SignOutPanel() {
   async function handleSignOut() {
     setSigningOut(true);
     await signOut();
-    router.replace("/login");
+    router.replace('/login');
     router.refresh();
   }
 
@@ -210,7 +217,9 @@ function SignOutPanel() {
     <Panel className="flex flex-wrap items-center justify-between gap-3 p-4 sm:p-5">
       <div className="flex flex-col gap-0.5">
         <h2 className="text-h3 font-medium text-text">Sign out</h2>
-        <p className="text-small text-text-dim">Ends your session on this device.</p>
+        <p className="text-small text-text-dim">
+          Ends your session on this device.
+        </p>
       </div>
       <Button variant="secondary" onClick={handleSignOut} loading={signingOut}>
         Sign out

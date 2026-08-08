@@ -137,7 +137,7 @@ create policy suppressions_insert on public.suppressions for insert
   with check (public.has_org_role(
     org_id, array['owner','admin','operator']::public.org_role[]));
 -- Removing one makes somebody who opted out callable again: owners only. There is
--- deliberately no UPDATE policy — a suppression is added or removed, never edited.
+-- deliberately no UPDATE policy - a suppression is added or removed, never edited.
 create policy suppressions_delete on public.suppressions for delete
   using (public.has_org_role(org_id, array['owner']::public.org_role[]));
 """
@@ -146,7 +146,7 @@ create policy suppressions_delete on public.suppressions for delete
 # The DELETE branch skips the check when the parent org or user is already gone.
 # Postgres applies the parent delete before firing the referential action, so
 # mid-cascade absence distinguishes "revoking a membership" from "cleaning up
-# after a deleted owner". Without it no account could ever be deleted — see
+# after a deleted owner". Without it no account could ever be deleted - see
 # ISSUES.md #13.
 LAST_OWNER_GUARD = """
 create or replace function public.protect_last_owner()
@@ -258,7 +258,7 @@ create trigger on_auth_user_created
 
 
 # RLS decides which rows are visible; grants decide which tables are reachable at
-# all. Both are required — RLS without a grant is unreadable, a grant without RLS
+# all. Both are required - RLS without a grant is unreadable, a grant without RLS
 # leaks. `anon` gets nothing: every read here requires a signed-in user.
 GRANTS = """
 grant usage on schema public to authenticated, anon;

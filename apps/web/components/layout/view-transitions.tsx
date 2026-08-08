@@ -1,7 +1,7 @@
-"use client";
+'use client';
 
-import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useRef } from "react";
+import { usePathname, useRouter } from 'next/navigation';
+import { useEffect, useRef } from 'react';
 
 /**
  * Cross-dissolve between routes using the browser's View Transitions API.
@@ -9,7 +9,7 @@ import { useEffect, useRef } from "react";
  * Mounted once in the root layout, this intercepts internal link clicks in the
  * capture phase and drives the navigation through `document.startViewTransition`,
  * so the browser crossfades the old page into the new one (and morphs any
- * elements that share a `view-transition-name` — see the app cards).
+ * elements that share a `view-transition-name` - see the app cards).
  *
  * The transition callback resolves only once the route has actually changed
  * (watched via `usePathname`), which is what makes the browser capture the *new*
@@ -17,7 +17,7 @@ import { useEffect, useRef } from "react";
  * never lands so the page can never freeze mid-transition.
  *
  * Where the API is unavailable, or for modified / new-tab / external / same-page
- * clicks, this does nothing and the normal Next.js navigation runs — the CSS
+ * clicks, this does nothing and the normal Next.js navigation runs - the CSS
  * `.page-enter` fade in globals.css is the fallback.
  */
 export function ViewTransitions() {
@@ -34,7 +34,10 @@ export function ViewTransitions() {
   }, [pathname]);
 
   useEffect(() => {
-    if (typeof document === "undefined" || !("startViewTransition" in document)) {
+    if (
+      typeof document === 'undefined' ||
+      !('startViewTransition' in document)
+    ) {
       return;
     }
 
@@ -50,12 +53,12 @@ export function ViewTransitions() {
         return;
       }
 
-      const anchor = (event.target as Element | null)?.closest?.("a");
+      const anchor = (event.target as Element | null)?.closest?.('a');
       if (!anchor) return;
-      if (anchor.target === "_blank" || anchor.hasAttribute("download")) return;
+      if (anchor.target === '_blank' || anchor.hasAttribute('download')) return;
 
-      const href = anchor.getAttribute("href");
-      if (!href || href.startsWith("#")) return;
+      const href = anchor.getAttribute('href');
+      if (!href || href.startsWith('#')) return;
 
       let url: URL;
       try {
@@ -82,15 +85,17 @@ export function ViewTransitions() {
           }, 500);
         });
 
-      (document as Document & {
-        startViewTransition: (cb: () => Promise<void>) => void;
-      }).startViewTransition(navigate);
+      (
+        document as Document & {
+          startViewTransition: (cb: () => Promise<void>) => void;
+        }
+      ).startViewTransition(navigate);
     };
 
     // Capture phase so this runs before Next's own Link handler; preventDefault
     // then makes Link stand down and we own the navigation.
-    document.addEventListener("click", onClick, true);
-    return () => document.removeEventListener("click", onClick, true);
+    document.addEventListener('click', onClick, true);
+    return () => document.removeEventListener('click', onClick, true);
   }, [router]);
 
   return null;

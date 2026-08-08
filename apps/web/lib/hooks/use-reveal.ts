@@ -1,7 +1,7 @@
-"use client";
+'use client';
 
-import { useEffect, useRef, useState } from "react";
-import { usePrefersReducedMotion } from "./use-external-store";
+import { useEffect, useRef, useState } from 'react';
+import { usePrefersReducedMotion } from './use-external-store';
 
 /**
  * Reveal-on-scroll, fired once at 20% visibility and never re-fired on scroll up.
@@ -10,7 +10,7 @@ import { usePrefersReducedMotion } from "./use-external-store";
  * as you scroll past it a second time is the thing that makes a page feel like a
  * template.
  *
- * Under reduced motion the element is simply shown — `shown` is derived rather than set,
+ * Under reduced motion the element is simply shown - `shown` is derived rather than set,
  * so there is no render where the content is hidden from someone who asked for less
  * animation.
  */

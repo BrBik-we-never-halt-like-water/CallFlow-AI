@@ -30,7 +30,7 @@ from app.integrations.voice.engine import (
 # Failures worth trying again, not treating as "this number doesn't work": the
 # engine, or its downstream carrier, said this is a transient condition rather
 # than something wrong with the number or the request itself. This set governs
-# dial-time decisions (start_call, and a non-retryable poll failure) — a fresh
+# dial-time decisions (start_call, and a non-retryable poll failure) - a fresh
 # call attempt against a number/request that's genuinely invalid or blocked
 # should not be retried, per CLAUDE.md's fail-closed rule for anything that
 # spends a credit or places a call.
@@ -44,11 +44,11 @@ _RETRYABLE_FAILURES = frozenset(
 # way it does to _RETRYABLE_FAILURES above. Abandoning a live, possibly-already
 # -completed call because one status check hit `internal_error`, `not_found`
 # (the classic read-after-write race right after creation), or `call_not_ready`
-# is the lossy choice, not the conservative one — all three fall through
+# is the lossy choice, not the conservative one - all three fall through
 # `classify_error`'s unmapped-code default to DialFailure.INTERNAL today, and
 # would otherwise sit outside _RETRYABLE_FAILURES. So every failure is worth
 # retrying here except one this account cannot recover from by waiting:
-# UNAUTHORIZED (covers both the engine's `unauthorized` and `forbidden` codes) —
+# UNAUTHORIZED (covers both the engine's `unauthorized` and `forbidden` codes) -
 # if the credentials are bad, no amount of polling fixes that, and burning the
 # rest of the timeout on it delays the operator finding out.
 _POLL_RETRYABLE_FAILURES = frozenset(DialFailure) - {DialFailure.UNAUTHORIZED}
@@ -91,7 +91,7 @@ def _extract_result(call: JsonObject) -> JsonObject:
 
     Confirmed against the SDK's generated `CallTaskStructuredResultType0` model
     (its own docstring: "Schema-valid structured result object extracted for
-    the whole call task using `result_schema`") — CampaignRunner always passes
+    the whole call task using `result_schema`") - CampaignRunner always passes
     a task-level `result_schema` to `start_call`, never `recipient_result_schema`,
     so the real API always populates the top-level `structured_result` key,
     which the first loop below checks. The other top-level keys, the one-level
@@ -134,7 +134,7 @@ def _final_attempt(attempts: list[Any]) -> JsonObject | None:
     Picking by status alone isn't enough: the model documents `transcript_turns`
     as "empty when no transcript is available" on *any* status, so a `completed`
     final attempt can still have nothing to show while an earlier `failed` one
-    holds a real partial conversation — that's the exact case that would have
+    holds a real partial conversation - that's the exact case that would have
     reproduced this fix's own symptom (a real conversation existing, but
     nothing surfaced) if status were the only signal. So the actual transcript
     content is what decides: prefer the most recent `completed` attempt that
@@ -142,7 +142,7 @@ def _final_attempt(attempts: list[Any]) -> JsonObject | None:
     only if nothing has ever captured a turn does this fall back to the literal
     most recent attempt (which will end up rendering as "no transcript").
 
-    "Most recent" is `started_at` order, not array position — the model
+    "Most recent" is `started_at` order, not array position - the model
     doesn't document `attempts` as chronologically ordered, and `started_at` is
     already on every attempt (an ISO 8601 string, so it sorts correctly as
     text with no parsing needed). Attempts with no `started_at` yet sort first.
@@ -169,7 +169,7 @@ def _final_attempt(attempts: list[Any]) -> JsonObject | None:
 def _extract_transcript(call: JsonObject) -> str | None:
     """Pull the transcript out of the call payload.
 
-    CALL-E's response has no top-level transcript field at all — confirmed
+    CALL-E's response has no top-level transcript field at all - confirmed
     against the installed SDK's generated models (`CallTaskAttempt.transcript_turns`,
     `CallTranscriptTurn`) and the public OpenAPI spec (CALLE.md). The real
     location is nested two levels down: recipients[N].attempts[M].transcript_turns[],
@@ -203,7 +203,7 @@ def _extract_transcript(call: JsonObject) -> str | None:
     for turn in turns:
         if not isinstance(turn, dict):
             continue
-        # `.get(key, default)` only falls back when the key is absent — a turn
+        # `.get(key, default)` only falls back when the key is absent - a turn
         # with `"text": null` (a real, permitted value on the model) still
         # returns None here, which would otherwise render the literal string
         # "None" to whoever reads the transcript. `or ""` catches that case
@@ -275,22 +275,22 @@ class CampaignRunner:
         dashboard show `queued → ringing → in_progress` while the call happens,
         instead of a frozen spinner until it ends. The SDK itself is a blocking
         client, so each poll runs in a worker thread rather than on the event
-        loop — otherwise one in-flight call would stall every other request.
+        loop - otherwise one in-flight call would stall every other request.
 
         At 2s between polls and up to `poll_timeout_seconds` (900s by default),
         a single call can make on the order of 450 HTTP requests just to watch
-        it finish. A poll failing doesn't mean the phone call failed — CALL-E
+        it finish. A poll failing doesn't mean the phone call failed - CALL-E
         keeps running the conversation regardless of whether we can currently
-        reach `GET /v1/calls/{id}` — so one flaky request must not end the
+        reach `GET /v1/calls/{id}` - so one flaky request must not end the
         whole loop the way any other unhandled exception here would. Each
         failure is classified with `_POLL_RETRYABLE_FAILURES` (deliberately
-        wider than `_RETRYABLE_FAILURES` — see its own comment for why a GET
+        wider than `_RETRYABLE_FAILURES` - see its own comment for why a GET
         poll gets a different, more forgiving answer than a dial decision):
         retryable ones are logged and the loop tries again next tick; anything
-        still classified as non-retryable (an outright auth failure — polling
+        still classified as non-retryable (an outright auth failure - polling
         can't recover from that) is re-raised immediately rather than spending
         the rest of the timeout on something that cannot succeed. No separate
-        consecutive-failure counter is needed for the retryable path — the
+        consecutive-failure counter is needed for the retryable path - the
         existing `deadline` is already a firm 900s ceiling, not an unbounded
         retry.
         """
@@ -305,7 +305,7 @@ class CampaignRunner:
                 if failure not in _POLL_RETRYABLE_FAILURES:
                     raise
                 log.warning(
-                    "transient poll failure for call %s: %s — retrying", call_id, failure.value
+                    "transient poll failure for call %s: %s - retrying", call_id, failure.value
                 )
                 await asyncio.sleep(2.0)
                 continue
@@ -390,7 +390,7 @@ class CampaignRunner:
             call_id = str(created.get("id", ""))
 
             # Surface the row as soon as the call is placed. Otherwise the
-            # dashboard shows nothing for the whole call — which reads as a
+            # dashboard shows nothing for the whole call - which reads as a
             # hang when a conversation runs for minutes.
             if on_status is not None:
                 await on_status(
@@ -408,12 +408,12 @@ class CampaignRunner:
 
         except (EngineAPIError, EngineTimeoutError, EngineConnectionError) as exc:
             # Classified against the engine's own documented error taxonomy
-            # (CALLE.md §4), not left as a raw exception string — so an operator
+            # (CALLE.md §4), not left as a raw exception string - so an operator
             # can tell "this number is bad, stop trying" apart from "we're rate
             # limited, this will work on retry" instead of both reading as the
             # same generic failure. `EngineConnectionError` (raised by the SDK
             # when a request fails before any response arrives) is included
-            # here too — without it, a dropped connection during `start_call`
+            # here too - without it, a dropped connection during `start_call`
             # would fall through to the generic `except Exception` below and
             # be misclassified as a non-retryable internal error instead of
             # the transient, worth-retrying failure it actually is.
@@ -426,7 +426,7 @@ class CampaignRunner:
                     "error": failure.value,
                     "disposition": Disposition.RETRY if retryable else Disposition.UNREACHABLE,
                     "disposition_reason": (
-                        f"Worth retrying — {failure.value.replace('_', ' ')}."
+                        f"Worth retrying - {failure.value.replace('_', ' ')}."
                         if retryable
                         else f"Call could not be completed: {failure.value.replace('_', ' ')}."
                     ),
@@ -434,7 +434,7 @@ class CampaignRunner:
             )
         except TimeoutError:
             # Raised by _poll_until_done itself when the call never reached a
-            # terminal status in time — not an engine error, so it can't go
+            # terminal status in time - not an engine error, so it can't go
             # through classify_error(), but it's the same "transient, worth
             # trying again" shape as PROVIDER_UNAVAILABLE/RATE_LIMITED.
             log.exception("poll timed out for %s", mask(contact.phone))
@@ -443,12 +443,12 @@ class CampaignRunner:
                     "status": "FAILED",
                     "error": DialFailure.TIMED_OUT.value,
                     "disposition": Disposition.RETRY,
-                    "disposition_reason": "Worth retrying — timed out waiting for a result.",
+                    "disposition_reason": "Worth retrying - timed out waiting for a result.",
                 }
             )
         except Exception:  # network error, or anything else unclassified
             # The exception's own message is logged (log.exception captures it
-            # in full) but never interpolated into a user-facing field — unlike
+            # in full) but never interpolated into a user-facing field - unlike
             # a vendor error's DialFailure.value, a raw exception string is
             # untrusted content that can carry hostnames, URLs, or other
             # internal detail through to whoever views this run or escalation.

@@ -1,4 +1,4 @@
-"""SQL for the do-not-call list. See ISSUES.md #3 — this is what makes the
+"""SQL for the do-not-call list. See ISSUES.md #3 - this is what makes the
 product's "never dialled again" promise real instead of UI-only."""
 
 from __future__ import annotations

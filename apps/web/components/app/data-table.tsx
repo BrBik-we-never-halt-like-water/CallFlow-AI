@@ -1,4 +1,4 @@
-"use client";
+'use client';
 
 import {
   CaretDownIcon,
@@ -7,11 +7,11 @@ import {
   CaretRightIcon,
   DownloadSimpleIcon,
   SlidersHorizontalIcon,
-} from "@phosphor-icons/react/dist/ssr";
-import { useMemo, useState } from "react";
-import { cn } from "@/lib/cn";
-import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
+} from '@phosphor-icons/react/dist/ssr';
+import { useMemo, useState } from 'react';
+import { cn } from '@/lib/cn';
+import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -20,9 +20,9 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { Select } from "@/components/ui/select";
-import { Skeleton } from "@/components/ui/skeleton";
+} from '@/components/ui/dropdown-menu';
+import { Select } from '@/components/ui/select';
+import { Skeleton } from '@/components/ui/skeleton';
 
 export interface Column<T> {
   id: string;
@@ -34,7 +34,7 @@ export interface Column<T> {
    */
   value?: (row: T) => string | number | null;
   /** Numeric, phone, and timestamp columns are right-aligned and mono. */
-  align?: "left" | "right";
+  align?: 'left' | 'right';
   mono?: boolean;
   sortable?: boolean;
   /** Hidden until the operator turns it on in the column control. */
@@ -45,7 +45,7 @@ export interface Column<T> {
 
 export interface SortState {
   id: string;
-  dir: "asc" | "desc";
+  dir: 'asc' | 'desc';
 }
 
 export interface DataTableProps<T> {
@@ -79,7 +79,7 @@ export interface DataTableProps<T> {
   onRowClick?: (row: T) => void;
   /**
    * Card body for the mobile list. Below 768px the table becomes a stacked list
-   * rather than a horizontally-scrolling table — an ops manager checking
+   * rather than a horizontally-scrolling table - an ops manager checking
    * escalations on a phone should never have to scroll sideways.
    */
   mobileCard?: (row: T) => React.ReactNode;
@@ -91,7 +91,7 @@ export interface DataTableProps<T> {
   className?: string;
 }
 
-const ROWS_PER_PAGE = ["25", "50", "100"];
+const ROWS_PER_PAGE = ['25', '50', '100'];
 
 export function DataTable<T>({
   caption,
@@ -129,8 +129,12 @@ export function DataTable<T>({
   const selected = selectedIds ?? new Set<string>();
   const allKeys = rows.map(rowKey);
   const selectedOnPage = allKeys.filter((k) => selected.has(k)).length;
-  const headerChecked: boolean | "indeterminate" =
-    selectedOnPage === 0 ? false : selectedOnPage === allKeys.length ? true : "indeterminate";
+  const headerChecked: boolean | 'indeterminate' =
+    selectedOnPage === 0
+      ? false
+      : selectedOnPage === allKeys.length
+        ? true
+        : 'indeterminate';
 
   function toggleAll(next: boolean) {
     if (!onSelectionChange) return;
@@ -152,7 +156,7 @@ export function DataTable<T>({
 
   function requestSort(column: Column<T>) {
     if (!column.sortable || !onSortChange) return;
-    const dir = sort?.id === column.id && sort.dir === "asc" ? "desc" : "asc";
+    const dir = sort?.id === column.id && sort.dir === 'asc' ? 'desc' : 'asc';
     onSortChange({ id: column.id, dir });
   }
 
@@ -160,35 +164,41 @@ export function DataTable<T>({
     const header = visible.map((c) => c.header);
     const body = rows.map((row) =>
       visible.map((c) => {
-        const raw = c.value ? c.value(row) : "";
-        return raw == null ? "" : String(raw);
+        const raw = c.value ? c.value(row) : '';
+        return raw == null ? '' : String(raw);
       }),
     );
     const csv = [header, ...body]
       .map((line) =>
         line
-          .map((cell) => (/[",\n]/.test(cell) ? `"${cell.replace(/"/g, '""')}"` : cell))
-          .join(","),
+          .map((cell) =>
+            /[",\n]/.test(cell) ? `"${cell.replace(/"/g, '""')}"` : cell,
+          )
+          .join(','),
       )
-      .join("\n");
+      .join('\n');
 
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
+    const link = document.createElement('a');
     link.href = url;
     link.download = `${exportFileName}.csv`;
     link.click();
     URL.revokeObjectURL(url);
   }
 
-  const totalPages = totalRows != null ? Math.max(1, Math.ceil(totalRows / pageSize)) : null;
-  const showToolbar = Boolean(toolbar) || columns.length > 1 || Boolean(exportFileName);
+  const totalPages =
+    totalRows != null ? Math.max(1, Math.ceil(totalRows / pageSize)) : null;
+  const showToolbar =
+    Boolean(toolbar) || columns.length > 1 || Boolean(exportFileName);
 
   return (
-    <div className={cn("flex flex-col", className)}>
+    <div className={cn('flex flex-col', className)}>
       {showToolbar ? (
         <div className="flex flex-wrap items-center justify-between gap-2 pb-3">
-          <div className="flex min-w-0 flex-wrap items-center gap-2">{toolbar}</div>
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            {toolbar}
+          </div>
 
           <div className="flex items-center gap-2">
             <DropdownMenu>
@@ -259,15 +269,15 @@ export function DataTable<T>({
                     aria-sort={
                       column.sortable
                         ? isSorted
-                          ? sort.dir === "asc"
-                            ? "ascending"
-                            : "descending"
-                          : "none"
+                          ? sort.dir === 'asc'
+                            ? 'ascending'
+                            : 'descending'
+                          : 'none'
                         : undefined
                     }
                     className={cn(
-                      "px-3 py-2 text-small font-medium text-text-mute",
-                      column.align === "right" && "text-right",
+                      'px-3 py-2 text-small font-medium text-text-mute',
+                      column.align === 'right' && 'text-right',
                       column.width,
                     )}
                   >
@@ -276,19 +286,22 @@ export function DataTable<T>({
                         type="button"
                         onClick={() => requestSort(column)}
                         className={cn(
-                          "inline-flex cursor-pointer items-center gap-1 transition-colors hover:text-text",
-                          column.align === "right" && "flex-row-reverse",
+                          'inline-flex cursor-pointer items-center gap-1 transition-colors hover:text-text',
+                          column.align === 'right' && 'flex-row-reverse',
                         )}
                       >
                         {column.header}
                         {isSorted ? (
-                          sort.dir === "asc" ? (
+                          sort.dir === 'asc' ? (
                             <CaretUpIcon aria-hidden className="size-3" />
                           ) : (
                             <CaretDownIcon aria-hidden className="size-3" />
                           )
                         ) : (
-                          <CaretUpDownIcon aria-hidden className="size-3 opacity-50" />
+                          <CaretUpDownIcon
+                            aria-hidden
+                            className="size-3 opacity-50"
+                          />
                         )}
                       </button>
                     ) : (
@@ -331,12 +344,12 @@ export function DataTable<T>({
                     key={key}
                     onClick={onRowClick ? () => onRowClick(row) : undefined}
                     className={cn(
-                      "h-11 border-b border-rule transition-colors duration-(--dur-micro) last:border-0",
-                      // No zebra striping and no transform on hover — rows are
+                      'h-11 border-b border-rule transition-colors duration-(--dur-micro) last:border-0',
+                      // No zebra striping and no transform on hover - rows are
                       // separated by a rule, and the surface is what reacts.
-                      "hover:bg-surface-sunken",
-                      isSelected && "bg-surface-sunken",
-                      onRowClick && "cursor-pointer",
+                      'hover:bg-surface-sunken',
+                      isSelected && 'bg-surface-sunken',
+                      onRowClick && 'cursor-pointer',
                     )}
                   >
                     {selectable ? (
@@ -359,9 +372,9 @@ export function DataTable<T>({
                       <td
                         key={column.id}
                         className={cn(
-                          "px-3 py-2 text-small text-text",
-                          column.align === "right" && "text-right",
-                          column.mono && "font-mono text-data tabular-nums",
+                          'px-3 py-2 text-small text-text',
+                          column.align === 'right' && 'text-right',
+                          column.mono && 'font-mono text-data tabular-nums',
                         )}
                       >
                         {column.cell(row)}
@@ -379,13 +392,18 @@ export function DataTable<T>({
       <div className="flex flex-col gap-2 md:hidden">
         {loading ? (
           Array.from({ length: 4 }, (_, i) => (
-            <div key={i} className="panel-glass rounded-md border border-rule/70 p-3">
+            <div
+              key={i}
+              className="panel-glass rounded-md border border-rule/70 p-3"
+            >
               <Skeleton className="h-4 w-32" />
               <Skeleton className="mt-2 h-3 w-24" />
             </div>
           ))
         ) : rows.length === 0 ? (
-          <div className="panel-glass rounded-md border border-rule/70">{empty}</div>
+          <div className="panel-glass rounded-md border border-rule/70">
+            {empty}
+          </div>
         ) : (
           rows.map((row) => {
             const key = rowKey(row);
@@ -394,9 +412,19 @@ export function DataTable<T>({
             ) : (
               <div className="flex flex-col gap-1">
                 {visible.slice(0, 3).map((column) => (
-                  <div key={column.id} className="flex items-baseline justify-between gap-3">
-                    <span className="text-small font-medium text-text-mute">{column.header}</span>
-                    <span className={cn("text-small text-text", column.mono && "font-mono text-data")}>
+                  <div
+                    key={column.id}
+                    className="flex items-baseline justify-between gap-3"
+                  >
+                    <span className="text-small font-medium text-text-mute">
+                      {column.header}
+                    </span>
+                    <span
+                      className={cn(
+                        'text-small text-text',
+                        column.mono && 'font-mono text-data',
+                      )}
+                    >
                       {column.cell(row)}
                     </span>
                   </div>
@@ -423,7 +451,10 @@ export function DataTable<T>({
                 className="panel-glass flex w-full cursor-pointer items-center gap-3 rounded-md border border-rule/70 p-3 text-left transition-colors hover:bg-surface-hover"
               >
                 <span className="min-w-0 flex-1">{content}</span>
-                <CaretRightIcon aria-hidden className="size-4 shrink-0 text-text-mute" />
+                <CaretRightIcon
+                  aria-hidden
+                  className="size-4 shrink-0 text-text-mute"
+                />
               </button>
             );
           })
@@ -477,8 +508,8 @@ export function DataTable<T>({
           role="region"
           aria-label="Selection actions"
           className={cn(
-            "fixed inset-x-0 bottom-0 z-40 border-t border-rule-strong bg-surface-raised p-3 shadow-overlay",
-            "flex flex-wrap items-center justify-between gap-3",
+            'fixed inset-x-0 bottom-0 z-40 border-t border-rule-strong bg-surface-raised p-3 shadow-overlay',
+            'flex flex-wrap items-center justify-between gap-3',
           )}
         >
           <p className="font-mono text-data tabular-nums text-text">
@@ -486,7 +517,11 @@ export function DataTable<T>({
           </p>
           <div className="flex flex-wrap items-center gap-2">
             {selectionActions}
-            <Button variant="ghost" size="sm" onClick={() => onSelectionChange?.(new Set())}>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => onSelectionChange?.(new Set())}
+            >
               Clear
             </Button>
           </div>

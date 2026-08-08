@@ -20,7 +20,7 @@ class MembershipOut(BaseModel):
     org_name: str
     org_slug: str
     org_logo_url: str | None
-    # Null means the org still has its auto-generated placeholder name — the
+    # Null means the org still has its auto-generated placeholder name - the
     # dashboard gates on this to force the first-run org setup screen.
     onboarded_at: datetime | None
     plan_id: str

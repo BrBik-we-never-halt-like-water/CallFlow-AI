@@ -1,24 +1,24 @@
 export const metadata = {
-  title: "Safety configuration",
+  title: 'Safety configuration',
   description:
-    "The allowlist, the per-run ceiling, rate limits, and the suppression list. Every guard fails closed.",
+    'The allowlist, the per-run ceiling, rate limits, and the suppression list. Every guard fails closed.',
 };
 
 # Safety configuration
 
-CallFlow places real phone calls — every run dials for real, from the first one. Every
-guard here fails closed — meaning that if a guard cannot be evaluated, the call does
+CallFlow places real phone calls - every run dials for real, from the first one. Every
+guard here fails closed - meaning that if a guard cannot be evaluated, the call does
 not go out.
 
 ## The guards
 
-| Guard | Behaviour |
-|---|---|
-| Allowlist | While non-empty, only these E.164 numbers can be dialled. |
-| Per-run ceiling | Hard cap on real calls in one run. Protects your balance. |
-| Rate limit | Calls allowed per window. Paces a run to a human rhythm. |
-| Daily budget | Shared daily ceiling across the whole organisation. |
-| E.164 validation | Malformed numbers are rejected before they reach the engine. |
+| Guard            | Behaviour                                                                          |
+| ---------------- | ---------------------------------------------------------------------------------- |
+| Allowlist        | While non-empty, only these E.164 numbers can be dialled.                          |
+| Per-run ceiling  | Hard cap on real calls in one run. Protects your balance.                          |
+| Rate limit       | Calls allowed per window. Paces a run to a human rhythm.                           |
+| Daily budget     | Shared daily ceiling across the whole organisation.                                |
+| E.164 validation | Malformed numbers are rejected before they reach the engine.                       |
 | Suppression list | Permanent and global. Opt-outs are never dialled again, checked before every dial. |
 
 All of them are visible as mono chips on the run composer, above the button that
@@ -56,7 +56,7 @@ rate limits for your own testing. It does not lift the allowlist or the ceiling.
 
 ## Number masking
 
-Phone numbers are masked — `+91*******210` — in every log, API response, and interface
+Phone numbers are masked - `+91*******210` - in every log, API response, and interface
 surface. Revealing a full number is a separate, permissioned action.
 
 Masking is implemented in exactly one place in the codebase, so a new screen cannot
@@ -65,5 +65,5 @@ ship without it by accident.
 ## While you are still setting up
 
 Put your own number on the allowlist before your first run. While it's non-empty,
-that's the only number a run can dial — the state you want to be in until you have
+that's the only number a run can dial - the state you want to be in until you have
 watched a real call go through end to end.

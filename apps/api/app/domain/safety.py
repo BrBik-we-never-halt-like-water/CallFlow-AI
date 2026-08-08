@@ -63,7 +63,7 @@ class GateResult:
 @dataclass(frozen=True)
 class EffectiveSafety:
     """An organisation's safety numbers, with the deployment defaults already
-    merged in — the one place that merge happens, so display (Settings ->
+    merged in - the one place that merge happens, so display (Settings ->
     Safety, the run composer's guard bar) and enforcement (`check_dial_allowed`,
     the rate limiter) can never resolve two different answers for the same org."""
 
@@ -84,10 +84,10 @@ def resolve_safety_settings(
 ) -> EffectiveSafety:
     """Merge an organisation's override onto the deployment's env-var defaults.
 
-    Every field is `is not None`-checked, never truthiness — an org's explicit
+    Every field is `is not None`-checked, never truthiness - an org's explicit
     choice must win even when that choice is `[]` or `0`. An empty allowlist is
     a real, meaningful, intentional value ("no restriction, any number may be
-    dialled"; Settings -> Safety says exactly this), not "unset" — a bare `or`
+    dialled"; Settings -> Safety says exactly this), not "unset" - a bare `or`
     here previously reinstated the deployment's own `CALLFLOW_ALLOWLIST` the
     moment an org cleared theirs, silently enforcing a restriction the org had
     just turned off.
@@ -120,7 +120,7 @@ def check_dial_allowed(
     """Final gate before a number is dialed.
 
     Takes the suppression verdict, the per-run ceiling, and the allowlist as plain
-    values rather than looking any of them up itself — this module does no I/O, by
+    values rather than looking any of them up itself - this module does no I/O, by
     design (CLAUDE.md §3, S). `max_calls_per_run`/`allowlist` default to the
     deployment's env-var config when omitted; the caller passes an organisation's
     own override (`org_safety_settings`) when one exists, resolved once per run,

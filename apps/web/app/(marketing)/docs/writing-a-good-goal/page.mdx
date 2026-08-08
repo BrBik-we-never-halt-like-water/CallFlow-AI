@@ -1,7 +1,7 @@
 export const metadata = {
-  title: "Writing a good goal",
+  title: 'Writing a good goal',
   description:
-    "The goal field is the product. What separates a goal that works from one that produces a confusing robocall.",
+    'The goal field is the product. What separates a goal that works from one that produces a confusing robocall.',
 };
 
 # Writing a good goal
@@ -11,7 +11,7 @@ The goal is the entire product.
 That is not a figure of speech. The same calling engine, given a one-line task,
 produces a confusing robocall that people hang up on. Given a well-written goal, it
 produces something closer to a competent junior colleague. Nothing else you
-configure — not the schema, not the retry policy, not the calling window — moves the
+configure - not the schema, not the retry policy, not the calling window - moves the
 outcome anything like as much.
 
 So this page is the one worth reading properly.
@@ -31,7 +31,7 @@ through a run.
 
 The minimum is a floor, not a target. A goal that scrapes past 40 characters will
 technically dial and will still go badly, because the agent has to improvise
-everything you did not say — including things you would never have said.
+everything you did not say - including things you would never have said.
 
 ## The four things a goal must state
 
@@ -43,8 +43,8 @@ fourth are the ones people leave out.
 2. **What to ask, in order.** Number them. An unordered list of topics produces a
    call that wanders and a result with holes in it.
 3. **What to do when they say yes.** Confirm what? Offer what? Record what?
-4. **What to do when they say no** — and separately, what to do when they say *not
-   now*. These are different outcomes and conflating them is the most common
+4. **What to do when they say no** - and separately, what to do when they say _not
+   now_. These are different outcomes and conflating them is the most common
    mistake.
 
 Everything beyond those four is refinement. Everything short of them is a gamble.
@@ -52,8 +52,8 @@ Everything beyond those four is refinement. Everything short of them is a gamble
 ## Say what the agent must refuse to do
 
 This matters more than it sounds. An agent that has not been told what is out of
-bounds will helpfully answer a question it should have deferred — quoting a price,
-confirming a date, commenting on a medical result — because being helpful is what it
+bounds will helpfully answer a question it should have deferred - quoting a price,
+confirming a date, commenting on a medical result - because being helpful is what it
 is for.
 
 Write the boundary explicitly:
@@ -71,7 +71,7 @@ you more than that.
 
 The triage rules run over the result regardless, so frustration and opt-outs are
 caught whether or not you mention them. But saying it in the goal changes the
-agent's behaviour *during* the call rather than only classifying it afterwards:
+agent's behaviour _during_ the call rather than only classifying it afterwards:
 
 ```text
 If at any point they sound frustrated, ask to speak to a person, or ask you to
@@ -87,7 +87,7 @@ One sentence, near the start, and it changes the shape of your results.
 
 Without it, a contact caught at a bad moment produces a short, negative call that
 looks like disinterest. With it, the same contact says "not now", the call is queued
-for a polite retry, and you keep the lead. **A bad time is not a bad mood** — and
+for a polite retry, and you keep the lead. **A bad time is not a bad mood** - and
 the difference only shows up in your data if the agent asked.
 
 ## Use variables for anything that differs per contact
@@ -101,7 +101,7 @@ Confirm they can work from {context[location]}, or would need remote.
 ```
 
 A missing context key renders as an empty string rather than failing the run, which
-is forgiving at call time and easy to miss while authoring — so check the live
+is forgiving at call time and easy to miss while authoring - so check the live
 preview in the campaign editor with a real contact selected before you save.
 
 ## What a finished goal looks like
@@ -109,7 +109,7 @@ preview in the campaign editor with a real contact selected before you save.
 Long enough to be specific, ordered, with the refusals and the escalation stated. If
 yours is three lines, it is not finished; the starter templates run to twenty or
 more, and that is why they work. Every solution page on this site shows its goal
-template in full — those are the real ones, not excerpts, and they are the best
+template in full - those are the real ones, not excerpts, and they are the best
 reference available.
 
 ## Preview it on a real name before you run

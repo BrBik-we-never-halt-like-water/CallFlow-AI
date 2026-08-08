@@ -1,18 +1,18 @@
-"use client";
+'use client';
 
-import { useRouter } from "next/navigation";
-import { useState } from "react";
-import { Button } from "@/components/ui/button";
-import { Field } from "@/components/ui/field";
-import { ImageUpload } from "@/components/ui/image-upload";
-import { Input } from "@/components/ui/input";
-import { Panel } from "@/components/ui/panel";
-import { useToast } from "@/components/ui/toast";
-import { api, type Organisation } from "@/lib/api";
-import { useActiveOrg } from "@/lib/hooks/use-active-org";
-import { useSession } from "@/lib/hooks/use-session";
+import { useRouter } from 'next/navigation';
+import { useState } from 'react';
+import { Button } from '@/components/ui/button';
+import { Field } from '@/components/ui/field';
+import { ImageUpload } from '@/components/ui/image-upload';
+import { Input } from '@/components/ui/input';
+import { Panel } from '@/components/ui/panel';
+import { useToast } from '@/components/ui/toast';
+import { api, type Organisation } from '@/lib/api';
+import { useActiveOrg } from '@/lib/hooks/use-active-org';
+import { useSession } from '@/lib/hooks/use-session';
 
-type Step = "name" | "logo";
+type Step = 'name' | 'logo';
 
 /**
  * A real screen for starting a new organisation, not a name-only popup.
@@ -29,8 +29,8 @@ export default function NewOrganisationPage() {
   const session = useSession();
   const [, setActiveOrgId] = useActiveOrg();
 
-  const [step, setStep] = useState<Step>("name");
-  const [name, setName] = useState("");
+  const [step, setStep] = useState<Step>('name');
+  const [name, setName] = useState('');
   const [creating, setCreating] = useState(false);
   const [created, setCreated] = useState<Organisation | null>(null);
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
@@ -45,10 +45,10 @@ export default function NewOrganisationPage() {
       setCreated(org);
       setActiveOrgId(org.id);
       await session.refresh();
-      setStep("logo");
+      setStep('logo');
     } catch (error) {
       toast({
-        tone: "error",
+        tone: 'error',
         title: "Couldn't create the organisation",
         body: error instanceof Error ? error.message : undefined,
       });
@@ -64,15 +64,19 @@ export default function NewOrganisationPage() {
       if (logoUrl) {
         await api.updateActiveOrganisation({ logo_url: logoUrl });
       }
-      toast({ tone: "success", title: "Organisation created", body: created.name });
-      router.replace("/app");
+      toast({
+        tone: 'success',
+        title: 'Organisation created',
+        body: created.name,
+      });
+      router.replace('/app');
     } catch (error) {
       toast({
-        tone: "error",
+        tone: 'error',
         title: "Created, but the logo didn't save",
         body: error instanceof Error ? error.message : undefined,
       });
-      router.replace("/app");
+      router.replace('/app');
     } finally {
       setFinishing(false);
     }
@@ -83,17 +87,17 @@ export default function NewOrganisationPage() {
       <div className="flex flex-col gap-1">
         <p className="text-small font-bold text-text-mute">New organisation</p>
         <h1 className="font-display text-h2 text-text">
-          {step === "name" ? "Name your organisation" : "Add a logo"}
+          {step === 'name' ? 'Name your organisation' : 'Add a logo'}
         </h1>
         <p className="measure text-small text-text-dim">
-          {step === "name"
-            ? "A separate workspace with its own team, campaigns, and settings."
-            : "Optional — everyone you invite will see this next to the name."}
+          {step === 'name'
+            ? 'A separate workspace with its own team, campaigns, and settings.'
+            : 'Optional - everyone you invite will see this next to the name.'}
         </p>
       </div>
 
       <Panel className="flex flex-col gap-5 p-5">
-        {step === "name" ? (
+        {step === 'name' ? (
           <form onSubmit={createOrg} className="flex flex-col gap-4">
             <Field label="Organisation name" required>
               <Input
@@ -104,7 +108,11 @@ export default function NewOrganisationPage() {
               />
             </Field>
             <div className="flex items-center gap-3 border-t border-rule pt-4">
-              <Button type="submit" loading={creating} disabled={name.trim().length < 2}>
+              <Button
+                type="submit"
+                loading={creating}
+                disabled={name.trim().length < 2}
+              >
                 Continue
               </Button>
               <Button
@@ -122,7 +130,7 @@ export default function NewOrganisationPage() {
             <Field label="Logo">
               <ImageUpload
                 bucket="org-logos"
-                ownerId={created?.id ?? ""}
+                ownerId={created?.id ?? ''}
                 value={logoUrl}
                 onChange={setLogoUrl}
                 label="Upload an organisation logo"
@@ -131,7 +139,7 @@ export default function NewOrganisationPage() {
             </Field>
             <div className="flex items-center gap-3 border-t border-rule pt-4">
               <Button onClick={finish} loading={finishing}>
-                {logoUrl ? "Finish" : "Skip for now"}
+                {logoUrl ? 'Finish' : 'Skip for now'}
               </Button>
             </div>
           </div>

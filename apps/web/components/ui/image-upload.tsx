@@ -1,27 +1,27 @@
-"use client";
+'use client';
 
-import { useRef, useState } from "react";
-import { Button } from "@/components/ui/button";
-import { useToast } from "@/components/ui/toast";
-import { cn } from "@/lib/cn";
-import { supabaseBrowser } from "@/lib/supabase/client";
+import { useRef, useState } from 'react';
+import { Button } from '@/components/ui/button';
+import { useToast } from '@/components/ui/toast';
+import { cn } from '@/lib/cn';
+import { supabaseBrowser } from '@/lib/supabase/client';
 
 const MAX_BYTES = 2 * 1024 * 1024;
-const ACCEPTED_TYPES = ["image/jpeg", "image/png", "image/webp"];
+const ACCEPTED_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 
 export interface ImageUploadProps {
-  /** Matches the storage bucket's RLS policy — see the migration in Part 3. */
-  bucket: "avatars" | "org-logos";
+  /** Matches the storage bucket's RLS policy - see the migration in Part 3. */
+  bucket: 'avatars' | 'org-logos';
   /** The org or user id the bucket policy checks the upload path against. */
   ownerId: string;
   value: string | null;
   onChange: (url: string) => void;
   label: string;
-  shape?: "circle" | "square";
+  shape?: 'circle' | 'square';
 }
 
 /**
- * Upload straight to Supabase Storage from the browser — no API round trip for the
+ * Upload straight to Supabase Storage from the browser - no API round trip for the
  * bytes themselves, just the resulting public URL, which the caller persists.
  */
 export function ImageUpload({
@@ -30,7 +30,7 @@ export function ImageUpload({
   value,
   onChange,
   label,
-  shape = "circle",
+  shape = 'circle',
 }: ImageUploadProps) {
   const toast = useToast();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -38,27 +38,37 @@ export function ImageUpload({
 
   async function handleFile(file: File) {
     if (!ACCEPTED_TYPES.includes(file.type)) {
-      toast({ tone: "error", title: "Use a JPG, PNG, or WEBP image." });
+      toast({ tone: 'error', title: 'Use a JPG, PNG, or WEBP image.' });
       return;
     }
     if (file.size > MAX_BYTES) {
-      toast({ tone: "error", title: "Image is too large", body: "Keep it under 2MB." });
+      toast({
+        tone: 'error',
+        title: 'Image is too large',
+        body: 'Keep it under 2MB.',
+      });
       return;
     }
 
     setUploading(true);
     try {
-      const extension = file.name.split(".").pop()?.toLowerCase() || "png";
+      const extension = file.name.split('.').pop()?.toLowerCase() || 'png';
       const path = `${ownerId}/${Date.now()}.${extension}`;
       const { error } = await supabaseBrowser()
         .storage.from(bucket)
-        .upload(path, file, { upsert: true, cacheControl: "3600" });
+        .upload(path, file, { upsert: true, cacheControl: '3600' });
       if (error) throw error;
 
-      const { data } = supabaseBrowser().storage.from(bucket).getPublicUrl(path);
+      const { data } = supabaseBrowser()
+        .storage.from(bucket)
+        .getPublicUrl(path);
       onChange(data.publicUrl);
     } catch {
-      toast({ tone: "error", title: "Upload failed", body: "Try a different image." });
+      toast({
+        tone: 'error',
+        title: 'Upload failed',
+        body: 'Try a different image.',
+      });
     } finally {
       setUploading(false);
     }
@@ -71,8 +81,8 @@ export function ImageUpload({
         onClick={() => inputRef.current?.click()}
         aria-label={label}
         className={cn(
-          "flex size-16 shrink-0 items-center justify-center overflow-hidden border border-rule bg-surface-sunken text-text-dim transition-colors hover:bg-surface-hover",
-          shape === "circle" ? "rounded-full" : "rounded-lg",
+          'flex size-16 shrink-0 items-center justify-center overflow-hidden border border-rule bg-surface-sunken text-text-dim transition-colors hover:bg-surface-hover',
+          shape === 'circle' ? 'rounded-full' : 'rounded-lg',
         )}
       >
         {value ? (
@@ -93,9 +103,11 @@ export function ImageUpload({
           loading={uploading}
           onClick={() => inputRef.current?.click()}
         >
-          {value ? "Change image" : "Upload image"}
+          {value ? 'Change image' : 'Upload image'}
         </Button>
-        <span className="text-small text-text-dim">JPG, PNG, or WEBP — up to 2MB.</span>
+        <span className="text-small text-text-dim">
+          JPG, PNG, or WEBP - up to 2MB.
+        </span>
       </div>
 
       <input
@@ -106,7 +118,7 @@ export function ImageUpload({
         onChange={(e) => {
           const file = e.target.files?.[0];
           if (file) void handleFile(file);
-          e.target.value = "";
+          e.target.value = '';
         }}
       />
     </div>

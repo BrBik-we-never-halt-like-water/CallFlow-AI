@@ -1,42 +1,47 @@
-import { Eyebrow } from "@/components/ui/panel";
-import { Reveal } from "@/components/ui/reveal";
-import { WaveCanvas } from "@/components/brand/wave-canvas";
-import { Tag } from "@/components/ui/badge";
-import { LiveLamp } from "./live-lamp";
+import { Eyebrow } from '@/components/ui/panel';
+import { Reveal } from '@/components/ui/reveal';
+import { WaveCanvas } from '@/components/brand/wave-canvas';
+import { Tag } from '@/components/ui/badge';
+import { LiveLamp } from './live-lamp';
 
 /**
  * The problem, argued on the left and demonstrated on the right.
  *
  * The demonstration is two call-log rows. The "without" pair is deliberately
- * identical — same status, same duration, no way to tell them apart — and the
+ * identical - same status, same duration, no way to tell them apart - and the
  * "with" pair is the same two calls carrying lamps. That contrast *is* the pitch,
  * so it gets room and no caption: explaining it would concede that it doesn't
  * land on its own.
  */
 
 const ROWS = [
-  { name: "Aditi Sharma", phone: "+91*******210", duration: "2m 41s" },
-  { name: "Rahul Verma", phone: "+91*******884", duration: "2m 08s" },
+  { name: 'Aditi Sharma', phone: '+91*******210', duration: '2m 41s' },
+  { name: 'Rahul Verma', phone: '+91*******884', duration: '2m 08s' },
 ];
 
 export function ProblemCompare() {
   return (
-    <section id="problem" className="mx-auto max-w-(--container-marketing) px-4 sm:px-6">
+    <section
+      id="problem"
+      className="mx-auto max-w-(--container-marketing) px-4 sm:px-6"
+    >
       <div className="grid items-center gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,520px)] lg:gap-16">
         <Reveal className="flex flex-col gap-5">
           <h2 className="measure-display font-display text-h2 text-text">
             A completed call tells you nothing.
           </h2>
           <p className="measure text-body-l text-text-dim">
-            In a normal call log, a delighted customer and a furious one look identical
-            — both just say <span className="font-mono text-data">completed</span>. Your
-            team burns hours dialling, repeating the same five questions, and typing
-            notes into a CRM afterwards. You find out a call went badly when someone
-            escalates, which is far too late.
+            In a normal call log, a delighted customer and a furious one look
+            identical - both just say{' '}
+            <span className="font-mono text-data">completed</span>. Your team
+            burns hours dialling, repeating the same five questions, and typing
+            notes into a CRM afterwards. You find out a call went badly when
+            someone escalates, which is far too late.
           </p>
           <p className="measure text-body-l text-text">
-            CallFlow turns every conversation into typed data the moment it ends, so the
-            work that needs a person is visible immediately and the rest closes itself.
+            CallFlow turns every conversation into typed data the moment it
+            ends, so the work that needs a person is visible immediately and the
+            rest closes itself.
           </p>
         </Reveal>
 
@@ -69,7 +74,13 @@ export function ProblemCompare() {
   );
 }
 
-function LogGroup({ label, children }: { label: string; children: React.ReactNode }) {
+function LogGroup({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
   return (
     <div className="flex flex-col gap-2">
       <Eyebrow>{label}</Eyebrow>
@@ -105,8 +116,12 @@ function LogRow({
 
   return (
     <div className="flex items-center gap-3 border-b border-rule px-3 py-3 last:border-0">
-      <span className="flex size-2.5 shrink-0 items-center justify-center">{lamp}</span>
-      <span className="w-24 shrink-0 truncate text-small text-text sm:w-28">{name}</span>
+      <span className="flex size-2.5 shrink-0 items-center justify-center">
+        {lamp}
+      </span>
+      <span className="w-24 shrink-0 truncate text-small text-text sm:w-28">
+        {name}
+      </span>
 
       {insight ? (
         <>
@@ -124,7 +139,9 @@ function LogRow({
           <span className="hidden min-w-0 flex-1 font-mono text-data tabular-nums text-text-mute sm:inline">
             {phone}
           </span>
-          <span className="font-mono text-data tabular-nums text-text-mute">{duration}</span>
+          <span className="font-mono text-data tabular-nums text-text-mute">
+            {duration}
+          </span>
           <span className="w-24 shrink-0 truncate text-right text-small text-text-mute">
             {status}
           </span>

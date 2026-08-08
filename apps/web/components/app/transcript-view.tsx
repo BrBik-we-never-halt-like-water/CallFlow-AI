@@ -1,20 +1,20 @@
-"use client";
+'use client';
 
-import { useState } from "react";
-import { CaretRightIcon } from "@phosphor-icons/react/dist/ssr";
-import { cn } from "@/lib/cn";
-import { Lamp } from "@/components/brand/lamp";
-import { LampBadge, Tag } from "@/components/ui/badge";
-import { CodeBlock } from "@/components/ui/code-block";
-import { Panel } from "@/components/ui/panel";
-import { TabPanel, Tabs } from "@/components/ui/disclosure";
-import { MaskedPhone } from "./masked-phone";
-import type { Outcome } from "@/lib/api";
-import { formatDuration, formatTimestamp, humaniseKey } from "@/lib/format";
-import { lampForOutcome } from "@/lib/lamp";
+import { useState } from 'react';
+import { CaretRightIcon } from '@phosphor-icons/react/dist/ssr';
+import { cn } from '@/lib/cn';
+import { Lamp } from '@/components/brand/lamp';
+import { LampBadge, Tag } from '@/components/ui/badge';
+import { CodeBlock } from '@/components/ui/code-block';
+import { Panel } from '@/components/ui/panel';
+import { TabPanel, Tabs } from '@/components/ui/disclosure';
+import { MaskedPhone } from './masked-phone';
+import type { Outcome } from '@/lib/api';
+import { formatDuration, formatTimestamp, humaniseKey } from '@/lib/format';
+import { lampForOutcome } from '@/lib/lamp';
 
 interface Turn {
-  speaker: "agent" | "contact" | "unknown";
+  speaker: 'agent' | 'contact' | 'unknown';
   text: string;
   timestamp?: string;
 }
@@ -23,12 +23,12 @@ interface Turn {
  * A call, in full: the conversation on the left, what came out of it on the right.
  *
  * The triage decision is rendered as a chain of typed fields rather than as prose. That
- * is the guarantee the whole product rests on — the reason a call was escalated is a
- * value you can check, not a sentence someone wrote — so it is displayed as a chain of
+ * is the guarantee the whole product rests on - the reason a call was escalated is a
+ * value you can check, not a sentence someone wrote - so it is displayed as a chain of
  * values, and never assembled by reading the summary text.
  */
 export function TranscriptView({ outcome }: { outcome: Outcome }) {
-  const [tab, setTab] = useState("conversation");
+  const [tab, setTab] = useState('conversation');
   const lamp = lampForOutcome(outcome);
   const turns = parseTranscript(outcome.transcript);
 
@@ -45,9 +45,20 @@ export function TranscriptView({ outcome }: { outcome: Outcome }) {
 
         <dl className="grid gap-x-6 gap-y-2 sm:grid-cols-2 lg:grid-cols-4">
           <Meta label="Contact" value={outcome.contact_name} />
-          <Meta label="Number" value={<MaskedPhone phone={outcome.phone_masked} />} />
-          <Meta label="Duration" value={formatDuration(outcome.duration_seconds)} mono />
-          <Meta label="Ended" value={formatTimestamp(outcome.created_at)} mono />
+          <Meta
+            label="Number"
+            value={<MaskedPhone phone={outcome.phone_masked} />}
+          />
+          <Meta
+            label="Duration"
+            value={formatDuration(outcome.duration_seconds)}
+            mono
+          />
+          <Meta
+            label="Ended"
+            value={formatTimestamp(outcome.created_at)}
+            mono
+          />
         </dl>
       </div>
 
@@ -57,8 +68,8 @@ export function TranscriptView({ outcome }: { outcome: Outcome }) {
           value={tab}
           onValueChange={setTab}
           tabs={[
-            { value: "conversation", label: "Conversation" },
-            { value: "result", label: "Result" },
+            { value: 'conversation', label: 'Conversation' },
+            { value: 'result', label: 'Result' },
           ]}
           listClassName="px-4"
         >
@@ -87,22 +98,22 @@ function Meta({
   label,
   value,
   mono = false,
-  tone = "default",
+  tone = 'default',
 }: {
   label: string;
   value: React.ReactNode;
   mono?: boolean;
-  /** `danger` marks a value that needs attention — currently just call errors. */
-  tone?: "default" | "danger";
+  /** `danger` marks a value that needs attention - currently just call errors. */
+  tone?: 'default' | 'danger';
 }) {
   return (
     <div className="flex flex-col gap-0.5">
       <dt className="text-small font-bold text-text-mute">{label}</dt>
       <dd
         className={cn(
-          "text-small",
-          tone === "danger" ? "text-lamp-flare-text" : "text-text",
-          mono && "font-mono text-data tabular-nums",
+          'text-small',
+          tone === 'danger' ? 'text-lamp-flare-text' : 'text-text',
+          mono && 'font-mono text-data tabular-nums',
         )}
       >
         {value}
@@ -131,8 +142,11 @@ function Conversation({ turns, outcome }: { turns: Turn[]; outcome: Outcome }) {
   // The turn where sentiment shifted, marked with an inline lamp. Approximated as the
   // last contact turn on a negative call, which is where the trigger nearly always is.
   const shiftIndex =
-    outcome.sentiment === "negative"
-      ? turns.reduce((last, turn, i) => (turn.speaker === "contact" ? i : last), -1)
+    outcome.sentiment === 'negative'
+      ? turns.reduce(
+          (last, turn, i) => (turn.speaker === 'contact' ? i : last),
+          -1,
+        )
       : -1;
 
   return (
@@ -143,26 +157,26 @@ function Conversation({ turns, outcome }: { turns: Turn[]; outcome: Outcome }) {
         {turns.map((turn, i) => (
           <li key={i} className="flex gap-3">
             <span className="w-12 shrink-0 pt-2 text-right font-mono text-data text-text-mute">
-              {turn.timestamp ?? ""}
+              {turn.timestamp ?? ''}
             </span>
 
             <div className="flex min-w-0 flex-1 flex-col gap-1">
               <div
                 className={cn(
-                  "rounded-md border p-3",
-                  turn.speaker === "agent" && "border-rule bg-surface-raised",
-                  turn.speaker === "contact" && "border-rule bg-surface-sunken",
+                  'rounded-md border p-3',
+                  turn.speaker === 'agent' && 'border-rule bg-surface-raised',
+                  turn.speaker === 'contact' && 'border-rule bg-surface-sunken',
                   // "unknown" is CALL-E's own value for a turn it couldn't attribute to
-                  // either party — rendered as neither speaker's bubble, not silently
+                  // either party - rendered as neither speaker's bubble, not silently
                   // folded into the contact's, so it never misrepresents who said it.
-                  turn.speaker === "unknown" && "border-dashed border-rule",
+                  turn.speaker === 'unknown' && 'border-dashed border-rule',
                 )}
               >
                 <p className="mb-1.5 text-small font-bold text-text-mute">
-                  {turn.speaker === "agent"
-                    ? "CallFlow"
-                    : turn.speaker === "unknown"
-                      ? "Unknown speaker"
+                  {turn.speaker === 'agent'
+                    ? 'CallFlow'
+                    : turn.speaker === 'unknown'
+                      ? 'Unknown speaker'
                       : outcome.contact_name}
                 </p>
                 <p className="text-small text-text">{turn.text}</p>
@@ -195,16 +209,26 @@ function ResultColumn({ outcome }: { outcome: Outcome }) {
         <p className="text-small font-bold text-text-mute">Result</p>
         <dl className="flex flex-col gap-3">
           <Meta label="Outcome" value={humaniseKey(outcome.disposition)} />
-          {outcome.summary ? <Meta label="Summary" value={outcome.summary} /> : null}
+          {outcome.summary ? (
+            <Meta label="Summary" value={outcome.summary} />
+          ) : null}
           <Meta label="Sentiment" value={humaniseKey(outcome.sentiment)} />
           {outcome.sentiment_reason ? (
             <Meta label="Sentiment reason" value={outcome.sentiment_reason} />
           ) : null}
           {outcome.disposition_reason ? (
-            <Meta label="Disposition reason" value={outcome.disposition_reason} />
+            <Meta
+              label="Disposition reason"
+              value={outcome.disposition_reason}
+            />
           ) : null}
           {Object.entries(extracted).map(([key, value]) => (
-            <Meta key={key} label={humaniseKey(key)} value={formatValue(value)} mono />
+            <Meta
+              key={key}
+              label={humaniseKey(key)}
+              value={formatValue(value)}
+              mono
+            />
           ))}
           {outcome.error ? (
             <Meta label="Error" value={outcome.error} mono tone="danger" />
@@ -222,18 +246,23 @@ function ResultColumn({ outcome }: { outcome: Outcome }) {
               <CaretRightIcon
                 aria-hidden
                 className={cn(
-                  "size-3 transition-transform duration-(--dur-base) ease-(--ease-out)",
-                  showRaw && "rotate-90",
+                  'size-3 transition-transform duration-(--dur-base) ease-(--ease-out)',
+                  showRaw && 'rotate-90',
                 )}
               />
               View raw JSON
             </button>
             {showRaw ? (
-              <CodeBlock code={JSON.stringify(extracted, null, 2)} maxHeight="max-h-72" />
+              <CodeBlock
+                code={JSON.stringify(extracted, null, 2)}
+                maxHeight="max-h-72"
+              />
             ) : null}
           </div>
         ) : (
-          <p className="text-small text-text-mute">No custom fields came back from this call.</p>
+          <p className="text-small text-text-mute">
+            No custom fields came back from this call.
+          </p>
         )}
       </div>
 
@@ -243,13 +272,18 @@ function ResultColumn({ outcome }: { outcome: Outcome }) {
         <ol className="flex flex-col gap-1.5">
           {chain.map((step, i) => (
             <li key={i} className="flex items-start gap-2">
-              <span aria-hidden className="pt-0.5 font-mono text-data text-text-mute">
-                {i === chain.length - 1 ? "→" : "·"}
+              <span
+                aria-hidden
+                className="pt-0.5 font-mono text-data text-text-mute"
+              >
+                {i === chain.length - 1 ? '→' : '·'}
               </span>
               <span
                 className={cn(
-                  "text-small",
-                  i === chain.length - 1 ? "font-medium text-text" : "text-text-dim",
+                  'text-small',
+                  i === chain.length - 1
+                    ? 'font-medium text-text'
+                    : 'text-text-dim',
                 )}
               >
                 {step}
@@ -269,8 +303,8 @@ function ResultColumn({ outcome }: { outcome: Outcome }) {
 function triageChain(outcome: Outcome): string[] {
   const chain: string[] = [];
 
-  chain.push(`Status: ${outcome.status || "unknown"}`);
-  if (outcome.sentiment && outcome.sentiment !== "unknown") {
+  chain.push(`Status: ${outcome.status || 'unknown'}`);
+  if (outcome.sentiment && outcome.sentiment !== 'unknown') {
     chain.push(`Sentiment: ${outcome.sentiment}`);
   }
   if (outcome.sentiment_reason) chain.push(outcome.sentiment_reason);
@@ -281,9 +315,9 @@ function triageChain(outcome: Outcome): string[] {
 }
 
 function formatValue(value: unknown): string {
-  if (value === null || value === undefined) return "—";
-  if (typeof value === "boolean") return value ? "yes" : "no";
-  if (typeof value === "object") return JSON.stringify(value);
+  if (value === null || value === undefined) return '-';
+  if (typeof value === 'boolean') return value ? 'yes' : 'no';
+  if (typeof value === 'object') return JSON.stringify(value);
   return String(value);
 }
 
@@ -292,7 +326,7 @@ function formatValue(value: unknown): string {
  *
  * The stored format is `Speaker: text` per line. Anything that does not match keeps its
  * text and is attributed to the contact, so an unexpected shape degrades to readable
- * rather than to empty. CALL-E's own speaker enum is `bot | user | unknown` — `unknown`
+ * rather than to empty. CALL-E's own speaker enum is `bot | user | unknown` - `unknown`
  * is a real value (the engine couldn't attribute that turn to either party), not a
  * placeholder for a shape this parser failed to recognise, so it gets its own bucket
  * rather than silently falling into "contact".
@@ -301,19 +335,21 @@ function parseTranscript(transcript: string | null): Turn[] {
   if (!transcript?.trim()) return [];
 
   return transcript
-    .split("\n")
+    .split('\n')
     .map((line) => line.trim())
     .filter(Boolean)
     .map((line) => {
       const match = line.match(/^([\w .'-]{1,40}?)\s*:\s*(.+)$/);
-      if (!match) return { speaker: "contact" as const, text: line };
+      if (!match) return { speaker: 'contact' as const, text: line };
 
       const [, rawSpeaker, text] = match;
-      const speaker: Turn["speaker"] = /agent|assistant|callflow|bot|ai/i.test(rawSpeaker)
-        ? "agent"
+      const speaker: Turn['speaker'] = /agent|assistant|callflow|bot|ai/i.test(
+        rawSpeaker,
+      )
+        ? 'agent'
         : /^unknown$/i.test(rawSpeaker.trim())
-          ? "unknown"
-          : "contact";
+          ? 'unknown'
+          : 'contact';
       return { speaker, text };
     });
 }

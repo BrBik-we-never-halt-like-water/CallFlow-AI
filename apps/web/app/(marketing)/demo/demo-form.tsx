@@ -1,19 +1,19 @@
-"use client";
+'use client';
 
-import { useState } from "react";
-import { Button } from "@/components/ui/button";
-import { ErrorSummary, Field } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
-import { Panel } from "@/components/ui/panel";
-import { Select } from "@/components/ui/select";
-import { VERTICALS } from "@/lib/verticals";
+import { useState } from 'react';
+import { Button } from '@/components/ui/button';
+import { ErrorSummary, Field } from '@/components/ui/field';
+import { Input } from '@/components/ui/input';
+import { Panel } from '@/components/ui/panel';
+import { Select } from '@/components/ui/select';
+import { VERTICALS } from '@/lib/verticals';
 
 const VOLUMES = [
-  { value: "under-100", label: "Under 100 calls a month" },
-  { value: "100-500", label: "100 – 500" },
-  { value: "500-2000", label: "500 – 2,000" },
-  { value: "2000-plus", label: "More than 2,000" },
-  { value: "unsure", label: "Not sure yet" },
+  { value: 'under-100', label: 'Under 100 calls a month' },
+  { value: '100-500', label: '100 – 500' },
+  { value: '500-2000', label: '500 – 2,000' },
+  { value: '2000-plus', label: 'More than 2,000' },
+  { value: 'unsure', label: 'Not sure yet' },
 ];
 
 /**
@@ -25,24 +25,25 @@ const VOLUMES = [
  * that was never scheduled.
  */
 export function DemoForm() {
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [company, setCompany] = useState("");
-  const [volume, setVolume] = useState("");
-  const [vertical, setVertical] = useState("");
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [company, setCompany] = useState('');
+  const [volume, setVolume] = useState('');
+  const [vertical, setVertical] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [done, setDone] = useState(false);
 
   function submit(event: React.FormEvent) {
     event.preventDefault();
     const next: Record<string, string> = {};
-    if (!name.trim()) next.name = "Add your name.";
-    if (!email.trim()) next.email = "Add a work email so we can send the invite.";
+    if (!name.trim()) next.name = 'Add your name.';
+    if (!email.trim())
+      next.email = 'Add a work email so we can send the invite.';
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
       next.email = "That doesn't look like an email address.";
     }
-    if (!company.trim()) next.company = "Add your company.";
-    if (!volume) next.volume = "Pick the volume closest to yours.";
+    if (!company.trim()) next.company = 'Add your company.';
+    if (!volume) next.volume = 'Pick the volume closest to yours.';
 
     setErrors(next);
     if (Object.keys(next).length === 0) setDone(true);
@@ -58,15 +59,17 @@ export function DemoForm() {
         : null,
     ]
       .filter(Boolean)
-      .join("\n");
+      .join('\n');
 
     return (
       <Panel className="flex flex-col gap-4 p-5 sm:p-6">
-        <h2 className="font-display text-h3 text-text">Send this and we&apos;ll book it</h2>
+        <h2 className="font-display text-h3 text-text">
+          Send this and we&apos;ll book it
+        </h2>
         <p className="text-small text-text-dim">
-          The scheduler isn&apos;t connected yet, so nothing has been booked. Send the
-          email below — it already has your details in it — and we&apos;ll come back with
-          two or three times within one business day.
+          The scheduler isn&apos;t connected yet, so nothing has been booked.
+          Send the email below - it already has your details in it - and
+          we&apos;ll come back with two or three times within one business day.
         </p>
 
         <Panel sunken className="p-3">
@@ -79,7 +82,7 @@ export function DemoForm() {
           <Button asChild>
             <a
               href={`mailto:hello@callflow.ai?subject=${encodeURIComponent(
-                `Demo request — ${company}`,
+                `Demo request - ${company}`,
               )}&body=${encodeURIComponent(`${body}\n\nReply-to: ${email}\n`)}`}
             >
               Send the request
@@ -96,9 +99,12 @@ export function DemoForm() {
   const summary = Object.entries(errors).map(([id, message]) => ({
     id: `demo-${id}`,
     label:
-      { name: "Name", email: "Work email", company: "Company", volume: "Monthly call volume" }[
-        id
-      ] ?? id,
+      {
+        name: 'Name',
+        email: 'Work email',
+        company: 'Company',
+        volume: 'Monthly call volume',
+      }[id] ?? id,
     message,
   }));
 
@@ -107,7 +113,7 @@ export function DemoForm() {
       <div className="flex flex-col gap-1">
         <h2 className="font-display text-h3 text-text">Request a time</h2>
         <p className="text-small text-text-mute">
-          No phone number needed — everything happens over a screen share.
+          No phone number needed - everything happens over a screen share.
         </p>
       </div>
 
@@ -152,7 +158,10 @@ export function DemoForm() {
           />
         </Field>
 
-        <Field label="What you'd use it for" help="Optional — it helps us prepare.">
+        <Field
+          label="What you'd use it for"
+          help="Optional - it helps us prepare."
+        >
           <Select
             id="demo-vertical"
             value={vertical}

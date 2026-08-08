@@ -1,6 +1,6 @@
 """SQL for org-owned Twilio/Plivo credentials. RLS restricts every query to owner/admin.
 
-Encryption happens in the route layer (`app/core/crypto.py`), not here — this
+Encryption happens in the route layer (`app/core/crypto.py`), not here - this
 module only ever sees ciphertext, so a bug here can leak a row, not a secret.
 """
 

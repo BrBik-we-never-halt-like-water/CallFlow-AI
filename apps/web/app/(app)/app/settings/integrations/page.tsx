@@ -1,18 +1,21 @@
-"use client";
+'use client';
 
-import { useState } from "react";
-import { NotWiredNotice, SettingsSection } from "@/components/app/settings-section";
-import { SessionGate } from "@/components/app/session-gate";
-import { Tag } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Dialog, DialogRoot } from "@/components/ui/dialog";
-import { Field } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
-import { Skeleton } from "@/components/ui/skeleton";
-import { useToast } from "@/components/ui/toast";
-import { api, type Provider, type ProviderCredential } from "@/lib/api";
-import { useOrgScopedEffect } from "@/lib/hooks/use-org-scoped-effect";
-import { useSession, type SessionProfile } from "@/lib/hooks/use-session";
+import { useState } from 'react';
+import {
+  NotWiredNotice,
+  SettingsSection,
+} from '@/components/app/settings-section';
+import { SessionGate } from '@/components/app/session-gate';
+import { Tag } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Dialog, DialogRoot } from '@/components/ui/dialog';
+import { Field } from '@/components/ui/field';
+import { Input } from '@/components/ui/input';
+import { Skeleton } from '@/components/ui/skeleton';
+import { useToast } from '@/components/ui/toast';
+import { api, type Provider, type ProviderCredential } from '@/lib/api';
+import { useOrgScopedEffect } from '@/lib/hooks/use-org-scoped-effect';
+import { useSession, type SessionProfile } from '@/lib/hooks/use-session';
 
 const PROVIDERS: {
   id: Provider;
@@ -23,25 +26,27 @@ const PROVIDERS: {
   description: string;
 }[] = [
   {
-    id: "twilio",
-    name: "Twilio",
-    mark: "T",
-    identifierLabel: "Account SID",
-    secretLabel: "Auth token",
-    description: "Store your organisation's Twilio account credentials, encrypted.",
+    id: 'twilio',
+    name: 'Twilio',
+    mark: 'T',
+    identifierLabel: 'Account SID',
+    secretLabel: 'Auth token',
+    description:
+      "Store your organisation's Twilio account credentials, encrypted.",
   },
   {
-    id: "plivo",
-    name: "Plivo",
-    mark: "P",
-    identifierLabel: "Auth ID",
-    secretLabel: "Auth token",
-    description: "Store your organisation's Plivo account credentials, encrypted.",
+    id: 'plivo',
+    name: 'Plivo',
+    mark: 'P',
+    identifierLabel: 'Auth ID',
+    secretLabel: 'Auth token',
+    description:
+      "Store your organisation's Plivo account credentials, encrypted.",
   },
 ];
 
 /**
- * A provider's mark — its initial in a consistent badge, the same monochrome
+ * A provider's mark - its initial in a consistent badge, the same monochrome
  * pattern as `OrgMark`. Not the vendor's actual logo: reproducing a trademarked
  * wordmark accurately needs the vendor's own asset, not a guess, and this
  * product's identity is monochrome throughout regardless.
@@ -56,24 +61,28 @@ function ProviderMark({ letter }: { letter: string }) {
 
 const COMING_SOON = [
   {
-    name: "Zapier",
-    reason: "Connect CallFlow to thousands of other tools without custom code.",
+    name: 'Zapier',
+    reason: 'Connect CallFlow to thousands of other tools without custom code.',
   },
   {
-    name: "Slack",
-    reason: "Escalation alerts where the team already lives, the moment a call needs a person.",
+    name: 'Slack',
+    reason:
+      'Escalation alerts where the team already lives, the moment a call needs a person.',
   },
   {
-    name: "HubSpot",
-    reason: "Push typed call results back onto the CRM record your team already works from.",
+    name: 'HubSpot',
+    reason:
+      'Push typed call results back onto the CRM record your team already works from.',
   },
   {
-    name: "Salesforce",
-    reason: "The same write-back, for teams whose pipeline lives in Salesforce instead.",
+    name: 'Salesforce',
+    reason:
+      'The same write-back, for teams whose pipeline lives in Salesforce instead.',
   },
   {
-    name: "Google Sheets",
-    reason: "For teams running contacts from a spreadsheet — results land back in the same one.",
+    name: 'Google Sheets',
+    reason:
+      'For teams running contacts from a spreadsheet - results land back in the same one.',
   },
 ];
 
@@ -88,10 +97,12 @@ export default function IntegrationsSettingsPage() {
 
 function IntegrationsContent({ profile }: { profile: SessionProfile }) {
   const toast = useToast();
-  const canRead = profile.permissions.includes("integrations:read");
-  const canWrite = profile.permissions.includes("integrations:write");
+  const canRead = profile.permissions.includes('integrations:read');
+  const canWrite = profile.permissions.includes('integrations:write');
 
-  const [credentials, setCredentials] = useState<ProviderCredential[] | null>(null);
+  const [credentials, setCredentials] = useState<ProviderCredential[] | null>(
+    null,
+  );
   const [editing, setEditing] = useState<Provider | null>(null);
 
   function load() {
@@ -99,7 +110,9 @@ function IntegrationsContent({ profile }: { profile: SessionProfile }) {
     api
       .listProviderCredentials()
       .then(setCredentials)
-      .catch(() => toast({ tone: "error", title: "Couldn't load integrations" }));
+      .catch(() =>
+        toast({ tone: 'error', title: "Couldn't load integrations" }),
+      );
   }
 
   useOrgScopedEffect(() => {
@@ -132,7 +145,9 @@ function IntegrationsContent({ profile }: { profile: SessionProfile }) {
               <ProviderRow
                 key={provider.id}
                 provider={provider}
-                credential={credentials.find((c) => c.provider === provider.id) ?? null}
+                credential={
+                  credentials.find((c) => c.provider === provider.id) ?? null
+                }
                 canWrite={canWrite}
                 onEdit={() => setEditing(provider.id)}
                 onChanged={load}
@@ -143,15 +158,15 @@ function IntegrationsContent({ profile }: { profile: SessionProfile }) {
       </SettingsSection>
 
       <NotWiredNotice>
-        A connected number stores real, encrypted credentials — but nothing yet
-        places a call over it. That&apos;s a separate, not-yet-built piece of work
-        (the voice-agent platform); today, connecting a number here doesn&apos;t
-        change which numbers your runs dial from.
+        A connected number stores real, encrypted credentials - but nothing yet
+        places a call over it. That&apos;s a separate, not-yet-built piece of
+        work (the voice-agent platform); today, connecting a number here
+        doesn&apos;t change which numbers your runs dial from.
       </NotWiredNotice>
 
       <SettingsSection
         title="More integrations"
-        description="Coming soon — reach out if one of these would unblock you sooner."
+        description="Coming soon - reach out if one of these would unblock you sooner."
       >
         <ul className="flex flex-col divide-y divide-rule">
           {COMING_SOON.map((integration) => (
@@ -160,8 +175,12 @@ function IntegrationsContent({ profile }: { profile: SessionProfile }) {
               className="flex flex-wrap items-center justify-between gap-3 py-3"
             >
               <div className="flex min-w-0 flex-col gap-0.5">
-                <span className="text-small font-medium text-text">{integration.name}</span>
-                <span className="measure text-small text-text-dim">{integration.reason}</span>
+                <span className="text-small font-medium text-text">
+                  {integration.name}
+                </span>
+                <span className="measure text-small text-text-dim">
+                  {integration.reason}
+                </span>
               </div>
               <Tag>Coming soon</Tag>
             </li>
@@ -204,11 +223,11 @@ function ProviderRow({
     setDisconnecting(true);
     try {
       await api.disconnectProvider(provider.id);
-      toast({ tone: "info", title: `${provider.name} disconnected` });
+      toast({ tone: 'info', title: `${provider.name} disconnected` });
       onChanged();
     } catch (error) {
       toast({
-        tone: "error",
+        tone: 'error',
         title: "Couldn't disconnect",
         body: error instanceof Error ? error.message : undefined,
       });
@@ -223,7 +242,9 @@ function ProviderRow({
         <ProviderMark letter={provider.mark} />
         <div className="flex min-w-0 flex-col gap-0.5">
           <div className="flex items-center gap-2">
-            <span className="text-small font-medium text-text">{provider.name}</span>
+            <span className="text-small font-medium text-text">
+              {provider.name}
+            </span>
             {credential ? <Tag>Connected</Tag> : null}
           </div>
           <span className="measure text-small text-text-dim">
@@ -234,10 +255,15 @@ function ProviderRow({
       {canWrite ? (
         <div className="flex items-center gap-2">
           <Button variant="secondary" size="sm" onClick={onEdit}>
-            {credential ? "Update" : "Connect"}
+            {credential ? 'Update' : 'Connect'}
           </Button>
           {credential ? (
-            <Button variant="ghost" size="sm" onClick={disconnect} loading={disconnecting}>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={disconnect}
+              loading={disconnecting}
+            >
               Disconnect
             </Button>
           ) : null}
@@ -259,9 +285,9 @@ function ConnectDialog({
   onChanged: () => void;
 }) {
   const toast = useToast();
-  const [identifier, setIdentifier] = useState("");
-  const [secret, setSecret] = useState("");
-  const [phoneNumber, setPhoneNumber] = useState(existing?.phone_number ?? "");
+  const [identifier, setIdentifier] = useState('');
+  const [secret, setSecret] = useState('');
+  const [phoneNumber, setPhoneNumber] = useState(existing?.phone_number ?? '');
   const [saving, setSaving] = useState(false);
 
   const valid = identifier.trim().length > 0 && secret.trim().length > 0;
@@ -275,11 +301,11 @@ function ConnectDialog({
         secret: secret.trim(),
         phone_number: phoneNumber.trim() || undefined,
       });
-      toast({ tone: "success", title: `${provider.name} connected` });
+      toast({ tone: 'success', title: `${provider.name} connected` });
       onChanged();
     } catch (error) {
       toast({
-        tone: "error",
+        tone: 'error',
         title: "Couldn't save credentials",
         body: error instanceof Error ? error.message : undefined,
       });
@@ -294,8 +320,10 @@ function ConnectDialog({
         title={`Connect ${provider.name}`}
         description={
           existing
-            ? "Replacing these credentials overwrites the ones on file. The previous values are never shown again."
-            : "Find these in your " + provider.name + " console. Stored encrypted, never shown again after saving."
+            ? 'Replacing these credentials overwrites the ones on file. The previous values are never shown again.'
+            : 'Find these in your ' +
+              provider.name +
+              ' console. Stored encrypted, never shown again after saving.'
         }
         size="sm"
         footer={

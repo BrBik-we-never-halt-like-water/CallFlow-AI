@@ -1,17 +1,17 @@
-"use client";
+'use client';
 
-import Link from "next/link";
-import { useState } from "react";
-import { AuthCard } from "@/components/layout/auth-card";
-import { Button } from "@/components/ui/button";
-import { Field } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
-import { useToast } from "@/components/ui/toast";
-import { requestPasswordReset } from "@/lib/auth/actions";
+import Link from 'next/link';
+import { useState } from 'react';
+import { AuthCard } from '@/components/layout/auth-card';
+import { Button } from '@/components/ui/button';
+import { Field } from '@/components/ui/field';
+import { Input } from '@/components/ui/input';
+import { useToast } from '@/components/ui/toast';
+import { requestPasswordReset } from '@/lib/auth/actions';
 
 export default function ForgotPasswordPage() {
   const toast = useToast();
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [sent, setSent] = useState(false);
@@ -20,7 +20,7 @@ export default function ForgotPasswordPage() {
     event.preventDefault();
 
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
-      setError("Enter the email address on your account.");
+      setError('Enter the email address on your account.');
       return;
     }
 
@@ -29,10 +29,10 @@ export default function ForgotPasswordPage() {
 
     const result = await requestPasswordReset(email);
 
-    // Rate limiting is worth surfacing — the user can act on it by waiting. Anything
+    // Rate limiting is worth surfacing - the user can act on it by waiting. Anything
     // else is swallowed: reporting "no such account" here would turn this form into a
     // way to discover which addresses are registered.
-    if (!result.ok && result.error?.includes("emails have been sent")) {
+    if (!result.ok && result.error?.includes('emails have been sent')) {
       setError(result.error);
       setSubmitting(false);
       return;
@@ -41,8 +41,8 @@ export default function ForgotPasswordPage() {
     setSubmitting(false);
     setSent(true);
     toast({
-      tone: "success",
-      title: "Reset link sent",
+      tone: 'success',
+      title: 'Reset link sent',
       body: "Check spam if it doesn't arrive in a minute or two.",
     });
   }
@@ -72,8 +72,14 @@ export default function ForgotPasswordPage() {
           />
         </Field>
 
-        <Button type="submit" size="lg" className="w-full" loading={submitting} disabled={sent}>
-          {sent ? "Link sent" : "Send reset link"}
+        <Button
+          type="submit"
+          size="lg"
+          className="w-full"
+          loading={submitting}
+          disabled={sent}
+        >
+          {sent ? 'Link sent' : 'Send reset link'}
         </Button>
       </form>
     </AuthCard>

@@ -1,13 +1,13 @@
-"use client";
+'use client';
 
-import { useCallback, useSyncExternalStore } from "react";
+import { useCallback, useSyncExternalStore } from 'react';
 
 /**
- * Bridges to browser state that React does not own — `localStorage` and
+ * Bridges to browser state that React does not own - `localStorage` and
  * `matchMedia`.
  *
- * Both of these are genuinely external stores, and the tempting shape — read them in an
- * effect and call `setState` — causes a cascading render on every mount and is exactly
+ * Both of these are genuinely external stores, and the tempting shape - read them in an
+ * effect and call `setState` - causes a cascading render on every mount and is exactly
  * what `react-hooks/set-state-in-effect` is warning about. `useSyncExternalStore` is the
  * sanctioned tool: it subscribes, it returns a server snapshot so SSR and hydration
  * agree, and it never renders twice to arrive at the same value.
@@ -26,10 +26,10 @@ function notify(): void {
 function subscribeToStorage(callback: () => void): () => void {
   listeners.add(callback);
   // `storage` fires for changes made in *other* tabs; local writes call notify().
-  window.addEventListener("storage", callback);
+  window.addEventListener('storage', callback);
   return () => {
     listeners.delete(callback);
-    window.removeEventListener("storage", callback);
+    window.removeEventListener('storage', callback);
   };
 }
 
@@ -77,7 +77,7 @@ export function useStoredString(
  * A JSON value in `localStorage`, as React state.
  *
  * Parsed results are memoised against the raw string, because `getSnapshot` must return
- * a referentially stable value — parsing on every call would return a fresh object each
+ * a referentially stable value - parsing on every call would return a fresh object each
  * time and send React into an infinite loop.
  */
 const jsonCache = new Map<string, { raw: string | null; parsed: unknown }>();
@@ -103,14 +103,20 @@ export function useStoredJson<T>(
     return parsed as T;
   }, [key, fallback]);
 
-  const value = useSyncExternalStore(subscribeToStorage, getSnapshot, () => fallback);
+  const value = useSyncExternalStore(
+    subscribeToStorage,
+    getSnapshot,
+    () => fallback,
+  );
 
   // Accepts an updater as well as a value, so callers read like `useState` and can patch
   // one field of a settings object without restating the rest.
   const set = useCallback(
     (next: T | ((current: T) => T)) => {
       const resolved =
-        typeof next === "function" ? (next as (current: T) => T)(getSnapshot()) : next;
+        typeof next === 'function'
+          ? (next as (current: T) => T)(getSnapshot())
+          : next;
       writeRaw(key, JSON.stringify(resolved));
     },
     [key, getSnapshot],
@@ -131,8 +137,8 @@ export function useMediaQuery(query: string): boolean {
   const subscribe = useCallback(
     (callback: () => void) => {
       const list = window.matchMedia(query);
-      list.addEventListener("change", callback);
-      return () => list.removeEventListener("change", callback);
+      list.addEventListener('change', callback);
+      return () => list.removeEventListener('change', callback);
     },
     [query],
   );
@@ -145,9 +151,9 @@ export function useMediaQuery(query: string): boolean {
 }
 
 export function usePrefersReducedMotion(): boolean {
-  return useMediaQuery("(prefers-reduced-motion: reduce)");
+  return useMediaQuery('(prefers-reduced-motion: reduce)');
 }
 
 export function usePrefersDark(): boolean {
-  return useMediaQuery("(prefers-color-scheme: dark)");
+  return useMediaQuery('(prefers-color-scheme: dark)');
 }

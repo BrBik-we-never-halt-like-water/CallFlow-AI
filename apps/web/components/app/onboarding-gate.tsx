@@ -1,25 +1,25 @@
-"use client";
+'use client';
 
-import { useState } from "react";
-import { Button } from "@/components/ui/button";
-import { Dialog, DialogRoot } from "@/components/ui/dialog";
-import { Field } from "@/components/ui/field";
-import { ImageUpload } from "@/components/ui/image-upload";
-import { Input } from "@/components/ui/input";
-import { Select } from "@/components/ui/select";
-import { useToast } from "@/components/ui/toast";
-import { ROLES } from "@/components/app/invite-dialog";
-import { api } from "@/lib/api";
-import { useSession, type SessionProfile } from "@/lib/hooks/use-session";
+import { useState } from 'react';
+import { Button } from '@/components/ui/button';
+import { Dialog, DialogRoot } from '@/components/ui/dialog';
+import { Field } from '@/components/ui/field';
+import { ImageUpload } from '@/components/ui/image-upload';
+import { Input } from '@/components/ui/input';
+import { Select } from '@/components/ui/select';
+import { useToast } from '@/components/ui/toast';
+import { ROLES } from '@/components/app/invite-dialog';
+import { api } from '@/lib/api';
+import { useSession, type SessionProfile } from '@/lib/hooks/use-session';
 
-type WizardStep = "organisation" | "profile" | "invite";
+type WizardStep = 'organisation' | 'profile' | 'invite';
 
 /**
  * Forces the org setup step on any organisation that hasn't completed it, as a
  * non-dismissible modal over the dashboard rather than a separate route.
  *
- * The signal is `active.onboarded_at` from `/api/v1/me` — server data, not a
- * `localStorage` flag — so it can't be bypassed by clearing storage or opening
+ * The signal is `active.onboarded_at` from `/api/v1/me` - server data, not a
+ * `localStorage` flag - so it can't be bypassed by clearing storage or opening
  * a new device. This component owns one `useSession()` instance and the modal
  * reads/writes through it directly: a previous version used a separate page
  * per step, each with its own independent `useSession()` call, so finishing
@@ -31,22 +31,27 @@ export function OnboardingGate({ children }: { children: React.ReactNode }) {
   const session = useSession();
   const [step, setStep] = useState<WizardStep | null>(null);
 
-  const needsOrgSetup = session.status === "signed-in" && session.profile.active.onboarded_at === null;
-  const activeStep: WizardStep | null = needsOrgSetup ? "organisation" : step;
+  const needsOrgSetup =
+    session.status === 'signed-in' &&
+    session.profile.active.onboarded_at === null;
+  const activeStep: WizardStep | null = needsOrgSetup ? 'organisation' : step;
 
   return (
     <>
       {children}
       <DialogRoot open={activeStep !== null} onOpenChange={() => {}}>
-        {activeStep === "organisation" && session.status === "signed-in" ? (
+        {activeStep === 'organisation' && session.status === 'signed-in' ? (
           <OrganisationStep
             profile={session.profile}
             refresh={session.refresh}
-            onDone={() => setStep("profile")}
+            onDone={() => setStep('profile')}
           />
-        ) : activeStep === "profile" && session.status === "signed-in" ? (
-          <ProfileStep profile={session.profile} onDone={() => setStep("invite")} />
-        ) : activeStep === "invite" && session.status === "signed-in" ? (
+        ) : activeStep === 'profile' && session.status === 'signed-in' ? (
+          <ProfileStep
+            profile={session.profile}
+            onDone={() => setStep('invite')}
+          />
+        ) : activeStep === 'invite' && session.status === 'signed-in' ? (
           <InviteStep onDone={() => setStep(null)} />
         ) : null}
       </DialogRoot>
@@ -83,9 +88,12 @@ function OrganisationStep({
       onDone();
     } catch (error) {
       toast({
-        tone: "error",
+        tone: 'error',
         title: "That didn't save",
-        body: error instanceof Error ? error.message : "The service didn't respond.",
+        body:
+          error instanceof Error
+            ? error.message
+            : "The service didn't respond.",
       });
     } finally {
       setSaving(false);
@@ -96,9 +104,9 @@ function OrganisationStep({
     <Dialog title="Name your organisation" dismissible={false} size="sm">
       <form onSubmit={submit} className="flex flex-col gap-4">
         <p className="measure text-small text-text-dim">
-          We guessed a name from your email — {profile.active.org_name}. Everyone
-          you invite will see whatever you set here, so make it the one your
-          team will recognise.
+          We guessed a name from your email - {profile.active.org_name}.
+          Everyone you invite will see whatever you set here, so make it the one
+          your team will recognise.
         </p>
 
         <Field label="Organisation name" required>
@@ -128,7 +136,7 @@ function ProfileStep({
   onDone: () => void;
 }) {
   const toast = useToast();
-  const [name, setName] = useState(profile.name ?? "");
+  const [name, setName] = useState(profile.name ?? '');
   const [avatarUrl, setAvatarUrl] = useState(profile.avatar_url);
   const [saving, setSaving] = useState(false);
 
@@ -142,9 +150,12 @@ function ProfileStep({
       onDone();
     } catch (error) {
       toast({
-        tone: "error",
+        tone: 'error',
         title: "That didn't save",
-        body: error instanceof Error ? error.message : "The service didn't respond.",
+        body:
+          error instanceof Error
+            ? error.message
+            : "The service didn't respond.",
       });
     } finally {
       setSaving(false);
@@ -170,7 +181,11 @@ function ProfileStep({
         </Field>
 
         <Field label="Name">
-          <Input value={name} onChange={(e) => setName(e.target.value)} autoFocus />
+          <Input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            autoFocus
+          />
         </Field>
 
         <div className="flex items-center gap-3 border-t border-rule pt-4">
@@ -188,8 +203,8 @@ function ProfileStep({
 
 function InviteStep({ onDone }: { onDone: () => void }) {
   const toast = useToast();
-  const [email, setEmail] = useState("");
-  const [role, setRole] = useState("operator");
+  const [email, setEmail] = useState('');
+  const [role, setRole] = useState('operator');
   const [sending, setSending] = useState(false);
 
   async function send() {
@@ -197,11 +212,11 @@ function InviteStep({ onDone }: { onDone: () => void }) {
     setSending(true);
     try {
       await api.inviteMember(email.trim(), role);
-      toast({ tone: "success", title: "Invitation sent", body: email.trim() });
+      toast({ tone: 'success', title: 'Invitation sent', body: email.trim() });
       onDone();
     } catch (error) {
       toast({
-        tone: "error",
+        tone: 'error',
         title: "Couldn't send the invitation",
         body: error instanceof Error ? error.message : undefined,
       });
@@ -214,9 +229,9 @@ function InviteStep({ onDone }: { onDone: () => void }) {
     <Dialog title="Invite a teammate" dismissible={false} size="sm">
       <div className="flex flex-col gap-4">
         <p className="measure text-small text-text-dim">
-          Optional — they&apos;ll get an email with a link, and nothing
-          happens on their account until they accept it. You can always
-          invite people later from Settings.
+          Optional - they&apos;ll get an email with a link, and nothing happens
+          on their account until they accept it. You can always invite people
+          later from Settings.
         </p>
 
         <Field label="Work email">
@@ -227,7 +242,10 @@ function InviteStep({ onDone }: { onDone: () => void }) {
             autoFocus
           />
         </Field>
-        <Field label="Role" help="Operators can run campaigns but not change billing.">
+        <Field
+          label="Role"
+          help="Operators can run campaigns but not change billing."
+        >
           <Select value={role} onValueChange={setRole} options={ROLES} />
         </Field>
 

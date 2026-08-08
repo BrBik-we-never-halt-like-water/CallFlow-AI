@@ -1,7 +1,7 @@
-"use client";
+'use client';
 
-import { useEffect, useState } from "react";
-import { BrandLockup } from "@/components/brand/wordmark";
+import { useEffect, useState } from 'react';
+import { BrandLockup } from '@/components/brand/wordmark';
 
 const BARS = 14;
 /** Hard ceiling: the overlay is removed from the DOM by now no matter what. */
@@ -14,8 +14,8 @@ const DISMISS_MS = 1700;
  * Belt and suspenders on dismissal so it can never trap the page: the CSS fade
  * (see `.site-loader` in globals.css) hides it visually and, even with JS off,
  * `visibility: hidden` stops it blocking; a JS timeout then unmounts it outright.
- * Rendered in the root layout, so it plays once per full load — not on
- * client-side navigations — and it is skipped under prefers-reduced-motion.
+ * Rendered in the root layout, so it plays once per full load - not on
+ * client-side navigations - and it is skipped under prefers-reduced-motion.
  */
 export function SiteLoader() {
   const [gone, setGone] = useState(false);

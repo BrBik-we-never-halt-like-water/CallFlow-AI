@@ -2,12 +2,12 @@
 
 Replaces the in-memory campaign registry and run store (ISSUES.md #1, #2) with
 real, org-scoped Postgres tables. Built-in campaigns deliberately stay as Python
-constants in app/domain/campaigns.py rather than being seeded here — they are
+constants in app/domain/campaigns.py rather than being seeded here - they are
 global templates with no owning tenant, and CLAUDE.md's non-negotiable #1
 ("every tenant-scoped table has org_id NOT NULL") is easier to honour exactly
 than to carve an exception into. `runs.campaign_id` is therefore not a foreign
 key: it may reference a built-in id (resolved in code) or a row in
-`campaigns` (resolved here) — application code, not the database, decides which.
+`campaigns` (resolved here) - application code, not the database, decides which.
 
 Also fixes ISSUES.md #4: `CallOutcome.run_id` held the *provider's* call id,
 not the run id, because there was nowhere else to put it. Now that an outcome
@@ -129,7 +129,7 @@ def upgrade() -> None:
         sa.Column("contact_name", sa.Text(), nullable=False),
         sa.Column("phone_masked", sa.Text(), nullable=False),
         sa.Column("status", sa.Text(), server_default="UNKNOWN", nullable=False),
-        # The provider's own call id — was previously smuggled into the domain
+        # The provider's own call id - was previously smuggled into the domain
         # model's `run_id` field for lack of anywhere else to put it (ISSUES #4).
         sa.Column("provider_call_id", sa.Text(), nullable=True),
         sa.Column("transcript", sa.Text(), nullable=True),

@@ -1,17 +1,17 @@
-"use client";
+'use client';
 
-import { EyeIcon } from "@phosphor-icons/react/dist/ssr";
-import { useState } from "react";
-import { cn } from "@/lib/cn";
-import { formatE164, maskPhone } from "@/lib/format/phone";
-import { Tooltip } from "@/components/ui/tooltip";
-import { CopyButton } from "@/components/ui/code-block";
+import { EyeIcon } from '@phosphor-icons/react/dist/ssr';
+import { useState } from 'react';
+import { cn } from '@/lib/cn';
+import { formatE164, maskPhone } from '@/lib/format/phone';
+import { Tooltip } from '@/components/ui/tooltip';
+import { CopyButton } from '@/components/ui/code-block';
 
 /**
  * A phone number on screen.
  *
  * Masked by default, everywhere, with no prop to turn that off. Revealing the
- * full number is a separate, permissioned action — masking is a product
+ * full number is a separate, permissioned action - masking is a product
  * guarantee we make to the people being called, not a display preference, so the
  * component makes the guarded path the easy one and gives the unguarded path no
  * API at all.
@@ -31,18 +31,23 @@ export function MaskedPhone({
 }) {
   const [revealed, setRevealed] = useState(false);
 
-  if (!phone) return <span className={cn("text-text-mute", className)}>—</span>;
+  if (!phone) return <span className={cn('text-text-mute', className)}>-</span>;
 
   if (!canReveal) {
     return (
-      <span className={cn("font-mono text-data tabular-nums text-text-dim", className)}>
+      <span
+        className={cn(
+          'font-mono text-data tabular-nums text-text-dim',
+          className,
+        )}
+      >
         {maskPhone(phone)}
       </span>
     );
   }
 
   return (
-    <span className={cn("inline-flex items-center gap-1.5", className)}>
+    <span className={cn('inline-flex items-center gap-1.5', className)}>
       <span className="font-mono text-data tabular-nums text-text-dim">
         {revealed ? formatE164(phone) : maskPhone(phone)}
       </span>

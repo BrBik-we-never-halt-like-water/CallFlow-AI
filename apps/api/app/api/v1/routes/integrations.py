@@ -3,7 +3,7 @@
 Twilio and Plivo both authenticate with an identifier + secret pair rather than
 OAuth (Account SID + Auth Token; Auth ID + Auth Token), so this is credential
 storage, not a connection flow. Actually placing a call over one of these
-providers is separate, not-yet-built work — this endpoint only stores and
+providers is separate, not-yet-built work - this endpoint only stores and
 reports whether credentials are on file.
 """
 

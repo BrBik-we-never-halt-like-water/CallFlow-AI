@@ -3,7 +3,7 @@
 The bug this guards against: a rejected send used to surface as a raw `httpx`
 exception dump (`Client error '403 Forbidden' for url '...'`), which told
 whoever was troubleshooting nothing about *why* Resend refused the message.
-Domain verification is the rejection worth naming specifically — it is a
+Domain verification is the rejection worth naming specifically - it is a
 one-time dashboard step, not a transient failure, and no retry or code change
 works around it.
 """
@@ -28,8 +28,8 @@ from app.integrations.email.resend import (
 def _install_transport(monkeypatch: pytest.MonkeyPatch, handler: Any) -> None:
     """Routes the module's `httpx.AsyncClient()` through a `MockTransport`.
 
-    `EmailGateway` builds its own client rather than accepting one — matching
-    every other call site in this file — so the test substitutes the
+    `EmailGateway` builds its own client rather than accepting one - matching
+    every other call site in this file - so the test substitutes the
     transport at the `httpx.AsyncClient` class level instead of reaching
     into an instance.
     """
@@ -80,7 +80,7 @@ async def test_send_invitation_posts_the_shape_resend_expects(
 async def test_send_invitation_without_api_key_raises_not_configured(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """`api_key=""` alone doesn't prove this — the constructor's `or` falls
+    """`api_key=""` alone doesn't prove this - the constructor's `or` falls
     back to `config.resend_api_key`, so the empty case has to come from
     config itself being unset, same as a real deployment missing the env var."""
     monkeypatch.setattr(resend_module, "config", replace(resend_module.config, resend_api_key=""))
@@ -128,7 +128,7 @@ async def test_unverified_domain_rejection_names_the_domain_and_the_fix(
     assert "callflow-ai.brbik.com" in message
     assert "isn't a domain verified in Resend" in message
     assert "Domains" in message
-    # The raw Resend sentence must not be the whole story handed back — the
+    # The raw Resend sentence must not be the whole story handed back - the
     # message above it is what actually tells someone where to go fix this.
     assert "resend.com/domains" not in message
 
@@ -136,7 +136,7 @@ async def test_unverified_domain_rejection_names_the_domain_and_the_fix(
 async def test_other_rejection_reasons_still_surface_resends_detail(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A 422 (bad payload) or any non-domain 403 should stay generic — the
+    """A 422 (bad payload) or any non-domain 403 should stay generic - the
     specific message above is reserved for the one case code can actually
     tell someone how to fix."""
 

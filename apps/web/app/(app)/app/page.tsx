@@ -28,11 +28,11 @@ import { useSession } from '@/lib/hooks/use-session';
 
 /**
  * The bottom-right grid slot (Twisty's "Proposal Progress") is a stat-trio,
- * not a donut — three columns divided by a hairline, each a count over a
+ * not a donut - three columns divided by a hairline, each a count over a
  * label, matching that slot's own proportions better than a circle does.
  * Deliberately just these three, in this order: the two states that need a
  * decision (a person, or another try) before the one that's already settled.
- * `off`/"Skipped" still exists as data — it's just not one of
+ * `off`/"Skipped" still exists as data - it's just not one of
  * the three columns this specific slot has room for.
  */
 const DISPOSITION_STAT_TRIO: {
@@ -114,7 +114,7 @@ export default function OverviewPage() {
 
   const hasAnything = settled.length > 0 || runs.length > 0;
 
-  // Skeleton while there's nothing to show yet — connecting, or runs still loading.
+  // Skeleton while there's nothing to show yet - connecting, or runs still loading.
   // Once real data exists, never fall back to this, even on a background refetch.
   if ((phase !== 'up' || loadingRuns) && !hasAnything) {
     return (
@@ -132,14 +132,16 @@ export default function OverviewPage() {
       <ConnectionBanner phase={phase} />
 
       {/* ---- The Twisty-mapped grid: ~60/40, left column a hero chart over
-          two secondary cards, right column a taller list over a stat-trio —
+          two secondary cards, right column a taller list over a stat-trio -
           same slots, same proportions, our own cards and data. ------------ */}
       <div className="grid gap-6 lg:grid-cols-[3fr_2fr]">
         {/* ================= Left column (~60%) ================= */}
         <div className="flex flex-col gap-6">
           <div className="hero-flow flex flex-col gap-3 p-5 sm:p-7">
             <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <p className="text-small font-bold text-text-mute">Volume, last 7 days</p>
+              <p className="text-small font-bold text-text-mute">
+                Volume, last 7 days
+              </p>
               <span className="text-small tabular-nums text-text-mute">
                 {runs.length} {runs.length === 1 ? 'run' : 'runs'}
               </span>
@@ -163,8 +165,8 @@ export default function OverviewPage() {
 
           {/* ---- Team (55%) + next move (45%) ----------------------------
               `NextMoveCard` only has one message left ("place your first
-              call") now that "bring in a teammate" — a second invite entry
-              point duplicating `TeamPreview`'s own "+" — was retired. Once
+              call") now that "bring in a teammate" - a second invite entry
+              point duplicating `TeamPreview`'s own "+" - was retired. Once
               a run exists there's nothing left for this slot to say, so it
               disappears and Team grows to fill the row. */}
           <div
@@ -184,7 +186,9 @@ export default function OverviewPage() {
           {/* ---- Needs a person: taller, full right-column width -------- */}
           <Panel interactive className="flex flex-1 flex-col gap-4 p-5 sm:p-6">
             <div className="flex items-center justify-between gap-2">
-              <p className="text-small font-bold text-text-mute">Needs a person</p>
+              <p className="text-small font-bold text-text-mute">
+                Needs a person
+              </p>
               {escalations.length > 0 ? (
                 <Link
                   href="/app/escalations"
@@ -214,7 +218,7 @@ export default function OverviewPage() {
           {/* ---- Disposition, as a stat-trio ------------------------------
               Deviation, flagged per the brief: no sparkline under each
               number yet (there's no Sparkline component in this codebase
-              to wire one from today — the brief's own accepted fallback for
+              to wire one from today - the brief's own accepted fallback for
               "more work than it's worth right now" is a resized donut; this
               goes one step further into the actual stat-trio shape since the
               layout cost of that was low, just without the sparkline detail). */}
@@ -235,7 +239,9 @@ export default function OverviewPage() {
                     <span className="font-display text-h3 text-text tabular-nums">
                       {item.value}
                     </span>
-                    <p className="truncate text-small font-bold text-text-mute">{item.label}</p>
+                    <p className="truncate text-small font-bold text-text-mute">
+                      {item.label}
+                    </p>
                   </div>
                 ))}
               </div>
@@ -250,14 +256,16 @@ export default function OverviewPage() {
 
       {/* ---- Outcome distribution: the page's visual anchor, full width --
           The count-per-disposition row below is the primary visual, not a
-          single lamp standing in for the whole distribution — at the volumes
+          single lamp standing in for the whole distribution - at the volumes
           this page usually shows, one dot (or one donut slice) reads as far
           more definitive than the sample backing it. A zero count still
           renders, dimmed: "0 need a person" is real information. --------- */}
       <div className="signal-field rounded-xl">
         <Panel className="flex flex-col gap-5 p-5 sm:p-7">
           <div className="flex flex-col gap-1">
-            <p className="text-small font-bold text-text-mute">Outcome distribution</p>
+            <p className="text-small font-bold text-text-mute">
+              Outcome distribution
+            </p>
             <h2 className="font-display text-h3 text-text">
               The last {Math.min(settled.length, STRIP_WINDOW)}{' '}
               {settled.length === 1 ? 'call' : 'calls'}
@@ -268,7 +276,7 @@ export default function OverviewPage() {
             <EmptyState
               icon={PhoneSlashIcon}
               title="Nothing has been dialled yet"
-              body="Add a few contacts and start a run — results appear here as calls settle."
+              body="Add a few contacts and start a run - results appear here as calls settle."
               action={
                 <Button asChild>
                   <Link href="/app/runs/new">Start a run</Link>
@@ -403,8 +411,8 @@ const OUTCOME_COUNT_TEXT: Record<LampState, string> = {
 };
 
 /** One bucket of the outcome-distribution legend: a lamp-coloured chip, a
- * count, and a label. A zero count still renders — dimmed to `off`, rather
- * than dropped — because "0 need a person" is real information worth seeing. */
+ * count, and a label. A zero count still renders - dimmed to `off`, rather
+ * than dropped - because "0 need a person" is real information worth seeing. */
 function OutcomeCount({
   state,
   n,
@@ -433,7 +441,7 @@ function OutcomeCount({
   );
 }
 
-/** Who's on this — a quiet counterpart to the run/escalation data around it. */
+/** Who's on this - a quiet counterpart to the run/escalation data around it. */
 function TeamPreview({ canInvite }: { canInvite: boolean }) {
   const [team, setTeam] = useState<Team | null>(null);
   const [inviting, setInviting] = useState(false);
@@ -511,11 +519,11 @@ function TeamPreview({ canInvite }: { canInvite: boolean }) {
   );
 }
 
-/** The one deliberately warmer card on the page — an invitation to the single
+/** The one deliberately warmer card on the page - an invitation to the single
  * next action while there isn't one yet. Only rendered before the first run;
  * once any run exists, `TeamPreview` grows to fill this row instead (this
  * card's other message, "Bring in a teammate", was a second invite entry
- * point duplicating `TeamPreview`'s own "+" — retired, not repurposed). */
+ * point duplicating `TeamPreview`'s own "+" - retired, not repurposed). */
 function NextMoveCard() {
   return (
     <div className="hero-flow flex flex-col gap-3 p-5 sm:p-6">
@@ -527,7 +535,7 @@ function NextMoveCard() {
           Place your first call
         </h3>
         <p className="text-small text-text-dim">
-          Add a few contacts and start a run — this card turns into your weekly
+          Add a few contacts and start a run - this card turns into your weekly
           trend once one settles.
         </p>
       </div>

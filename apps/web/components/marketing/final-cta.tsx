@@ -1,25 +1,25 @@
-import Link from "next/link";
-import { LampStrip } from "@/components/brand/lamp-strip";
-import { WaveCanvas } from "@/components/brand/wave-canvas";
-import { Button } from "@/components/ui/button";
-import { Reveal } from "@/components/ui/reveal";
-import type { LampSpec } from "@/lib/lamp";
+import Link from 'next/link';
+import { LampStrip } from '@/components/brand/lamp-strip';
+import { WaveCanvas } from '@/components/brand/wave-canvas';
+import { Button } from '@/components/ui/button';
+import { Reveal } from '@/components/ui/reveal';
+import type { LampSpec } from '@/lib/lamp';
 
 const STRIP: LampSpec[] = [
-  { state: "jade", label: "Auto-closed" },
-  { state: "jade", label: "Auto-closed" },
-  { state: "jade", label: "Auto-closed" },
-  { state: "jade", label: "Auto-closed" },
-  { state: "brass", pulse: true, label: "Queued for retry" },
-  { state: "jade", label: "Auto-closed" },
-  { state: "flare", label: "Needs a person" },
-  { state: "jade", label: "Auto-closed" },
+  { state: 'jade', label: 'Auto-closed' },
+  { state: 'jade', label: 'Auto-closed' },
+  { state: 'jade', label: 'Auto-closed' },
+  { state: 'jade', label: 'Auto-closed' },
+  { state: 'brass', pulse: true, label: 'Queued for retry' },
+  { state: 'jade', label: 'Auto-closed' },
+  { state: 'flare', label: 'Needs a person' },
+  { state: 'jade', label: 'Auto-closed' },
 ];
 
 /**
  * The closing note.
  *
- * A raised card rather than an inverted band — the page is light throughout, and the
+ * A raised card rather than an inverted band - the page is light throughout, and the
  * emphasis comes from elevation and the grid behind it rather than from flipping the
  * surface.
  */
@@ -42,11 +42,16 @@ export function FinalCta() {
             </h2>
 
             <p className="measure text-body-l text-text-dim">
-              Load your contacts, write a goal, and let CallFlow dial. Every run is
-              validated and guarded before it places a single call.
+              Load your contacts, write a goal, and let CallFlow dial. Every run
+              is validated and guarded before it places a single call.
             </p>
 
-            <LampStrip lamps={STRIP} size="lg" counts className="items-center" />
+            <LampStrip
+              lamps={STRIP}
+              size="lg"
+              counts
+              className="items-center"
+            />
 
             <div className="flex flex-wrap items-center justify-center gap-3">
               <Button asChild size="lg">

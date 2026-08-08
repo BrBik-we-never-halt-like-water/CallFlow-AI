@@ -6,7 +6,7 @@ changed=$(git diff --cached --name-only)
 # Resolve a Python tool from the project venv first, then PATH.
 #
 # Bare `ruff` only works when the venv happens to be activated, which it usually
-# isn't in a GUI client or a fresh shell — and a hook that dies on
+# isn't in a GUI client or a fresh shell - and a hook that dies on
 # "command not found" blocks the commit for a reason that has nothing to do with
 # the code. Look in the venv explicitly, and fall back to PATH.
 find_tool() {
@@ -34,7 +34,7 @@ if echo "$changed" | grep -qE '^apps/api/'; then
     # This is an opt-in convenience hook, so a missing toolchain warns loudly and
     # lets the commit through rather than blocking it. CI runs the same checks and
     # is the gate that actually counts.
-    echo "  SKIPPED — ruff/pytest not found in .venv or on PATH."
+    echo "  SKIPPED - ruff/pytest not found in .venv or on PATH."
     echo "  Install them with:  pip install -e \"./apps/api[dev]\""
   else
     (cd apps/api && "$OLDPWD/$ruff_bin" check app tests)
@@ -47,6 +47,6 @@ if echo "$changed" | grep -q '^apps/web/'; then
   if command -v npm > /dev/null 2>&1; then
     (cd apps/web && npm run lint && npm run type-check)
   else
-    echo "  SKIPPED — npm not found on PATH."
+    echo "  SKIPPED - npm not found on PATH."
   fi
 fi

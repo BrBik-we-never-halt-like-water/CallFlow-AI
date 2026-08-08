@@ -1,43 +1,49 @@
-import Link from "next/link";
-import { Mark } from "@/components/brand/mark";
-import { BrandLockup } from "@/components/brand/wordmark";
+import Link from 'next/link';
+import { Mark } from '@/components/brand/mark';
+import { BrandLockup } from '@/components/brand/wordmark';
 
 const COLUMNS = [
   {
-    heading: "Product",
+    heading: 'Product',
     links: [
-      { label: "Features", href: "/#capabilities" },
-      { label: "How it works", href: "/#how-it-works" },
-      { label: "Pricing", href: "/pricing" },
-      { label: "Docs", href: "/docs" },
-      { label: "Changelog", href: "/docs/changelog" },
+      { label: 'Features', href: '/#capabilities' },
+      { label: 'How it works', href: '/#how-it-works' },
+      { label: 'Pricing', href: '/pricing' },
+      { label: 'Docs', href: '/docs' },
+      { label: 'Changelog', href: '/docs/changelog' },
     ],
   },
   {
-    heading: "Solutions",
+    heading: 'Solutions',
     links: [
-      { label: "Recruiting screening", href: "/solutions/recruiting-screening" },
-      { label: "Appointment recovery", href: "/solutions/appointment-recovery" },
-      { label: "Admissions follow-up", href: "/solutions/admissions-followup" },
-      { label: "Lead qualification", href: "/solutions/lead-qualification" },
+      {
+        label: 'Recruiting screening',
+        href: '/solutions/recruiting-screening',
+      },
+      {
+        label: 'Appointment recovery',
+        href: '/solutions/appointment-recovery',
+      },
+      { label: 'Admissions follow-up', href: '/solutions/admissions-followup' },
+      { label: 'Lead qualification', href: '/solutions/lead-qualification' },
     ],
   },
   {
-    heading: "Company",
+    heading: 'Company',
     links: [
-      { label: "About", href: "/about" },
-      { label: "Contact", href: "/demo" },
-      { label: "Status", href: "/status" },
-      { label: "Trust", href: "/trust" },
+      { label: 'About', href: '/about' },
+      { label: 'Contact', href: '/demo' },
+      { label: 'Status', href: '/status' },
+      { label: 'Trust', href: '/trust' },
     ],
   },
   {
-    heading: "Resources",
+    heading: 'Resources',
     links: [
-      { label: "Getting started", href: "/docs/getting-started" },
-      { label: "Writing a good goal", href: "/docs/writing-a-good-goal" },
-      { label: "Result schemas", href: "/docs/result-schemas" },
-      { label: "API reference", href: "/docs/api-reference" },
+      { label: 'Getting started', href: '/docs/getting-started' },
+      { label: 'Writing a good goal', href: '/docs/writing-a-good-goal' },
+      { label: 'Result schemas', href: '/docs/result-schemas' },
+      { label: 'API reference', href: '/docs/api-reference' },
     ],
   },
 ];
@@ -49,11 +55,11 @@ const COLUMNS = [
  * marquee reads as a template.
  */
 const CAPABILITIES = [
-  "Always on",
-  "Adaptive conversations",
-  "Typed results",
-  "Sentiment on every call",
-  "Human handoff when needed",
+  'Always on',
+  'Adaptive conversations',
+  'Typed results',
+  'Sentiment on every call',
+  'Human handoff when needed',
 ];
 
 export function SiteFooter() {
@@ -67,9 +73,9 @@ export function SiteFooter() {
               <span className="sr-only">CallFlow AI home</span>
             </Link>
             <p className="max-w-xs text-small text-text-dim">
-              An operations layer for outbound phone calls. Load a list, write a goal,
-              and get typed results back — with only the calls that need a person
-              reaching one.
+              An operations layer for outbound phone calls. Load a list, write a
+              goal, and get typed results back - with only the calls that need a
+              person reaching one.
             </p>
           </div>
 
@@ -95,10 +101,10 @@ export function SiteFooter() {
         {/* Legal row */}
         <div className="mt-10 flex flex-wrap gap-x-5 gap-y-2 border-t border-rule pt-6">
           {[
-            { label: "Privacy", href: "/trust" },
-            { label: "Terms", href: "/trust" },
-            { label: "Acceptable use", href: "/trust" },
-            { label: "DPA", href: "/trust#dpa" },
+            { label: 'Privacy', href: '/trust' },
+            { label: 'Terms', href: '/trust' },
+            { label: 'Acceptable use', href: '/trust' },
+            { label: 'DPA', href: '/trust#dpa' },
           ].map((link) => (
             <Link
               key={link.label}
@@ -117,7 +123,7 @@ export function SiteFooter() {
           </div>
 
           <p className="text-small text-text-mute">
-            Created by{" "}
+            Created by{' '}
             <a
               href="https://brbik.com"
               target="_blank"

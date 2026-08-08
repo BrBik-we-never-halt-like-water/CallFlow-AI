@@ -1,13 +1,13 @@
-"use client";
+'use client';
 
-import { useEffect, useState } from "react";
-import { api, type Organisation } from "@/lib/api";
-import type { SessionProfile } from "@/lib/hooks/use-session";
+import { useEffect, useState } from 'react';
+import { api, type Organisation } from '@/lib/api';
+import type { SessionProfile } from '@/lib/hooks/use-session';
 
 /**
  * Every organisation the signed-in user belongs to.
  *
- * Backs the sidebar org switcher (`app-nav.tsx`) — the one place in the dashboard
+ * Backs the sidebar org switcher (`app-nav.tsx`) - the one place in the dashboard
  * that switches, creates, or lists organisations. See its own docstring for why
  * there is only one now.
  */

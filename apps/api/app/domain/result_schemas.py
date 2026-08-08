@@ -50,7 +50,7 @@ def build_result_schema(
 ) -> JsonObject:
     """Compose a campaign-specific schema on top of the shared triage fields.
 
-    `extra_required` is a campaign's own fields marked required in the editor —
+    `extra_required` is a campaign's own fields marked required in the editor -
     appended rather than replacing `BASE_REQUIRED`, so a campaign can never make
     triage's own fields optional.
     """

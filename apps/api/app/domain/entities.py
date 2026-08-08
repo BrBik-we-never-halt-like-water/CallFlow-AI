@@ -37,8 +37,8 @@ class Sentiment(str, Enum):
 
 
 class DialFailure(str, Enum):
-    """A vendor-neutral reason a call attempt itself failed — never placed, or
-    never came back — as opposed to `Disposition`, which is the triage decision
+    """A vendor-neutral reason a call attempt itself failed - never placed, or
+    never came back - as opposed to `Disposition`, which is the triage decision
     once a call *did* happen. CLAUDE.md's Substitutability section calls for
     exactly this: retry policy keys off this name, never a vendor error string,
     so a second voice provider slots in without every caller re-learning a new
@@ -58,7 +58,7 @@ class DialFailure(str, Enum):
 class Disposition(str, Enum):
     """What the orchestrator decided to do after the call resolved."""
 
-    # Not a decision — the call is still happening. Lets the dashboard show a
+    # Not a decision - the call is still happening. Lets the dashboard show a
     # row while it runs instead of nothing until it ends.
     IN_FLIGHT = "in_flight"
     AUTO_CLOSED = "auto_closed"

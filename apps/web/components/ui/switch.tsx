@@ -1,15 +1,15 @@
-"use client";
+'use client';
 
-import * as RadixSwitch from "@radix-ui/react-switch";
-import { cn } from "@/lib/cn";
-import type { LampState } from "@/lib/lamp";
+import * as RadixSwitch from '@radix-ui/react-switch';
+import { cn } from '@/lib/cn';
+import type { LampState } from '@/lib/lamp';
 
 const TRACK_VAR: Record<LampState, string> = {
-  off: "var(--lamp-off)",
-  ice: "var(--lamp-ice)",
-  brass: "var(--lamp-brass)",
-  jade: "var(--lamp-jade)",
-  flare: "var(--lamp-flare)",
+  off: 'var(--lamp-off)',
+  ice: 'var(--lamp-ice)',
+  brass: 'var(--lamp-brass)',
+  jade: 'var(--lamp-jade)',
+  flare: 'var(--lamp-flare)',
 };
 
 export interface SwitchProps {
@@ -31,7 +31,7 @@ export interface SwitchProps {
  * Switch with its label and sub-label as part of the component.
  *
  * The sub-label is not optional decoration: it says what the switch actually
- * does, not just what it's called — worth stating plainly in a product that
+ * does, not just what it's called - worth stating plainly in a product that
  * places real phone calls.
  */
 export function Switch({
@@ -44,11 +44,12 @@ export function Switch({
   id,
   className,
 }: SwitchProps) {
-  const generatedId = id ?? `switch-${label.replace(/\s+/g, "-").toLowerCase()}`;
+  const generatedId =
+    id ?? `switch-${label.replace(/\s+/g, '-').toLowerCase()}`;
   const subId = subLabel ? `${generatedId}-sub` : undefined;
 
   return (
-    <div className={cn("flex items-start gap-3", className)}>
+    <div className={cn('flex items-start gap-3', className)}>
       <RadixSwitch.Root
         id={generatedId}
         checked={checked}
@@ -58,22 +59,22 @@ export function Switch({
         // 40px wide / 24px tall track with a 20px thumb: reads as a physical
         // toggle rather than a chip, and the whole row is the hit target.
         className={cn(
-          "relative mt-0.5 h-6 w-10 shrink-0 cursor-pointer rounded-full border transition-colors duration-(--dur-base) ease-(--ease-out)",
-          "border-rule-strong bg-surface-sunken",
-          "disabled:cursor-not-allowed disabled:opacity-45",
-          checked && "border-transparent",
+          'relative mt-0.5 h-6 w-10 shrink-0 cursor-pointer rounded-full border transition-colors duration-(--dur-base) ease-(--ease-out)',
+          'border-rule-strong bg-surface-sunken',
+          'disabled:cursor-not-allowed disabled:opacity-45',
+          checked && 'border-transparent',
         )}
         style={
           checked
-            ? { background: tone ? TRACK_VAR[tone] : "var(--surface-inverse)" }
+            ? { background: tone ? TRACK_VAR[tone] : 'var(--surface-inverse)' }
             : undefined
         }
       >
         <RadixSwitch.Thumb
           className={cn(
-            "block size-5 rounded-full bg-surface-raised",
-            "translate-x-0.5 transition-transform duration-(--dur-base) ease-(--ease-out)",
-            "data-[state=checked]:translate-x-[18px]",
+            'block size-5 rounded-full bg-surface-raised',
+            'translate-x-0.5 transition-transform duration-(--dur-base) ease-(--ease-out)',
+            'data-[state=checked]:translate-x-[18px]',
           )}
         />
       </RadixSwitch.Root>
@@ -82,8 +83,8 @@ export function Switch({
         <label
           htmlFor={generatedId}
           className={cn(
-            "cursor-pointer text-small font-medium text-text",
-            disabled && "cursor-not-allowed opacity-45",
+            'cursor-pointer text-small font-medium text-text',
+            disabled && 'cursor-not-allowed opacity-45',
           )}
         >
           {label}

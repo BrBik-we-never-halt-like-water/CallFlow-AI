@@ -68,7 +68,7 @@ _READ_ONLY = frozenset(
 )
 
 # An operator runs the product day to day: campaigns, runs, escalations. No
-# billing, no team management, and no going live — that last one is an owner or
+# billing, no team management, and no going live - that last one is an owner or
 # admin decision because it spends the organisation's money.
 _OPERATOR = _READ_ONLY | {
     Permission.CAMPAIGNS_WRITE,
@@ -119,7 +119,7 @@ def role_has(role: OrgRole, permission: Permission) -> bool:
 
 
 # Owner outranks admin outranks operator outranks viewer. Not stated anywhere
-# else as a literal order — this is that order, made explicit for can_grant_role.
+# else as a literal order - this is that order, made explicit for can_grant_role.
 _ROLE_RANK: MappingProxyType[OrgRole, int] = MappingProxyType(
     {
         OrgRole.VIEWER: 0,
@@ -134,9 +134,9 @@ def can_grant_role(caller_role: OrgRole, target_role: OrgRole) -> bool:
     """Whether `caller_role` may assign `target_role` to a member or invite.
 
     Holding `team:set_role`/`team:invite` only gates *that* a role can be
-    changed — Admin has both, same as Owner. It says nothing about *which*
+    changed - Admin has both, same as Owner. It says nothing about *which*
     role, which is what let an Admin grant themselves Owner and take over the
-    account. Owner may grant any role, including owner itself — that's how
+    account. Owner may grant any role, including owner itself - that's how
     ownership transfers. Every other role may only grant a role strictly below
     its own: Admin can hand out operator or viewer, never admin or owner, not
     even to itself. Mirrored in SQL as `public.can_grant_role()`
@@ -150,19 +150,19 @@ def can_grant_role(caller_role: OrgRole, target_role: OrgRole) -> bool:
 
 def can_act_on_member(caller_role: OrgRole, target_current_role: OrgRole) -> bool:
     """Whether `caller_role` may update or remove a member currently holding
-    `target_current_role` — a *different* question from `can_grant_role`
+    `target_current_role` - a *different* question from `can_grant_role`
     (which role may be assigned), even though it resolves the same way today.
 
     Without this, `can_grant_role` alone leaves a residual gap: in an org with
-    two owners, an Admin could still demote or remove one of them — nothing
+    two owners, an Admin could still demote or remove one of them - nothing
     checked the *existing* row's role, only the new value being written. The
     rule is the same rank comparison as `can_grant_role`, applied to the
     target's current role instead of the proposed one: Owner may act on
-    anyone; every other role only on a member strictly below its own rank —
+    anyone; every other role only on a member strictly below its own rank -
     so Admin can act on operator/viewer members, not on another Admin's row
     and not on an Owner's. Mirrored in SQL as `public.can_act_on_member()`
     (migration `d94b2c8f1a67`). Callers exempt the caller acting on their own
-    row before reaching this check — self-service (e.g. an Admin stepping
+    row before reaching this check - self-service (e.g. an Admin stepping
     themselves down) is governed by `can_grant_role` alone.
     """
     return can_grant_role(caller_role, target_current_role)

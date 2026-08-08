@@ -1,27 +1,27 @@
-"use client";
+'use client';
 
-import { MegaphoneIcon } from "@phosphor-icons/react/dist/ssr";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
-import { CampaignCard } from "@/components/app/campaign-card";
-import { ConnectionBanner } from "@/components/app/connection-banner";
-import { Button } from "@/components/ui/button";
-import { Dialog, DialogRoot } from "@/components/ui/dialog";
-import { EmptyState } from "@/components/ui/empty-state";
-import { Panel } from "@/components/ui/panel";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Tabs, TabPanel } from "@/components/ui/disclosure";
-import { useToast } from "@/components/ui/toast";
-import { api, type Campaign } from "@/lib/api";
-import { useAppStore } from "@/lib/app-store";
-import { CAMPAIGN_DRAFT_KEY } from "@/lib/campaign-draft";
+import { MegaphoneIcon } from '@phosphor-icons/react/dist/ssr';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { useMemo, useState } from 'react';
+import { CampaignCard } from '@/components/app/campaign-card';
+import { ConnectionBanner } from '@/components/app/connection-banner';
+import { Button } from '@/components/ui/button';
+import { Dialog, DialogRoot } from '@/components/ui/dialog';
+import { EmptyState } from '@/components/ui/empty-state';
+import { Panel } from '@/components/ui/panel';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Tabs, TabPanel } from '@/components/ui/disclosure';
+import { useToast } from '@/components/ui/toast';
+import { api, type Campaign } from '@/lib/api';
+import { useAppStore } from '@/lib/app-store';
+import { CAMPAIGN_DRAFT_KEY } from '@/lib/campaign-draft';
 
 export default function CampaignsPage() {
   const router = useRouter();
   const toast = useToast();
   const { campaigns, hydratedRuns, phase, refresh } = useAppStore();
-  const [filter, setFilter] = useState("all");
+  const [filter, setFilter] = useState('all');
   const [pendingDelete, setPendingDelete] = useState<Campaign | null>(null);
   const [deleting, setDeleting] = useState(false);
 
@@ -39,7 +39,8 @@ export default function CampaignsPage() {
 
   const builtIn = campaigns.filter((c) => c.built_in);
   const custom = campaigns.filter((c) => !c.built_in);
-  const shown = filter === "templates" ? builtIn : filter === "custom" ? custom : campaigns;
+  const shown =
+    filter === 'templates' ? builtIn : filter === 'custom' ? custom : campaigns;
 
   /**
    * Duplicating hands the source campaign to the editor as a draft rather than
@@ -59,9 +60,9 @@ export default function CampaignsPage() {
         }),
       );
     } catch {
-      /* storage unavailable — the editor opens empty, which is recoverable */
+      /* storage unavailable - the editor opens empty, which is recoverable */
     }
-    router.push("/app/campaigns/new");
+    router.push('/app/campaigns/new');
   }
 
   async function confirmDelete() {
@@ -69,17 +70,20 @@ export default function CampaignsPage() {
     setDeleting(true);
     try {
       await api.deleteCampaign(pendingDelete.id);
-      toast({ tone: "success", title: "Campaign deleted" });
+      toast({ tone: 'success', title: 'Campaign deleted' });
       setPendingDelete(null);
       refresh();
-      // The campaign list lives on the connection hook, which loads once — a reload is
+      // The campaign list lives on the connection hook, which loads once - a reload is
       // the honest way to reflect the deletion until that becomes refetchable.
       router.refresh();
     } catch (error) {
       toast({
-        tone: "error",
+        tone: 'error',
         title: "That campaign wasn't deleted",
-        body: error instanceof Error ? error.message : "The service didn't respond.",
+        body:
+          error instanceof Error
+            ? error.message
+            : "The service didn't respond.",
       });
     } finally {
       setDeleting(false);
@@ -91,10 +95,12 @@ export default function CampaignsPage() {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex flex-col gap-1">
           <p className="text-small font-bold text-text-mute">Campaigns</p>
-          <h1 className="font-display text-h2 text-text">What you&apos;re calling about</h1>
+          <h1 className="font-display text-h2 text-text">
+            What you&apos;re calling about
+          </h1>
           <p className="measure text-small text-text-dim">
-            Built-in templates plus what your team has written — a goal in plain English
-            and the fields you want back from every call.
+            Built-in templates plus what your team has written - a goal in plain
+            English and the fields you want back from every call.
           </p>
         </div>
         <Button asChild>
@@ -108,13 +114,13 @@ export default function CampaignsPage() {
         value={filter}
         onValueChange={setFilter}
         tabs={[
-          { value: "all", label: "All", count: campaigns.length },
-          { value: "templates", label: "Templates", count: builtIn.length },
-          { value: "custom", label: "Yours", count: custom.length },
+          { value: 'all', label: 'All', count: campaigns.length },
+          { value: 'templates', label: 'Templates', count: builtIn.length },
+          { value: 'custom', label: 'Yours', count: custom.length },
         ]}
       >
         <TabPanel value={filter} className="pt-6">
-          {phase === "connecting" ? (
+          {phase === 'connecting' ? (
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
               {Array.from({ length: 3 }, (_, i) => (
                 <Panel key={i} className="flex flex-col gap-3 p-4">
@@ -129,8 +135,12 @@ export default function CampaignsPage() {
             <Panel>
               <EmptyState
                 icon={MegaphoneIcon}
-                title={filter === "custom" ? "You haven't made one yet" : "No campaigns yet"}
-                body="Start from a built-in template, or write your own from a blank goal — either way, it's ready to run in a minute."
+                title={
+                  filter === 'custom'
+                    ? "You haven't made one yet"
+                    : 'No campaigns yet'
+                }
+                body="Start from a built-in template, or write your own from a blank goal - either way, it's ready to run in a minute."
                 action={
                   <Button asChild>
                     <Link href="/app/campaigns/new">New campaign</Link>
@@ -169,10 +179,17 @@ export default function CampaignsPage() {
           size="sm"
           footer={
             <>
-              <Button variant="secondary" onClick={() => setPendingDelete(null)}>
+              <Button
+                variant="secondary"
+                onClick={() => setPendingDelete(null)}
+              >
                 Keep it
               </Button>
-              <Button variant="danger" loading={deleting} onClick={confirmDelete}>
+              <Button
+                variant="danger"
+                loading={deleting}
+                onClick={confirmDelete}
+              >
                 Delete campaign
               </Button>
             </>
