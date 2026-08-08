@@ -62,12 +62,8 @@ export function Hero() {
     instant: reduced,
   });
 
-  // The waveform's playhead rides the exact typing progress of the spoken line.
-  const spokenProgress = SPOKEN.length
-    ? Math.min(1, heard.output.length / SPOKEN.length)
-    : 0;
-  // Only "speaking" once characters are actually landing — so the wave rests at
-  // its full shape during the wait, then sweeps as the line is spoken.
+  // Only "speaking" once characters are actually landing, so the level meter
+  // moves while the line is being said and rests once it lands.
   const speaking = heard.output.length > 0 && !heard.done;
 
   return (
@@ -137,7 +133,6 @@ export function Hero() {
                   spoken={SPOKEN}
                   output={heard.output}
                   done={heard.done}
-                  progress={spokenProgress}
                   speaking={speaking}
                   live
                 />
@@ -184,42 +179,55 @@ function ParallaxGrid() {
 }
 
 /**
- * A slim trace of the line being spoken, with a lit playhead.
+ * A four-bar level meter — the universal "audio is playing" mark.
  *
- * Deliberately quiet. The field behind the hero already carries the voice at
- * full volume, and two waveforms competing in one view is what made this card
- * read as busy — so inside the card the signal is reduced to a hairline that
- * simply shows how far through the sentence we are.
+ * Replaces a full-width waveform inside the card. At this width a waveform has
+ * to be drawn from either uniform bars, which reads as a barcode, or fake
+ * amplitude data, which is a picture of a sound nobody recorded. Neither earns
+ * its space next to the sentence it is describing, and the field behind the
+ * hero is already carrying the voice at full size.
+ *
+ * It moves only while the line is being spoken, and rests flat once it lands —
+ * so it reports state rather than decorating.
  */
-function VoiceLine({ progress, speaking }: { progress: number; speaking: boolean }) {
-  const BARS = 56;
+function LevelMeter({ speaking }: { speaking: boolean }) {
   return (
-    <div aria-hidden className="flex h-6 items-center gap-px">
-      {Array.from({ length: BARS }, (_, i) => {
-        const at = i / BARS;
-        const head = speaking && Math.abs(at - progress) < 1.5 / BARS;
-        return (
-          <i
-            key={i}
-            className={cn(
-              "flex-1 rounded-[1px] transition-[background-color,height] duration-150",
-              // Spoken bars stay light. At --text-dim and this bar count they
-              // merge into one solid black block the moment the line finishes,
-              // which is a filled rectangle, not a trace.
-              head ? "bg-lamp-brass" : at < progress ? "bg-rule-strong" : "bg-rule",
-            )}
-            style={{ height: head ? "100%" : at < progress ? "44%" : "22%" }}
-          />
-        );
-      })}
-    </div>
+    <span aria-hidden className="flex h-3 items-end gap-[3px]">
+      {[0, 1, 2, 3].map((i) => (
+        <i
+          key={i}
+          className={cn(
+            "w-[3px] origin-bottom rounded-[1px]",
+            speaking ? "bg-lamp-brass" : "bg-rule-strong",
+          )}
+          style={{
+            height: speaking ? "100%" : "34%",
+            animation: speaking
+              ? `talk 900ms var(--ease-inout) ${i * 130}ms infinite`
+              : undefined,
+          }}
+        />
+      ))}
+    </span>
   );
 }
 
-function PanelBlock({ label, children }: { label: string; children: React.ReactNode }) {
+function PanelBlock({
+  label,
+  trailing,
+  children,
+}: {
+  label: string;
+  /** Sits on the label row, right-aligned — for a small state mark. */
+  trailing?: React.ReactNode;
+  children: React.ReactNode;
+}) {
   return (
     <div className="flex flex-col gap-2.5">
-      <Eyebrow>{label}</Eyebrow>
+      <div className="flex items-center justify-between gap-3">
+        <Eyebrow>{label}</Eyebrow>
+        {trailing}
+      </div>
       {/* A fixed minimum height stops the panel resizing as text types in. */}
       <div className="min-h-16">{children}</div>
     </div>
@@ -235,32 +243,26 @@ function CardShell({ children }: { children: React.ReactNode }) {
 }
 
 /**
- * Beat one: the line the contact hears, led by a voice waveform drawn from the
- * words. A two-line reservation keeps this block's height steady as the line
- * types in and wraps.
+ * Beat one: the line the contact hears, with a level meter on the label row.
+ * A two-line reservation keeps this block's height steady as the line types in
+ * and wraps.
  */
 function HeardBlock({
   spoken,
   output,
   done,
-  progress = 1,
   speaking = false,
   live = false,
 }: {
   spoken: string;
   output: string;
   done: boolean;
-  progress?: number;
   speaking?: boolean;
   live?: boolean;
 }) {
   return (
-    <PanelBlock label="What the caller hears">
+    <PanelBlock label="What the caller hears" trailing={<LevelMeter speaking={speaking} />}>
       <div className="flex flex-col gap-4">
-        {/* A quiet trace, not a second animation: the atmosphere behind the hero
-            already carries the voice, and two competing waveforms in one view
-            is what made this card read as busy. */}
-        <VoiceLine progress={progress} speaking={speaking} />
         <div className="relative">
           <p aria-hidden className="invisible text-body font-semibold">
             {`“${spoken}”`}
