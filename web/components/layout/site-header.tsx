@@ -105,13 +105,15 @@ export function SiteHeader() {
   return (
     <header
       className={cn(
-        "sticky top-0 z-40 h-16 border-b bg-surface",
-        "transition-[border-color,box-shadow] duration-(--dur-base) ease-(--ease-out)",
-        // Solid, not frosted: the page and the header share --surface, so at the
-        // top the header reads as flush with the hero. On scroll a hairline and a
-        // soft shadow ease in to lift it above the content passing underneath —
-        // an opaque bar never lets text ghost through the way a translucent one does.
-        scrolled ? "border-rule shadow-sm" : "border-transparent",
+        "sticky top-0 z-40 h-16 border-b",
+        "transition-[border-color,box-shadow,background-color] duration-(--dur-base) ease-(--ease-out)",
+        // Flush with the page at the top — header and hero share --surface, so
+        // there is nothing to lift. Once content starts passing underneath it
+        // becomes glass: blurred and saturated rather than merely translucent,
+        // which is what keeps nav labels legible over whatever scrolls beneath.
+        // `.glass` falls back to a solid surface where backdrop-filter is
+        // unsupported, so the text is never left floating on a see-through bar.
+        scrolled ? "glass rounded-none border-rule shadow-sm" : "border-transparent bg-surface",
       )}
     >
       <div className="mx-auto flex h-full max-w-(--container-marketing) items-center justify-between gap-4 px-4 sm:px-6">

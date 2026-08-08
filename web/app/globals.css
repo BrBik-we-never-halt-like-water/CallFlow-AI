@@ -55,8 +55,15 @@
 
   /* ---- Text -------------------------------------------------------------- */
   --text: #0e1114; /* 16.8:1 */
-  --text-dim: #4a5358; /* 7.6:1 — secondary copy */
-  --text-mute: #69757a; /* 4.6:1 — placeholders and metadata ONLY, never body */
+  --text-dim: #39434a; /* 10.1:1 — secondary copy, darkened for presence */
+  --text-mute: #5d686e; /* 5.7:1 — metadata and placeholders ONLY, never body */
+
+  /* Glass. Used on the header and on one card level, never as the page's
+     identity: glass over glass is what turns a design into mush, and text on a
+     low-opacity surface is the fastest way to lose contrast. */
+  --glass: color-mix(in oklab, var(--surface-raised) 72%, transparent);
+  --glass-edge: color-mix(in oklab, var(--text) 8%, transparent);
+  --glass-blur: 16px;
   --text-inverse: #ffffff;
 
   /* ---- Rules ------------------------------------------------------------- */
@@ -85,13 +92,13 @@
   /* ---- Type scale — fluid at every step ---------------------------------
      Previously h3/h4 were frozen while the display sizes scaled, so
      hierarchy compressed between tablet and laptop. Every step now scales. */
-  --t-display-xl: clamp(2.75rem, 5.5vw, 4.5rem);
-  --t-display-l: clamp(2.25rem, 4vw, 3.25rem);
-  --t-h2: clamp(1.75rem, 2.8vw, 2.5rem);
-  --t-h3: clamp(1.25rem, 1.6vw, 1.5rem);
-  --t-h4: clamp(1rem, 1.1vw, 1.125rem);
-  --t-body-l: 1.125rem;
-  --t-body: 1rem;
+  --t-display-xl: clamp(3rem, 6.4vw, 5.25rem);
+  --t-display-l: clamp(2.5rem, 4.6vw, 3.75rem);
+  --t-h2: clamp(2rem, 3.4vw, 3rem);
+  --t-h3: clamp(1.375rem, 1.9vw, 1.75rem);
+  --t-h4: clamp(1.0625rem, 1.2vw, 1.1875rem);
+  --t-body-l: 1.1875rem;
+  --t-body: 1.0625rem;
   --t-small: 0.875rem;
   --t-data: 0.8125rem;
   --t-label: 0.6875rem;
@@ -250,6 +257,9 @@
 html {
   scroll-padding-top: calc(var(--h-site-header) + 24px);
   -webkit-text-size-adjust: 100%;
+  /* Native smooth scrolling rather than a scroll-hijacking library. Anchor
+     jumps and Back both stay correct, and it costs nothing. */
+  scroll-behavior: smooth;
 }
 
 body {
@@ -395,7 +405,83 @@ button[data-menu][data-state="open"]:focus-visible {
 
 .card-interactive:hover {
   box-shadow: var(--shadow-md);
-  transform: translateY(-2px);
+  transform: translateY(-3px);
+}
+
+/* A card is top-lit: a faint highlight along the top edge reads as a physical
+   surface catching light, and it is what stops a flat rectangle looking like a
+   div with a border. One gradient, no glow, no ring. */
+.card,
+.card-raised,
+.card-feature {
+  background-image: linear-gradient(
+    180deg,
+    color-mix(in oklab, #ffffff 60%, transparent) 0%,
+    transparent 42%
+  );
+}
+
+/* Glass, used sparingly — the header and the one featured card. Falls back to
+   a solid surface where backdrop-filter is unavailable, so text never lands on
+   a half-transparent panel with nothing behind it. */
+.glass {
+  background: var(--surface-raised);
+  border: 1px solid var(--rule);
+  border-radius: var(--r-lg);
+}
+
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+  .glass {
+    background: var(--glass);
+    border-color: var(--glass-edge);
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(1.4);
+    backdrop-filter: blur(var(--glass-blur)) saturate(1.4);
+  }
+}
+
+/* --------------------------------------------------------------------------
+   The deck.
+
+   One section fills the screen; depth carries the transition. `--d` is written
+   per section by use-scroll-depth (1 = centred), and defaults to 1 so the page
+   is fully legible before hydration and under reduced motion.
+
+   Snap is `proximity`, never `mandatory`: mandatory snapping fights anyone who
+   wants to stop halfway, and traps keyboard and screen-reader users mid-section.
+   -------------------------------------------------------------------------- */
+
+.deck {
+  scroll-snap-type: y proximity;
+}
+
+/* The default lives here, on the element the hook writes to — putting it on
+   .deck-inner would shadow the inherited value and depth would never apply. */
+.deck-section {
+  --d: 1;
+  scroll-snap-align: start;
+  scroll-snap-stop: normal;
+}
+
+.deck-inner {
+  transform: scale(calc(0.955 + 0.045 * var(--d)));
+  opacity: calc(0.45 + 0.55 * var(--d));
+  transition:
+    transform 120ms linear,
+    opacity 120ms linear;
+  will-change: transform, opacity;
+}
+
+/* The receding veil. Cheaper than blurring a full-viewport section, which
+   forces a compositor layer per section and is where this pattern usually
+   starts dropping frames. */
+.deck-section::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: var(--surface);
+  opacity: calc((1 - var(--d, 1)) * 0.35);
+  transition: opacity 120ms linear;
 }
 
 /* --------------------------------------------------------------------------
@@ -717,6 +803,25 @@ button[data-menu][data-state="open"]:focus-visible {
 
   .card-interactive:hover {
     transform: none;
+  }
+
+  /* No depth, no snap, no smooth scroll: every section sits forward and the
+     page is an ordinary document. */
+  html {
+    scroll-behavior: auto;
+  }
+
+  .deck {
+    scroll-snap-type: none;
+  }
+
+  .deck-inner {
+    transform: none;
+    opacity: 1;
+  }
+
+  .deck-section::after {
+    opacity: 0;
   }
 
   .lamp-settle {
