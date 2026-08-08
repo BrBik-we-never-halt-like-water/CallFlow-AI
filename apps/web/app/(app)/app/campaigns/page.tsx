@@ -9,7 +9,7 @@ import { ConnectionBanner } from "@/components/app/connection-banner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogRoot } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Eyebrow, Panel } from "@/components/ui/panel";
+import { Panel } from "@/components/ui/panel";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabPanel } from "@/components/ui/disclosure";
 import { useToast } from "@/components/ui/toast";
@@ -61,7 +61,7 @@ export default function CampaignsPage() {
     } catch {
       /* storage unavailable — the editor opens empty, which is recoverable */
     }
-    router.push("/app/campaigns/new?from=duplicate");
+    router.push("/app/campaigns/new");
   }
 
   async function confirmDelete() {
@@ -88,10 +88,14 @@ export default function CampaignsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-wrap items-end justify-between gap-3">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex flex-col gap-1">
-          <Eyebrow>Campaigns</Eyebrow>
+          <p className="text-small font-bold text-text-mute">Campaigns</p>
           <h1 className="font-display text-h2 text-text">What you&apos;re calling about</h1>
+          <p className="measure text-small text-text-dim">
+            Built-in templates plus what your team has written — a goal in plain English
+            and the fields you want back from every call.
+          </p>
         </div>
         <Button asChild>
           <Link href="/app/campaigns/new">New campaign</Link>
@@ -126,7 +130,7 @@ export default function CampaignsPage() {
               <EmptyState
                 icon={MegaphoneIcon}
                 title={filter === "custom" ? "You haven't made one yet" : "No campaigns yet"}
-                body="A campaign is a goal written in plain English plus the fields you want back from every call."
+                body="Start from a built-in template, or write your own from a blank goal — either way, it's ready to run in a minute."
                 action={
                   <Button asChild>
                     <Link href="/app/campaigns/new">New campaign</Link>

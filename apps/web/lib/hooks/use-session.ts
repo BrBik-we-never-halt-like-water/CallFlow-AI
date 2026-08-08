@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { ACTIVE_ORG_KEY } from "@/lib/api";
 import { supabaseBrowser } from "@/lib/supabase/client";
 
 export interface ActiveOrg {
@@ -73,10 +74,41 @@ export function useSession(): SessionState & { refresh: () => Promise<void> } {
 
       try {
         const base = process.env.NEXT_PUBLIC_API_URL ?? "";
-        const response = await fetch(`${base}/api/v1/me`, {
-          headers: { Authorization: `Bearer ${session.access_token}` },
-          cache: "no-store",
-        });
+
+        // Without X-Org-Id, the profile this hook returns never reflects a
+        // switch made in the org switcher — every other call in lib/api.ts
+        // attaches it, but this hook fetches directly and was missing it
+        // entirely, so `active` silently stayed pinned to the server's default
+        // organisation.
+        let pinnedOrgId: string | null = null;
+        try {
+          pinnedOrgId = localStorage.getItem(ACTIVE_ORG_KEY);
+        } catch {
+          /* private mode or blocked storage — fall back to the server's default org */
+        }
+
+        async function fetchMe(orgId: string | null): Promise<Response> {
+          const headers: Record<string, string> = {
+            Authorization: `Bearer ${session!.access_token}`,
+          };
+          if (orgId) headers["X-Org-Id"] = orgId;
+          return fetch(`${base}/api/v1/me`, { headers, cache: "no-store" });
+        }
+
+        let response = await fetchMe(pinnedOrgId);
+
+        // The pinned org can go stale — left, removed, or deleted since the
+        // browser last wrote it. Rather than get stuck on a 403 the org switcher
+        // can't fix (it never re-renders once loading this profile has already
+        // failed), drop the pin and fall back to the server's own default org.
+        if (response.status === 403 && pinnedOrgId) {
+          try {
+            localStorage.removeItem(ACTIVE_ORG_KEY);
+          } catch {
+            /* private mode or blocked storage */
+          }
+          response = await fetchMe(null);
+        }
 
         if (cancelled) return;
 

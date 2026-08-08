@@ -18,7 +18,11 @@ export type LampState = "off" | "ice" | "brass" | "jade" | "flare";
 
 export interface LampSpec {
   state: LampState;
-  /** A slow pulse. Reserved for "queued for retry" — bad timing, not bad mood. */
+  /**
+   * A slow pulse for a state that is still moving: a run that hasn't
+   * finished, or a call queued for retry. A settled or idle state never
+   * pulses — the animation itself is the claim that something is happening.
+   */
   pulse?: boolean;
   /** Human label. Always present, because colour is never the only carrier. */
   label: string;
@@ -57,6 +61,31 @@ export function lampForDisposition(disposition: Disposition): LampSpec {
       return { state: "off", label: "Skipped by a safety guard" };
     default:
       return { state: "off", label: "Queued" };
+  }
+}
+
+/** A run's own batch-level status — distinct from any one call's disposition. */
+export type RunStatus = "running" | "completed" | "failed";
+
+const RUN_STATUS_LABELS: Record<RunStatus, string> = {
+  running: "Running",
+  completed: "Completed",
+  failed: "Failed",
+};
+
+/**
+ * Which lamp a run's own status gets. `lampForOutcome` is per call; this is
+ * the run as a whole, so every list that shows a run's status reads the same
+ * colour and the same words instead of each re-deriving them.
+ */
+export function lampForRunStatus(status: RunStatus): LampSpec {
+  switch (status) {
+    case "running":
+      return { state: "brass", pulse: true, label: RUN_STATUS_LABELS.running };
+    case "failed":
+      return { state: "flare", label: RUN_STATUS_LABELS.failed };
+    case "completed":
+      return { state: "jade", label: RUN_STATUS_LABELS.completed };
   }
 }
 

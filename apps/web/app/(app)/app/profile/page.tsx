@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { ImageUpload } from "@/components/ui/image-upload";
 import { Input } from "@/components/ui/input";
-import { Eyebrow, Panel } from "@/components/ui/panel";
+import { Panel } from "@/components/ui/panel";
 import { isPasswordValid, PasswordStrength } from "@/components/ui/password-strength";
 import { useToast } from "@/components/ui/toast";
 import { api } from "@/lib/api";
@@ -43,8 +43,12 @@ export default function ProfilePage() {
 function Header() {
   return (
     <div className="flex flex-col gap-1">
-      <Eyebrow>Account</Eyebrow>
+      <p className="text-small font-bold text-text-mute">Account</p>
       <h1 className="font-display text-h2 text-text">Your profile</h1>
+      <p className="measure text-small text-text-dim">
+        Your name, your photo, and the password only you use — these follow you into
+        every organisation you belong to, not just this one.
+      </p>
     </div>
   );
 }

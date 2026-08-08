@@ -155,15 +155,9 @@ export function StatusBoard() {
         {health?.limits ? (
           <Row
             label="Daily call budget"
-            lamp={
-              health.limits.used_today >= health.limits.daily_budget
-                ? "flare"
-                : health.limits.used_today / health.limits.daily_budget > 0.8
-                  ? "brass"
-                  : "jade"
-            }
-            value={`${health.limits.used_today} of ${health.limits.daily_budget} used`}
-            detail="Shared across everyone on this deployment."
+            lamp="jade"
+            value={`${health.limits.daily_budget} calls/day, ${health.limits.per_window} per ${health.limits.window_minutes}min`}
+            detail="The deployment default. Each organisation gets its own budget and can raise it in Settings → Safety — this isn't any one organisation's live usage."
           />
         ) : null}
       </Panel>

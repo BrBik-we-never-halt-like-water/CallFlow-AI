@@ -2,18 +2,23 @@ import { cn } from "@/lib/cn";
 import { WaveLine } from "@/components/brand/wave-spine";
 
 /**
- * A surface: hairline border plus a soft shadow.
+ * A surface: hairline border plus real glass.
  *
- * On a light page a border alone reads as flat and a shadow alone reads as floating, so
- * every raised surface gets both — the border gives it an edge, the shadow gives it
- * weight. `interactive` adds a hover lift, which is the only place anything in this
- * design moves on hover.
+ * Frosted, not flat — `--glass-surface` (a translucent fill) over `--glass-blur`
+ * (a `backdrop-filter` blur), plus a soft shadow with an inset highlight
+ * (`.panel-glass` / `.panel-glass-sunken`, globals.css), so a panel reads as
+ * floating above the page rather than painted onto it. The border colour comes
+ * from `--glass-border` inside those same classes, not a Tailwind border-color
+ * utility — a layered utility couldn't win against the unlayered glass classes
+ * anyway (see the comment above `.panel-glass-interactive`), so `border` here only
+ * turns the width/style on. `interactive` adds a hover lift, which is the only
+ * place anything in this design moves on hover.
  */
 export function Panel({
   as: Component = "div",
   sunken = false,
   interactive = false,
-  /** Drop the shadow — for a panel nested inside another panel. */
+  /** Drop the shadow down to just the hairline highlight — for a panel nested inside another. */
   flat = false,
   className,
   children,
@@ -29,11 +34,10 @@ export function Panel({
   return (
     <Component
       className={cn(
-        "rounded-lg border border-rule",
-        sunken ? "bg-surface-sunken" : "bg-surface-raised",
-        !sunken && !flat && "shadow-sm",
-        interactive &&
-          "transition-[box-shadow,transform,border-color] duration-(--dur-base) ease-(--ease-out) hover:-translate-y-0.5 hover:border-rule-strong hover:shadow-md",
+        "rounded-xl border",
+        sunken ? "panel-glass-sunken" : "panel-glass",
+        !sunken && flat && "panel-glass-flat",
+        interactive && "panel-glass-interactive hover:-translate-y-0.5",
         className,
       )}
       {...props}

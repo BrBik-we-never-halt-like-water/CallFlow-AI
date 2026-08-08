@@ -11,12 +11,13 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { CodeBlock } from "@/components/ui/code-block";
 import { Field } from "@/components/ui/field";
 import { Input, MinLengthCounter, Textarea } from "@/components/ui/input";
-import { Eyebrow, Panel } from "@/components/ui/panel";
+import { Panel } from "@/components/ui/panel";
 import { Select } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip } from "@/components/ui/tooltip";
 import { useToast } from "@/components/ui/toast";
 import { api, type Campaign } from "@/lib/api";
+import { useAppStore } from "@/lib/app-store";
 import {
   EDITOR_FIELD_TYPES,
   fieldKeyError,
@@ -34,7 +35,6 @@ import {
   CAMPAIGN_DRAFT_KEY,
   DEFAULT_SETTINGS,
   LANGUAGES,
-  PREVIEW_CONTACTS,
   REGIONS,
   saveLocalSettings,
   settingsKey,
@@ -54,6 +54,7 @@ import { useStoredJson } from "@/lib/hooks/use-external-store";
 export function CampaignEditor({ existing }: { existing?: Campaign }) {
   const router = useRouter();
   const toast = useToast();
+  const { outcomes } = useAppStore();
 
   // `existing` is available on the first render, so everything it seeds is a lazy
   // initialiser rather than an effect — the editor is never briefly empty.
@@ -124,9 +125,30 @@ export function CampaignEditor({ existing }: { existing?: Campaign }) {
   /* eslint-enable react-hooks/set-state-in-effect */
 
   const variables = useMemo(() => templateVariables(goal), [goal]);
-  const previewContact = PREVIEW_CONTACTS[previewIndex] ?? PREVIEW_CONTACTS[0];
+
+  // Real contacts only — someone this org has actually called — so the preview
+  // never passes off a scripted name as what a real call sounds like. Outcomes
+  // carry no input context, so a real contact still renders `{context.*}` empty;
+  // that is the same "missing key" behaviour a live call would hit.
+  const realContacts = useMemo(() => {
+    const byKey = new Map<string, { name: string; phoneMasked: string; lastCalled: string }>();
+    for (const outcome of outcomes) {
+      const key = `${outcome.contact_name}|${outcome.phone_masked}`;
+      const seen = byKey.get(key);
+      if (!seen || outcome.created_at > seen.lastCalled) {
+        byKey.set(key, {
+          name: outcome.contact_name,
+          phoneMasked: outcome.phone_masked,
+          lastCalled: outcome.created_at,
+        });
+      }
+    }
+    return [...byKey.values()].sort((a, b) => b.lastCalled.localeCompare(a.lastCalled));
+  }, [outcomes]);
+  const previewContact = realContacts[previewIndex] ?? null;
   const renderedGoal = useMemo(
-    () => renderGoalPreview(goal, previewContact),
+    () =>
+      previewContact ? renderGoalPreview(goal, { name: previewContact.name, context: {} }) : goal,
     [goal, previewContact],
   );
   const schema = useMemo(() => previewSchema(fields), [fields]);
@@ -197,7 +219,7 @@ export function CampaignEditor({ existing }: { existing?: Campaign }) {
       <div className="flex min-w-0 flex-col gap-5">
         {readOnly ? (
           <Panel sunken className="flex flex-col gap-2 p-4">
-            <Eyebrow>Read only</Eyebrow>
+            <p className="text-small font-bold text-text-mute">Read only</p>
             <p className="text-small text-text-dim">
               This is a starter template. Duplicate it from the campaigns list to make a
               version you can change.
@@ -217,7 +239,7 @@ export function CampaignEditor({ existing }: { existing?: Campaign }) {
         <div className="flex flex-col gap-2">
           <Field
             label="Goal"
-            hint="Write it as instructions to a competent new colleague: what to say, what to ask, and what to do when they say yes or no."
+            hint="What to say, what to ask, and what to do based on their answer."
             required
           >
             <Textarea
@@ -235,7 +257,7 @@ export function CampaignEditor({ existing }: { existing?: Campaign }) {
           {/* Variables the template actually references, so a typo in a context key is
               visible rather than silently rendering empty at call time. */}
           <div className="flex flex-wrap items-center gap-1.5">
-            <span className="eyebrow text-text-mute">Variables</span>
+            <span className="text-small font-bold text-text-mute">Variables</span>
             {variables.length === 0 ? (
               <span className="text-small text-text-mute">
                 none yet — try <code className="font-mono text-data">{"{name}"}</code>
@@ -268,7 +290,7 @@ export function CampaignEditor({ existing }: { existing?: Campaign }) {
         {/* ---- Calling window ------------------------------------------- */}
         <Panel className="flex flex-col gap-4 p-4">
           <div className="flex flex-col gap-1">
-            <Eyebrow>Calling window</Eyebrow>
+            <p className="text-small font-bold text-text-mute">Calling window</p>
             <p className="text-small text-text-dim">
               The hours you intend to call within.
             </p>
@@ -318,7 +340,7 @@ export function CampaignEditor({ existing }: { existing?: Campaign }) {
         {/* ---- Retry policy -------------------------------------------- */}
         <Panel className="flex flex-col gap-4 p-4">
           <div className="flex flex-col gap-1">
-            <Eyebrow>Retry policy</Eyebrow>
+            <p className="text-small font-bold text-text-mute">Retry policy</p>
             <p className="text-small text-text-dim">
               A bad time isn&apos;t a bad mood — unavailable contacts and bad-time calls
               are marked for retry rather than escalated.
@@ -377,7 +399,7 @@ export function CampaignEditor({ existing }: { existing?: Campaign }) {
         <Panel className="flex flex-col gap-4 p-4">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="flex flex-col gap-1">
-              <Eyebrow>Fields to extract</Eyebrow>
+              <p className="text-small font-bold text-text-mute">Fields to extract</p>
               <p className="text-small text-text-dim">
                 Every call returns outcome and sentiment. These are the fields on top of
                 that.
@@ -510,23 +532,30 @@ export function CampaignEditor({ existing }: { existing?: Campaign }) {
       {/* ================= Live preview ================================= */}
       <div className="flex min-w-0 flex-col gap-4 lg:sticky lg:top-24 lg:self-start">
         <div className="flex flex-wrap items-end justify-between gap-2">
-          <Eyebrow>Live preview</Eyebrow>
-          <div className="w-52">
-            <Select
-              value={String(previewIndex)}
-              onValueChange={(v) => setPreviewIndex(Number(v))}
-              options={PREVIEW_CONTACTS.map((contact, i) => ({
-                value: String(i),
-                label: contact.name,
-              }))}
-              ariaLabel="Preview with a different contact"
-            />
-          </div>
+          <p className="text-small font-bold text-text-mute">Live preview</p>
+          {realContacts.length > 0 ? (
+            <div className="w-52">
+              <Select
+                value={String(previewIndex)}
+                onValueChange={(v) => setPreviewIndex(Number(v))}
+                options={realContacts.map((contact, i) => ({
+                  value: String(i),
+                  label: contact.name,
+                  hint: contact.phoneMasked,
+                }))}
+                ariaLabel="Preview with a different contact"
+              />
+            </div>
+          ) : null}
         </div>
 
         <Panel className="flex flex-col">
           <div className="flex flex-col gap-2 p-4">
-            <Eyebrow>What {previewContact.name.split(" ")[0]} would hear</Eyebrow>
+            {previewContact ? (
+              <p className="text-small font-bold text-text-mute">
+                What {previewContact.name.split(" ")[0]} would hear
+              </p>
+            ) : null}
             <div
               className={cn(
                 "min-h-40 overflow-x-auto whitespace-pre-wrap font-mono text-data",
@@ -549,8 +578,8 @@ export function CampaignEditor({ existing }: { existing?: Campaign }) {
         </Panel>
 
         <p className="text-small text-text-mute">
-          A missing context key renders empty rather than failing the run, so check this
-          panel with a real contact selected before saving.
+          A missing context key renders empty rather than failing the run. Once
+          you&apos;ve made a real call, preview with that contact to check the wording.
         </p>
       </div>
     </div>

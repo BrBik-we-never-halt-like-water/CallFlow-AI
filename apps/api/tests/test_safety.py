@@ -1,8 +1,17 @@
 """Safety guardrails must fail closed."""
 
+import dataclasses
+
 import pytest
 
-from app.domain.safety import assert_e164, check_dial_allowed, is_e164, mask
+from app.domain import safety
+from app.domain.safety import (
+    assert_e164,
+    check_dial_allowed,
+    is_e164,
+    mask,
+    resolve_safety_settings,
+)
 
 
 @pytest.mark.parametrize(
@@ -67,13 +76,60 @@ def test_gate_allows_valid_number_under_ceiling() -> None:
 
 
 def test_gate_respects_allowlist(monkeypatch: pytest.MonkeyPatch) -> None:
-    import dataclasses
-
-    from app.domain import safety
-
     # Config is frozen, so swap in a replaced copy rather than mutating it.
     monkeypatch.setattr(
         safety, "config", dataclasses.replace(safety.config, allowlist=["+15555550199"])
     )
     assert safety.check_dial_allowed("+15555550100", 0).allowed is False
     assert safety.check_dial_allowed("+15555550199", 0).allowed is True
+
+
+def test_resolve_safety_settings_falls_back_when_org_never_configured() -> None:
+    """`None` (no `org_safety_settings` row at all) means "use the deployment
+    default" — the one case this function is actually meant to fall back on."""
+    effective = resolve_safety_settings(
+        allowlist=None,
+        max_calls_per_run=None,
+        calls_per_window=None,
+        window_minutes=None,
+        daily_budget=None,
+    )
+    assert effective.allowlist == frozenset(safety.config.allowlist)
+    assert effective.max_calls_per_run == safety.config.max_calls_per_run
+    assert effective.daily_budget == safety.config.daily_call_budget
+
+
+def test_resolve_safety_settings_an_explicitly_cleared_allowlist_stays_cleared(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An org that clears its own allowlist means "no restriction" — it must
+    not silently fall back to the deployment's `CALLFLOW_ALLOWLIST`. Regression
+    for a bug where `[] if allowlist else config.allowlist` treated an
+    explicitly emptied override the same as "never configured"."""
+    monkeypatch.setattr(
+        safety, "config", dataclasses.replace(safety.config, allowlist=["+15555550199"])
+    )
+    effective = resolve_safety_settings(
+        allowlist=[],
+        max_calls_per_run=None,
+        calls_per_window=None,
+        window_minutes=None,
+        daily_budget=None,
+    )
+    assert effective.allowlist == frozenset()
+
+
+def test_resolve_safety_settings_org_override_wins_over_deployment_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        safety, "config", dataclasses.replace(safety.config, max_calls_per_run=3)
+    )
+    effective = resolve_safety_settings(
+        allowlist=None,
+        max_calls_per_run=10,
+        calls_per_window=None,
+        window_minutes=None,
+        daily_budget=None,
+    )
+    assert effective.max_calls_per_run == 10

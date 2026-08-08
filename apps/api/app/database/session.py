@@ -108,20 +108,23 @@ class Database:
         """
         async with self.pool.acquire() as connection, connection.transaction():
             await self._assume(connection, "authenticated", str(auth_user_id))
-            try:
-                yield connection
-            finally:
-                await self._release(connection)
+            yield connection
+            # Only on the way out clean: if the body raised, the transaction is
+            # already rolling back (or aborted), and this `SET LOCAL` reset would
+            # itself fail with `InFailedSQLTransactionError` — replacing whatever
+            # real error the body raised with a confusing one about the cleanup
+            # instead. The rollback already discards the `SET LOCAL` role for us.
+            await self._release(connection)
 
     @asynccontextmanager
     async def anonymous(self) -> AsyncIterator[asyncpg.Connection]:
         """A connection with no identity. Every tenant policy evaluates false."""
         async with self.pool.acquire() as connection, connection.transaction():
             await connection.execute("select set_config('role', 'anon', true)")
-            try:
-                yield connection
-            finally:
-                await self._release(connection)
+            yield connection
+            # See as_user()'s matching comment: skip cleanup on the error path, or a
+            # `SET LOCAL` reset on an already-aborted transaction masks the real error.
+            await self._release(connection)
 
     @staticmethod
     async def _assume(connection: asyncpg.Connection, role: str, subject: str) -> None:

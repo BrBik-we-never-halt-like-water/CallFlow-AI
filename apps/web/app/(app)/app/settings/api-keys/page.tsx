@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { NotWiredNotice, SettingsSection } from "@/components/app/settings-section";
 import { SessionGate } from "@/components/app/session-gate";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
 import { formatAge } from "@/lib/format";
 import { api, type ApiKey } from "@/lib/api";
+import { useOrgScopedEffect } from "@/lib/hooks/use-org-scoped-effect";
 import { useSession, type SessionProfile } from "@/lib/hooks/use-session";
 
 export default function ApiKeysSettingsPage() {
@@ -41,10 +42,9 @@ function ApiKeysContent({ profile }: { profile: SessionProfile }) {
       .catch(() => toast({ tone: "error", title: "Couldn't load API keys" }));
   }
 
-  useEffect(() => {
+  useOrgScopedEffect(() => {
     load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [profile.active.org_id]);
+  });
 
   if (!canRead) {
     return (

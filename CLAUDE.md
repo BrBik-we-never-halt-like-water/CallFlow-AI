@@ -217,7 +217,12 @@ These override style preference, convenience, and personal taste.
     `apps/web/DESIGN_NOTES.md` §2 for the three documented exceptions. With dry_run gone,
     `ice` (previously "simulated") is reserved and currently unassigned — do not repurpose
     it without updating the lamp-state table everywhere it's documented (`SYSTEM.md`,
-    the docs site's triage-rules page).
+    the docs site's triage-rules page). Separately, `--accent` (an indigo, `globals.css`)
+    exists as the product's one **decorative-only** colour — dashboard chart markers, one
+    CTA card, a tinted page canvas. The line between it and the lamps is absolute: `--accent`
+    must never appear inside anything that represents call/run/escalation state (`Lamp`,
+    `LampBadge`, `DonutChart`, or any future component like them) — see
+    `apps/web/DESIGN_NOTES.md` §2 for where it's used today.
 
 ---
 

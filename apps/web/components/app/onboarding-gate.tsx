@@ -6,11 +6,13 @@ import { Dialog, DialogRoot } from "@/components/ui/dialog";
 import { Field } from "@/components/ui/field";
 import { ImageUpload } from "@/components/ui/image-upload";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import { useToast } from "@/components/ui/toast";
+import { ROLES } from "@/components/app/invite-dialog";
 import { api } from "@/lib/api";
 import { useSession, type SessionProfile } from "@/lib/hooks/use-session";
 
-type WizardStep = "organisation" | "profile";
+type WizardStep = "organisation" | "profile" | "invite";
 
 /**
  * Forces the org setup step on any organisation that hasn't completed it, as a
@@ -43,7 +45,9 @@ export function OnboardingGate({ children }: { children: React.ReactNode }) {
             onDone={() => setStep("profile")}
           />
         ) : activeStep === "profile" && session.status === "signed-in" ? (
-          <ProfileStep profile={session.profile} onDone={() => setStep(null)} />
+          <ProfileStep profile={session.profile} onDone={() => setStep("invite")} />
+        ) : activeStep === "invite" && session.status === "signed-in" ? (
+          <InviteStep onDone={() => setStep(null)} />
         ) : null}
       </DialogRoot>
     </>
@@ -174,6 +178,64 @@ function ProfileStep({
             Continue
           </Button>
           <Button variant="ghost" onClick={onDone} disabled={saving}>
+            Skip for now
+          </Button>
+        </div>
+      </div>
+    </Dialog>
+  );
+}
+
+function InviteStep({ onDone }: { onDone: () => void }) {
+  const toast = useToast();
+  const [email, setEmail] = useState("");
+  const [role, setRole] = useState("operator");
+  const [sending, setSending] = useState(false);
+
+  async function send() {
+    if (!email.trim()) return;
+    setSending(true);
+    try {
+      await api.inviteMember(email.trim(), role);
+      toast({ tone: "success", title: "Invitation sent", body: email.trim() });
+      onDone();
+    } catch (error) {
+      toast({
+        tone: "error",
+        title: "Couldn't send the invitation",
+        body: error instanceof Error ? error.message : undefined,
+      });
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return (
+    <Dialog title="Invite a teammate" dismissible={false} size="sm">
+      <div className="flex flex-col gap-4">
+        <p className="measure text-small text-text-dim">
+          Optional — they&apos;ll get an email with a link, and nothing
+          happens on their account until they accept it. You can always
+          invite people later from Settings.
+        </p>
+
+        <Field label="Work email">
+          <Input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            autoFocus
+          />
+        </Field>
+        <Field label="Role" help="Operators can run campaigns but not change billing.">
+          <Select value={role} onValueChange={setRole} options={ROLES} />
+        </Field>
+
+        <div className="flex items-center gap-3 border-t border-rule pt-4">
+          <Button onClick={send} loading={sending} disabled={!email.trim()}>
+            Send invitation
+          </Button>
+          <Button variant="ghost" onClick={onDone} disabled={sending}>
             Skip for now
           </Button>
         </div>

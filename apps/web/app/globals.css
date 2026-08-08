@@ -17,15 +17,22 @@
   color-scheme: light;
 
   /* ---- Surfaces ---------------------------------------------------------- */
-  --surface: #f4f6f5; /* page background */
+  --surface: #f3f4f6; /* page background */
   --surface-raised: #ffffff; /* cards, inputs, panels */
   --surface-sunken: #eceff0; /* wells, table headers, code blocks */
   --surface-hover: #e7ebeb; /* hover background */
 
   /* ---- Text -------------------------------------------------------------- */
-  --text: #0b0f12; /* primary */
+  --text: #111318; /* primary */
   --text-dim: #47545a; /* secondary — 7.4:1 on --surface */
-  --text-mute: #6b787e; /* tertiary, placeholders — 4.6:1 on --surface */
+  /* ISSUES.md #47: was `#6b7280` (a stale comment here claimed 4.6:1 on --surface; the
+     real number was 4.39:1, below the 4.5:1 AA minimum that applies almost everywhere
+     this token is actually used — small `text-small`/`text-data`/`.eyebrow`/placeholder
+     text, never large enough for the 3:1 large-text exception). Pre-existing, not
+     introduced by round 3's glass treatment; caught during this round's own contrast
+     check and darkened here to actually clear the bar. */
+  --text-mute: #666d7b; /* tertiary, placeholders — 4.73:1 on --surface, 4.80:1 on
+     --glass-surface composited over the worst-case (`.canvas-tint`) backdrop */
   --text-inverse: #ffffff; /* on --surface-inverse */
 
   /* Inverted surface. The primary CTA is monochrome, never brand-coloured. */
@@ -34,6 +41,26 @@
   /* ---- Rules ------------------------------------------------------------- */
   --rule: #dde2e1;
   --rule-strong: #c2cac8;
+
+  /* ---- Glass — the dashboard's surface material --------------------------
+     Round 3 pushes the previous round's subtle "monochrome glass" (a flat,
+     mostly-opaque card) into real glassmorphism: a translucent fill over a
+     `backdrop-filter` blur, so a panel reads as frosted glass floating above
+     the page rather than a card painted onto it. Built only from the existing
+     surface/rule tokens — `color-mix`ing with `transparent` changes alpha
+     only, never hue or lightness, so this stays achromatic like everything
+     else (CLAUDE.md §4 #10: the five lamp colours are the only colour that
+     means something). `--glass-border` dims `--rule-strong` the same way, so
+     the hairline still reads against a see-through fill instead of vanishing
+     into it. Contrast of `--text`/`--text-mute` against this fill composited
+     over the dashboard's `--accent-wash`-tinted canvas — the worst-case
+     backdrop — is verified in the round-3 task-1 report: ~17:1 / ~4.80:1,
+     both clearing the 4.5:1 AA body-text minimum with room to spare (see
+     ISSUES.md #47 for why `--text-mute` needed the 4.5:1 bar, not 3:1, and
+     for the value change that got it there). */
+  --glass-surface: color-mix(in oklab, var(--surface-raised) 66%, transparent);
+  --glass-border: color-mix(in oklab, var(--rule-strong) 62%, transparent);
+  --glass-blur: blur(24px) saturate(150%);
 
   /* ---- Lamps — semantic only --------------------------------------------
      These five colours communicate call state and nothing else. They are
@@ -54,6 +81,42 @@
   --lamp-brass-text: #7a5810;
   --lamp-jade-text: #1c6349;
   --lamp-flare-text: #9d2c1a;
+
+  /* ---- Forest — the Lush Forest palette (round-3 dashboard-polish) ------
+     Four raw swatches, `/app/*`-only by way of everywhere they're actually
+     consumed (below). `--accent`/`--accent-text`/`--accent-wash` are built
+     from three of the four exactly as before, just a new hue: `--forest-
+     deep` for the surface, `--forest-ink` for text/icons (the text-safe
+     variant — same job as the lamp `-text` tokens), `--forest-mint` for the
+     wash. `--forest-mid` has no solid-fill role of its own — 2.35:1 against
+     white, 2.14:1 against `--surface`, short of both the 3:1 non-text and
+     4.5:1 text bars — so it never sits under a label or icon. It appears
+     once, as the /app-only primary-button pulse ring (`.app-font-scope
+     .btn-pulse`, below), which is translucent motion with no text on it.
+
+     Worth flagging for whoever picks this up next: `--forest-deep`/`--forest-
+     mid` sit only ~21° of hue away from `--lamp-jade` (both read as "green"
+     at a glance) — closer than the indigo this replaces, which was chosen
+     specifically to sit far from every lamp hue. `--accent` is never used
+     inside `Lamp`/`LampBadge`/`DonutChart`/`OutcomeCount` (verified — the
+     letter of the rule below holds), but the family resemblance to jade is a
+     real one, not just a hue-wheel technicality, and is worth a second look
+     before this palette extends any further. */
+  --forest-deep: #2e6f40;
+  --forest-mint: #cfffdc;
+  --forest-mid: #68ba7f;
+  --forest-ink: #253d2c;
+
+  /* ---- Accent — decorative only, never state ----------------------------
+     This is the product's only other colour: dashboard chart accents, one
+     CTA card, the dashboard's primary-button family (`.app-font-scope
+     .btn-glass-primary`, below), quiet visual warmth — never a `Lamp`,
+     `LampBadge`, `DonutChart` segment, or anything else that represents
+     call/run/escalation state. If a component means something about a call,
+     it uses a lamp colour or none at all; if it doesn't, it may use this one. */
+  --accent: var(--forest-deep);
+  --accent-text: var(--forest-ink); /* ~10.7:1 on --surface, for text/icons */
+  --accent-wash: var(--forest-mint); /* the tinted-canvas colour */
 
   /* ---- Type scale (fluid) ------------------------------------------------ */
   --t-display-xl: clamp(2.5rem, 5.6vw, 4.5rem);
@@ -89,6 +152,11 @@
   --shadow-lg: 0 4px 8px rgba(11, 15, 18, 0.05), 0 24px 48px -12px rgba(11, 15, 18, 0.14);
   --shadow-overlay:
     0 1px 2px rgba(11, 15, 18, 0.08), 0 16px 40px -8px rgba(11, 15, 18, 0.22);
+  /* One diffuse, single-value shadow for every card on the page — a
+     deliberately softer, wider spread than --shadow-sm/md, used so every
+     card reads with the exact same depth instead of each picking a rung off
+     the scale above. */
+  --shadow-card: 0 8px 24px -4px rgba(16, 24, 40, 0.06);
 
   /* ---- Motion — 200-300ms with gentle easing ---------------------------- */
   --dur-micro: 150ms;
@@ -103,8 +171,6 @@
   --w-app: 1440px;
   --h-site-header: 68px;
   --h-app-topbar: 60px;
-  --w-app-nav: 240px;
-  --w-app-nav-collapsed: 60px;
 }
 
 /* --------------------------------------------------------------------------
@@ -137,6 +203,15 @@
   --color-lamp-brass-text: var(--lamp-brass-text);
   --color-lamp-jade-text: var(--lamp-jade-text);
   --color-lamp-flare-text: var(--lamp-flare-text);
+
+  --color-forest-deep: var(--forest-deep);
+  --color-forest-mint: var(--forest-mint);
+  --color-forest-mid: var(--forest-mid);
+  --color-forest-ink: var(--forest-ink);
+
+  --color-accent: var(--accent);
+  --color-accent-text: var(--accent-text);
+  --color-accent-wash: var(--accent-wash);
 
   --font-display: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
   --font-sans: var(--font-inter-tight), ui-sans-serif, system-ui, sans-serif;
@@ -180,6 +255,11 @@
   --shadow-md: var(--shadow-md);
   --shadow-lg: var(--shadow-lg);
   --shadow-overlay: var(--shadow-overlay);
+  --shadow-card: var(--shadow-card);
+
+  --glass-surface: var(--glass-surface);
+  --glass-border: var(--glass-border);
+  --glass-blur: var(--glass-blur);
 
   --ease-out: var(--ease-out);
   --ease-inout: var(--ease-inout);
@@ -205,6 +285,21 @@ body {
   line-height: 1.65;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+}
+
+/* Ubuntu, scoped to the dashboard only — `app/(app)/app/layout.tsx` wraps its
+   tree in this class because that layout doesn't render `<html>`/`<body>`
+   itself (those stay Inter Tight for marketing/auth in the true root layout).
+   `font-family` is set directly here, not just redeclared as the `--font-sans`
+   custom property, because `body` above hardcodes `--font-inter-tight` rather
+   than routing through `--font-sans` — redeclaring the token alone would
+   leave the rendered face unchanged. `--font-sans` is redeclared too so
+   anything that *does* reach for the Tailwind `font-sans` utility anywhere
+   under `/app` still resolves to Ubuntu rather than silently falling back to
+   Inter Tight. */
+.app-font-scope {
+  --font-sans: var(--font-ubuntu), ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--font-ubuntu), ui-sans-serif, system-ui, sans-serif;
 }
 
 /* Archivo at width 112 ("Expanded"). Applied through a class rather than an
@@ -338,6 +433,239 @@ button[data-menu][data-state="open"]:focus-visible {
     0 40px 80px -32px rgba(11, 15, 18, 0.4);
 }
 
+/* --------------------------------------------------------------------------
+   Monochrome glass — frosted content panels.
+
+   Real translucency, not just a border and a flat fill: a `color-mix`ed
+   background sits over a `backdrop-filter` blur, with the same soft
+   depth-and-highlight recipe `.pool` already uses. Built only from the
+   existing surface and rule tokens, so nothing here is a new hue — the five
+   lamp colours stay the only colour in the product (CLAUDE.md §4 #10).
+
+   `-sunken` reads recessed rather than raised, for a panel that sits inside
+   another. `-flat` drops the resting shadow down to just the hairline
+   highlight, for a panel nested inside a panel. `-interactive` is the hover
+   elevation: written as one rule rather than composed from `hover:shadow-md`,
+   because that Tailwind utility would replace the whole `box-shadow` and
+   erase the inset highlight instead of deepening it. */
+
+.panel-glass {
+  background: var(--glass-surface);
+  border-color: var(--glass-border);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  box-shadow:
+    inset 0 1px 0 color-mix(in oklab, var(--surface-raised) 55%, transparent),
+    var(--shadow-card);
+}
+
+.panel-glass-sunken {
+  background: color-mix(in oklab, var(--surface-sunken) 60%, transparent);
+  border-color: var(--glass-border);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  box-shadow: inset 0 1px 0 color-mix(in oklab, var(--surface-raised) 30%, transparent);
+}
+
+.panel-glass.panel-glass-flat {
+  box-shadow: inset 0 1px 0 color-mix(in oklab, var(--surface-raised) 55%, transparent);
+}
+
+/* Neither combination is used anywhere today, but the specificity tie below
+   would otherwise let :hover silently win over -flat/-sunken's own intent the
+   moment a caller does combine them — fixed now rather than left as a trap
+   for whoever adds the first real caller. */
+.panel-glass-flat.panel-glass-interactive:hover {
+  box-shadow: inset 0 1px 0 color-mix(in oklab, var(--surface-raised) 65%, transparent);
+}
+
+.panel-glass-sunken.panel-glass-interactive:hover {
+  box-shadow: inset 0 1px 0 color-mix(in oklab, var(--surface-raised) 40%, transparent);
+}
+
+.panel-glass-interactive {
+  transition:
+    box-shadow var(--dur-base) var(--ease-out),
+    border-color var(--dur-base) var(--ease-out),
+    transform var(--dur-base) var(--ease-out);
+}
+
+.panel-glass-interactive:hover {
+  border-color: color-mix(in oklab, var(--rule-strong) 80%, transparent);
+  box-shadow:
+    inset 0 1px 0 color-mix(in oklab, var(--surface-raised) 55%, transparent),
+    var(--shadow-md);
+}
+
+/* Browsers without backdrop-filter support (or a user who has turned
+   transparency effects off at the OS level) get a fully opaque panel instead
+   of a translucent one sitting directly over whatever's behind it with no
+   blur to soften it — a real contrast/legibility regression, not just a
+   missed visual flourish. */
+@supports not (backdrop-filter: blur(1px)) {
+  .panel-glass {
+    background: var(--surface-raised);
+  }
+
+  .panel-glass-sunken {
+    background: var(--surface-sunken);
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .panel-glass {
+    background: var(--surface-raised);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  .panel-glass-sunken {
+    background: var(--surface-sunken);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+
+/* The dashboard header, in the same glass as the content below it — the
+   header and the page canvas share one background token instead of an
+   opaque white bar over a grey page: the header is simply a translucent,
+   blurred view of whatever's actually behind it (the plain `--surface`, or
+   `.canvas-tint`'s wash on the dashboard). `border-b` (applied by the
+   caller) still gives it a seam where one is wanted.
+
+   Tinted with `--accent-wash` (round-3 dashboard-polish, Lush Forest
+   follow-up) rather than left as plain frosted white — `AppShell` only
+   renders `.header-glass` on `/app/*` (verified: its two call sites are both
+   inside `components/layout/app-shell.tsx`, which nothing outside the
+   dashboard imports), so unlike `Button` this class needed no
+   `.app-font-scope` scoping trick; it can carry the tint directly. The tint
+   is baked into the base colour *before* the existing translucency mix
+   (`50% --surface-raised, 50% --accent-wash`, then the same 66%-over-
+   transparent alpha every other glass surface already uses) rather than by
+   raising the alpha, so the header keeps the same blur/opacity recipe as
+   `.panel-glass` — it just frosts a pale mint instead of plain white. Kept
+   deliberately pale (mixing in `--forest-mid` for a stronger green was
+   tried and rejected — it pushed `--text-mute`, used for inactive nav
+   links, down toward ~4.3–4.5:1, too close to the 4.5:1 AA floor for
+   functional nav text). Verified contrast, computed rather than eyeballed,
+   worst-case backdrop (`--surface-sunken` scrolled behind the blur):
+   `--text` ~17:1, `--text-dim` (Wordmark's "AI" suffix) ~7.2:1, `--text-mute`
+   (inactive nav links, credit balance) ~4.8:1 — all clear 4.5:1 with real
+   margin. */
+.header-glass {
+  background: color-mix(
+    in oklab,
+    color-mix(in oklab, var(--surface-raised) 50%, var(--accent-wash) 50%) 66%,
+    transparent
+  );
+  border-color: var(--glass-border);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+}
+
+@supports not (backdrop-filter: blur(1px)) {
+  .header-glass {
+    background: color-mix(in oklab, var(--surface-raised) 50%, var(--accent-wash) 50%);
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .header-glass {
+    background: color-mix(in oklab, var(--surface-raised) 50%, var(--accent-wash) 50%);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+
+/* Buttons get the same material as Panel, so one sitting on a glass panel
+   doesn't read as a different substance. `-primary` tints toward
+   `--surface-inverse` (the monochrome CTA colour, CLAUDE.md §4 #10) rather
+   than `--glass-surface`, so the solid action still stays the darkest,
+   most committed-looking element on the page — it just now catches the
+   same blur as everything else. `-secondary` reuses `--glass-surface`
+   directly: it used to be fully transparent (`bg-transparent`), which on
+   top of an already-translucent Panel let two layers of "nothing" stack
+   into no visible button at all.
+   Hover/active are written here rather than as Tailwind `hover:`/`active:`
+   utilities on the component, for the same reason `.panel-glass-interactive`
+   is: this file is unlayered, so a layered utility touching `background`
+   would never be able to override it (see the note above `.panel-glass-
+   interactive`). */
+.btn-glass-primary {
+  background: color-mix(in oklab, var(--surface-inverse) 88%, transparent);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+}
+
+.btn-glass-secondary {
+  background: var(--glass-surface);
+  border-color: var(--glass-border);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+}
+
+.btn-glass-secondary:hover {
+  background: color-mix(in oklab, var(--surface-raised) 82%, transparent);
+}
+
+.btn-glass-secondary:active {
+  background: color-mix(in oklab, var(--surface-sunken) 78%, transparent);
+}
+
+@supports not (backdrop-filter: blur(1px)) {
+  .btn-glass-primary {
+    background: var(--surface-inverse);
+  }
+
+  .btn-glass-secondary {
+    background: var(--surface-raised);
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .btn-glass-primary {
+    background: var(--surface-inverse);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  .btn-glass-secondary {
+    background: var(--surface-raised);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+
+/* The dashboard's primary CTA, scoped to `/app/*` only via `.app-font-scope`
+   (the same wrapper `app/(app)/app/layout.tsx` uses to scope Ubuntu) — the
+   round-3 dashboard-polish approval to extend `--accent` into "primary
+   buttons/CTAs ... within /app/*" (DESIGN_NOTES §2). `Button` is one shared
+   component rendered on marketing and auth too (DESIGN_NOTES §13: the glass
+   treatment is product-wide), so the override lives here as a descendant
+   selector rather than in `button.tsx` — only a `.btn-glass-primary` nested
+   inside `.app-font-scope` picks it up via ordinary specificity (two classes
+   beat one); marketing and auth keep the monochrome `--surface-inverse` CTA
+   above, untouched. `92%` rather than the `88%` used above: `--accent` is
+   lighter than `--surface-inverse`, so a higher opacity is needed to hold
+   white button text at 4.5:1+ against the button's own composited colour
+   (verified ~5.1:1 against both the `--surface` and `.canvas-tint`-wash
+   backdrops an /app button actually sits on — see design-v2-report.md). */
+.app-font-scope .btn-glass-primary {
+  background: color-mix(in oklab, var(--accent) 92%, transparent);
+}
+
+@supports not (backdrop-filter: blur(1px)) {
+  .app-font-scope .btn-glass-primary {
+    background: var(--accent);
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .app-font-scope .btn-glass-primary {
+    background: var(--accent);
+  }
+}
+
 /* Hairlines that fade at both ends — the flow-language replacement for a hard
    full-width / full-height divider. `seam-x` is horizontal, `seam-y` vertical;
    `flow-seam-l` is the desktop-only fading left border used between columns. */
@@ -365,6 +693,81 @@ button[data-menu][data-state="open"]:focus-visible {
       )
       1;
   }
+}
+
+/* --------------------------------------------------------------------------
+   Signal field — the dashboard's own atmosphere.
+
+   An ambient glow built from the lamp colours themselves, not a new hue: three
+   very soft, blurred blooms in jade/ice/brass sitting behind the live outcome
+   strip, like a switchboard's own light spilling onto the wall behind it. The
+   lamps stay the only colour that means something (CLAUDE.md §4 #10) — this
+   is that same colour, diffused into atmosphere rather than decoration, and
+   only where the page is actually showing live call signal.
+   -------------------------------------------------------------------------- */
+
+.signal-field {
+  position: relative;
+  isolation: isolate;
+  /* The glow (`::before`, below) is deliberately oversized past this box so
+     `blur(40px)` has room to soften its edge instead of cutting the gradient
+     off hard — but with nothing here to clip it, that oversized box was real
+     layout, not just paint: it widened this element's own scrollable overflow,
+     and with no ancestor between here and `<body>` clipping horizontally
+     either, the whole page picked up a horizontal scrollbar the moment this
+     section rendered (ISSUES.md — "the whole UI scrolls left" report).
+     `overflow: hidden` contains the bleed to this card, where the glow was
+     always meant to stay. */
+  overflow: hidden;
+}
+
+.signal-field::before {
+  content: "";
+  position: absolute;
+  inset: -20% -10%;
+  z-index: -1;
+  background:
+    radial-gradient(38% 55% at 12% 20%, color-mix(in oklab, var(--lamp-jade) 16%, transparent), transparent 70%),
+    radial-gradient(34% 50% at 88% 15%, color-mix(in oklab, var(--lamp-ice) 15%, transparent), transparent 70%),
+    radial-gradient(30% 45% at 50% 100%, color-mix(in oklab, var(--lamp-brass) 12%, transparent), transparent 70%);
+  filter: blur(40px);
+  opacity: 0.8;
+}
+
+@media (prefers-contrast: more) {
+  .signal-field::before {
+    display: none;
+  }
+}
+
+/* The dashboard's own hero card — card-flow's gradient lift, at a bigger radius
+   and with room for a display-scale number. Distinct from `.card-flow` itself
+   (marketing's hero) so tuning one never silently moves the other. */
+.hero-flow {
+  border-radius: var(--r-xl);
+  background: linear-gradient(
+    165deg,
+    #ffffff 0%,
+    var(--surface-raised) 38%,
+    color-mix(in oklab, var(--surface-raised) 85%, var(--surface-sunken)) 100%
+  );
+  box-shadow:
+    inset 0 1px 0 color-mix(in oklab, #ffffff 80%, transparent),
+    var(--shadow-card);
+}
+
+/* A soft tint on the page canvas behind the dashboard's cards, so a white
+   card actually reads as floating rather than as a slightly-lighter rectangle
+   on an already-near-white page. Same accent hue as --accent, just diluted —
+   this is the one place the accent tints something structural rather than a
+   single decorative element, since it's the canvas the whole page sits on,
+   not a claim about any one piece of content. */
+.canvas-tint {
+  background: radial-gradient(
+    130% 80% at 50% -15%,
+    var(--accent-wash) 0%,
+    var(--surface) 78%
+  );
 }
 
 /* --------------------------------------------------------------------------
@@ -513,6 +916,29 @@ button[data-menu][data-state="open"]:focus-visible {
 
 .btn-pulse:hover::after {
   animation: btn-pulse 1.3s var(--ease-out) infinite;
+}
+
+/* The dashboard-only variant of the ring above: tints toward `--forest-mid`
+   instead of `--text`, so hovering the dashboard's now-green primary CTA
+   sends out a ring in the same colour family rather than a plain-ink flash.
+   `--forest-mid` is otherwise unused as a solid fill (see the note over
+   `--forest-mid` near the top of this file) — a low-opacity, text-free ring
+   is exactly the one place its weak contrast doesn't matter. Only
+   `.app-font-scope` descendants get this; marketing/auth keep `btn-pulse`
+   as-is, via the same specificity trick as `.btn-glass-primary` above. */
+@keyframes btn-pulse-forest {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in oklab, var(--forest-mid) 45%, transparent);
+    opacity: 0.55;
+  }
+  100% {
+    box-shadow: 0 0 0 12px transparent;
+    opacity: 0;
+  }
+}
+
+.app-font-scope .btn-pulse:hover::after {
+  animation-name: btn-pulse-forest;
 }
 
 /* The 1–2 bars at the waveform's leading edge get a small live flutter as the

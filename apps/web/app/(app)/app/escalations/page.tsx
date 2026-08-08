@@ -7,7 +7,7 @@ import { TranscriptView } from "@/components/app/transcript-view";
 import { Button } from "@/components/ui/button";
 import { DialogRoot, Sheet } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Eyebrow, Panel } from "@/components/ui/panel";
+import { Panel } from "@/components/ui/panel";
 import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { Outcome } from "@/lib/api";
@@ -54,17 +54,17 @@ export default function EscalationsPage() {
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="flex flex-col gap-1">
-          <Eyebrow>Needs a person</Eyebrow>
+          <p className="text-small font-bold text-text-mute">Needs a person</p>
           <h1 className="font-display text-h2 text-text">
             {escalations.length === 0
               ? "Nothing needs you"
               : `${escalations.length} waiting`}
           </h1>
-          {escalations.length > 0 ? (
-            <p className="text-small text-text-dim">
-              Oldest first — the longest wait is the most expensive one.
-            </p>
-          ) : null}
+          <p className="measure text-small text-text-dim">
+            {escalations.length > 0
+              ? "Oldest first — the longest wait is the most expensive one."
+              : "Escalations land here when someone sounds frustrated, asks to opt out, or asks for a person."}
+          </p>
         </div>
       </div>
 
@@ -73,7 +73,7 @@ export default function EscalationsPage() {
       {escalations.length > 0 ? (
         <div className="flex flex-wrap items-end gap-3">
           <div className="w-44">
-            <Eyebrow className="mb-1.5">Sort</Eyebrow>
+            <p className="mb-1.5 text-small font-bold text-text-mute">Sort</p>
             <Select
               value={sortOrder}
               onValueChange={(v) => setSortOrder(v as SortOrder)}
@@ -86,7 +86,7 @@ export default function EscalationsPage() {
           </div>
 
           <div className="w-52">
-            <Eyebrow className="mb-1.5">Campaign</Eyebrow>
+            <p className="mb-1.5 text-small font-bold text-text-mute">Campaign</p>
             <Select
               value={campaignFilter}
               onValueChange={setCampaignFilter}
@@ -100,7 +100,7 @@ export default function EscalationsPage() {
 
           {reasons.length > 0 ? (
             <div className="w-56">
-              <Eyebrow className="mb-1.5">Reason</Eyebrow>
+              <p className="mb-1.5 text-small font-bold text-text-mute">Reason</p>
               <Select
                 value={reasonFilter}
                 onValueChange={setReasonFilter}
@@ -147,7 +147,7 @@ export default function EscalationsPage() {
             }
             body={
               escalations.length === 0
-                ? "Escalations land here when someone sounds frustrated, asks to opt out, or asks for a person."
+                ? "When calls come in, they'll appear in this queue."
                 : "Clear the filters to see the whole queue."
             }
             action={

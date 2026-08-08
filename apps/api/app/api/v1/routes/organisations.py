@@ -14,9 +14,10 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
 from app.auth.dependencies import CurrentUser, RequirePermission, current_user
-from app.auth.permissions import Permission
+from app.auth.permissions import Permission, can_act_on_member, can_grant_role
 from app.core.config import config
 from app.database import database
+from app.database.models import OrgRole
 from app.database.repositories import organisations as org_repo
 from app.integrations.email.resend import (
     EmailAPIError,
@@ -100,6 +101,42 @@ def _validate_role(role: str) -> str:
             detail=f"'{role}' isn't a role. Use one of: {', '.join(sorted(VALID_ROLES))}.",
         )
     return role
+
+
+def _ensure_can_grant(user: CurrentUser, role: str) -> None:
+    """Block a grant that would outrank the caller — the admin-to-owner hole.
+
+    `Permission.TEAM_SET_ROLE`/`TEAM_INVITE` only gate that a role can be
+    changed at all; Admin holds both, same as Owner. This is the check for
+    *which* role, applied before either write reaches the database.
+    """
+    if can_grant_role(user.role, OrgRole(role)):
+        return
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail=(
+            f"Your role ({user.role.value}) can't grant '{role}'. "
+            "You can only grant a role below your own — ask an owner to make this change."
+        ),
+    )
+
+
+def _ensure_can_act_on(user: CurrentUser, target_current_role: str) -> None:
+    """Block acting on a member who outranks the caller — the companion gap
+    to `_ensure_can_grant`: an Admin who can't grant `owner`/`admin` shouldn't
+    be able to demote or remove someone who already holds it, either. Never
+    called for the caller's own row — self-service is `_ensure_can_grant`'s
+    job alone.
+    """
+    if can_act_on_member(user.role, OrgRole(target_current_role)):
+        return
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail=(
+            f"Your role ({user.role.value}) can't act on a '{target_current_role}'. "
+            "Ask an owner to make this change."
+        ),
+    )
 
 
 @router.get("", response_model=list[OrganisationOut])
@@ -210,6 +247,7 @@ async def invite(
     user: Annotated[CurrentUser, Depends(RequirePermission(Permission.TEAM_INVITE))],
 ) -> PendingInviteOut:
     role = _validate_role(body.role)
+    _ensure_can_grant(user, role)
     if not _EMAIL_RE.match(body.email.strip()):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -266,8 +304,13 @@ async def set_member_role(
     user: Annotated[CurrentUser, Depends(RequirePermission(Permission.TEAM_SET_ROLE))],
 ) -> None:
     role = _validate_role(body.role)
+    _ensure_can_grant(user, role)
     async with database.as_user(user.auth_user_id) as conn:
         try:
+            if member_user_id != user.id:
+                current_role = await org_repo.get_member_role(conn, user.org_id, member_user_id)
+                if current_role is not None:
+                    _ensure_can_act_on(user, current_role)
             await org_repo.set_member_role(conn, user.org_id, member_user_id, role)
         except asyncpg.exceptions.RestrictViolationError as exc:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=exc.message) from exc
@@ -289,6 +332,10 @@ async def remove_member(
         )
     async with database.as_user(user.auth_user_id) as conn:
         try:
+            if member_user_id != user.id:
+                current_role = await org_repo.get_member_role(conn, user.org_id, member_user_id)
+                if current_role is not None:
+                    _ensure_can_act_on(user, current_role)
             await org_repo.remove_member(conn, user.org_id, member_user_id)
         except asyncpg.exceptions.RestrictViolationError as exc:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=exc.message) from exc

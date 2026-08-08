@@ -7,18 +7,16 @@ import { LampStrip } from "@/components/brand/lamp-strip";
 import { ConnectionBanner } from "@/components/app/connection-banner";
 import { MaskedPhone } from "@/components/app/masked-phone";
 import { TranscriptView } from "@/components/app/transcript-view";
-import { LampBadge, Tag } from "@/components/ui/badge";
+import { LampBadge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogRoot } from "@/components/ui/dialog";
-import { Sheet } from "@/components/ui/dialog";
+import { DialogRoot, Sheet } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Eyebrow, Panel } from "@/components/ui/panel";
+import { Panel } from "@/components/ui/panel";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useToast } from "@/components/ui/toast";
 import type { Outcome } from "@/lib/api";
 import { formatDuration, formatTimestamp } from "@/lib/format";
 import { useProgressAnnouncement, useRunPoll } from "@/lib/hooks/use-run-poll";
-import { countLamps, lampForOutcome, stripForRun } from "@/lib/lamp";
+import { countLamps, lampForOutcome, lampForRunStatus, stripForRun } from "@/lib/lamp";
 import { useAppStore } from "@/lib/app-store";
 
 /**
@@ -31,11 +29,9 @@ import { useAppStore } from "@/lib/app-store";
 export default function RunDetailPage() {
   const params = useParams<{ id: string }>();
   const runId = typeof params?.id === "string" ? params.id : null;
-  const toast = useToast();
   const { phase, campaigns } = useAppStore();
 
   const [paused, setPaused] = useState(false);
-  const [stopping, setStopping] = useState(false);
   const [selected, setSelected] = useState<Outcome | null>(null);
 
   const { run, error, live, elapsed } = useRunPoll(runId, { paused });
@@ -100,32 +96,35 @@ export default function RunDetailPage() {
     );
   }
 
+  const runLamp = lampForRunStatus(run.status);
+
   return (
     <div className="flex flex-col gap-6">
       {/* ---- Header ------------------------------------------------------ */}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex flex-col gap-1.5">
-          <Eyebrow>Run</Eyebrow>
+          <p className="text-small font-bold text-text-mute">Run</p>
           <h1 className="font-display text-h2 text-text">
             {campaign?.name ?? run.campaign_id}
           </h1>
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-mono text-data text-text-mute">{run.id}</span>
-            <Tag>{run.status}</Tag>
+            <LampBadge state={runLamp.state} pulse={runLamp.pulse}>
+              {runLamp.label}
+            </LampBadge>
             <span className="font-mono text-data text-text-mute">
               {formatTimestamp(run.started_at)}
             </span>
           </div>
         </div>
 
-        {/* Pause and Stop are always reachable while a run is live. */}
+        {/* Pause is always reachable while a run is live. There is no way to cancel a
+            run in progress yet — pausing only stops this screen from polling for
+            updates; it does not stop any call. */}
         {live ? (
           <div className="flex items-center gap-2">
             <Button variant="secondary" onClick={() => setPaused((p) => !p)}>
               {paused ? "Resume updates" : "Pause run"}
-            </Button>
-            <Button variant="danger" onClick={() => setStopping(true)}>
-              Stop run
             </Button>
           </div>
         ) : null}
@@ -134,7 +133,7 @@ export default function RunDetailPage() {
       {/* ---- Progress ---------------------------------------------------- */}
       <Panel className={cn("flex flex-col gap-4 p-4 pl-4 sm:p-5", "border-l-2 border-l-lamp-brass")}>
         <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <Eyebrow>Live · Real calls</Eyebrow>
+          <p className="text-small font-bold text-text-mute">Live · Real calls</p>
           {live ? (
             <span className="font-mono text-data tabular-nums text-text-mute">
               {formatDuration(elapsed)} elapsed
@@ -183,7 +182,7 @@ export default function RunDetailPage() {
 
       {/* ---- Results ----------------------------------------------------- */}
       <Panel className="flex flex-col gap-4 p-4 sm:p-5">
-        <Eyebrow>Results</Eyebrow>
+        <p className="text-small font-bold text-text-mute">Results</p>
 
         {rows.length === 0 ? (
           <EmptyState
@@ -198,19 +197,19 @@ export default function RunDetailPage() {
               </caption>
               <thead className="bg-surface-sunken">
                 <tr className="border-b border-rule">
-                  <th scope="col" className="eyebrow px-3 py-2 text-text-mute">
+                  <th scope="col" className="text-small font-bold px-3 py-2 text-text-mute">
                     Outcome
                   </th>
-                  <th scope="col" className="eyebrow px-3 py-2 text-text-mute">
+                  <th scope="col" className="text-small font-bold px-3 py-2 text-text-mute">
                     Contact
                   </th>
-                  <th scope="col" className="eyebrow px-3 py-2 text-text-mute">
+                  <th scope="col" className="text-small font-bold px-3 py-2 text-text-mute">
                     Number
                   </th>
-                  <th scope="col" className="eyebrow px-3 py-2 text-right text-text-mute">
+                  <th scope="col" className="text-small font-bold px-3 py-2 text-right text-text-mute">
                     Duration
                   </th>
-                  <th scope="col" className="eyebrow px-3 py-2 text-text-mute">
+                  <th scope="col" className="text-small font-bold px-3 py-2 text-text-mute">
                     Summary
                   </th>
                 </tr>
@@ -256,38 +255,6 @@ export default function RunDetailPage() {
             <TranscriptView outcome={selected} />
           </Sheet>
         ) : null}
-      </DialogRoot>
-
-      {/* ---- Stop confirmation ------------------------------------------- */}
-      <DialogRoot open={stopping} onOpenChange={setStopping}>
-        <Dialog
-          title="Stop this run?"
-          description="Calls already placed keep their results. Contacts not yet reached will not be called."
-          size="sm"
-          footer={
-            <>
-              <Button variant="secondary" onClick={() => setStopping(false)}>
-                Keep running
-              </Button>
-              <Button
-                variant="danger"
-                onClick={() => {
-                  setStopping(false);
-                  setPaused(true);
-                  // The service has no stop endpoint yet, so say what actually happened
-                  // rather than claiming the run was stopped.
-                  toast({
-                    tone: "warning",
-                    title: "Updates stopped, run not cancelled",
-                    body: "This deployment can't cancel a run in progress. Remaining calls will still be placed.",
-                  });
-                }}
-              >
-                Stop run
-              </Button>
-            </>
-          }
-        />
       </DialogRoot>
     </div>
   );

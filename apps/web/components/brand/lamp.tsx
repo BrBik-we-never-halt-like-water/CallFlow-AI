@@ -24,7 +24,7 @@ const COLOR_VAR: Record<LampState, string> = {
 export interface LampProps {
   state: LampState;
   size?: LampSize;
-  /** Slow pulse. Reserved for "queued for retry". */
+  /** Slow pulse for a state that's still moving — in progress, or queued for retry. */
   pulse?: boolean;
   /**
    * Accessible name. Omit only when an ancestor already names this lamp — a

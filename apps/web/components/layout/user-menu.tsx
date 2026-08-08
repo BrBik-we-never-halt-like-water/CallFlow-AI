@@ -1,6 +1,11 @@
 "use client";
 
-import { GearSixIcon, SignOutIcon, UserCircleIcon } from "@phosphor-icons/react/dist/ssr";
+import {
+  BuildingsIcon,
+  GearSixIcon,
+  SignOutIcon,
+  UserCircleIcon,
+} from "@phosphor-icons/react/dist/ssr";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useState } from "react";
@@ -17,12 +22,12 @@ import { signOut } from "@/lib/auth/actions";
 import type { SessionProfile } from "@/lib/hooks/use-session";
 
 /**
- * The signed-in user's own menu — name, profile, settings, sign out.
- *
- * Organisation switching lives only in the sidebar now. This used to also
- * carry its own copy of the org switcher, which meant the same action existed
- * in three places on screen at once; this menu's job is just "you," not "which
- * workspace."
+ * The signed-in user's own menu — the one account entry point now that there
+ * is no sidebar to also carry one. Organisation and Settings are lower-
+ * frequency than the header's primary nav row (`PrimaryNav`, app-shell.tsx),
+ * so they fold in here rather than compressing that row to fit all seven
+ * destinations. Organisation *switching* stays a separate control
+ * (`HeaderOrgSwitcher`) — this menu is "you," not "which workspace."
  */
 export function UserMenu({
   profile,
@@ -75,6 +80,13 @@ export function UserMenu({
           <Link href="/app/profile" className="flex flex-1 items-center gap-2">
             <UserCircleIcon aria-hidden className="size-4" />
             Profile
+          </Link>
+        </DropdownMenuItem>
+
+        <DropdownMenuItem>
+          <Link href="/app/organisation" className="flex flex-1 items-center gap-2">
+            <BuildingsIcon aria-hidden className="size-4" />
+            Organisation
           </Link>
         </DropdownMenuItem>
 

@@ -18,9 +18,8 @@ export default function BillingSettingsPage() {
 }
 
 function BillingContent({ profile }: { profile: SessionProfile }) {
-  const { health } = useAppStore();
+  const { safetySettings } = useAppStore();
   const plan = PLANS.find((p) => p.id === profile.active.plan_id);
-  const limits = health?.limits;
 
   return (
     <div className="flex flex-col gap-4">
@@ -40,38 +39,34 @@ function BillingContent({ profile }: { profile: SessionProfile }) {
         title="Usage today"
         description="The same limiter every run passes through — nothing here is estimated."
       >
-        {!health ? (
+        {!safetySettings ? (
           <div className="flex flex-col gap-2">
             <Skeleton className="h-8 w-48" />
             <Skeleton className="h-2 w-full" />
           </div>
-        ) : limits ? (
+        ) : (
           <div className="flex flex-col gap-3">
             <div className="flex items-baseline gap-2">
               <span className="font-mono text-h2 tabular-nums text-text">
-                {formatNumber(limits.used_today)}
+                {formatNumber(safetySettings.used_today)}
               </span>
               <span className="text-body text-text-dim">
-                of {formatNumber(limits.daily_budget)} calls used
+                of {formatNumber(safetySettings.daily_budget)} calls used
               </span>
             </div>
             <div className="h-1.5 w-full overflow-hidden rounded-full bg-surface-sunken">
               <div
                 className="h-full rounded-full bg-surface-inverse"
                 style={{
-                  width: `${Math.min(100, (limits.used_today / Math.max(1, limits.daily_budget)) * 100)}%`,
+                  width: `${Math.min(100, (safetySettings.used_today / Math.max(1, safetySettings.daily_budget)) * 100)}%`,
                 }}
               />
             </div>
             <p className="text-small text-text-mute">
-              Resets daily. Paced at {limits.per_window} calls per{" "}
-              {Math.round(limits.window_minutes)} minutes per caller.
+              Resets daily. Paced at {safetySettings.calls_per_window} calls per{" "}
+              {Math.round(safetySettings.window_minutes)} minutes.
             </p>
           </div>
-        ) : (
-          <p className="text-small text-text-dim">
-            Usage isn&apos;t available right now — the limiter didn&apos;t report a snapshot.
-          </p>
         )}
       </SettingsSection>
 

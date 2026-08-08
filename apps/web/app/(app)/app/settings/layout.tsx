@@ -3,11 +3,8 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/cn";
-import { Eyebrow } from "@/components/ui/panel";
 
 const TABS = [
-  { slug: "", label: "Organisation" },
-  { slug: "team", label: "Team" },
   { slug: "safety", label: "Safety" },
   { slug: "api-keys", label: "API keys" },
   { slug: "integrations", label: "Integrations" },
@@ -22,8 +19,11 @@ export default function SettingsLayout({
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-1">
-        <Eyebrow>Settings</Eyebrow>
-        <h1 className="font-display text-h2 text-text">Settings</h1>
+        <p className="text-small font-bold text-text-mute">Settings</p>
+        <h1 className="font-display text-h2 text-text">The controls behind every run</h1>
+        <p className="measure text-small text-text-dim">
+          Guards, credentials, connected numbers, and the plan this organisation is on.
+        </p>
       </div>
 
       {/* Real links rather than a tab widget: each pane is its own URL, so a setting
@@ -31,7 +31,7 @@ export default function SettingsLayout({
       <nav aria-label="Settings sections" className="-mb-px overflow-x-auto border-b border-rule">
         <ul className="flex min-w-max gap-1">
           {TABS.map((tab) => {
-            const href = tab.slug ? `/app/settings/${tab.slug}` : "/app/settings";
+            const href = `/app/settings/${tab.slug}`;
             const active = pathname === href;
             return (
               <li key={tab.slug}>

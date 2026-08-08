@@ -36,6 +36,25 @@ class Sentiment(str, Enum):
     UNKNOWN = "unknown"
 
 
+class DialFailure(str, Enum):
+    """A vendor-neutral reason a call attempt itself failed — never placed, or
+    never came back — as opposed to `Disposition`, which is the triage decision
+    once a call *did* happen. CLAUDE.md's Substitutability section calls for
+    exactly this: retry policy keys off this name, never a vendor error string,
+    so a second voice provider slots in without every caller re-learning a new
+    vocabulary of failures.
+    """
+
+    INVALID_NUMBER = "invalid_number"
+    RATE_LIMITED = "rate_limited"
+    INSUFFICIENT_BALANCE = "insufficient_balance"
+    POLICY_VIOLATION = "policy_violation"
+    UNAUTHORIZED = "unauthorized"
+    PROVIDER_UNAVAILABLE = "provider_unavailable"
+    TIMED_OUT = "timed_out"
+    INTERNAL = "internal"
+
+
 class Disposition(str, Enum):
     """What the orchestrator decided to do after the call resolved."""
 

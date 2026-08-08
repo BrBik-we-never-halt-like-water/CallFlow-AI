@@ -2,9 +2,11 @@
 
 Every run dials for real. There is no dry-run mode (CLAUDE.md, ADR-3) — the
 guards that actually stand between "started a run" and "rang a real phone" are
-the per-run ceiling, the allowlist, per-IP rate limiting, the shared daily
-budget, and the suppression list, all enforced in `check_dial_allowed()` and
-below.
+the per-run ceiling, the allowlist, per-organisation rate limiting, that
+organisation's own daily budget, and the suppression list, all enforced in
+`check_dial_allowed()` and below. Every one of these can be overridden per
+organisation (`org_safety_settings`) or falls back to the deployment's env-var
+defaults — `resolve_safety_settings()` is the one place that merge happens.
 """
 
 from __future__ import annotations
@@ -25,9 +27,10 @@ from app.core.config import config
 from app.core.rate_limit import limiter
 from app.database import database
 from app.database.repositories import runs as runs_repo
+from app.database.repositories import safety_settings as safety_settings_repo
 from app.database.repositories import suppressions as suppressions_repo
 from app.domain.entities import CallOutcome, Contact
-from app.domain.safety import phone_hash
+from app.domain.safety import phone_hash, resolve_safety_settings
 from app.services.campaign_runner import CampaignRunner
 
 log = logging.getLogger("app.api.v1.runs")
@@ -48,13 +51,6 @@ class RunRequest(BaseModel):
     contacts: list[ContactIn]
 
 
-def _client_ip(request: Request) -> str:
-    forwarded = request.headers.get("x-forwarded-for", "")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
-    return request.client.host if request.client else "unknown"
-
-
 def _is_owner(request: Request) -> bool:
     """True when the caller presents the owner key, lifting all rate limits."""
     if not config.owner_key:
@@ -72,8 +68,15 @@ async def _run_and_persist(
     result_schema: dict[str, Any],
     contacts: list[Contact],
     suppressed_hashes: frozenset[str],
+    max_calls_per_run: int | None,
+    allowlist: frozenset[str] | None,
 ) -> None:
-    runner = CampaignRunner(result_schema=result_schema, suppressed_hashes=suppressed_hashes)
+    runner = CampaignRunner(
+        result_schema=result_schema,
+        suppressed_hashes=suppressed_hashes,
+        max_calls_per_run=max_calls_per_run,
+        allowlist=allowlist,
+    )
 
     async def on_progress(outcome: CallOutcome) -> None:
         record = outcome.model_dump(mode="json")
@@ -117,7 +120,24 @@ async def start_run(
             status_code=400, detail="No Voice API key is configured — cannot place calls."
         )
 
-    verdict = limiter.check(_client_ip(request), calls=len(contacts), is_owner=_is_owner(request))
+    async with database.as_user(user.auth_user_id) as conn:
+        safety_row = await safety_settings_repo.get_for_org(conn, user.org_id)
+    effective = resolve_safety_settings(
+        allowlist=safety_row["allowlist"] if safety_row else None,
+        max_calls_per_run=safety_row["max_calls_per_run"] if safety_row else None,
+        calls_per_window=safety_row["calls_per_window"] if safety_row else None,
+        window_minutes=safety_row["window_minutes"] if safety_row else None,
+        daily_budget=safety_row["daily_budget"] if safety_row else None,
+    )
+
+    verdict = limiter.check(
+        str(user.org_id),
+        calls=len(contacts),
+        is_owner=_is_owner(request),
+        rate_limit_calls=effective.calls_per_window,
+        rate_limit_window_seconds=effective.window_minutes * 60,
+        daily_call_budget=effective.daily_budget,
+    )
     if not verdict.allowed:
         raise HTTPException(
             status_code=429,
@@ -155,6 +175,8 @@ async def start_run(
         result_schema=result_schema,
         contacts=contacts,
         suppressed_hashes=frozenset(suppressed),
+        max_calls_per_run=effective.max_calls_per_run,
+        allowlist=effective.allowlist,
     )
     return {"run_id": run_id, "total": len(contacts)}
 

@@ -17,9 +17,9 @@ from app.api.v1.routes.invitations import router as invitations_router
 from app.api.v1.routes.organisations import router as organisations_router
 from app.api.v1.routes.profile import router as profile_router
 from app.api.v1.routes.runs import router as runs_router
+from app.api.v1.routes.safety import router as safety_router
 from app.api.v1.routes.suppressions import router as suppressions_router
 from app.core.config import config
-from app.core.rate_limit import limiter
 from app.database import database
 
 logging.basicConfig(level=logging.INFO)
@@ -68,6 +68,7 @@ app.include_router(organisations_router)
 app.include_router(invitations_router)
 app.include_router(campaigns_router)
 app.include_router(runs_router)
+app.include_router(safety_router)
 app.include_router(suppressions_router)
 app.include_router(api_keys_router)
 app.include_router(integrations_router)
@@ -85,12 +86,19 @@ def root() -> dict[str, str]:
 
 @app.get("/api/health")
 def health() -> dict[str, Any]:
+    """Unauthenticated, so this can only report the deployment's own defaults —
+    not any organisation's live usage or override. `GET /api/v1/safety` (signed
+    in) is where a real `used_today` lives now that the limiter is org-scoped."""
     return {
         "ok": True,
         "api_key_configured": bool(config.api_key),
         "max_calls_per_run": config.max_calls_per_run,
         "allowlist_active": bool(config.allowlist),
-        "limits": limiter.snapshot(),
+        "limits": {
+            "daily_budget": config.daily_call_budget,
+            "per_window": config.rate_limit_calls,
+            "window_minutes": config.rate_limit_window_seconds // 60,
+        },
     }
 
 

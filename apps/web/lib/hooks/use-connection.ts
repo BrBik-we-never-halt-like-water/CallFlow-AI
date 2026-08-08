@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { api, type Campaign, type Health } from "@/lib/api";
+import { useOrgScopedEffect } from "@/lib/hooks/use-org-scoped-effect";
 
 export type ConnectionPhase = "connecting" | "up" | "down";
 
@@ -28,7 +29,10 @@ export function useConnection(): Connection {
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [healthNonce, setHealthNonce] = useState(0);
 
-  useEffect(() => {
+  // Campaigns are organisation-scoped, so this whole connect sequence re-runs on
+  // every org switch, not just on mount — otherwise switching orgs would keep
+  // showing the previous org's campaigns until a hard reload.
+  useOrgScopedEffect(() => {
     let cancelled = false;
 
     async function load(): Promise<void> {
@@ -65,7 +69,7 @@ export function useConnection(): Connection {
     return () => {
       cancelled = true;
     };
-  }, []);
+  });
 
   // Refreshing health after a run updates the remaining live-call budget.
   useEffect(() => {

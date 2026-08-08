@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import { cn } from "@/lib/cn";
 import { Lamp } from "@/components/brand/lamp";
 import { Button } from "@/components/ui/button";
@@ -9,6 +8,7 @@ import { Panel } from "@/components/ui/panel";
 import { useToast } from "@/components/ui/toast";
 import { MaskedPhone } from "./masked-phone";
 import type { Outcome } from "@/lib/api";
+import { useAppStore } from "@/lib/app-store";
 import { formatAge, formatDuration } from "@/lib/format";
 
 /**
@@ -29,23 +29,25 @@ export function EscalationCard({
   onOpen?: () => void;
 }) {
   const toast = useToast();
-  const [resolved, setResolved] = useState(false);
+  const { resolveEscalation } = useAppStore();
 
   const chain = buildChain(outcome);
 
+  // The dashboard's condensed preview reads as a list — hairline dividers
+  // between rows, like the rest of that column — not a stack of boxed cards.
+  // The dedicated /app/escalations worklist keeps the full card: there, each
+  // item is the thing being acted on, not a row in a summary.
+  const Wrapper = compact ? "div" : Panel;
+  const wrapperClassName = cn(
+    "flex flex-col gap-3",
+    compact ? "border-b border-rule pb-4 last:border-0 last:pb-0" : "p-3 sm:p-4",
+  );
+
   return (
-    <Panel
-      className={cn(
-        "flex flex-col gap-3 p-3 sm:p-4",
-        // A flare left border, because this is call state and it is the one thing on
-        // the page that needs action.
-        "border-l-2 border-l-[var(--lamp-flare)]",
-        resolved && "opacity-50",
-      )}
-    >
+    <Wrapper className={wrapperClassName}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2">
-          <Lamp state={resolved ? "jade" : "flare"} size="md" label={resolved ? "Resolved" : "Needs a person"} />
+          <Lamp state="flare" size="md" label="Needs a person" />
           <div className="flex min-w-0 flex-col">
             <p className="truncate text-small font-medium text-text">
               {outcome.contact_name}
@@ -66,16 +68,25 @@ export function EscalationCard({
         </div>
       </div>
 
-      {/* The reasoning chain. */}
-      <ol className="flex flex-wrap items-center gap-1.5">
+      {/* The reasoning chain. Tag's own `whitespace-nowrap` is right for a short
+          role/template label, but disposition_reason/sentiment_reason are full
+          sentences — overridden back to wrapping here so a long one wraps
+          inside the card instead of pushing past its edge. */}
+      <ol className="flex flex-wrap items-start gap-1.5">
         {chain.map((step, i) => (
-          <li key={i} className="flex items-center gap-1.5">
+          <li key={i} className="flex min-w-0 max-w-full items-center gap-1.5">
             {i > 0 ? (
-              <span aria-hidden className="font-mono text-data text-text-mute">
+              <span aria-hidden className="shrink-0 font-mono text-data text-text-mute">
                 →
               </span>
             ) : null}
-            <Tag mono={false} className={i === chain.length - 1 ? "text-lamp-flare-text" : undefined}>
+            <Tag
+              mono={false}
+              className={cn(
+                "min-w-0 whitespace-normal break-words",
+                i === chain.length - 1 && "text-lamp-flare-text",
+              )}
+            >
               {step}
             </Tag>
           </li>
@@ -101,7 +112,6 @@ export function EscalationCard({
         <Button
           variant="secondary"
           size="sm"
-          disabled={resolved}
           onClick={() =>
             toast({
               tone: "info",
@@ -115,7 +125,6 @@ export function EscalationCard({
         <Button
           variant="ghost"
           size="sm"
-          disabled={resolved}
           onClick={() =>
             toast({
               tone: "info",
@@ -129,18 +138,26 @@ export function EscalationCard({
         <Button
           variant="ghost"
           size="sm"
-          disabled={resolved}
           onClick={() => {
-            setResolved(true);
-            // The verb matches the button, so the confirmation is unmistakably about
-            // the thing that was just clicked.
-            toast({ tone: "success", title: "Marked resolved" });
+            // Resolution isn't persisted anywhere yet (ISSUES.md #7) — `resolveEscalation`
+            // only drops this outcome from the shared `escalations` list for the rest of
+            // this session, which is what actually makes the worklist, the dashboard
+            // panel, and the nav badge update immediately. The toast says exactly that
+            // instead of implying it was saved, matching "Call back myself"/"Reassign"
+            // above — and there is no "Resolved" state to show here afterward, since this
+            // card unmounts the moment its outcome drops out of that list.
+            resolveEscalation(outcome);
+            toast({
+              tone: "info",
+              title: "Hidden for now, not saved",
+              body: "This comes back if you reload — resolution tracking isn't wired up yet.",
+            });
           }}
         >
-          {resolved ? "Resolved" : "Mark resolved"}
+          Mark resolved
         </Button>
       </div>
-    </Panel>
+    </Wrapper>
   );
 }
 

@@ -14,12 +14,18 @@ export type ButtonSize = "sm" | "md" | "lg";
  * That is deliberate and it is the most important rule in the design: lamp
  * colours are reserved for call state. Because a button is never brass or jade,
  * a lamp lighting on an otherwise ink-on-paper page carries real weight.
+ *
+ * `primary` and `secondary` both pick up the same glass material as `Panel`
+ * (`.btn-glass-primary` / `.btn-glass-secondary`, globals.css) — a button
+ * sitting on a glass panel shouldn't read as a different substance. Their
+ * hover/active states live in those CSS classes rather than as `hover:`/
+ * `active:` utilities here, because both classes are unlayered and a layered
+ * utility touching `background` could never win against them.
  */
 const VARIANTS: Record<ButtonVariant, string> = {
   primary:
-    "btn-pulse bg-surface-inverse text-text-inverse hover:opacity-90 active:opacity-80 border border-transparent",
-  secondary:
-    "border border-rule-strong bg-transparent text-text hover:bg-surface-hover active:bg-surface-sunken",
+    "btn-pulse btn-glass-primary text-text-inverse hover:opacity-90 active:opacity-80 border border-transparent",
+  secondary: "btn-glass-secondary border text-text",
   ghost: "border border-transparent bg-transparent text-text-dim hover:bg-surface-hover hover:text-text",
   // Flare is a lamp colour, and this is the one exception: a destructive action
   // is a state the operator must not misread, which is the same job a lamp does.

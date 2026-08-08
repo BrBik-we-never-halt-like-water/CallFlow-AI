@@ -5,10 +5,10 @@ import { Suspense, useMemo, useState } from "react";
 import { cn } from "@/lib/cn";
 import { ConnectionBanner } from "@/components/app/connection-banner";
 import { ContactGrid } from "@/components/app/contact-grid";
-import { guardsFromHealth, SafetyBar } from "@/components/app/safety-bar";
+import { guardsFromSafety, SafetyBar } from "@/components/app/safety-bar";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
-import { Eyebrow, Panel } from "@/components/ui/panel";
+import { Panel } from "@/components/ui/panel";
 import { Select } from "@/components/ui/select";
 import { Tooltip } from "@/components/ui/tooltip";
 import { useToast } from "@/components/ui/toast";
@@ -42,7 +42,7 @@ function RunComposer() {
   const router = useRouter();
   const toast = useToast();
   const searchParams = useSearchParams();
-  const { campaigns, health, phase, refresh } = useAppStore();
+  const { campaigns, health, safetySettings, phase, refresh } = useAppStore();
 
   const [rows, setRows] = useState<ParsedRow[]>([]);
   const [chosenId, setChosenId] = useState<string | null>(null);
@@ -67,9 +67,9 @@ function RunComposer() {
   const validRows = useMemo(() => rows.filter((r) => r.valid), [rows]);
   const contacts = useMemo(() => toContactInputs(rows), [rows]);
 
-  const guards = useMemo(() => guardsFromHealth(health), [health]);
+  const guards = useMemo(() => guardsFromSafety(safetySettings), [safetySettings]);
 
-  const ceiling = health?.max_calls_per_run ?? null;
+  const ceiling = safetySettings?.max_calls_per_run ?? null;
   const overCeiling = ceiling !== null && validRows.length > ceiling;
 
   /** Exactly why Start is blocked. Never a generic complaint. */
@@ -115,7 +115,7 @@ function RunComposer() {
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-1">
-        <Eyebrow>New run</Eyebrow>
+        <p className="text-small font-bold text-text-mute">New run</p>
         <h1 className="font-display text-h2 text-text">Start a run</h1>
       </div>
 
@@ -147,11 +147,11 @@ function RunComposer() {
 
           {campaign ? (
             <Panel sunken className="flex flex-col gap-2 p-4">
-              <Eyebrow>
+              <p className="text-small font-bold text-text-mute">
                 {validRows[0]
                   ? `What ${validRows[0].name.split(" ")[0] || "the first contact"} will hear`
                   : "What each contact will hear"}
-              </Eyebrow>
+              </p>
               <div className="max-h-56 overflow-y-auto whitespace-pre-wrap font-mono text-data text-text">
                 {renderGoalPreview(campaign.goal_template, {
                   name: validRows[0]?.name || "there",
@@ -173,7 +173,6 @@ function RunComposer() {
 
           <dl className="flex flex-wrap gap-x-8 gap-y-2 border-t border-rule pt-4">
             <Estimate label="Contacts" value={String(validRows.length)} />
-            <Estimate label="Credits" value={String(validRows.length)} />
             {ceiling !== null ? (
               <Estimate
                 label="Per-run ceiling"
@@ -209,7 +208,7 @@ function ComposerFallback() {
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-1">
-        <Eyebrow>New run</Eyebrow>
+        <p className="text-small font-bold text-text-mute">New run</p>
         <h1 className="font-display text-h2 text-text">Start a run</h1>
       </div>
       <Panel className="p-5">
@@ -233,9 +232,9 @@ function Step({
   return (
     <Panel className="flex flex-col gap-5 p-4 sm:p-5">
       <div className="flex items-start gap-3">
-        <Eyebrow as="span" className="mt-1 shrink-0 text-text">
+        <span className="mt-1 shrink-0 text-small font-bold text-text">
           {n}
-        </Eyebrow>
+        </span>
         <div className="flex flex-col gap-0.5">
           <h2 className="text-h3 font-medium text-text">{title}</h2>
           <p className="text-small text-text-dim">{detail}</p>
@@ -259,7 +258,7 @@ function Estimate({
 }) {
   return (
     <div className="flex flex-col gap-0.5">
-      <dt className="eyebrow text-text-mute">{label}</dt>
+      <dt className="text-small font-bold text-text-mute">{label}</dt>
       <dd
         className={cn(
           "font-mono text-data tabular-nums",

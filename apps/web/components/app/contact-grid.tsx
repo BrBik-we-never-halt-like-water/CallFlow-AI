@@ -4,7 +4,7 @@ import { PlusIcon, TrashIcon, UploadSimpleIcon } from "@phosphor-icons/react/dis
 import { useRef, useState } from "react";
 import { cn } from "@/lib/cn";
 import { Button } from "@/components/ui/button";
-import { Eyebrow, Panel } from "@/components/ui/panel";
+import { Panel } from "@/components/ui/panel";
 import { Tag } from "@/components/ui/badge";
 import { useToast } from "@/components/ui/toast";
 import { normalisePhone } from "@/lib/format/phone";
@@ -172,7 +172,15 @@ export function ContactGrid({
             className="mt-3"
             onClick={() =>
               onChange([
-                { row: 1, name: "", phone: "", note: "", valid: false, error: "Add a name for this row." },
+                {
+                  row: 1,
+                  name: "",
+                  phone: "",
+                  note: "",
+                  valid: false,
+                  error: "Add a name for this row.",
+                  errorField: "name",
+                },
               ])
             }
           >
@@ -188,16 +196,16 @@ export function ContactGrid({
             </caption>
             <thead className="bg-surface-sunken">
               <tr className="border-b border-rule">
-                <th scope="col" className="eyebrow w-10 px-3 py-2 text-text-mute">
+                <th scope="col" className="text-small font-bold w-10 px-3 py-2 text-text-mute">
                   #
                 </th>
-                <th scope="col" className="eyebrow px-3 py-2 text-text-mute">
+                <th scope="col" className="text-small font-bold px-3 py-2 text-text-mute">
                   Name
                 </th>
-                <th scope="col" className="eyebrow px-3 py-2 text-text-mute">
+                <th scope="col" className="text-small font-bold px-3 py-2 text-text-mute">
                   Phone
                 </th>
-                <th scope="col" className="eyebrow px-3 py-2 text-text-mute">
+                <th scope="col" className="text-small font-bold px-3 py-2 text-text-mute">
                   Note
                 </th>
                 <th scope="col" className="w-10 px-3 py-2">
@@ -206,58 +214,70 @@ export function ContactGrid({
               </tr>
             </thead>
             <tbody>
-              {rows.map((row, index) => (
-                <tr
-                  key={index}
-                  className={cn(
-                    "border-b border-rule last:border-0",
-                    !row.valid && "bg-[color-mix(in_oklab,var(--lamp-flare)_6%,transparent)]",
-                  )}
-                >
-                  <td className="px-3 py-1.5 font-mono text-data tabular-nums text-text-mute">
-                    {row.row}
-                  </td>
-                  <td className="px-2 py-1.5">
-                    <GridInput
-                      value={row.name}
-                      onChange={(value) => updateCell(index, { name: value })}
-                      placeholder="Aditi Sharma"
-                      label={`Name, row ${row.row}`}
-                    />
-                  </td>
-                  <td className="px-2 py-1.5">
-                    <GridInput
-                      value={row.phone}
-                      onChange={(value) => updateCell(index, { phone: value })}
-                      placeholder="+919876543210"
-                      label={`Phone, row ${row.row}`}
-                      mono
-                      invalid={!row.valid}
-                      error={row.error}
-                    />
-                  </td>
-                  <td className="px-2 py-1.5">
-                    <GridInput
-                      value={row.note}
-                      onChange={(value) => updateCell(index, { note: value })}
-                      placeholder="asked about Bali in December"
-                      label={`Note, row ${row.row}`}
-                    />
-                  </td>
-                  <td className="px-2 py-1.5">
-                    <button
-                      type="button"
-                      aria-label={`Remove row ${row.row}`}
-                      onClick={() =>
-                        onChange(renumber(rows.filter((_, i) => i !== index)))
-                      }
-                      className="flex size-8 cursor-pointer items-center justify-center rounded-sm text-text-mute transition-colors hover:bg-surface-hover hover:text-text"
-                    >
-                      <TrashIcon aria-hidden className="size-3.5" />
-                    </button>
-                  </td>
-                </tr>
-              ))}
+              {rows.map((row, index) => {
+                // A freshly added, completely empty row is obviously incomplete —
+                // it doesn't need a red border and an error message to say so
+                // before anyone has typed a single character into it. Once any
+                // field has content, show real validation feedback on whichever
+                // cell is actually the problem.
+                const touched = Boolean(row.name || row.phone || row.note);
+                const flagged = !row.valid && touched;
+
+                return (
+                  <tr
+                    key={index}
+                    className={cn(
+                      "border-b border-rule last:border-0",
+                      flagged && "bg-[color-mix(in_oklab,var(--lamp-flare)_6%,transparent)]",
+                    )}
+                  >
+                    <td className="px-3 py-1.5 font-mono text-data tabular-nums text-text-mute">
+                      {row.row}
+                    </td>
+                    <td className="px-2 py-1.5">
+                      <GridInput
+                        value={row.name}
+                        onChange={(value) => updateCell(index, { name: value })}
+                        placeholder="Aditi Sharma"
+                        label={`Name, row ${row.row}`}
+                        invalid={flagged && row.errorField === "name"}
+                        error={row.errorField === "name" ? row.error : undefined}
+                      />
+                    </td>
+                    <td className="px-2 py-1.5">
+                      <GridInput
+                        value={row.phone}
+                        onChange={(value) => updateCell(index, { phone: value })}
+                        placeholder="+919876543210"
+                        label={`Phone, row ${row.row}`}
+                        mono
+                        invalid={flagged && row.errorField === "phone"}
+                        error={row.errorField === "phone" ? row.error : undefined}
+                      />
+                    </td>
+                    <td className="px-2 py-1.5">
+                      <GridInput
+                        value={row.note}
+                        onChange={(value) => updateCell(index, { note: value })}
+                        placeholder="asked about Bali in December"
+                        label={`Note, row ${row.row}`}
+                      />
+                    </td>
+                    <td className="px-2 py-1.5">
+                      <button
+                        type="button"
+                        aria-label={`Remove row ${row.row}`}
+                        onClick={() =>
+                          onChange(renumber(rows.filter((_, i) => i !== index)))
+                        }
+                        className="flex size-8 cursor-pointer items-center justify-center rounded-sm text-text-mute transition-colors hover:bg-surface-hover hover:text-text"
+                      >
+                        <TrashIcon aria-hidden className="size-3.5" />
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -267,9 +287,9 @@ export function ContactGrid({
       {rows.length > 0 ? (
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-2">
-            <Eyebrow as="span">
+            <span className="text-small font-bold text-text-mute">
               {valid.length} of {rows.length} ready
-            </Eyebrow>
+            </span>
             {invalid.length > 0 ? (
               <Tag mono={false} className="text-lamp-flare-text">
                 {invalid.length} {invalid.length === 1 ? "row needs" : "rows need"} fixing
@@ -285,7 +305,14 @@ export function ContactGrid({
                 onChange(
                   renumber([
                     ...rows,
-                    { name: "", phone: "", note: "", valid: false, error: "Add a name for this row." },
+                    {
+                      name: "",
+                      phone: "",
+                      note: "",
+                      valid: false,
+                      error: "Add a name for this row.",
+                      errorField: "name",
+                    },
                   ]),
                 )
               }

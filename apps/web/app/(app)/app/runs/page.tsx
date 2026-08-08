@@ -4,21 +4,19 @@ import { BroadcastIcon } from "@phosphor-icons/react/dist/ssr";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
-import { LampStrip } from "@/components/brand/lamp-strip";
 import { ConnectionBanner } from "@/components/app/connection-banner";
 import { DataTable, type Column, type SortState } from "@/components/app/data-table";
 import { LampBadge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Eyebrow } from "@/components/ui/panel";
 import type { RunSummary } from "@/lib/api";
 import { formatTimestamp } from "@/lib/format";
-import { lampForOutcome } from "@/lib/lamp";
+import { lampForRunStatus } from "@/lib/lamp";
 import { useAppStore } from "@/lib/app-store";
 
 export default function RunsPage() {
   const router = useRouter();
-  const { runs, hydratedRuns, campaigns, phase, loadingRuns } = useAppStore();
+  const { runs, campaigns, phase, loadingRuns } = useAppStore();
   const [sort, setSort] = useState<SortState>({ id: "started_at", dir: "desc" });
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
@@ -69,32 +67,17 @@ export default function RunsPage() {
       value: (run) => campaignName(run.campaign_id),
     },
     {
-      id: "outcomes",
-      header: "Outcomes",
-      cell: (run) => {
-        const hydrated = hydratedRuns.find((h) => h.id === run.id);
-        if (!hydrated || hydrated.outcomes.length === 0) {
-          return <span className="font-mono text-data text-text-mute">—</span>;
-        }
-        return (
-          <LampStrip lamps={hydrated.outcomes.slice(0, 20).map(lampForOutcome)} size="sm" />
-        );
-      },
-      value: (run) => `${run.completed}/${run.total}`,
-    },
-    {
       id: "status",
       header: "Status",
       sortable: true,
-      cell: (run) => (
-        <LampBadge
-          state={
-            run.status === "failed" ? "flare" : run.status === "running" ? "brass" : "jade"
-          }
-        >
-          {run.status}
-        </LampBadge>
-      ),
+      cell: (run) => {
+        const lamp = lampForRunStatus(run.status);
+        return (
+          <LampBadge state={lamp.state} pulse={lamp.pulse}>
+            {lamp.label}
+          </LampBadge>
+        );
+      },
       value: (run) => run.status,
     },
     {
@@ -119,10 +102,14 @@ export default function RunsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-wrap items-end justify-between gap-3">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex flex-col gap-1">
-          <Eyebrow>Runs</Eyebrow>
+          <p className="text-small font-bold text-text-mute">Runs</p>
           <h1 className="font-display text-h2 text-text">Every run, newest first</h1>
+          <p className="measure text-small text-text-dim">
+            One row per batch of contacts dialled toward a single goal — outcomes update
+            as calls settle.
+          </p>
         </div>
         <Button asChild>
           <Link href="/app/runs/new">Start a run</Link>
@@ -132,7 +119,7 @@ export default function RunsPage() {
       <ConnectionBanner phase={phase} />
 
       <DataTable
-        caption="Runs, with the campaign, outcome distribution, status, and start time."
+        caption="Runs, with the campaign, status, and start time."
         columns={columns}
         rows={paged}
         rowKey={(run) => run.id}

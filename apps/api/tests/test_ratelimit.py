@@ -1,8 +1,11 @@
-"""Rate limiting for the public demo.
+"""Per-organisation rate limiting.
 
-These caps are the only thing standing between a public URL and someone
-draining the owner's engine credits or repeatedly dialing a stranger, so they
-are tested like the safety gate: fail closed, no off-by-one.
+These caps are the only thing standing between a signed-in caller and draining
+the engine balance or dialling a number too fast, so they are tested like the
+safety gate: fail closed, no off-by-one. Also pinned here: two different keys
+(organisations) must never share a bucket — they used to, when this was IP-keyed
+with one process-global daily counter (`ISSUES.md`), and two unrelated paying
+organisations on the same deployment could rate-limit each other.
 """
 
 import dataclasses
@@ -48,18 +51,29 @@ def test_batch_larger_than_limit_is_refused_atomically(limited: RateLimiter) -> 
     assert limited.check("1.1.1.1", calls=2).allowed is True
 
 
-def test_ips_are_independent(limited: RateLimiter) -> None:
+def test_keys_are_independent(limited: RateLimiter) -> None:
     limited.check("1.1.1.1", calls=2)
     assert limited.check("2.2.2.2", calls=1).allowed is True
 
 
-def test_daily_budget_caps_everyone(limited: RateLimiter) -> None:
-    # Budget is 5/day; five distinct IPs each taking one exhausts it.
-    for i in range(5):
-        assert limited.check(f"10.0.0.{i}", calls=1).allowed is True
-    verdict = limited.check("10.0.0.99", calls=1)
+def test_daily_budget_caps_its_own_key(limited: RateLimiter) -> None:
+    # Budget is 5/day; five calls from the same key exhausts that key's own budget.
+    # Override the per-window ceiling (2) so it isn't what actually refuses the 5th
+    # call — this test is about the daily bucket, not the window one.
+    for _ in range(5):
+        assert limited.check("org-a", calls=1, rate_limit_calls=99).allowed is True
+    verdict = limited.check("org-a", calls=1, rate_limit_calls=99)
     assert verdict.allowed is False
     assert "daily" in verdict.reason.lower()
+
+
+def test_daily_budget_is_not_shared_across_keys(limited: RateLimiter) -> None:
+    # A different key (organisation) gets its own budget, not what's left of
+    # someone else's — the bug this used to have when the bucket was global.
+    for _ in range(5):
+        limited.check("org-a", calls=1, rate_limit_calls=99)
+    assert limited.check("org-a", calls=1, rate_limit_calls=99).allowed is False
+    assert limited.check("org-b", calls=1, rate_limit_calls=99).allowed is True
 
 
 def test_owner_bypasses_every_limit(limited: RateLimiter) -> None:
@@ -106,6 +120,13 @@ def test_window_expiry_frees_the_allowance(monkeypatch: pytest.MonkeyPatch) -> N
 
 def test_snapshot_reports_usage(limited: RateLimiter) -> None:
     limited.check("1.1.1.1", calls=2)
-    snap = limited.snapshot()
+    snap = limited.snapshot("1.1.1.1")
     assert snap["used_today"] == 2
     assert snap["daily_budget"] == 5
+
+
+def test_snapshot_is_per_key(limited: RateLimiter) -> None:
+    limited.check("org-a", calls=2)
+    limited.check("org-b", calls=1)
+    assert limited.snapshot("org-a")["used_today"] == 2
+    assert limited.snapshot("org-b")["used_today"] == 1

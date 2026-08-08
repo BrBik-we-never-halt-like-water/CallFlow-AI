@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { NotWiredNotice, SettingsSection } from "@/components/app/settings-section";
 import { SessionGate } from "@/components/app/session-gate";
 import { Tag } from "@/components/ui/badge";
@@ -11,11 +11,13 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
 import { api, type Provider, type ProviderCredential } from "@/lib/api";
+import { useOrgScopedEffect } from "@/lib/hooks/use-org-scoped-effect";
 import { useSession, type SessionProfile } from "@/lib/hooks/use-session";
 
 const PROVIDERS: {
   id: Provider;
   name: string;
+  mark: string;
   identifierLabel: string;
   secretLabel: string;
   description: string;
@@ -23,18 +25,34 @@ const PROVIDERS: {
   {
     id: "twilio",
     name: "Twilio",
+    mark: "T",
     identifierLabel: "Account SID",
     secretLabel: "Auth token",
-    description: "Dial from a number your organisation already owns on Twilio.",
+    description: "Store your organisation's Twilio account credentials, encrypted.",
   },
   {
     id: "plivo",
     name: "Plivo",
+    mark: "P",
     identifierLabel: "Auth ID",
     secretLabel: "Auth token",
-    description: "Dial from a number your organisation already owns on Plivo.",
+    description: "Store your organisation's Plivo account credentials, encrypted.",
   },
 ];
+
+/**
+ * A provider's mark — its initial in a consistent badge, the same monochrome
+ * pattern as `OrgMark`. Not the vendor's actual logo: reproducing a trademarked
+ * wordmark accurately needs the vendor's own asset, not a guess, and this
+ * product's identity is monochrome throughout regardless.
+ */
+function ProviderMark({ letter }: { letter: string }) {
+  return (
+    <span className="flex size-8 shrink-0 items-center justify-center rounded-sm border border-rule bg-surface-sunken font-mono text-small font-medium text-text">
+      {letter}
+    </span>
+  );
+}
 
 const COMING_SOON = [
   {
@@ -84,10 +102,9 @@ function IntegrationsContent({ profile }: { profile: SessionProfile }) {
       .catch(() => toast({ tone: "error", title: "Couldn't load integrations" }));
   }
 
-  useEffect(() => {
+  useOrgScopedEffect(() => {
     load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [profile.active.org_id]);
+  });
 
   if (!canRead) {
     return (
@@ -102,7 +119,7 @@ function IntegrationsContent({ profile }: { profile: SessionProfile }) {
     <div className="flex flex-col gap-4">
       <SettingsSection
         title="Your own phone numbers"
-        description="Connect Twilio or Plivo so runs can dial from a number your organisation already owns, instead of CALL-E's shared numbers."
+        description="Connect Twilio or Plivo and we'll store your organisation's account credentials, encrypted."
       >
         {credentials === null ? (
           <div className="flex flex-col gap-2">
@@ -202,14 +219,17 @@ function ProviderRow({
 
   return (
     <li className="flex flex-wrap items-center justify-between gap-3 py-3">
-      <div className="flex min-w-0 flex-col gap-0.5">
-        <div className="flex items-center gap-2">
-          <span className="text-small font-medium text-text">{provider.name}</span>
-          {credential ? <Tag>Connected</Tag> : null}
+      <div className="flex min-w-0 items-center gap-3">
+        <ProviderMark letter={provider.mark} />
+        <div className="flex min-w-0 flex-col gap-0.5">
+          <div className="flex items-center gap-2">
+            <span className="text-small font-medium text-text">{provider.name}</span>
+            {credential ? <Tag>Connected</Tag> : null}
+          </div>
+          <span className="measure text-small text-text-dim">
+            {credential?.phone_number ?? provider.description}
+          </span>
         </div>
-        <span className="measure text-small text-text-dim">
-          {credential?.phone_number ?? provider.description}
-        </span>
       </div>
       {canWrite ? (
         <div className="flex items-center gap-2">

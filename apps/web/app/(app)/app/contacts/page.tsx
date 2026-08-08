@@ -2,7 +2,7 @@
 
 import { AddressBookIcon, ProhibitIcon } from "@phosphor-icons/react/dist/ssr";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { ConnectionBanner } from "@/components/app/connection-banner";
 import { MaskedPhone } from "@/components/app/masked-phone";
 import { LampBadge, Tag } from "@/components/ui/badge";
@@ -12,7 +12,7 @@ import { TabPanel, Tabs } from "@/components/ui/disclosure";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Field } from "@/components/ui/field";
 import { Input, SearchInput } from "@/components/ui/input";
-import { Eyebrow, Panel } from "@/components/ui/panel";
+import { Panel } from "@/components/ui/panel";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
 import { api, type Outcome, type Suppression } from "@/lib/api";
@@ -20,6 +20,7 @@ import { formatAge, formatTimestamp } from "@/lib/format";
 import { isE164, normalisePhone } from "@/lib/format/phone";
 import { lampForOutcome } from "@/lib/lamp";
 import { useAppStore } from "@/lib/app-store";
+import { useOrgScopedEffect } from "@/lib/hooks/use-org-scoped-effect";
 import { useSession } from "@/lib/hooks/use-session";
 
 interface ContactRecord {
@@ -49,10 +50,9 @@ export default function ContactsPage() {
       .catch(() => toast({ tone: "error", title: "Couldn't load the suppression list" }));
   }
 
-  useEffect(() => {
+  useOrgScopedEffect(() => {
     loadSuppressions();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [profile?.active.org_id]);
+  });
 
   /**
    * Contacts are derived from calls, because that is the only contact data the service
@@ -90,10 +90,14 @@ export default function ContactsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-wrap items-end justify-between gap-3">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex flex-col gap-1">
-          <Eyebrow>Contacts</Eyebrow>
+          <p className="text-small font-bold text-text-mute">Contacts</p>
           <h1 className="font-display text-h2 text-text">Who you&apos;ve called</h1>
+          <p className="measure text-small text-text-dim">
+            Everyone your campaigns have dialled, and the numbers you&apos;ve told us never
+            to call again.
+          </p>
         </div>
         <div className="flex gap-2">
           {canAdd ? (
@@ -190,7 +194,7 @@ export default function ContactsPage() {
         {/* ---- Suppression list ----------------------------------------- */}
         <TabPanel value="suppressed" className="flex flex-col gap-4 pt-6">
           <Panel sunken className="flex flex-col gap-2 p-4">
-            <Eyebrow>How this works</Eyebrow>
+            <p className="text-small font-bold text-text-mute">How this works</p>
             <p className="measure text-small text-text-dim">
               Anyone who asks not to be called again is added here and is never dialled by
               any campaign, ever. This is global across your whole organisation, it cannot
@@ -209,7 +213,7 @@ export default function ContactsPage() {
               <EmptyState
                 icon={ProhibitIcon}
                 title="No suppressed numbers"
-                body="Anyone who asks not to be called again is added here automatically and is never dialled by any campaign."
+                body="Add one by hand with the button below, or wait for someone to opt out during a call."
                 action={
                   canAdd ? (
                     <Button variant="secondary" onClick={() => setAddOpen(true)}>
@@ -349,7 +353,7 @@ function SuppressDialog({
     <DialogRoot open={open} onOpenChange={onOpenChange}>
       <Dialog
         title="Suppress a number"
-        description="It will never be dialled by any campaign. This cannot be overridden from a run."
+        description="Once you confirm, only an owner can remove this number again."
         size="sm"
         footer={
           <>

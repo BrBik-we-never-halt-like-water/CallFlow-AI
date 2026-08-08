@@ -15,7 +15,8 @@ export const ROLES = [
   { value: "viewer", label: "Viewer", hint: "Read results only — cannot start a run" },
 ];
 
-/** Shared by Settings → Team and Overview's team summary panel. */
+/** Mounted from three places: the dashboard's Team preview, the header's Team
+ * popover (`TeamControls`), and Settings → Team. */
 export function InviteDialog({
   open,
   onOpenChange,

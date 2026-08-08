@@ -14,12 +14,14 @@ from __future__ import annotations
 import json
 import uuid
 from collections.abc import AsyncIterator
+from datetime import UTC, datetime, timedelta
 
 import asyncpg
 import pytest
 import pytest_asyncio
 
 from app.core.config import config
+from app.database.repositories import organisations as org_repo
 from app.domain.api_keys import generate_api_key, hash_api_key
 
 pytestmark = [
@@ -451,4 +453,622 @@ async def test_only_owner_or_admin_can_write_provider_credentials(
 
     await _as_postgres(db)
     await db.execute("delete from auth.users where id = $1", operator.auth_user_id)
+    await db.execute("delete from public.organisations where deleted_at is not null")
+
+
+# --- Role-hierarchy grant guard (admin-to-owner privilege escalation, R5 audit) --
+#
+# `set_member_role`/`invite` (app/api/v1/routes/organisations.py) stop an Admin's
+# escalation attempt before it reaches the database — see
+# `tests/test_organisations_routes.py` for that half. These tests are the RLS half:
+# CLAUDE.md's stated model is an API check *and* an RLS check, neither alone, so a
+# direct write that skipped the API layer entirely must still be refused
+# (migration `c2f7a9d15e63`, `public.can_grant_role`/`public.current_org_role`).
+
+
+async def test_admin_cannot_promote_an_operator_to_owner_via_direct_update(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    """The genuine promotion attempt: target is a non-owner member, so this
+    exercises `memberships_update`'s `WITH CHECK` (the granted-role guard) —
+    not the target-role guard (`test_admin_cannot_demote_or_remove_an_owner_*`
+    below), which fires earlier, silently, for an already-owner target."""
+    a, _ = tenants
+    await _as_postgres(db)
+
+    admin = await _create_tenant(db, "admin")
+    operator = await _create_tenant(db, "operator")
+    await db.execute(
+        "insert into public.memberships (org_id, user_id, role) values ($1, $2, 'admin')",
+        a.org_id,
+        admin.user_id,
+    )
+    await db.execute(
+        "insert into public.memberships (org_id, user_id, role) values ($1, $2, 'operator')",
+        a.org_id,
+        operator.user_id,
+    )
+
+    with pytest.raises(asyncpg.exceptions.InsufficientPrivilegeError):
+        async with db.transaction():
+            await _as_user(db, admin.auth_user_id)
+            await db.execute(
+                "update public.memberships set role = 'owner' where org_id = $1 and user_id = $2",
+                a.org_id,
+                operator.user_id,
+            )
+
+    await _as_postgres(db)
+    await db.execute(
+        "delete from auth.users where id = any($1::uuid[])",
+        [admin.auth_user_id, operator.auth_user_id],
+    )
+    await db.execute("delete from public.organisations where deleted_at is not null")
+
+
+async def test_admin_cannot_grant_admin_via_direct_update_not_even_to_a_third_member(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    a, _ = tenants
+    await _as_postgres(db)
+
+    admin = await _create_tenant(db, "admin")
+    operator = await _create_tenant(db, "operator")
+    await db.execute(
+        "insert into public.memberships (org_id, user_id, role) values ($1, $2, 'admin')",
+        a.org_id,
+        admin.user_id,
+    )
+    await db.execute(
+        "insert into public.memberships (org_id, user_id, role) values ($1, $2, 'operator')",
+        a.org_id,
+        operator.user_id,
+    )
+
+    with pytest.raises(asyncpg.exceptions.InsufficientPrivilegeError):
+        async with db.transaction():
+            await _as_user(db, admin.auth_user_id)
+            await db.execute(
+                "update public.memberships set role = 'admin' where org_id = $1 and user_id = $2",
+                a.org_id,
+                operator.user_id,
+            )
+
+    await _as_postgres(db)
+    await db.execute(
+        "delete from auth.users where id = any($1::uuid[])",
+        [admin.auth_user_id, operator.auth_user_id],
+    )
+    await db.execute("delete from public.organisations where deleted_at is not null")
+
+
+async def test_admin_cannot_self_promote_to_owner_via_direct_update(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    """The exact takeover path from the audit: Admin targets their own row."""
+    a, _ = tenants
+    await _as_postgres(db)
+
+    admin = await _create_tenant(db, "admin")
+    await db.execute(
+        "insert into public.memberships (org_id, user_id, role) values ($1, $2, 'admin')",
+        a.org_id,
+        admin.user_id,
+    )
+
+    with pytest.raises(asyncpg.exceptions.InsufficientPrivilegeError):
+        async with db.transaction():
+            await _as_user(db, admin.auth_user_id)
+            await db.execute(
+                "update public.memberships set role = 'owner' where org_id = $1 and user_id = $2",
+                a.org_id,
+                admin.user_id,
+            )
+
+    await _as_postgres(db)
+    await db.execute("delete from auth.users where id = $1", admin.auth_user_id)
+    await db.execute("delete from public.organisations where deleted_at is not null")
+
+
+async def test_admin_cannot_insert_a_membership_directly_as_owner(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    """The insert-side twin of the update test above — same rank check, `memberships_insert`."""
+    a, _ = tenants
+    await _as_postgres(db)
+
+    admin = await _create_tenant(db, "admin")
+    newcomer = await _create_tenant(db, "newcomer")
+    await db.execute(
+        "insert into public.memberships (org_id, user_id, role) values ($1, $2, 'admin')",
+        a.org_id,
+        admin.user_id,
+    )
+
+    with pytest.raises(asyncpg.exceptions.InsufficientPrivilegeError):
+        async with db.transaction():
+            await _as_user(db, admin.auth_user_id)
+            await db.execute(
+                "insert into public.memberships (org_id, user_id, role) values ($1, $2, 'owner')",
+                a.org_id,
+                newcomer.user_id,
+            )
+
+    await _as_postgres(db)
+    await db.execute(
+        "delete from auth.users where id = any($1::uuid[])",
+        [admin.auth_user_id, newcomer.auth_user_id],
+    )
+    await db.execute("delete from public.organisations where deleted_at is not null")
+
+
+async def test_admin_cannot_create_an_owner_invitation(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    """The invite-to-owner path: blocking `invitations_insert` is what actually closes
+    it, since `memberships_insert`'s `has_valid_invitation` branch only checks that a
+    role matches an existing invitation, not who was allowed to create it."""
+    a, _ = tenants
+    await _as_postgres(db)
+
+    admin = await _create_tenant(db, "admin")
+    await db.execute(
+        "insert into public.memberships (org_id, user_id, role) values ($1, $2, 'admin')",
+        a.org_id,
+        admin.user_id,
+    )
+
+    with pytest.raises(asyncpg.exceptions.InsufficientPrivilegeError):
+        async with db.transaction():
+            await _as_user(db, admin.auth_user_id)
+            await db.execute(
+                """
+                insert into public.invitations (org_id, email, role, token, invited_by, expires_at)
+                values ($1, 'new-owner@example.com', 'owner', $2, $3, now() + interval '7 days')
+                """,
+                a.org_id,
+                uuid.uuid4().hex,
+                admin.user_id,
+            )
+
+    await _as_postgres(db)
+    await db.execute("delete from auth.users where id = $1", admin.auth_user_id)
+    await db.execute("delete from public.organisations where deleted_at is not null")
+
+
+async def test_admin_can_still_set_a_members_role_to_operator_via_direct_update(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    """Non-regression: this is a hierarchy fix, not a permission removal."""
+    a, _ = tenants
+    await _as_postgres(db)
+
+    admin = await _create_tenant(db, "admin")
+    viewer = await _create_tenant(db, "viewer")
+    await db.execute(
+        "insert into public.memberships (org_id, user_id, role) values ($1, $2, 'admin')",
+        a.org_id,
+        admin.user_id,
+    )
+    await db.execute(
+        "insert into public.memberships (org_id, user_id, role) values ($1, $2, 'viewer')",
+        a.org_id,
+        viewer.user_id,
+    )
+
+    async with db.transaction():
+        await _as_user(db, admin.auth_user_id)
+        await db.execute(
+            "update public.memberships set role = 'operator' where org_id = $1 and user_id = $2",
+            a.org_id,
+            viewer.user_id,
+        )
+
+    await _as_postgres(db)
+    role = await db.fetchval(
+        "select role from public.memberships where org_id = $1 and user_id = $2",
+        a.org_id,
+        viewer.user_id,
+    )
+    assert role == "operator"
+
+    await db.execute(
+        "delete from auth.users where id = any($1::uuid[])",
+        [admin.auth_user_id, viewer.auth_user_id],
+    )
+    await db.execute("delete from public.organisations where deleted_at is not null")
+
+
+async def test_owner_can_still_promote_a_member_to_admin_via_direct_update(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    """Non-regression: Owner's own existing range is untouched by this fix."""
+    a, _ = tenants
+    await _as_postgres(db)
+
+    operator = await _create_tenant(db, "operator")
+    await db.execute(
+        "insert into public.memberships (org_id, user_id, role) values ($1, $2, 'operator')",
+        a.org_id,
+        operator.user_id,
+    )
+
+    async with db.transaction():
+        await _as_user(db, a.auth_user_id)
+        await db.execute(
+            "update public.memberships set role = 'admin' where org_id = $1 and user_id = $2",
+            a.org_id,
+            operator.user_id,
+        )
+
+    await _as_postgres(db)
+    role = await db.fetchval(
+        "select role from public.memberships where org_id = $1 and user_id = $2",
+        a.org_id,
+        operator.user_id,
+    )
+    assert role == "admin"
+
+    await db.execute("delete from auth.users where id = $1", operator.auth_user_id)
+    await db.execute("delete from public.organisations where deleted_at is not null")
+
+
+# --- Target-role guard (migration `d94b2c8f1a67`) --------------------------
+#
+# `can_grant_role` alone only checks the role being *granted* — an Admin could
+# still demote or remove an existing Owner in a multi-owner org, since neither
+# `memberships_update` nor `memberships_delete` looked at the row's *current*
+# role at all. `public.can_act_on_member()` closes that: added to both
+# policies' `USING` clause (which is exactly where Postgres evaluates a row's
+# pre-write state), it fails silently — the write matches zero rows, same
+# pattern as `test_cannot_update_another_tenants_organisation` — rather than
+# raising, since `USING` filters rows rather than validating a proposed one.
+
+
+async def test_admin_cannot_demote_an_owner_via_direct_update(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    a, _ = tenants
+    await _as_postgres(db)
+
+    admin = await _create_tenant(db, "admin")
+    co_owner = await _create_tenant(db, "co-owner")
+    await db.execute(
+        "insert into public.memberships (org_id, user_id, role) values ($1, $2, 'admin')",
+        a.org_id,
+        admin.user_id,
+    )
+    await db.execute(
+        "insert into public.memberships (org_id, user_id, role) values ($1, $2, 'owner')",
+        a.org_id,
+        co_owner.user_id,
+    )
+
+    async with db.transaction():
+        await _as_user(db, admin.auth_user_id)
+        await db.execute(
+            "update public.memberships set role = 'operator' where org_id = $1 and user_id = $2",
+            a.org_id,
+            co_owner.user_id,
+        )
+
+    await _as_postgres(db)
+    role = await db.fetchval(
+        "select role from public.memberships where org_id = $1 and user_id = $2",
+        a.org_id,
+        co_owner.user_id,
+    )
+    assert role == "owner", "Admin demoted an Owner — the target-role guard did not hold"
+
+    await db.execute(
+        "delete from auth.users where id = any($1::uuid[])",
+        [admin.auth_user_id, co_owner.auth_user_id],
+    )
+    await db.execute("delete from public.organisations where deleted_at is not null")
+
+
+async def test_admin_cannot_remove_an_owner_via_direct_delete(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    a, _ = tenants
+    await _as_postgres(db)
+
+    admin = await _create_tenant(db, "admin")
+    co_owner = await _create_tenant(db, "co-owner")
+    await db.execute(
+        "insert into public.memberships (org_id, user_id, role) values ($1, $2, 'admin')",
+        a.org_id,
+        admin.user_id,
+    )
+    await db.execute(
+        "insert into public.memberships (org_id, user_id, role) values ($1, $2, 'owner')",
+        a.org_id,
+        co_owner.user_id,
+    )
+
+    async with db.transaction():
+        await _as_user(db, admin.auth_user_id)
+        await db.execute(
+            "delete from public.memberships where org_id = $1 and user_id = $2",
+            a.org_id,
+            co_owner.user_id,
+        )
+
+    await _as_postgres(db)
+    still_there = await db.fetchval(
+        "select exists(select 1 from public.memberships where org_id = $1 and user_id = $2)",
+        a.org_id,
+        co_owner.user_id,
+    )
+    assert still_there, "Admin removed an Owner — the target-role guard did not hold"
+
+    await db.execute(
+        "delete from auth.users where id = any($1::uuid[])",
+        [admin.auth_user_id, co_owner.auth_user_id],
+    )
+    await db.execute("delete from public.organisations where deleted_at is not null")
+
+
+async def test_owner_can_still_demote_a_co_owner_via_direct_update(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    """Non-regression: an Owner acting on another Owner is unaffected."""
+    a, _ = tenants
+    await _as_postgres(db)
+
+    co_owner = await _create_tenant(db, "co-owner")
+    await db.execute(
+        "insert into public.memberships (org_id, user_id, role) values ($1, $2, 'owner')",
+        a.org_id,
+        co_owner.user_id,
+    )
+
+    async with db.transaction():
+        await _as_user(db, a.auth_user_id)
+        await db.execute(
+            "update public.memberships set role = 'admin' where org_id = $1 and user_id = $2",
+            a.org_id,
+            co_owner.user_id,
+        )
+
+    await _as_postgres(db)
+    role = await db.fetchval(
+        "select role from public.memberships where org_id = $1 and user_id = $2",
+        a.org_id,
+        co_owner.user_id,
+    )
+    assert role == "admin"
+
+    await db.execute("delete from auth.users where id = $1", co_owner.auth_user_id)
+    await db.execute("delete from public.organisations where deleted_at is not null")
+
+
+# --- Invitation-mutation guard (migration `d94b2c8f1a67`) -------------------
+#
+# `invitations_update_own` lets the invitee update their own pending invite
+# (to accept it) but never restricted *which* column — an invitee legitimately
+# invited as viewer could rewrite their own invitation's `role` to `owner`
+# before accepting, with no Admin or Owner action at all. Column-level GRANT
+# is the actual fix (`authenticated` can only ever write `accepted_at`); RLS
+# policy is unchanged and would still nominally allow it on an email match.
+
+
+async def test_invitee_cannot_escalate_their_own_pending_invitations_role(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    a, _ = tenants
+    await _as_postgres(db)
+
+    invitee = await _create_tenant(db, "invitee")
+    invitee_email = await db.fetchval(
+        "select email from public.users where id = $1", invitee.user_id
+    )
+    token = uuid.uuid4().hex
+    await db.execute(
+        """
+        insert into public.invitations (org_id, email, role, token, invited_by, expires_at)
+        values ($1, $2, 'viewer', $3, $4, now() + interval '7 days')
+        """,
+        a.org_id,
+        invitee_email,
+        token,
+        a.user_id,
+    )
+
+    with pytest.raises(asyncpg.exceptions.InsufficientPrivilegeError):
+        async with db.transaction():
+            await _as_user(db, invitee.auth_user_id)
+            await db.execute(
+                "update public.invitations set role = 'owner' where token = $1", token
+            )
+
+    await _as_postgres(db)
+    role = await db.fetchval("select role from public.invitations where token = $1", token)
+    assert role == "viewer", "invitee mutated their own pending invitation's role"
+
+    await db.execute("delete from public.invitations where token = $1", token)
+    await db.execute("delete from auth.users where id = $1", invitee.auth_user_id)
+    await db.execute("delete from public.organisations where deleted_at is not null")
+
+
+# --- Invitation-acceptance user_id guard (migration `d94b2c8f1a67`) --------
+#
+# `has_valid_invitation(org_id, role)` only ever checked that *the caller* has
+# a matching pending invitation — never that the `user_id` being inserted into
+# `memberships` was the caller's own. A caller holding any valid invitation
+# for an org+role could insert a membership row for an arbitrary other user.
+
+
+async def test_valid_invitation_cannot_seat_someone_else(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    a, _ = tenants
+    await _as_postgres(db)
+
+    invitee = await _create_tenant(db, "invitee")
+    victim = await _create_tenant(db, "victim")
+    invitee_email = await db.fetchval(
+        "select email from public.users where id = $1", invitee.user_id
+    )
+    token = uuid.uuid4().hex
+    await db.execute(
+        """
+        insert into public.invitations (org_id, email, role, token, invited_by, expires_at)
+        values ($1, $2, 'operator', $3, $4, now() + interval '7 days')
+        """,
+        a.org_id,
+        invitee_email,
+        token,
+        a.user_id,
+    )
+
+    with pytest.raises(asyncpg.exceptions.InsufficientPrivilegeError):
+        async with db.transaction():
+            await _as_user(db, invitee.auth_user_id)
+            await db.execute(
+                "insert into public.memberships (org_id, user_id, role) values ($1, $2, 'operator')",
+                a.org_id,
+                victim.user_id,
+            )
+
+    await _as_postgres(db)
+    seated = await db.fetchval(
+        "select exists(select 1 from public.memberships where org_id = $1 and user_id = $2)",
+        a.org_id,
+        victim.user_id,
+    )
+    assert not seated, "a valid invitation seated a user other than its own invitee"
+
+    await db.execute("delete from public.invitations where token = $1", token)
+    await db.execute(
+        "delete from auth.users where id = any($1::uuid[])",
+        [invitee.auth_user_id, victim.auth_user_id],
+    )
+    await db.execute("delete from public.organisations where deleted_at is not null")
+
+
+# --- Real, non-mocked invitation creation (migration `e15f3d9a2c78`) -------
+#
+# Migration `d94b2c8f1a67`'s `revoke update ... grant update (accepted_at)` on
+# `invitations` broke `org_repo.create_invitation()` outright: its
+# `insert ... on conflict ... do update` needs UPDATE privilege on the columns
+# in the `do update set` list for the *whole statement* to plan, regardless of
+# whether a conflict occurs at runtime — so a first-time invite failed
+# identically to a re-invite. `test_admin_can_still_invite_as_operator_or_viewer`
+# (`test_organisations_routes.py`) mocks `create_invitation` entirely and so
+# never exercised the real SQL — exactly the coverage gap that let this
+# regression through undetected. These call `org_repo.create_invitation()`
+# itself, for real, against the database.
+
+
+async def test_owner_can_create_a_real_invitation_through_the_repository(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    a, _ = tenants
+    expires_at = datetime.now(UTC) + timedelta(days=7)
+    token = uuid.uuid4().hex
+
+    async with db.transaction():
+        await _as_user(db, a.auth_user_id)
+        row = await org_repo.create_invitation(
+            db,
+            org_id=a.org_id,
+            email="brand-new-invitee@example.com",
+            role="operator",
+            token=token,
+            expires_at=expires_at,
+            invited_by=a.user_id,
+        )
+
+    assert row is not None
+    assert row["role"] == "operator"
+    assert row["email"] == "brand-new-invitee@example.com"
+    assert row["accepted_at"] is None
+
+    await _as_postgres(db)
+    await db.execute("delete from public.invitations where token = $1", token)
+
+
+async def test_owner_can_refresh_a_pending_invitation_through_the_repository(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    """The `ISSUES.md` #44 case: re-inviting an already-pending email, through
+    the real repository function, by the inviter (not the invitee)."""
+    a, _ = tenants
+    expires_at = datetime.now(UTC) + timedelta(days=7)
+    first_token = uuid.uuid4().hex
+    second_token = uuid.uuid4().hex
+
+    async with db.transaction():
+        await _as_user(db, a.auth_user_id)
+        first = await org_repo.create_invitation(
+            db,
+            org_id=a.org_id,
+            email="repeat-invitee@example.com",
+            role="operator",
+            token=first_token,
+            expires_at=expires_at,
+            invited_by=a.user_id,
+        )
+
+    async with db.transaction():
+        await _as_user(db, a.auth_user_id)
+        second = await org_repo.create_invitation(
+            db,
+            org_id=a.org_id,
+            email="repeat-invitee@example.com",
+            role="viewer",
+            token=second_token,
+            expires_at=expires_at,
+            invited_by=a.user_id,
+        )
+
+    assert second["id"] == first["id"], "re-invite should refresh the same row, not duplicate it"
+    assert second["role"] == "viewer"
+    assert second["token"] == second_token
+
+    await _as_postgres(db)
+    await db.execute("delete from public.invitations where id = $1", first["id"])
+
+
+async def test_admin_cannot_create_an_owner_invitation_through_the_repository(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    """The escalation check now lives inside `create_or_refresh_invitation()`
+    itself (it bypasses RLS, so it must enforce `can_grant_role` internally) —
+    this proves that check holds when called through the real application
+    code path, not just via a raw `INSERT` against `invitations_insert`
+    (`test_admin_cannot_create_an_owner_invitation`, above)."""
+    a, _ = tenants
+    await _as_postgres(db)
+
+    admin = await _create_tenant(db, "admin")
+    await db.execute(
+        "insert into public.memberships (org_id, user_id, role) values ($1, $2, 'admin')",
+        a.org_id,
+        admin.user_id,
+    )
+    expires_at = datetime.now(UTC) + timedelta(days=7)
+    token = uuid.uuid4().hex
+
+    with pytest.raises(asyncpg.exceptions.InsufficientPrivilegeError):
+        async with db.transaction():
+            await _as_user(db, admin.auth_user_id)
+            await org_repo.create_invitation(
+                db,
+                org_id=a.org_id,
+                email="sneaky-owner@example.com",
+                role="owner",
+                token=token,
+                expires_at=expires_at,
+                invited_by=admin.user_id,
+            )
+
+    await _as_postgres(db)
+    seated = await db.fetchval(
+        "select exists(select 1 from public.invitations where token = $1)", token
+    )
+    assert not seated, "an Admin created a pending owner-role invitation"
+
+    await db.execute("delete from auth.users where id = $1", admin.auth_user_id)
     await db.execute("delete from public.organisations where deleted_at is not null")

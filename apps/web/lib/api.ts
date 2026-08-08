@@ -141,8 +141,9 @@ export interface RunSummary {
   completed: number;
 }
 
+/** The deployment's own defaults — `/api/health` is unauthenticated, so this is
+ * never any one organisation's live usage. See `SafetySettings` for that. */
 export interface Limits {
-  used_today: number;
   daily_budget: number;
   per_window: number;
   window_minutes: number;
@@ -154,6 +155,17 @@ export interface Health {
   max_calls_per_run: number;
   allowlist_active: boolean;
   limits?: Limits;
+}
+
+/** An organisation's own safety overrides, merged onto the deployment defaults,
+ * plus that organisation's real, live rate-limit usage. */
+export interface SafetySettings {
+  allowlist: string[];
+  max_calls_per_run: number;
+  calls_per_window: number;
+  window_minutes: number;
+  daily_budget: number;
+  used_today: number;
 }
 
 export interface ContactInput {
@@ -382,6 +394,16 @@ export const api = {
     ),
   updateProfile: (patch: { name?: string; avatar_url?: string }) =>
     authReq<Profile>("/api/v1/me", { method: "PATCH", body: JSON.stringify(patch) }),
+
+  // --- safety ----------------------------------------------------------------
+  getSafetySettings: () => authReq<SafetySettings>("/api/v1/safety"),
+  updateSafetySettings: (patch: {
+    allowlist: string[];
+    max_calls_per_run: number;
+    calls_per_window: number;
+    window_minutes: number;
+    daily_budget: number;
+  }) => authReq<SafetySettings>("/api/v1/safety", { method: "PATCH", body: JSON.stringify(patch) }),
 
   // --- API keys ------------------------------------------------------------
   listApiKeys: () => authReq<ApiKey[]>("/api/v1/api-keys"),

@@ -35,13 +35,43 @@ Create a project, or use the existing one.
 **Auth → Providers → Google** — deliberately **not configured**. Email and password only
 for now. Adding it later is additive: a client ID, a secret, and a button.
 
-## 3. Custom SMTP — required before launch
+## 3. Email — two separate paths, both need Resend
 
-Supabase's built-in sender allows only a few messages per hour and is explicitly not for
-production. Signup does not use it (confirmation is off), but **password reset and team
-invitations do**, and both fail silently once the quota is gone. See `ISSUES.md` #19.
+There are two independent ways mail leaves this system, configured in two different
+places. Fixing one does nothing for the other.
 
-Set **Auth → SMTP Settings** to a real provider (Resend) before either flow is relied on.
+**Password reset** goes through Supabase Auth's mailer (`resetPasswordForEmail` in
+`apps/web/lib/auth/actions.ts`). Supabase's built-in sender allows only a few messages
+per hour and is explicitly not for production. Signup doesn't depend on it (confirmation
+is off), but password reset does, and it fails silently once the quota is gone. Set
+**Auth → SMTP Settings** to a real provider (Resend) before relying on password reset.
+See `ISSUES.md` #19.
+
+**Team invitations** never touch Supabase Auth's mailer at all, so the SMTP Settings
+above have no effect on them. `POST /api/v1/organisations/me/invitations`
+(`apps/api/app/api/v1/routes/organisations.py`) calls `EmailGateway.send_invitation()`
+(`apps/api/app/integrations/email/resend.py`), which POSTs directly to
+`https://api.resend.com/emails` using `RESEND_API_KEY` / `RESEND_FROM_EMAIL` from `.env`.
+For this to work:
+
+1. `RESEND_API_KEY` must be set to a real Resend API key (a send-only/restricted key is
+   fine — that's the normal, more-secure key type for this).
+2. `RESEND_FROM_EMAIL`'s domain **must be a domain verified in the Resend dashboard**
+   (Domains → Add Domain → add the DNS records Resend gives you → Verify) before Resend
+   will relay *any* mail from that address. There is no way to satisfy this from code —
+   it requires DNS records only the domain's actual owner can add.
+
+Until that domain is verified, every invitation fails with a `502` whose message names
+the unverified domain and points here — this is expected, not a new bug, and is exactly
+what happened in `ISSUES.md` #51.
+
+**A temporary stopgap for your own local testing only:** Resend's `onboarding@resend.dev`
+sender is pre-verified and needs no domain of your own. Point `RESEND_FROM_EMAIL` at it
+(e.g. `CallFlow AI <onboarding@resend.dev>`) and invitations will send — but, per Resend's
+current documentation, only to the email address your Resend account itself was signed up
+with, not to an actual invitee. Do this by hand when you need it; do not make it the
+default, since a silent restriction on who can be invited is exactly the kind of thing
+CLAUDE.md's non-negotiable #9 rules out.
 
 ## 4. Environment variables
 
@@ -57,6 +87,8 @@ Set **Auth → SMTP Settings** to a real provider (Resend) before either flow is
 | `DATABASE_URL` | Settings → Database → connection string, port **5432** |
 | `DIRECT_URL` | The same. Used by Alembic |
 | `PHONE_HASH_PEPPER` | Generate once: `python -c "import secrets; print(secrets.token_urlsafe(32))"` |
+| `RESEND_API_KEY` | resend.com dashboard → API Keys. A send-only restricted key is fine |
+| `RESEND_FROM_EMAIL` | `Name <address@your-verified-domain>` — the domain must be verified under resend.com dashboard → Domains first; see §3 above |
 
 **`apps/web/.env.local`** — only the public values ever reach the browser.
 

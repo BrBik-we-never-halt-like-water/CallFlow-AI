@@ -1,4 +1,4 @@
-import { Eyebrow, Panel } from "@/components/ui/panel";
+import { Panel } from "@/components/ui/panel";
 
 /**
  * A settings group: heading, one line of explanation, then the controls.
@@ -34,7 +34,7 @@ export function SettingsSection({
 
       {effect ? (
         <div className="flex flex-col gap-1 border-t border-rule pt-3">
-          <Eyebrow>What this means right now</Eyebrow>
+          <p className="text-small font-bold text-text-mute">What this means right now</p>
           <p className="text-small text-text-dim">{effect}</p>
         </div>
       ) : null}
@@ -51,7 +51,7 @@ export function SettingsSection({
 export function NotWiredNotice({ children }: { children: React.ReactNode }) {
   return (
     <Panel sunken className="flex flex-col gap-1.5 p-3">
-      <Eyebrow>On this deployment</Eyebrow>
+      <p className="text-small font-bold text-text-mute">On this deployment</p>
       <p className="measure text-small text-text-dim">{children}</p>
     </Panel>
   );

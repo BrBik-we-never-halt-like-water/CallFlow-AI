@@ -8,6 +8,9 @@ export interface ParsedRow {
   note: string;
   valid: boolean;
   error?: string;
+  /** Which cell the error actually belongs to, so the grid doesn't flag the
+   * phone column for a missing name. */
+  errorField?: "name" | "phone";
 }
 
 export const REQUIRED_HEADERS = ["name", "phone", "note"] as const;
@@ -94,13 +97,16 @@ export function validateRow(
   name: string,
   rawPhone: string,
   normalised = normalisePhone(rawPhone),
-): { valid: boolean; error?: string } {
-  if (!name) return { valid: false, error: "Add a name for this row." };
-  if (!rawPhone) return { valid: false, error: "Add a phone number for this row." };
+): { valid: boolean; error?: string; errorField?: "name" | "phone" } {
+  if (!name) return { valid: false, error: "Add a name for this row.", errorField: "name" };
+  if (!rawPhone) {
+    return { valid: false, error: "Add a phone number for this row.", errorField: "phone" };
+  }
   if (!isE164(normalised)) {
     return {
       valid: false,
       error: "Not a valid E.164 number — try +919876543210.",
+      errorField: "phone",
     };
   }
   return { valid: true };

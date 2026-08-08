@@ -45,7 +45,7 @@ What exists **today**, verified against the running system on 2026-08-07. Not a 
 | Auth | Supabase Auth, email + password. Cookie sessions, RLS-enforced tenancy |
 | Deployment | Single VM, nginx + pm2, at `callflow-ai.brbik.com`. `render.yaml` is stale |
 | CI | GitHub Actions `ci-cd.yml` — 3 jobs, deploys on push to `main` |
-| Verified | 29 API endpoints (all but 3 authenticated) · 50 built routes · **85 backend tests** (16 cross-tenant RLS) · eslint + `tsc` clean · `alembic check` no drift |
+| Verified | 29 API endpoints (all but 3 authenticated) · 50 built routes · **147 backend tests** (31 cross-tenant/cross-role RLS) · eslint + `tsc` clean · `alembic check` no drift |
 
 ---
 
@@ -58,7 +58,7 @@ CallFlow-AI/
 │   │   ├── app/
 │   │   │   ├── main.py             app assembly, lifespan, CORS, router includes
 │   │   │   ├── api/v1/routes/      campaigns, runs, organisations, invitations, profile,
-│   │   │   │                       api_keys, integrations
+│   │   │   │                       api_keys, integrations, suppressions, safety
 │   │   │   ├── core/               config, rate_limit, crypto
 │   │   │   ├── auth/               tokens, dependencies, permissions
 │   │   │   ├── database/           models, session, privileged, repositories/
@@ -66,8 +66,8 @@ CallFlow-AI/
 │   │   │   │                       campaigns, api_keys  — pure, no I/O
 │   │   │   ├── services/           campaign_runner (async)
 │   │   │   └── integrations/voice/ engine.py — the only vendor SDK import
-│   │   ├── alembic/                env.py + 8 revisions
-│   │   ├── tests/                  9 files, 85 tests
+│   │   ├── alembic/                env.py + 13 revisions
+│   │   ├── tests/                  12 files, 147 tests
 │   │   └── pyproject.toml
 │   └── web/                        Next.js
 │       ├── app/                    (marketing) · (auth) · (app)/app
@@ -100,7 +100,7 @@ What a user can actually do, which endpoint it hits, and what survives a restart
 | **Goal preview** | Render the goal per contact — free, no dialling | `POST /api/v1/campaigns/preview` (authenticated; currently unused by any UI — the editor and run composer render locally, see §5) | n/a (stateless) |
 | **Contacts (in a run)** | Paste, CSV drop, manual grid entry, per-row E.164 validation, remove-all-invalid | none — client-side only, sent inline with the run | ❌ never stored |
 | **Runs** | Start (always live), watch live, open a call's transcript, export CSV | `POST /api/v1/runs`, `GET /api/v1/runs`, `GET /api/v1/runs/{id}` | ✅ org-scoped Postgres, updated as each call resolves |
-| **Safety guards** | View the guards in force; they are enforced server-side per dial | read via `GET /api/health` | ⚠️ env vars only, not editable from UI |
+| **Safety guards** | View and edit this org's own overrides (per-run ceiling, rate limit, daily budget, allowlist); enforced server-side per dial | `GET/PATCH /api/v1/safety` | ✅ org-scoped Postgres row (`org_safety_settings`), falls back to deployment env vars when unset |
 | **Escalations** | Filter by reason/campaign/age, sort oldest-first, open transcript, mark resolved | none — derived client-side from `GET /api/v1/runs/{id}` | ❌ resolution is component state, lost on navigate |
 | **Contacts list** | Search, view call history | none — derived from run outcomes | ❌ |
 | **Suppression list** | View, add, and remove (owner-only) — org-wide, checked before every dial | `GET/POST /api/v1/suppressions`, `DELETE /api/v1/suppressions/{id}` | ✅ org-scoped Postgres row; the same table `check_dial_allowed()` checks (see §7) |
@@ -109,8 +109,8 @@ What a user can actually do, which endpoint it hits, and what survives a restart
 | **Onboarding** | 4-step walkthrough ending in a real, live call, reached only after the org-setup gate clears | `POST /api/v1/runs` | ⚠️ step index in `localStorage` |
 | **Status page** | Live health check with latency | `GET /api/health` | n/a |
 | **Auth** | Sign up, sign in, sign out, password reset, `/app/*` gating, user menu with org + role | Supabase Auth + `GET /api/v1/me` | ✅ Postgres, RLS-scoped |
-| **Organisation + membership** | Auto-created at signup, named from the email domain; owner role granted | signup trigger | ✅ Postgres |
-| **Team** | Invite by email (role chosen), list members + pending invites, change a member's role, remove a member | `GET/POST /api/v1/organisations/me/members`, `.../invitations` | ✅ Postgres, RLS-scoped |
+| **Organisation + membership** | Auto-created at signup (owner role granted by the trigger). A second organisation is created from a dedicated two-step `/app/organisation/new` (name, then an optional logo — logo is a separate step because Storage RLS scopes uploads by `org_id`, which doesn't exist until the org does). Managed — name, logo, delete — from `/app/organisation`, a dedicated page, not a dialog or a Settings tab | signup trigger; `POST /api/v1/organisations` via `public.create_organisation()` | ✅ Postgres |
+| **Team** | Invite by email (role chosen), list members + pending invites, change a member's role, remove a member — from `/app/organisation`'s Team pane. A caller may only grant a role strictly below their own rank (owner > admin > operator > viewer; Owner is the one exception, who may grant any role including owner itself), and may only act on — update or remove — a member whose *current* role is strictly below their own. Enforced at both the API (`can_grant_role()`/`can_act_on_member()`) and RLS layers; self-targeting (e.g. an Admin stepping themselves down) is exempt from the second check. Accepting an invitation cannot be used to escalate — invitation `role` is not writable by `authenticated` past creation, and a valid invitation can only seat its own invitee, never an arbitrary `user_id` (`ISSUES.md` #43) | `GET/POST /api/v1/organisations/me/members`, `.../invitations` | ✅ Postgres, RLS-scoped |
 | **API keys** | Create (full key shown once), list (name, prefix, last used, created), revoke | `GET/POST /api/v1/api-keys`, `DELETE /api/v1/api-keys/{id}` | ✅ org-scoped Postgres row; only a SHA-256 hash is ever stored. **The key itself authenticates** — see §5 |
 | **Integrations** | Connect/update/disconnect org-owned Twilio or Plivo credentials | `GET/PUT/DELETE /api/v1/integrations/providers/{provider}` | ✅ credential storage is real, encrypted at rest (Fernet). ⚠️ Actually placing a call over a connected number is separate, not-yet-built work — the UI says so via `NotWiredNotice` |
 | **Billing** | View the current plan and today's real usage against the daily budget | `GET /api/v1/me` (`plan_id`), `GET /api/health` (`limits`) | ✅ plan name and usage are real. ❌ No payment processor — upgrading/downgrading is not wired |
@@ -126,21 +126,22 @@ Legend: ✅ persists · ⚠️ persists locally/partially · ❌ lost on restart
 |---|---|---|
 | `main.py` | FastAPI app assembly: CORS, lifespan (DB pool), router includes, `/` and `/api/health` only | `app` |
 | `core/config.py` | Frozen dataclass read once from the repo-root `.env` | `config` |
-| `core/rate_limit.py` | In-process sliding windows, reserve-on-check | `limiter` |
+| `core/rate_limit.py` | In-process sliding windows, reserve-on-check, **keyed per organisation** (not IP — `ISSUES.md` #32), with per-key overrides for an org's own `org_safety_settings` | `limiter` |
 | `core/crypto.py` | Fernet symmetric encryption for org-owned provider credentials, keyed by `PROVIDER_CREDENTIALS_KEY` | `encrypt()`, `decrypt()`, `CredentialsNotConfigured` |
 | `auth/tokens.py` | JWKS/HS256 verification with 30s clock-skew leeway | `TokenVerifier`, `TokenClaims`, `InvalidToken` |
 | `auth/dependencies.py` | Bearer token → `(user, org, role)`. **Two paths**: a Supabase access token, or a `cfk_…` CallFlow API key routed through `_resolve_api_key()`; both produce the same `CurrentUser` | `CurrentUser`, `current_user`, `RequirePermission` |
-| `auth/permissions.py` | The one role→permission matrix | `Permission`, `ROLE_PERMISSIONS`, `role_has()` |
+| `auth/permissions.py` | The one role→permission matrix, plus the role-hierarchy checks for *which* role a caller may grant and *whose* row they may act on (owner > admin > operator > viewer) | `Permission`, `ROLE_PERMISSIONS`, `role_has()`, `can_grant_role()`, `can_act_on_member()` |
 | `database/models.py` | SQLAlchemy tables for identity/tenancy only — structure, no RLS. `campaigns`, `runs`, `call_outcomes` are **not** ORM classes; they're hand-authored in the migration and read only through raw asyncpg in the repositories below | `User`, `Organisation`, `Membership`, `Suppression`, `OrgRole` |
 | `database/session.py` | Pool + the RLS-scoped connection + jsonb codec registration | `Database`, `database` |
 | `database/privileged.py` | The only RLS bypass. Demands a reason, logs every use | `PrivilegedAccess`, `privileged` |
 | `database/repositories/campaigns.py` | Org-owned campaign CRUD, raw asyncpg | `list_org_campaigns()`, `get_org_campaign()`, `create_campaign()`, `delete_campaign()` |
 | `database/repositories/runs.py` | Run + call-outcome persistence, raw asyncpg | `create_run()`, `append_outcome()`, `finish_run()`, `get_run()`, `list_outcomes()`, `list_runs()` |
 | `database/repositories/suppressions.py` | Do-not-call list, raw asyncpg | `is_suppressed()`, `list_suppressions()`, `add_suppression()`, `remove_suppression()` |
+| `database/repositories/safety_settings.py` | An org's own safety-guard overrides, raw asyncpg | `get_for_org()`, `upsert()` |
 | `database/repositories/api_keys.py` | Org-scoped API key CRUD, raw asyncpg. RLS restricts every query to owner/admin | `list_for_org()`, `create()`, `revoke()` |
 | `database/repositories/provider_credentials.py` | Org-owned Twilio/Plivo credential storage, raw asyncpg. Only ever sees ciphertext — encryption happens in the route layer | `list_for_org()`, `upsert()`, `remove()` |
-| `domain/entities.py` | Pydantic domain types and terminal-status sets. **No `dry_run` field anywhere** | `Contact`, `Campaign`, `CallOutcome`, `Sentiment`, `Disposition` |
-| `domain/safety.py` | Pre-dial gate and phone masking. No I/O | `is_e164()`, `mask()`, `phone_hash()`, `check_dial_allowed()` |
+| `domain/entities.py` | Pydantic domain types and terminal-status sets. **No `dry_run` field anywhere** | `Contact`, `Campaign`, `CallOutcome`, `Sentiment`, `Disposition`, `DialFailure` |
+| `domain/safety.py` | Pre-dial gate and phone masking. No I/O | `is_e164()`, `mask()`, `phone_hash()`, `check_dial_allowed()`, `EffectiveSafety`, `resolve_safety_settings()` |
 | `domain/triage.py` | Pure disposition decision from typed fields only | `triage()`, `needs_human()` |
 | `domain/result_schemas.py` | The shared result contract every campaign inherits | `BASE_PROPERTIES`, `build_result_schema()` |
 | `domain/campaigns.py` | 2 built-in constants + `slugify()`. **No runtime registry anymore** — custom campaigns are real rows, resolved through the repository above | `TRAVEL_DISCOVERY`, `APPOINTMENT_REMINDER`, `REGISTRY`, `SCHEMAS`, `BUILT_IN_IDS`, `FIELD_TYPES`, `slugify()` |
@@ -149,9 +150,11 @@ Legend: ✅ persists · ⚠️ persists locally/partially · ❌ lost on restart
 | `api/v1/routes/campaigns.py` | `/api/v1/campaigns` — list/create/update/delete/preview, org-scoped | `router`, `resolve_campaign()` |
 | `api/v1/routes/runs.py` | `/api/v1/runs` — start/list/get, org-scoped, background execution | `router` |
 | `api/v1/routes/suppressions.py` | `/api/v1/suppressions` — list/add/remove the org's do-not-call list. Add is operator+, remove is owner-only, matching the RLS policy | `router` |
+| `api/v1/routes/safety.py` | `/api/v1/safety` — get/patch this org's own safety-guard overrides, plus live `used_today` from the org-keyed limiter | `router` |
 | `api/v1/routes/api_keys.py` | `/api/v1/api-keys` — list/create/revoke, org-scoped, owner/admin only | `router` |
 | `api/v1/routes/integrations.py` | `/api/v1/integrations/providers/{provider}` — connect (upsert)/list/disconnect, owner/admin only | `router` |
-| `integrations/voice/engine.py` | **The only vendor-SDK boundary**, aliased on import | `EngineGateway`, `EngineAPIError`, `TERMINAL` |
+| `integrations/voice/protocol.py` | The `VoiceProvider` structural protocol every voice adapter conforms to — CALL-E is still the only one (`VOICE_AGENT_PLATFORM.md` P1) | `VoiceProvider`, `VoiceCapability`, `NotImplementedForProvider` |
+| `integrations/voice/engine.py` | **The only vendor-SDK boundary**, aliased on import. Conforms to `VoiceProvider`: `supports()` declares structured-extraction/live-events only, `cancel_call()` raises (the SDK has none). `classify_error()` maps the engine's own error codes onto the internal `DialFailure` taxonomy (`ISSUES.md` #37), unmapped codes fail closed to `INTERNAL` | `EngineGateway`, `EngineAPIError`, `TERMINAL`, `classify_error` |
 
 **Per-contact pipeline** (`CampaignRunner.run_one`, in `services/campaign_runner.py`):
 
@@ -168,6 +171,15 @@ build base outcome (masked phone)
   → _extract_result() / _extract_transcript()
   → triage() → return
 ```
+
+A failed `EngineAPIError`/`EngineTimeoutError` doesn't fall through to a generic catch —
+`classify_error()` maps it onto `DialFailure` first, and only `rate_limited`,
+`provider_unavailable`, and `timed_out` become `Disposition.RETRY`; everything else
+(`invalid_number`, `insufficient_balance`, `policy_violation`, `unauthorized`, and any
+unmapped engine code) becomes `Disposition.UNREACHABLE` (`ISSUES.md` #37). An
+unclassified exception (network error, anything outside the engine's own error types)
+still falls through to a final `except Exception`, storing `DialFailure.INTERNAL` rather
+than the raw exception string.
 
 Every run dials for real — there is no branch that skips the network call. The SDK's own
 client is blocking, so every call into it runs in a worker thread; otherwise one in-flight
@@ -215,7 +227,9 @@ Liveness probe. Touches no locks and no config, so it can never be the slow thin
 *Used by:* nginx/pm2 health check, CI post-deploy check.
 
 ### `GET /api/health`
-The safety and quota readout the whole UI keys off. Unauthenticated.
+The deployment's own default guards. Unauthenticated — since the rate limiter is now
+keyed per organisation (§7, `ISSUES.md` #32), this endpoint has no org to report live
+usage for and no longer tries to.
 
 ```json
 {
@@ -224,7 +238,6 @@ The safety and quota readout the whole UI keys off. Unauthenticated.
   "max_calls_per_run": 3,
   "allowlist_active": false,
   "limits": {
-    "used_today": 0,
     "daily_budget": 20,
     "per_window": 5,
     "window_minutes": 60
@@ -232,11 +245,36 @@ The safety and quota readout the whole UI keys off. Unauthenticated.
 }
 ```
 
-`limits` is omitted only if `limiter.snapshot()` fails — the frontend treats a missing
-`limits` as "nothing confirmed" rather than assuming defaults. There is no `dry_run`
-concept left to report — every run dials for real.
-*Used by:* `SafetyBar`, credit balance in the top bar, `/status`, the run composer's
-blocker logic, the Billing settings pane's usage readout.
+`limits` is omitted only if `config` fails to load. No `used_today` field — that moved to
+`GET /api/v1/safety` (below), the one place it can be resolved against a real `org_id`.
+There is no `dry_run` concept left to report — every run dials for real.
+*Used by:* `SafetyBar` (deployment defaults only), `/status`.
+
+### `GET /api/v1/safety`
+Requires `Permission.SAFETY_READ` (any member). This organisation's effective guards —
+its own `org_safety_settings` override merged onto the deployment defaults
+(`resolve_safety_settings()`, domain/safety.py) — plus this organisation's real, live
+`used_today` from the now org-keyed rate limiter.
+
+```json
+{
+  "allowlist": ["+919876543210"],
+  "max_calls_per_run": 3,
+  "calls_per_window": 5,
+  "window_minutes": 60,
+  "daily_budget": 20,
+  "used_today": 4
+}
+```
+
+### `PATCH /api/v1/safety`
+Requires `Permission.SAFETY_WRITE` (owner/admin). Upserts this organisation's
+`org_safety_settings` row and returns the same shape as the `GET`. Every field is
+required in the body (unlike the nullable-by-default database row) — a partial save
+isn't offered; the settings page always submits the full effective set it's already
+displaying. `allowlist` entries are validated E.164 (`400` listing which ones failed).
+*Used by:* Settings → Safety (`apps/web/app/(app)/app/settings/safety/page.tsx`), the run
+composer's guard bar (`guardsFromSafety()`).
 
 ### `GET /api/v1/campaigns`
 
@@ -265,7 +303,7 @@ this organisation's own rows (`campaigns_repo.list_org_campaigns`).
 `{field_name: human description}` map — *not* JSON Schema; the real schema lives
 server-side (`SCHEMAS[campaign_id]` or the row's `result_schema` jsonb column) and is
 never exposed over the API.
-*Used by:* campaigns index, run composer, campaign editor, ⌘K search.
+*Used by:* campaigns index, run composer, campaign editor.
 
 ### `POST /api/v1/campaigns`
 
@@ -596,15 +634,19 @@ started run and a ringing phone.
 |---|---|---|
 | Suppression list | on, always checked | `is_suppressed` param, resolved once per run against `public.suppressions` |
 | E.164 validation | always | `safety.is_e164` |
-| Per-run ceiling | 3 | `CALLFLOW_MAX_CALLS_PER_RUN` |
-| Allowlist | empty (inactive) | `CALLFLOW_ALLOWLIST` |
-| Per-IP rate limit | 5 per 3600s | `ratelimit`, now applies to every run |
-| Daily budget | 20 | `CALLFLOW_DAILY_BUDGET`, shared across all visitors |
+| Per-run ceiling | 3, or an org's own `org_safety_settings.max_calls_per_run` | `CALLFLOW_MAX_CALLS_PER_RUN`, editable per org via `PATCH /api/v1/safety` |
+| Allowlist | empty (inactive), or an org's own override | `CALLFLOW_ALLOWLIST`, editable per org via `PATCH /api/v1/safety` |
+| Per-organisation rate limit | 5 per 3600s, or an org's own override | `rate_limit.py`, keyed by `org_id` — **not** IP (`ISSUES.md` #32) |
+| Daily budget | 20, or an org's own override | `CALLFLOW_DAILY_BUDGET`, keyed by `org_id` — one organisation can no longer exhaust another's |
 | Owner bypass | off | `X-CallFlow-Owner-Key` header lifts rate limits only |
 | Phone masking | always | `safety.mask` + `lib/format/phone.ts` |
 
-The rate limiter **reserves slots at check time** so concurrent requests cannot both pass,
-and exposes `release()` for a run that fails before dialling.
+`resolve_safety_settings()` (`domain/safety.py`) is the one place an org's
+`org_safety_settings` row is merged onto the deployment defaults — `GET/PATCH
+/api/v1/safety`, the rate limiter, and `check_dial_allowed()` all resolve through it, so
+display and enforcement can never disagree about what an organisation's guards actually
+are (`ISSUES.md` #33). The rate limiter **reserves slots at check time** so concurrent
+requests cannot both pass, and exposes `release()` for a run that fails before dialling.
 
 **Suppression is checked and has a real write path.** `check_dial_allowed` takes
 `is_suppressed` as a plain boolean and denies the dial if true — `POST /api/v1/runs`
@@ -627,7 +669,7 @@ check · consent flag.
 
 - **`(marketing)`** — `/`, `/pricing`, `/solutions/[vertical]` (4 static), `/trust`, `/about`, `/demo`, `/status`, `/maintenance`, `/docs` + 8 MDX pages
 - **`(auth)`** — `/login`, `/signup`, `/forgot-password`, `/reset-password`, `/verify-email`, `/accept-invite/[token]`
-- **`(app)/app`** — dashboard (`/app`), `campaigns` + `new` + `[id]`, `runs` + `new` + `[id]`, `escalations`, `contacts`, `profile`, `welcome`, `settings` + 5 panes (`team`, `safety`, `api-keys`, `integrations`, `billing`). The mandatory org-setup step + its skippable profile follow-up are **not routes** — `OnboardingGate` renders them as a modal over whatever page is active (see §3/§12), specifically to avoid the two-independent-`useSession()`-instances bug a page-per-step version had (`ISSUES.md`)
+- **`(app)/app`** — dashboard (`/app`), `campaigns` + `new` + `[id]`, `runs` + `new` + `[id]`, `escalations`, `contacts`, `profile`, `organisation` + `new`, `settings` + 4 panes (`safety`, `api-keys`, `integrations`, `billing`). Organisation and Team are their own route, `/app/organisation` (`Suspense`-wrapped for `useSearchParams()`, `?tab=team` selects the Team pane) — not a dialog and not a Settings pane; `/app/settings` and `/app/settings/team` both redirect to `/app/settings/safety` so pre-existing generic "Settings" links still resolve; "Organisation" lives in the account menu (`user-menu.tsx`/`app-nav.tsx`'s dropdown), not a sidebar item, since there is no sidebar. Creating a second organisation is a dedicated two-step page, `/app/organisation/new` (name, then an optional logo — logo upload has to be a second step because Storage RLS scopes the upload path by `org_id`, which doesn't exist until the create call returns). There is no `/app/welcome` — the mandatory org-setup step + its skippable profile follow-up are **not routes at all**; `OnboardingGate` renders them as a modal over whatever page is active (see §3/§12), specifically to avoid the two-independent-`useSession()`-instances bug a page-per-step version had (`ISSUES.md`)
 - **Generated** — `icon.svg`, `apple-icon`, `opengraph-image`, `manifest.webmanifest`, `not-found` (`error.tsx` is a boundary, not a routed page)
 
 ### Design layer — `app/globals.css`, 714 lines
@@ -662,7 +704,6 @@ Named animations: `relay-settle` (the signature lamp flicker), `relay-glow`, `la
 | `campaign-fields.ts` | 5 editor field types → 4 wire types; JSON Schema preview; goal rendering |
 | `campaign-draft.ts` | Calling window / retry policy in `localStorage`; preview contacts |
 | `contacts.ts` | CSV/TSV parse, row validation, sample CSV |
-| `suppression.ts` | Pure list transforms over a `localStorage`-backed list |
 | `pricing.ts` | Plans, feature matrix, FAQ. **All prices are `null` → render as `TODO`** |
 | `verticals.ts` | The 4 solution pages' goal templates and schemas, shown in full |
 | `docs.ts` | Docs nav tree and neighbours |
@@ -670,6 +711,7 @@ Named animations: `relay-settle` (the signature lamp flicker), `relay-glow`, `la
 | `hooks/use-connection.ts` | Loads health + campaigns on mount; 2 quick retries at 1.5s absorb a blip. No cold-start wake logic — the VM deploy is always on, so a failure here means something is actually wrong |
 | `hooks/use-run-poll.ts` | 2.5s run polling + debounced `aria-live` announcement |
 | `hooks/use-external-store.ts` | `useSyncExternalStore` over `localStorage` and `matchMedia` |
+| `hooks/use-org-scoped-effect.ts` | `useEffect`, structurally forced to re-run when the active organisation changes — the standard pattern for org-scoped data fetching, used by 9 fetch sites |
 | `hooks/use-reveal.ts`, `use-typewriter.ts` | Scroll reveal, hero typing |
 
 ### `components/` — all 66 files
@@ -737,7 +779,7 @@ left to pre-warm (`hooks/use-connection.ts` below no longer has wake/retry logic
 | `campaign-editor.tsx` | Two-pane composer with sticky live goal + schema preview |
 | `campaign-card.tsx` | Card with field tags and last-run mini strip |
 | `contact-grid.tsx` | Spreadsheet grid, paste, CSV drop, per-row inline errors |
-| `safety-bar.tsx` | Guard chips with popovers; `guardsFromHealth()` |
+| `safety-bar.tsx` | Guard chips with popovers; `guardsFromSafety()`, reading this org's real `GET /api/v1/safety` values, not just the deployment defaults |
 | `escalation-card.tsx` | Worklist item with typed reasoning chain |
 | `transcript-view.tsx` | Conversation left, typed result + triage chain right |
 | `masked-phone.tsx` | Masked by default; **no prop to disable masking** |
@@ -745,9 +787,8 @@ left to pre-warm (`hooks/use-connection.ts` below no longer has wake/retry logic
 | `settings-section.tsx` | `SettingsSection` (with `effect` line) + `NotWiredNotice` |
 | `onboarding-gate.tsx` | `OnboardingGate` — renders a non-dismissible modal (org name, then a skippable profile step) over any `/app/*` page while `active.onboarded_at` is `null`; a server signal, not `localStorage`. Owns one `useSession()` instance for both steps deliberately — a separate-page-per-step version had each step reading its own independent, stale session snapshot |
 | `session-gate.tsx` | `SessionGate` — renders once the session resolves signed-in; a skeleton while loading, a retry panel otherwise, so pages stop each collapsing that into a silent blank render |
-| `overview-org-section.tsx` | `OrgTeamControls` — the dashboard's org switcher + team summary popover |
-| `create-org-dialog.tsx` | Name-only "new organisation" dialog, shared by the org switcher and Settings → Team |
-| `invite-dialog.tsx` | Email + role "invite a teammate" dialog, shared likewise |
+| `overview-org-section.tsx` | `TeamControls` — the dashboard's team summary popover. Its "Manage" link goes to `/app/organisation?tab=team`, not a dialog |
+| `invite-dialog.tsx` | Email + role "invite a teammate" dialog, shared by `/app/organisation`'s Team pane and the dashboard's team popover |
 
 **`layout/` (11)**
 
@@ -757,10 +798,9 @@ left to pre-warm (`hooks/use-connection.ts` below no longer has wake/retry logic
 | `site-footer.tsx` | 4 columns, legal row, capability band, BrBik credit |
 | `site-loader.tsx` | First-paint brand loader; CSS fade + JS unmount at 1700ms so it can never trap the page |
 | `view-transitions.tsx` | Intercepts internal links, drives `document.startViewTransition`, resolves on real route change with a timeout backstop |
-| `app-shell.tsx` | Left nav + top bar + credit balance + breadcrumb |
-| `app-nav.tsx` | Nav items (first item labelled **Dashboard**, matching the page heading), escalation badge, mobile tab bar |
-| `user-menu.tsx` | `UserMenu` — avatar dropdown: org switcher (shares `CreateOrgDialog`), sign out |
-| `command-search.tsx` | ⌘K over destinations, campaigns, contacts |
+| `app-shell.tsx` | No sidebar: a `grid-cols-[1fr_auto_1fr]` header (brand, primary nav, credit balance + org switcher + account menu) plus a bottom `AppTabBar` below `lg` |
+| `app-nav.tsx` | Nav constants (`NAV_ITEMS`/`PRIMARY_NAV_ITEMS`), `OrgMark`, and `AppTabBar` (the mobile tab bar) — not a sidebar component |
+| `user-menu.tsx` | `UserMenu` — avatar dropdown: profile, settings, sign out. No org switcher here — that's `HeaderOrgSwitcher` in `app-shell.tsx`, so the action doesn't exist in two places at once |
 | `docs-shell.tsx` | Three-pane docs; TOC read from rendered DOM headings |
 | `auth-card.tsx` `auth-notice.tsx` | Auth card shell; the honest "not connected" notice |
 
@@ -771,7 +811,7 @@ and `ViewTransitions` as siblings.
 
 | Page | Actions | Hits |
 |---|---|---|
-| `/app` (Dashboard) | Click a lamp → open call, resolve/assign inline (local), navigate | `GET /api/v1/runs`, `GET /api/v1/runs/{id}` |
+| `/app` (Dashboard) | View volume/disposition/outcome-distribution summaries, open a recent run, resolve an escalation inline (local, unpersisted — reassignment is a stub toast, not wired up at all), navigate | `GET /api/v1/runs`, `GET /api/v1/runs/{id}` |
 | Org-setup modal (any `/app/*` page, not a route) | Confirm the org's real name — the one mandatory, non-skippable step — then a skippable name + avatar step | `POST /api/v1/organisations/me/complete-onboarding`, `PATCH /api/v1/me` |
 | `/app/campaigns` | Filter all/template/custom, duplicate, delete, run | `GET`/`DELETE /api/v1/campaigns` |
 | `/app/campaigns/new`, `/[id]` | Edit name/goal/fields/region/language/window/retry, preview with a different contact (rendered locally, not via the API), save | `POST /api/v1/campaigns` |
@@ -794,8 +834,9 @@ Consistent with `web/DESIGN_NOTES.md` §5.
 
 | Surface | Reality |
 |---|---|
-| Dashboard, runs, escalations, contacts, ⌘K search | **Real** — derived from hydrated runs |
-| Safety pane, voice-API-key status, status page, credit balance | **Real** — from `/api/health` |
+| Dashboard, runs, escalations, contacts | **Real** — derived from hydrated runs |
+| Safety pane (editable, org-scoped) | **Real** — from `GET/PATCH /api/v1/safety` |
+| Voice-API-key status, status page, credit balance | **Real** — from `/api/health` (deployment defaults only, no per-org usage — see §5) |
 | Campaign editor (name, goal, fields, region, language) | **Real** |
 | Organisation setup gate, team, API keys, Integrations (credential storage), Billing (plan + usage), Suppression list | **Real** — see §3. Integrations doesn't yet place a call over a connected number; Billing has no payment processor |
 | Calling window, retry policy, onboarding progress | **Local only** — `localStorage` |
@@ -846,18 +887,21 @@ CORS also always allows `localhost:3000` plus a regex for `*.onrender.com` / `*.
 
 ## 11. Testing, CI, deployment
 
-**Tests** — 85 collected across 9 files (verified via `pytest --collect-only -q`).
+**Tests** — 147 collected across 12 files (verified via `pytest --collect-only -q`).
 `pytest -q`, `ruff check app tests`.
 
 | File | Tests | Covers |
 |---|---|---|
-| `test_safety.py` | 19 | E.164, masking, gate decisions |
+| `test_rls_isolation.py` | 31 | Cross-tenant isolation against the real database — signup trigger, org/user/membership/suppression invisibility, forged-org-id insert rejected, anon sees nothing, `postgres` bypass, account-deletion cascade + slug reuse, API-key resolution (matches owning tenant, revoked, live-membership), provider credentials (invisible cross-tenant, owner/admin-only write). **Cross-role, new this phase:** the admin-to-owner grant guard — granted-role and target-role checks on `memberships_update`/`_insert`/`_delete` and `invitations_insert`, the invitee-cannot-mutate-their-own-invitation-role and invitation-cannot-seat-someone-else guards, and real (non-mocked) invitation creation/refresh through `org_repo.create_invitation()` proving the `SECURITY DEFINER` upsert fix actually works end to end (15 tests) — `ISSUES.md` #43/#44. Skipped when `DATABASE_URL` is unset |
+| `test_safety.py` | 22 | E.164, masking, gate decisions |
+| `test_orchestrator.py` | 18 | Goal rendering, the async dial pipeline, ceiling + suppression gating, extraction shapes |
+| `test_organisations_routes.py` | 18 | The admin-to-owner grant guard's API layer, called through the real route handlers directly — `ISSUES.md` #43 |
+| `test_permissions.py` | 16 | `can_grant_role()`/`can_act_on_member()` — pure, no database — `ISSUES.md` #43 |
 | `test_triage.py` | 14 | Precedence rules — the most thoroughly tested module |
-| `test_rls_isolation.py` | 16 | Cross-tenant isolation against the real database — signup trigger, org/user/membership/suppression invisibility, forged-org-id insert rejected, anon sees nothing, `postgres` bypass, account-deletion cascade + slug reuse. **Plus, new this phase:** API-key resolution matches the owning tenant, stops working once revoked, and reflects a live membership/role change rather than a cached one (3 tests); provider credentials are invisible cross-tenant and writable only by owner/admin (2 tests). Skipped when `DATABASE_URL` is unset |
-| `test_orchestrator.py` | 13 | Goal rendering, the async dial pipeline, ceiling + suppression gating, extraction shapes |
-| `test_ratelimit.py` | 10 | Windows, budget, owner bypass, reserve/release |
+| `test_ratelimit.py` | 12 | Windows, budget, owner bypass, reserve/release |
 | `test_config.py` | 5 | Env parsing and defaults |
 | `test_crypto.py` | 4 | Round-trips, nonce uniqueness, missing-key and tampered-ciphertext both fail closed. Pure — no database |
+| `test_engine.py` | 3 | `EngineGateway`'s conformance to the `VoiceProvider` protocol, against a second stub implementation |
 | `test_live_progress.py` | 3 | In-flight status callbacks |
 | `test_campaigns.py` | 1 | `slugify()` only — org-owned campaign CRUD needs a live Postgres connection, so it isn't covered by this local suite |
 
@@ -890,17 +934,17 @@ neither is present.
 | F | Feature | Status | Note |
 |---|---|---|---|
 | F1 | Repo, envs, config | ⚠️ Partial | Flat repo not monorepo; no `uv`/`pnpm`/mypy/Docker; config is a dataclass not `pydantic-settings`, and does not refuse to boot on a missing var |
-| F2 | Database schema | ⚠️ Partial | Core relational schema is real: `users`, `organisations`, `memberships`, `suppressions`, `campaigns`, `runs`, `call_outcomes`, `api_keys`, `provider_credentials`, all RLS'd. No credit ledger, billing, or audit-log tables yet |
+| F2 | Database schema | ⚠️ Partial | Core relational schema is real: `users`, `organisations`, `memberships`, `suppressions`, `campaigns`, `runs`, `call_outcomes`, `api_keys`, `provider_credentials`, `org_safety_settings`, all RLS'd. No credit ledger, billing, or audit-log tables yet |
 | F3 | Authentication | ✅ | Real Supabase Auth: signup/signin/signout, password reset, JWT verification (JWKS, 30s clock-skew leeway), plus a second path — org-scoped API keys (`cfk_…`) resolved through a SECURITY DEFINER function for programmatic access. This row was stale (marked "UI stubs only") for several iterations after auth actually shipped — fixed here |
 | F4 | Organisations, membership | ✅ | Real, RLS-scoped Postgres: create/rename/delete an organisation, membership + roles, team invitations by email, and a mandatory server-verified onboarding gate (`organisations.onboarded_at`) that confirms the org's real name before the dashboard is reachable (`OnboardingGate`, `POST /api/v1/organisations/me/complete-onboarding`) |
-| F5 | Authorisation, RLS | ✅ | RLS enabled and forced on every tenant-scoped table, `app/auth/permissions.py`'s one role→permission matrix, `RequirePermission` FastAPI dependency, 16 cross-tenant isolation tests hitting the real database. Also stale as "❌" until this pass |
+| F5 | Authorisation, RLS | ✅ | RLS enabled and forced on every tenant-scoped table, `app/auth/permissions.py`'s one role→permission matrix, `RequirePermission` FastAPI dependency, 31 cross-tenant/cross-role isolation tests hitting the real database. Also stale as "❌" until this pass. Role-hierarchy grant guard (`can_grant_role()`/`can_act_on_member()`, API + RLS) closed a real admin-to-owner privilege-escalation hole, including a column-privilege gap on `invitations.role` and a missing target-role check that would have let an Admin still act on an existing Owner's row. The column-privilege fix itself regressed invitation creation entirely (fixed via a `SECURITY DEFINER` upsert function, `public.create_or_refresh_invitation()`) — `ISSUES.md` #43/#44 |
 | F6 | Audit log | ❌ | |
 | F7 | API conventions | ⚠️ Partial | FastAPI + Pydantic models ✅; **now under `/api/v1` throughout** — campaigns and runs joined organisations/invitations/profile there in this change. Still no idempotency, cursor pagination, or problem details |
 | F8 | Background jobs | ⚠️ Partial | `BackgroundTasks` only; single-process, no claim/retry/heartbeat |
 | F9 | Observability | ⚠️ Partial | stdlib logging + `/` health; no Sentry, structured JSON, or `/health/deep` |
-| F10 | Rate limiting | ⚠️ Partial | Works, but in-process — resets on restart, wrong across replicas. Not Redis |
+| F10 | Rate limiting | ⚠️ Partial | Now correctly keyed per organisation, with a real per-org override (`ISSUES.md` #32, #33) — the cross-tenant sharing bug is fixed. Still in-process — resets on restart, wrong across replicas. Not Redis |
 | F11 | Secrets management | ⚠️ Partial | GH secrets + gitignore; no gitleaks, no rotation drill |
-| F12 | Email | ❌ | |
+| F12 | Email | ⚠️ Partial | Team invitations are wired end to end (`EmailGateway`/`apps/api/app/integrations/email/resend.py` → Resend's HTTP API) and password reset goes through Supabase Auth's own mailer — but invitations have never actually delivered in this environment: `RESEND_FROM_EMAIL`'s domain was never verified in Resend, so every send is rejected 403 (`ISSUES.md` #51, PARTLY FIXED — the error is now specific and actionable, but verifying a real domain is a human dashboard step, not something code can do). This row was stale as "❌" — the integration exists, it's the domain that isn't ready |
 | F13 | Contacts and lists | ⚠️ Partial | Parse + validate + dedupe-in-file ✅; no storage, no `phonenumbers`, no import history |
 | F14 | Suppression list | ⚠️ Partial | **Now checked before every dial**, against the org's real `suppressions` table — the "never dialled again" guarantee holds for rows already in that table. But nothing writes to it yet: no CRUD route, `add_suppression()` has no caller, and a `do_not_call` disposition doesn't auto-add the number. The UI's own suppression list is still a disconnected `localStorage` list |
 | F15 | Campaigns | ⚠️ Partial | Create/edit/preview ✅; **now persisted** as org-scoped Postgres rows. Still no versioning, 2 built-ins not 6 |

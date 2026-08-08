@@ -19,7 +19,7 @@ export const DialogClose = RadixDialog.Close;
 
 function Overlay() {
   return (
-    <RadixDialog.Overlay className="fixed inset-0 z-50 bg-[color-mix(in_oklab,var(--text)_45%,transparent)]" />
+    <RadixDialog.Overlay className="fixed inset-0 z-50 bg-[color-mix(in_oklab,var(--text)_45%,transparent)] backdrop-blur-[3px]" />
   );
 }
 

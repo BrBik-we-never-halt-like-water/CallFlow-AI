@@ -1,42 +1,52 @@
-"use client";
+'use client';
 
-import { CaretDownIcon, UserPlusIcon } from "@phosphor-icons/react/dist/ssr";
-import Link from "next/link";
-import { useEffect, useState } from "react";
-import { InviteDialog } from "@/components/app/invite-dialog";
-import { SessionGate } from "@/components/app/session-gate";
-import { Tag } from "@/components/ui/badge";
-import { Popover } from "@/components/ui/disclosure";
-import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
-import { api, type Team } from "@/lib/api";
-import type { SessionProfile, SessionState } from "@/lib/hooks/use-session";
+import { CaretDownIcon, UserPlusIcon } from '@phosphor-icons/react/dist/ssr';
+import Link from 'next/link';
+import { useState } from 'react';
+import { InviteDialog } from '@/components/app/invite-dialog';
+import { SessionGate } from '@/components/app/session-gate';
+import { Tag } from '@/components/ui/badge';
+import { Popover } from '@/components/ui/disclosure';
+import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
+import { api, type Team } from '@/lib/api';
+import { useOrgScopedEffect } from '@/lib/hooks/use-org-scoped-effect';
+import type { SessionProfile, SessionState } from '@/lib/hooks/use-session';
 
 /**
  * The dashboard's team roster popover — who else is in this organisation.
  *
- * Switching organisations lives in exactly one place now: the sidebar's org
- * switcher. This used to also render its own org-switching dropdown here,
+ * Switching organisations lives in exactly one place now: `HeaderOrgSwitcher`
+ * in `components/layout/app-shell.tsx`. This used to also render its own
+ * org-switching dropdown here,
  * which — alongside a third copy inside the user menu — meant three controls
  * for one job. This popover's only job is "who's on the team."
  */
 export function TeamControls({
   session,
+  className,
 }: {
   session: SessionState & { refresh: () => void };
+  className?: string;
 }) {
   return (
     <SessionGate session={session} skeletonClassName="h-9 w-24">
-      {(profile) => <TeamMenu profile={profile} />}
+      {(profile) => <TeamMenu profile={profile} className={className} />}
     </SessionGate>
   );
 }
 
-function TeamMenu({ profile }: { profile: SessionProfile }) {
+function TeamMenu({
+  profile,
+  className,
+}: {
+  profile: SessionProfile;
+  className?: string;
+}) {
   const [team, setTeam] = useState<Team | null>(null);
   const [loading, setLoading] = useState(true);
   const [inviting, setInviting] = useState(false);
-  const canInvite = profile.permissions.includes("team:invite");
+  const canInvite = profile.permissions.includes('team:invite');
 
   function load() {
     api
@@ -46,9 +56,9 @@ function TeamMenu({ profile }: { profile: SessionProfile }) {
       .finally(() => setLoading(false));
   }
 
-  useEffect(() => {
+  useOrgScopedEffect(() => {
     void load();
-  }, [profile.active.org_id]);
+  });
 
   const members = team?.members ?? [];
   const shown = members.slice(0, 4);
@@ -61,10 +71,10 @@ function TeamMenu({ profile }: { profile: SessionProfile }) {
         trigger={
           <button
             type="button"
-            className="flex h-9 items-center gap-2 rounded-sm border border-rule px-2.5 transition-colors hover:bg-surface-hover"
+            className={`flex h-9 items-center gap-2 rounded-sm border border-rule px-2.5 transition-colors hover:bg-surface-hover ${className}`}
             aria-label="Team"
           >
-            <span className="eyebrow text-text-mute">Team</span>
+            <span className="text-small font-bold text-text-mute">Team</span>
             {loading ? (
               <Skeleton className="size-6 rounded-full" />
             ) : shown.length === 0 ? (
@@ -93,9 +103,9 @@ function TeamMenu({ profile }: { profile: SessionProfile }) {
       >
         <div className="flex flex-col gap-3">
           <div className="flex items-center justify-between gap-2">
-            <span className="eyebrow text-text-mute">Team</span>
+            <span className="text-small font-bold text-text-mute">Team</span>
             <Link
-              href="/app/settings/team"
+              href="/app/organisation?tab=team"
               className="text-small font-medium text-text underline decoration-rule-strong underline-offset-2 hover:decoration-current"
             >
               Manage
@@ -121,7 +131,11 @@ function TeamMenu({ profile }: { profile: SessionProfile }) {
           )}
 
           {canInvite ? (
-            <Button variant="secondary" size="sm" onClick={() => setInviting(true)}>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setInviting(true)}
+            >
               <UserPlusIcon aria-hidden className="size-4" />
               Invite
             </Button>
@@ -129,7 +143,11 @@ function TeamMenu({ profile }: { profile: SessionProfile }) {
         </div>
       </Popover>
 
-      <InviteDialog open={inviting} onOpenChange={setInviting} onInvited={load} />
+      <InviteDialog
+        open={inviting}
+        onOpenChange={setInviting}
+        onInvited={load}
+      />
     </>
   );
 }

@@ -44,8 +44,8 @@ export function LampBadge({
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5",
-        "text-small font-medium whitespace-nowrap",
+        "inline-flex items-center gap-2 rounded-full border px-2.5 py-1 shadow-xs",
+        "text-small leading-none font-medium whitespace-nowrap",
         TEXT[state],
         className,
       )}

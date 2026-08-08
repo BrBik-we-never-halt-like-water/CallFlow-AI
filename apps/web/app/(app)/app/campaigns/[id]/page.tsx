@@ -4,7 +4,7 @@ import { useParams } from "next/navigation";
 import { CampaignEditor } from "@/components/app/campaign-editor";
 import { ConnectionBanner } from "@/components/app/connection-banner";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Eyebrow, Panel } from "@/components/ui/panel";
+import { Panel } from "@/components/ui/panel";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tag } from "@/components/ui/badge";
 import { useAppStore } from "@/lib/app-store";
@@ -48,7 +48,7 @@ export default function EditCampaignPage() {
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-1">
         <div className="flex flex-wrap items-center gap-2">
-          <Eyebrow>Campaign</Eyebrow>
+          <p className="text-small font-bold text-text-mute">Campaign</p>
           {campaign.built_in ? <Tag>Template</Tag> : null}
         </div>
         <h1 className="font-display text-h2 text-text">{campaign.name}</h1>

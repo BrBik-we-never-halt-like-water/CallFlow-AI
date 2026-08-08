@@ -36,3 +36,6 @@ web/AGENTS.md
 
 # next.js incremental build cache
 web/tsconfig.tsbuildinfo
+
+# subagent-driven-development scratch (plans, ledgers, task briefs/reports)
+.superpowers/

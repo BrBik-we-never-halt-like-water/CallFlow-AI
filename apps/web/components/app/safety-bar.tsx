@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { cn } from "@/lib/cn";
 import { Popover } from "@/components/ui/disclosure";
-import type { Health } from "@/lib/api";
+import type { SafetySettings } from "@/lib/api";
 
 export interface Guard {
   id: string;
@@ -37,7 +37,7 @@ export function SafetyBar({
         className,
       )}
     >
-      <span className="eyebrow px-1 text-text-mute">Guards</span>
+      <span className="px-1 text-small font-bold text-text-mute">Guards</span>
       {guards.map((guard) => (
         <GuardChip key={guard.id} guard={guard} />
       ))}
@@ -89,20 +89,19 @@ function GuardChip({ guard }: { guard: Guard }) {
 }
 
 /**
- * Builds the guard list from what the service reports.
+ * Builds the guard list from this organisation's own safety settings.
  *
- * Where the service does not expose a value, the guard is reported as off rather
- * than guessed at — a safety indicator that shows a reassuring default it cannot
- * actually confirm is worse than one that admits it does not know.
+ * Where the value isn't known yet (still loading, or the service didn't respond),
+ * the guard is reported as off rather than guessed at — a safety indicator that
+ * shows a reassuring default it cannot actually confirm is worse than one that
+ * admits it does not know.
  */
-export function guardsFromHealth(health: Health | null): Guard[] {
-  const limits = health?.limits;
-
+export function guardsFromSafety(settings: SafetySettings | null): Guard[] {
   return [
     {
       id: "allowlist",
       label: "Allowlist",
-      value: health?.allowlist_active ? "ON" : null,
+      value: settings && settings.allowlist.length > 0 ? "ON" : null,
       explanation:
         "While the allowlist has any number on it, those are the only numbers a run may dial. Everything else is skipped before it rings.",
       settingsHref: "/app/settings/safety",
@@ -110,7 +109,7 @@ export function guardsFromHealth(health: Health | null): Guard[] {
     {
       id: "ceiling",
       label: "Ceiling",
-      value: health?.max_calls_per_run ? `${health.max_calls_per_run}/RUN` : null,
+      value: settings ? `${settings.max_calls_per_run}/RUN` : null,
       explanation:
         "A hard cap on how many real calls one run may place. The run stops at the ceiling rather than working through the rest of your list.",
       settingsHref: "/app/settings/safety",
@@ -118,8 +117,8 @@ export function guardsFromHealth(health: Health | null): Guard[] {
     {
       id: "rate",
       label: "Rate",
-      value: limits
-        ? `${limits.per_window}/${formatWindow(limits.window_minutes)}`
+      value: settings
+        ? `${settings.calls_per_window}/${formatWindow(settings.window_minutes)}`
         : null,
       explanation:
         "Paces how fast calls go out, so a run reaches people at a human rhythm instead of arriving as a burst.",

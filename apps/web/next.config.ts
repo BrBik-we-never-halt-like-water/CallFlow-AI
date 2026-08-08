@@ -11,6 +11,11 @@ const nextConfig: NextConfig = {
   turbopack: {
     root: path.resolve(__dirname),
   },
+
+  // Dev-only route indicator (bottom-left "N" badge), not app code — off by
+  // preference during local development. Compile/runtime error surfacing is
+  // unaffected; this only hides the route-context badge.
+  devIndicators: false,
 };
 
 const withMDX = createMDX({

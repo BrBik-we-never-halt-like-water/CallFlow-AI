@@ -232,7 +232,7 @@ export function DataTable<T>({
       ) : null}
 
       {/* ---- Desktop table ------------------------------------------------ */}
-      <div className="hidden overflow-x-auto rounded-md border border-rule md:block">
+      <div className="panel-glass hidden overflow-x-auto rounded-md border border-rule/70 md:block">
         <table className="w-full border-collapse text-left">
           <caption className="sr-only">{caption}</caption>
 
@@ -266,7 +266,7 @@ export function DataTable<T>({
                         : undefined
                     }
                     className={cn(
-                      "eyebrow px-3 py-2 text-text-mute",
+                      "px-3 py-2 text-small font-medium text-text-mute",
                       column.align === "right" && "text-right",
                       column.width,
                     )}
@@ -379,13 +379,13 @@ export function DataTable<T>({
       <div className="flex flex-col gap-2 md:hidden">
         {loading ? (
           Array.from({ length: 4 }, (_, i) => (
-            <div key={i} className="rounded-md border border-rule bg-surface-raised p-3">
+            <div key={i} className="panel-glass rounded-md border border-rule/70 p-3">
               <Skeleton className="h-4 w-32" />
               <Skeleton className="mt-2 h-3 w-24" />
             </div>
           ))
         ) : rows.length === 0 ? (
-          <div className="rounded-md border border-rule bg-surface-raised">{empty}</div>
+          <div className="panel-glass rounded-md border border-rule/70">{empty}</div>
         ) : (
           rows.map((row) => {
             const key = rowKey(row);
@@ -395,7 +395,7 @@ export function DataTable<T>({
               <div className="flex flex-col gap-1">
                 {visible.slice(0, 3).map((column) => (
                   <div key={column.id} className="flex items-baseline justify-between gap-3">
-                    <span className="eyebrow text-text-mute">{column.header}</span>
+                    <span className="text-small font-medium text-text-mute">{column.header}</span>
                     <span className={cn("text-small text-text", column.mono && "font-mono text-data")}>
                       {column.cell(row)}
                     </span>
@@ -408,7 +408,7 @@ export function DataTable<T>({
               return (
                 <div
                   key={key}
-                  className="rounded-md border border-rule bg-surface-raised p-3"
+                  className="panel-glass rounded-md border border-rule/70 p-3"
                 >
                   {content}
                 </div>
@@ -420,7 +420,7 @@ export function DataTable<T>({
                 key={key}
                 type="button"
                 onClick={() => onRowClick(row)}
-                className="flex w-full cursor-pointer items-center gap-3 rounded-md border border-rule bg-surface-raised p-3 text-left transition-colors hover:bg-surface-hover"
+                className="panel-glass flex w-full cursor-pointer items-center gap-3 rounded-md border border-rule/70 p-3 text-left transition-colors hover:bg-surface-hover"
               >
                 <span className="min-w-0 flex-1">{content}</span>
                 <CaretRightIcon aria-hidden className="size-4 shrink-0 text-text-mute" />
