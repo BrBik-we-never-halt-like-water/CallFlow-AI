@@ -22,7 +22,7 @@ const WAKE_INTERVAL_MS = 4000;
  * Establishes the connection to the service and loads what every app page needs.
  *
  * The service may be asleep when someone arrives. `phase` distinguishes "not
- * fetched yet" from "failed" from "waking" — collapsing those into one nullable
+ * fetched yet" from "failed" from "waking"   collapsing those into one nullable
  * value is how an error banner ends up flashing before the first request has
  * even finished.
  *
@@ -53,7 +53,7 @@ export function useConnection(): Connection {
     }
 
     async function connect() {
-      // Try once directly — if the service is already warm this is instant.
+      // Try once directly   if the service is already warm this is instant.
       try {
         await load();
         return;

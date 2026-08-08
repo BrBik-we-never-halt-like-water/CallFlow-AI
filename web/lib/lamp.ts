@@ -1,5 +1,5 @@
 /**
- * Lamp semantics — the mapping from what happened on a call to which lamp
+ * Lamp semantics   the mapping from what happened on a call to which lamp
  * lights.
  *
  * This mapping is the product's core promise made mechanical: in a normal call
@@ -18,7 +18,7 @@ export type LampState = "off" | "ice" | "brass" | "jade" | "flare";
 
 export interface LampSpec {
   state: LampState;
-  /** A slow pulse. Reserved for "queued for retry" — bad timing, not bad mood. */
+  /** A slow pulse. Reserved for "queued for retry"   bad timing, not bad mood. */
   pulse?: boolean;
   /** Human label. Always present, because colour is never the only carrier. */
   label: string;
@@ -38,12 +38,12 @@ export const LAMP_LABELS: Record<LampState, string> = {
  * Which lamp a settled outcome gets.
  *
  * A dry-run result is always ice regardless of how the simulated conversation
- * went — the operator's first question about any result is "did this actually
+ * went   the operator's first question about any result is "did this actually
  * dial?", and the answer has to be visible before the outcome is.
  */
 export function lampForOutcome(outcome: Outcome): LampSpec {
   if (outcome.dry_run && outcome.disposition !== "in_flight") {
-    return { state: "ice", label: "Dry run — nothing was dialled" };
+    return { state: "ice", label: "Dry run   nothing was dialled" };
   }
   return lampForDisposition(outcome.disposition);
 }
@@ -53,7 +53,7 @@ export function lampForDisposition(disposition: Disposition): LampSpec {
     case "in_flight":
       return { state: "brass", label: "In conversation" };
     case "auto_closed":
-      return { state: "jade", label: "Auto-closed — clean outcome" };
+      return { state: "jade", label: "Auto-closed   clean outcome" };
     case "escalated":
       return { state: "flare", label: "Needs a person" };
     case "retry":
@@ -69,7 +69,7 @@ export function lampForDisposition(disposition: Disposition): LampSpec {
 
 /**
  * Build the strip for a run: one lamp per contact, settled results first, then
- * dim lamps for everything still queued. The strip is the progress indicator —
+ * dim lamps for everything still queued. The strip is the progress indicator  
  * there is no progress bar anywhere in this product.
  */
 export function stripForRun(outcomes: Outcome[], total: number): LampSpec[] {
@@ -117,7 +117,7 @@ export function countLamps(lamps: LampSpec[]): LampCounts {
 /**
  * One summarising sentence for the whole strip.
  *
- * A screen reader gets this, not twenty individual lamp labels — the strip is a
+ * A screen reader gets this, not twenty individual lamp labels   the strip is a
  * single piece of information, and reading it out lamp by lamp would make it
  * unusable.
  */

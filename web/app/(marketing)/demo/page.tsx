@@ -7,7 +7,7 @@ import type { LampSpec } from "@/lib/lamp";
 export const metadata: Metadata = {
   title: "Book a demo",
   description:
-    "Fifteen minutes. Bring your own contact list and we will run it in dry mode together — no calls placed, no credits spent.",
+    "Fifteen minutes. Bring your own contact list and we will run it in dry mode together   no calls placed, no credits spent.",
 };
 
 const STRIP: LampSpec[] = [

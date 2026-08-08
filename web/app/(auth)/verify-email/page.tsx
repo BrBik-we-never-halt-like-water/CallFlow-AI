@@ -27,7 +27,7 @@ export default function VerifyEmailPage() {
     >
       <div className="flex flex-col gap-4">
         <p className="text-small text-text-dim">
-          The link expires in 24 hours. If it isn&apos;t there, check spam — and if it
+          The link expires in 24 hours. If it isn&apos;t there, check spam   and if it
           still isn&apos;t, send it again below.
         </p>
 

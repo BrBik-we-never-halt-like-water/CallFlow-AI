@@ -1,8 +1,8 @@
 """Thin wrapper over the voice engine SDK.
 
 This module is the only place in the codebase that touches the upstream
-vendor SDK. Everything above it speaks in CallFlow terms — `EngineGateway`,
-`EngineAPIError` — so no vendor name reaches the API surface or the UI.
+vendor SDK. Everything above it speaks in CallFlow terms   `EngineGateway`,
+`EngineAPIError`   so no vendor name reaches the API surface or the UI.
 
 Contract verified against the pinned SDK version:
 
@@ -62,10 +62,10 @@ class EngineGateway:
         region: str | None = None,
         language: str | None = None,
     ) -> JsonObject:
-        """Create a call. This DIALS — every caller must pass the safety gate first.
+        """Create a call. This DIALS   every caller must pass the safety gate first.
 
         Recipient fields are `phones`, `region`, and `locale`. The API rejects
-        anything else with 422 extra_forbidden — notably `language`, which is
+        anything else with 422 extra_forbidden   notably `language`, which is
         NOT a valid key despite reading like one.
         """
         recipient: JsonObject = {"phone": phone}
@@ -101,7 +101,7 @@ class EngineGateway:
         )
 
     def list_events(self, call_id: str, *, limit: int | None = None) -> JsonObject:
-        """Event stream for a call — powers live dashboard progress."""
+        """Event stream for a call   powers live dashboard progress."""
         return self._client.calls.list_events(call_id, limit=limit)
 
 

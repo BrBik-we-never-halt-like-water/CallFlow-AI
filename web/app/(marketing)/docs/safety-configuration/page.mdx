@@ -6,8 +6,8 @@ export const metadata = {
 
 # Safety configuration
 
-CallFlow places real phone calls. Every guard here fails closed — meaning that if a
-guard cannot be evaluated, the call does not go out.
+CallFlow places real phone calls. Every guard here fails closed   if one can't be
+evaluated, the call doesn't go out.
 
 ## The guards
 
@@ -28,8 +28,8 @@ unguarded configuration should look uncomfortable.
 
 ## Dry run
 
-Dry run exercises the whole pipeline — goal templating, contact validation, the safety
-gate, and the result shape — without placing a call or spending a credit.
+Dry run exercises the whole pipeline   goal templating, contact validation, the safety
+gate, and the result shape   without placing a call or spending a credit.
 
 It is on for every new run. Turning it off opens a confirmation dialog, and it is the
 only switch in the product that confirms. The dialog shows you the contact count, the
@@ -41,15 +41,15 @@ that cannot be dismissed.
 
 ## The allowlist and the rate limit solve different problems
 
-They are easy to confuse and they are not interchangeable.
+Easy to confuse, not interchangeable.
 
-**Use the allowlist while developing.** Put your own number on it and dialling anyone
-else becomes impossible. This is the guard that protects strangers from your test
+**Use the allowlist while developing.** Put your own number on it and dialling
+anyone else becomes impossible   the guard that protects strangers from your test
 runs.
 
-**Use the rate limit on a public deployment,** where visitors legitimately need to
-call their own numbers but nobody should be able to drain the account or dial one
-person repeatedly. This is the guard that protects your balance and your reputation.
+**Use the rate limit on a public deployment,** where visitors legitimately call
+their own numbers but nobody should drain the account or dial one person
+repeatedly   the guard that protects your balance and reputation.
 
 Most teams want both.
 
@@ -59,7 +59,7 @@ A window is a start time, an end time, and a timezone, set per campaign with an
 organisation-wide default.
 
 Outside the window nothing is dialled. Contacts are queued for the next opening rather
-than counted as failures — which is the same reasoning behind treating a bad time as a
+than counted as failures   which is the same reasoning behind treating a bad time as a
 retry rather than an escalation.
 
 ## Environment configuration
@@ -80,7 +80,7 @@ rate limits for your own testing. It does not lift the allowlist or the ceiling.
 
 ## Number masking
 
-Phone numbers are masked — `+91*******210` — in every log, API response, and interface
+Phone numbers are masked   `+91*******210`   in every log, API response, and interface
 surface. Revealing a full number is a separate, permissioned action.
 
 Masking is implemented in exactly one place in the codebase, so a new screen cannot

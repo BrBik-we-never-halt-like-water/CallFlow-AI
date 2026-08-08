@@ -6,7 +6,7 @@
  * not the permanent, global guarantee the product promises, and pretending otherwise
  * would be the most dangerous thing this interface could do.
  *
- * The functions here are pure list transforms — the storage read and write are owned by
+ * The functions here are pure list transforms   the storage read and write are owned by
  * `useStoredJson`, so reading the list is a subscription rather than a mount-time
  * side effect. Wiring this to a server means replacing the two call sites, not this file.
  */

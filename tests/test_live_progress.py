@@ -1,7 +1,7 @@
 """Live-call progress reporting.
 
 A conversation can run for minutes. Without intermediate updates the dashboard
-shows an empty table the whole time, which reads as a hang — so the row must
+shows an empty table the whole time, which reads as a hang   so the row must
 appear when the call is placed and update as the status changes.
 """
 

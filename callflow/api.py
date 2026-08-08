@@ -229,7 +229,7 @@ def start_run(
     if not dry_run and not config.api_key:
         raise HTTPException(
             status_code=400,
-            detail="No Voice API key is configured — cannot place live calls.",
+            detail="No Voice API key is configured   cannot place live calls.",
         )
 
     # Live calls spend the owner's credits and ring real people, so the public
@@ -267,7 +267,7 @@ def get_run(run_id: str) -> dict[str, Any]:
 
     outcomes = run["outcomes"]
     # A row exists as soon as a call is placed, so count only calls that have
-    # actually resolved — an in-flight one is not progress yet.
+    # actually resolved   an in-flight one is not progress yet.
     resolved = [o for o in outcomes if o["disposition"] != "in_flight"]
     escalated = sum(1 for o in resolved if o["disposition"] == "escalated")
     return run | {

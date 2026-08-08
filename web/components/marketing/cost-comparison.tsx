@@ -11,8 +11,8 @@ import { TodoChip } from "./price-value";
 /**
  * A tele-caller versus CallFlow.
  *
- * This is the comparison that actually closes deals in this market — the buyer is
- * weighing this against hiring someone, not against an API — so it gets a full
+ * This is the comparison that actually closes deals in this market   the buyer is
+ * weighing this against hiring someone, not against an API   so it gets a full
  * section rather than a footnote.
  *
  * The salary and call-rate figures are editable inputs with defaults, not claims.
@@ -43,7 +43,7 @@ export function CostComparison({ currency }: { currency: Currency }) {
       <div className="mt-6 grid gap-3 sm:max-w-md sm:grid-cols-2">
         <Field
           label="Monthly cost of one caller"
-          help="Fully loaded — salary, desk, phone."
+          help="Fully loaded   salary, desk, phone."
         >
           <Input
             type="number"

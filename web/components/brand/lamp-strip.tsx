@@ -19,7 +19,7 @@ export interface LampStripProps {
   counts?: boolean;
   /** Run the left-to-right entrance. Off for strips that are already settled. */
   animateIn?: boolean;
-  /** Allow the row to wrap — used for the 100-call overview strip. */
+  /** Allow the row to wrap   used for the 100-call overview strip. */
   wrap?: boolean;
   /** Makes each lamp a button. Used where a lamp opens the call it represents. */
   onSelect?: (index: number, lamp: LampSpec) => void;

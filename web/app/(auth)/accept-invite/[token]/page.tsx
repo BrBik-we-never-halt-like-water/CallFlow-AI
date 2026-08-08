@@ -17,7 +17,7 @@ import { isPasswordValid, PasswordStrength } from "@/components/ui/password-stre
  *
  * The organisation name and the role being granted are shown before anything is
  * accepted. Someone clicking a link from an email needs to know which company they are
- * joining and what access they are being given — "Admin" and "Viewer" are very
+ * joining and what access they are being given   "Admin" and "Viewer" are very
  * different things to accept blind, and in a product that dials real people the
  * difference matters.
  */
@@ -59,7 +59,7 @@ export default function AcceptInvitePage() {
           >
             Ignore it
           </Link>{" "}
-          — nothing happens until you set a password.
+            nothing happens until you set a password.
         </>
       }
     >
@@ -73,12 +73,12 @@ export default function AcceptInvitePage() {
           </div>
           <div className="flex items-baseline justify-between gap-3">
             <span className="text-small text-text-mute">Role</span>
-            {role ? <Tag>{role}</Tag> : <span className="text-small text-text-dim">—</span>}
+            {role ? <Tag>{role}</Tag> : <span className="text-small text-text-dim"> </span>}
           </div>
           <div className="flex items-baseline justify-between gap-3">
             <span className="text-small text-text-mute">Invite code</span>
             <span className="font-mono text-data text-text-dim">
-              {token ? `${token.slice(0, 8)}…` : "—"}
+              {token ? `${token.slice(0, 8)}…` : " "}
             </span>
           </div>
         </Panel>

@@ -1,5 +1,5 @@
 /**
- * Shared formatters. Never inline a variant of one of these in a component —
+ * Shared formatters. Never inline a variant of one of these in a component  
  * a duration that reads `2m 14s` on one screen and `134s` on another is how a
  * product starts to feel like several products.
  */
@@ -8,7 +8,7 @@ export { formatE164, isE164, maskPhone, normalisePhone } from "./phone";
 
 /** `134` → `2m 14s`. Durations are always mono. */
 export function formatDuration(seconds: number | null | undefined): string {
-  if (seconds == null || Number.isNaN(seconds)) return "—";
+  if (seconds == null || Number.isNaN(seconds)) return " ";
   const total = Math.max(0, Math.round(seconds));
   const h = Math.floor(total / 3600);
   const m = Math.floor((total % 3600) / 60);
@@ -19,7 +19,7 @@ export function formatDuration(seconds: number | null | undefined): string {
 }
 
 export function formatNumber(value: number | null | undefined): string {
-  if (value == null || Number.isNaN(value)) return "—";
+  if (value == null || Number.isNaN(value)) return " ";
   return new Intl.NumberFormat("en-IN").format(value);
 }
 
@@ -30,7 +30,7 @@ export function formatCurrency(
   currency: Currency,
   { compact = false }: { compact?: boolean } = {},
 ): string {
-  if (amount == null || Number.isNaN(amount)) return "—";
+  if (amount == null || Number.isNaN(amount)) return " ";
   return new Intl.NumberFormat(currency === "INR" ? "en-IN" : "en-US", {
     style: "currency",
     currency,
@@ -41,7 +41,7 @@ export function formatCurrency(
 
 /** Per-call overage rates are small; they need decimals the plan price doesn't. */
 export function formatRate(amount: number | null | undefined, currency: Currency): string {
-  if (amount == null || Number.isNaN(amount)) return "—";
+  if (amount == null || Number.isNaN(amount)) return " ";
   return new Intl.NumberFormat(currency === "INR" ? "en-IN" : "en-US", {
     style: "currency",
     currency,
@@ -51,7 +51,7 @@ export function formatRate(amount: number | null | undefined, currency: Currency
 }
 
 export function formatPercent(value: number | null | undefined): string {
-  if (value == null || Number.isNaN(value)) return "—";
+  if (value == null || Number.isNaN(value)) return " ";
   return `${Math.round(value)}%`;
 }
 
@@ -60,9 +60,9 @@ export function formatPercent(value: number | null | undefined): string {
  * so a server-rendered timestamp cannot disagree with the client's.
  */
 export function formatTimestamp(iso: string | null | undefined): string {
-  if (!iso) return "—";
+  if (!iso) return " ";
   const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "—";
+  if (Number.isNaN(d.getTime())) return " ";
   return new Intl.DateTimeFormat("en-GB", {
     day: "2-digit",
     month: "short",
@@ -73,9 +73,9 @@ export function formatTimestamp(iso: string | null | undefined): string {
 }
 
 export function formatTimeOnly(iso: string | null | undefined): string {
-  if (!iso) return "—";
+  if (!iso) return " ";
   const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "—";
+  if (Number.isNaN(d.getTime())) return " ";
   return new Intl.DateTimeFormat("en-GB", {
     hour: "2-digit",
     minute: "2-digit",
@@ -85,13 +85,13 @@ export function formatTimeOnly(iso: string | null | undefined): string {
 }
 
 /**
- * `4h ago`. Used where age is the point — the escalation worklist sorts oldest
+ * `4h ago`. Used where age is the point   the escalation worklist sorts oldest
  * first, because the oldest escalation is the most expensive one.
  */
 export function formatAge(iso: string | null | undefined, now = Date.now()): string {
-  if (!iso) return "—";
+  if (!iso) return " ";
   const then = new Date(iso).getTime();
-  if (Number.isNaN(then)) return "—";
+  if (Number.isNaN(then)) return " ";
   const mins = Math.max(0, Math.round((now - then) / 60000));
   if (mins < 1) return "just now";
   if (mins < 60) return `${mins}m ago`;

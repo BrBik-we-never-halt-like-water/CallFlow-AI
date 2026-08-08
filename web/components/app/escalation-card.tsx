@@ -14,8 +14,8 @@ import { formatAge, formatDuration } from "@/lib/format";
 /**
  * One item in the escalation worklist.
  *
- * The reason is rendered as a chain read from typed fields — `Frustration detected →
- * Needs a person` — not as a sentence someone wrote. That is the product's guarantee
+ * The reason is rendered as a chain read from typed fields   `Frustration detected →
+ * Needs a person`   not as a sentence someone wrote. That is the product's guarantee
  * made visible: the operator can see which value drove the decision, so disagreeing
  * with it is a two-second check rather than an argument.
  */
@@ -106,7 +106,7 @@ export function EscalationCard({
             toast({
               tone: "info",
               title: "Calling back isn't wired up yet",
-              body: `Dial ${outcome.contact_name} from your own phone — the number is on this card.`,
+              body: `Dial ${outcome.contact_name} from your own phone   the number is on this card.`,
             })
           }
         >

@@ -24,7 +24,7 @@ interface PollState {
 /**
  * Polls a run until it settles.
  *
- * Progress is announced to assistive tech once per meaningful change, not once per row —
+ * Progress is announced to assistive tech once per meaningful change, not once per row  
  * see `useProgressAnnouncement`. A screen reader reading out twenty individual rows as
  * they land is worse than no announcement at all.
  */
@@ -106,7 +106,7 @@ export function useRunPoll(runId: string | null, { paused = false } = {}): RunPo
  * Debounced progress message for an `aria-live="polite"` region.
  *
  * Returns a sentence only when the settled count has actually moved and has then held
- * still briefly — so a burst of results produces one announcement rather than five.
+ * still briefly   so a burst of results produces one announcement rather than five.
  */
 export function useProgressAnnouncement(settled: number, total: number): string {
   const [message, setMessage] = useState("");

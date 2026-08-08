@@ -89,7 +89,7 @@ export function AppNav({
 
               {/* The only persistently-coloured element in the nav, because it is the
                   only thing in the product that needs immediate human action. A count
-                  of zero renders nothing at all — not a grey zero. */}
+                  of zero renders nothing at all   not a grey zero. */}
               {badge > 0 ? (
                 <span
                   className={cn(
@@ -111,7 +111,7 @@ export function AppNav({
               {collapsed ? (
                 <Tooltip
                   content={
-                    badge > 0 ? `${item.label} — ${badge} waiting` : item.label
+                    badge > 0 ? `${item.label}   ${badge} waiting` : item.label
                   }
                   side="right"
                 >
@@ -170,7 +170,7 @@ function OrgSwitcher({ collapsed }: { collapsed: boolean }) {
   );
 }
 
-/** Bottom tab bar. Mobile only — ops managers check escalations from their phone. */
+/** Bottom tab bar. Mobile only   ops managers check escalations from their phone. */
 export function AppTabBar({ escalationCount }: { escalationCount: number }) {
   const pathname = usePathname() ?? "";
   const items = NAV_ITEMS.filter((item) => MOBILE_ITEMS.includes(item.href));

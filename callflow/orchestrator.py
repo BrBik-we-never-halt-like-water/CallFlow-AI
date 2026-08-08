@@ -212,7 +212,7 @@ class CampaignRunner:
 
         if self.dry_run:
             # Run a sample result through the real triage logic. Nothing is
-            # dialed, but the preview shows the full pipeline — extraction,
+            # dialed, but the preview shows the full pipeline   extraction,
             # sentiment, and the disposition each outcome would get. The
             # `is_sample` flag makes the UI label it as preview data.
             extracted = sample_outcome(campaign, contact, self._preview_index)
@@ -252,7 +252,7 @@ class CampaignRunner:
             call_id = str(created.get("id", ""))
 
             # Surface the row as soon as the call is placed. Otherwise the
-            # dashboard shows nothing for the whole call — which reads as a
+            # dashboard shows nothing for the whole call   which reads as a
             # hang when a conversation runs for minutes.
             if on_status is not None:
                 on_status(

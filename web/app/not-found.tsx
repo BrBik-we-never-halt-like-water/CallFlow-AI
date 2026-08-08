@@ -8,7 +8,7 @@ import type { LampSpec } from "@/lib/lamp";
 /**
  * 404.
  *
- * The lamp strip is the illustration, and every lamp is off — there is nothing here,
+ * The lamp strip is the illustration, and every lamp is off   there is nothing here,
  * and an unlit board says that more precisely than an apology would.
  */
 const ALL_OFF: LampSpec[] = Array.from({ length: 8 }, () => ({

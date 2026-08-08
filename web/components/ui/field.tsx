@@ -147,7 +147,7 @@ export function ErrorSummary({
               href={`#${e.id}`}
               className="text-small text-text underline decoration-rule-strong underline-offset-2 hover:decoration-current"
             >
-              <span className="font-medium">{e.label}</span> — {e.message}
+              <span className="font-medium">{e.label}</span>   {e.message}
             </a>
           </li>
         ))}

@@ -8,7 +8,7 @@ import { Eyebrow } from "@/components/ui/panel";
 /**
  * Shown after a valid auth submission.
  *
- * Accounts are not enabled on this deployment — there is no auth service behind these
+ * Accounts are not enabled on this deployment   there is no auth service behind these
  * forms yet. Saying so and opening the dashboard is the honest behaviour: a fake
  * "check your inbox" screen leaves someone waiting for an email that will never
  * arrive, and they will blame the product rather than the gap.
@@ -26,7 +26,7 @@ export function AuthNotice({
       <h2 className="text-h4 font-medium text-text">{heading}</h2>
       <p className="text-small text-text-dim">
         {children ??
-          "This deployment has no account service behind it yet, so nothing was created and no email was sent. The dashboard is open in the meantime — you can run a campaign in dry mode without an account."}
+          "This deployment has no account service behind it yet, so nothing was created and no email was sent. The dashboard is open in the meantime   you can run a campaign in dry mode without an account."}
       </p>
       <Button asChild size="sm" className="w-fit">
         <Link href="/app">Open dashboard</Link>
@@ -35,7 +35,7 @@ export function AuthNotice({
   );
 }
 
-/** Google OAuth button. Same honest treatment — it explains rather than pretending. */
+/** Google OAuth button. Same honest treatment   it explains rather than pretending. */
 export function GoogleButton({ label }: { label: string }) {
   return (
     <Button variant="secondary" size="lg" disabled className="w-full" title="Not configured on this deployment yet">

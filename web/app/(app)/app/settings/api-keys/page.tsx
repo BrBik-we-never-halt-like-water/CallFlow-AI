@@ -67,7 +67,7 @@ export default function ApiKeysSettingsPage() {
 
       <NotWiredNotice>
         Issuing and revoking API keys needs an account service, which this deployment does
-        not have. The Voice API key status above is real — it is read from the calling
+        not have. The Voice API key status above is real   it is read from the calling
         service.
       </NotWiredNotice>
 

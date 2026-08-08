@@ -15,8 +15,8 @@ import { usePrefersReducedMotion, useTypewriter } from "@/lib/hooks/use-typewrit
  *
  * Left: the thesis and the two ways in. Right: a scripted call that plays once
  * on load. It starts as just the voice signal and the line being spoken; once
- * the line finishes, the card blooms open — expanding up and down from its
- * centre — to reveal the typed result. The bloom grows inside a reserved height,
+ * the line finishes, the card blooms open   expanding up and down from its
+ * centre   to reveal the typed result. The bloom grows inside a reserved height,
  * so the left column never moves.
  *
  * Under `prefers-reduced-motion` the whole card renders finished on first paint.
@@ -24,7 +24,7 @@ import { usePrefersReducedMotion, useTypewriter } from "@/lib/hooks/use-typewrit
 
 const DEFAULT_NAME = "Aditi";
 
-/** The typed result the scripted run settles on — shown as labelled fields
+/** The typed result the scripted run settles on   shown as labelled fields
     rather than raw JSON, so the readout reads as data arriving, not a code
     dump. Categorical fields get a tag; plain facts stay text. */
 type ResultField = { label: string; value: string; tag?: boolean };
@@ -35,7 +35,7 @@ const RESULT_FIELDS: ResultField[] = [
   { label: "party size", value: "4" },
 ];
 
-/** Shared easing for the bloom — a soft, water-like ease-out. */
+/** Shared easing for the bloom   a soft, water-like ease-out. */
 const EASE_OUT = [0.22, 1, 0.36, 1] as const;
 
 function spokenLine(name: string): string {
@@ -61,13 +61,13 @@ export function Hero() {
   const spokenProgress = SPOKEN.length
     ? Math.min(1, heard.output.length / SPOKEN.length)
     : 0;
-  // Only "speaking" once characters are actually landing — so the wave rests at
+  // Only "speaking" once characters are actually landing   so the wave rests at
   // its full shape during the wait, then sweeps as the line is spoken.
   const speaking = heard.output.length > 0 && !heard.done;
 
   return (
     <section className="relative overflow-hidden">
-      {/* A quiet draughtsman's grid, drifting a few pixels as the page scrolls —
+      {/* A quiet draughtsman's grid, drifting a few pixels as the page scrolls  
           the only parallax on the site, off under prefers-reduced-motion. */}
       <ParallaxGrid />
 
@@ -93,7 +93,7 @@ export function Hero() {
               </Button>
             </div>
 
-            {/* A quiet proof row — what the product does, in three beats. */}
+            {/* A quiet proof row   what the product does, in three beats. */}
             <div className="flex flex-wrap items-center gap-x-4 gap-y-2 pt-2 text-small text-text-mute">
               <span>Real conversations</span>
               <span aria-hidden className="h-3.5 w-px bg-rule" />
@@ -104,7 +104,7 @@ export function Hero() {
           </div>
 
           {/* ---- The proof: opens as the voice signal, then blooms into the
-                  typed result — expanding up and down from the centre so the
+                  typed result   expanding up and down from the centre so the
                   left column never moves. ------------------------------------ */}
           <div className="grid">
             {/* Invisible copy at final size: reserves the column height so the
@@ -116,7 +116,7 @@ export function Hero() {
               </CardShell>
             </div>
 
-            {/* The live card, centred in the reserved space — so added height
+            {/* The live card, centred in the reserved space   so added height
                 pushes its top up and its bottom down in equal measure. */}
             <div className="[grid-area:1/1] self-center">
               <CardShell>
@@ -244,7 +244,7 @@ function ResultRow({ label, value, tag }: ResultField) {
 /**
  * Beat two: the typed fields the call returned, as labelled rows rather than raw
  * JSON. When `animate`, the block unfolds by height and opacity and the rows
- * arrive in sequence once `show` is true — the bloom that opens the card. The
+ * arrive in sequence once `show` is true   the bloom that opens the card. The
  * static form (no `animate`) is what the invisible sizer uses to reserve height.
  */
 function ResultBlock({ animate = false, show = true }: { animate?: boolean; show?: boolean }) {

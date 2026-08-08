@@ -192,7 +192,7 @@ const PLAN_IDS: PlanId[] = ["free", "starter", "growth", "scale"];
  * Full comparison, grouped by category with sticky plan headers.
  *
  * A real table with `scope` on every header, because this is exactly the content a
- * screen-reader user needs to navigate cell by cell — and a grid of divs would make
+ * screen-reader user needs to navigate cell by cell   and a grid of divs would make
  * that impossible.
  */
 export function FeatureMatrix() {
@@ -269,7 +269,7 @@ function MatrixCell({
   label: string;
   plan: PlanId;
 }) {
-  // `null` means the number has not been set yet — same TODO treatment as prices,
+  // `null` means the number has not been set yet   same TODO treatment as prices,
   // so an unfinished commercial decision is never mistaken for a real limit.
   if (value === null) return <TodoChip />;
 

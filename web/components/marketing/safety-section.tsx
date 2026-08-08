@@ -13,7 +13,7 @@ import { Reveal } from "@/components/ui/reveal";
  * convincing than the actual control.
  *
  * One guard is shown switched off, because the design's whole claim about guards
- * is that an unguarded configuration looks uncomfortable — and a visitor should
+ * is that an unguarded configuration looks uncomfortable   and a visitor should
  * be able to see that for themselves.
  */
 
@@ -57,7 +57,7 @@ const GUARDS_EXPLAINED = [
     name: "Validation first",
     behaviour: "Before any dial",
     detail:
-      "Every run validates the rows and walks the safety gates before a single number is dialled — a row that fails is skipped and says why. Starting a run takes a deliberate confirmation that shows you the contact count, the credit estimate, and the window.",
+      "Every run validates the rows and walks the safety gates before a single number is dialled   a row that fails is skipped and says why. Starting a run takes a deliberate confirmation that shows you the contact count, the credit estimate, and the window.",
   },
   {
     name: "Allowlist",
@@ -98,7 +98,7 @@ export function SafetySection() {
         <SectionHeading
           eyebrow="Safety"
           title="The guards fail closed."
-          sub="CallFlow places real phone calls, so every guard is on until you deliberately turn it off — and each one is visible on the screen where you start a run."
+          sub="CallFlow places real phone calls, so every guard is on until you deliberately turn it off   and each one is visible on the screen where you start a run."
         />
       </Reveal>
 

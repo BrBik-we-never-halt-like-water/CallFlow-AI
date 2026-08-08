@@ -1,4 +1,7 @@
+"use client";
+
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { Mark } from "@/components/brand/mark";
 import { BrandLockup } from "@/components/brand/wordmark";
 
@@ -57,6 +60,13 @@ const CAPABILITIES = [
 ];
 
 export function SiteFooter() {
+  const pathname = usePathname() ?? "";
+
+  // The docs shell has its own dense, self-contained content pane   the full
+  // marketing footer underneath it duplicates the sidebar links and adds a
+  // long scroll after every article. Docs pages skip it entirely.
+  if (pathname.startsWith("/docs")) return null;
+
   return (
     <footer className="mt-(--space-section) border-t border-rule bg-surface-raised">
       <div className="mx-auto max-w-(--container-marketing) px-4 py-14 sm:px-6">
@@ -66,17 +76,17 @@ export function SiteFooter() {
               <BrandLockup />
               <span className="sr-only">CallFlow AI home</span>
             </Link>
-            <p className="max-w-xs text-small text-text-dim">
+            <p className="max-w-xs text-small leading-[1.6] text-text-dim">
               An operations layer for outbound phone calls. Load a list, write a goal,
-              and get typed results back — with only the calls that need a person
+              and get typed results back   with only the calls that need a person
               reaching one.
             </p>
           </div>
 
           {COLUMNS.map((column) => (
-            <div key={column.heading} className="flex flex-col gap-3">
-              <h2 className="eyebrow text-text">{column.heading}</h2>
-              <ul className="flex flex-col gap-2">
+            <div key={column.heading} className="flex flex-col gap-3.5">
+              <h2 className="text-small font-medium text-text">{column.heading}</h2>
+              <ul className="flex flex-col gap-2.5">
                 {column.links.map((link) => (
                   <li key={`${column.heading}-${link.label}`}>
                     <Link
@@ -136,7 +146,7 @@ export function SiteFooter() {
           <ul className="flex min-w-max items-center justify-center gap-x-6 gap-y-2">
             {CAPABILITIES.map((capability, i) => (
               <li key={capability} className="flex items-center gap-6">
-                <span className="eyebrow text-text-mute">{capability}</span>
+                <span className="text-small text-text-mute">{capability}</span>
                 {i < CAPABILITIES.length - 1 ? (
                   <span aria-hidden className="h-3 w-px bg-rule" />
                 ) : null}

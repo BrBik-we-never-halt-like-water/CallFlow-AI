@@ -108,7 +108,7 @@ export default function OverviewPage() {
         />
         <Stat
           label="Auto-closed"
-          value={autoClosedPct == null ? "—" : formatPercent(autoClosedPct)}
+          value={autoClosedPct == null ? " " : formatPercent(autoClosedPct)}
           detail="closed without a person"
           lamp={autoClosedPct != null ? "jade" : undefined}
         />

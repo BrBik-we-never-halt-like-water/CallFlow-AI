@@ -6,7 +6,7 @@ import { WaveCanvas } from "@/components/brand/wave-canvas";
 import { VERTICALS } from "@/lib/verticals";
 
 /**
- * Built for — the four solution pages.
+ * Built for   the four solution pages.
  *
  * Rendered as rows, not cards. This is a list of four things, and a list should
  * look like one; three-across cards would give each vertical more visual weight

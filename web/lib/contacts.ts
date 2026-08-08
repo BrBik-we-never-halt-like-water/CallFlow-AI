@@ -44,7 +44,7 @@ function splitCsvLine(line: string): string[] {
  * Accepts an optional header line. Recognised columns: name, phone, note.
  * Without a header, columns are read positionally as name, phone, note.
  *
- * Invalid rows come back flagged rather than dropped — the composer shows the
+ * Invalid rows come back flagged rather than dropped   the composer shows the
  * reason inline and offers to remove them, because silently discarding a row
  * means a contact never gets called and nobody finds out why.
  */
@@ -100,7 +100,7 @@ export function validateRow(
   if (!isE164(normalised)) {
     return {
       valid: false,
-      error: "Not a valid E.164 number — try +919876543210.",
+      error: "Not a valid E.164 number   try +919876543210.",
     };
   }
   return { valid: true };
@@ -119,7 +119,7 @@ export function toContactInputs(rows: ParsedRow[]): ContactInput[] {
     }));
 }
 
-// Reserved fictional numbers only (+1 555 0100-0199) — sample data must never
+// Reserved fictional numbers only (+1 555 0100-0199)   sample data must never
 // be able to reach a real person if someone runs it in live mode.
 export const SAMPLE_CSV = `name,phone,note
 Aditi Sharma,+15555550100,asked about Bali in December

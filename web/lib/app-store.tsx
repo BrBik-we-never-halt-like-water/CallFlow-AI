@@ -21,7 +21,7 @@ import { useConnection, type Connection } from "@/lib/hooks/use-connection";
  *
  * The list endpoint returns runs without their outcomes, so the most recent runs are
  * hydrated individually. That is the only way to get real outcome data for the
- * overview, and it is bounded — see HYDRATE_LIMIT.
+ * overview, and it is bounded   see HYDRATE_LIMIT.
  */
 
 /** How many recent runs to fetch in full. Enough for the overview's 100-call strip. */
@@ -33,7 +33,7 @@ export interface AppState extends Connection {
   hydratedRuns: Run[];
   /** Every outcome across the hydrated runs, newest first. */
   outcomes: Outcome[];
-  /** Outcomes that need a person, oldest first — the worklist order. */
+  /** Outcomes that need a person, oldest first   the worklist order. */
   escalations: Outcome[];
   loadingRuns: boolean;
   refresh: () => void;
@@ -78,7 +78,7 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
         setHydratedRuns(hydrated.filter((run): run is Run => run !== null));
       } catch {
         // A failed refresh leaves the previous data in place rather than blanking the
-        // dashboard — stale numbers are more useful than empty ones, and the
+        // dashboard   stale numbers are more useful than empty ones, and the
         // connection banner already reports that something is wrong.
       } finally {
         if (!cancelled) setLoadingRuns(false);

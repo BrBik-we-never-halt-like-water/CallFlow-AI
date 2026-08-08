@@ -5,8 +5,8 @@
  * `integer`, `boolean`). `date` and `enum` are mapped onto `string` on the way out,
  * with their constraint folded into the description.
  *
- * That is not a fudge. The description *is* the extraction instruction — it is what
- * the engine reads to decide what belongs in a field — so "one of: onsite, hybrid,
+ * That is not a fudge. The description *is* the extraction instruction   it is what
+ * the engine reads to decide what belongs in a field   so "one of: onsite, hybrid,
  * remote_only" in the description constrains the answer in practice, while the
  * transport type stays something the service already validates. The alternative was
  * to drop two useful types from the editor.
@@ -44,7 +44,7 @@ const KEY_PATTERN = /^[a-z][a-z0-9_]*$/;
 export function fieldKeyError(key: string): string | null {
   if (!key.trim()) return "Give this field a name.";
   if (!KEY_PATTERN.test(key)) {
-    return "Use lowercase letters, numbers, and underscores — like party_size.";
+    return "Use lowercase letters, numbers, and underscores   like party_size.";
   }
   if (key.length > 40) return "Keep the name under 40 characters.";
   return null;
@@ -144,7 +144,7 @@ export function previewSchema(fields: EditorField[]): string {
 }
 
 /**
- * Substitute a sample contact into a goal template, the same way the service does —
+ * Substitute a sample contact into a goal template, the same way the service does  
  * a missing key renders empty rather than failing.
  */
 export function renderGoalPreview(

@@ -65,7 +65,7 @@ export function useTypewriter(
       const progress = Math.min(1, elapsed / total);
       const sliced = text.slice(0, Math.ceil(progress * text.length));
 
-      // Inside a rAF callback, not the effect body — this is the external clock
+      // Inside a rAF callback, not the effect body   this is the external clock
       // driving React, which is what an effect is for.
       setState({ key, output: sliced, done: progress >= 1 });
 

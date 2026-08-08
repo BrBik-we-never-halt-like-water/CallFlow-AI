@@ -88,7 +88,7 @@ export default async function SolutionPage({
         <SectionHeading
           eyebrow="The campaign"
           title="The exact goal, and the exact fields it returns."
-          sub="This is the whole template, not an excerpt. It is what the agent is told, verbatim — including what it must refuse to do."
+          sub="This is the whole template, not an excerpt. It is what the agent is told, verbatim   including what it must refuse to do."
         />
 
         {/* One basin, not two boxes: what the agent is told flows in on the

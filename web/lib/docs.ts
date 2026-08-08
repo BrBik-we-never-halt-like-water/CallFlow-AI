@@ -25,8 +25,7 @@ export const DOC_SECTIONS: DocSection[] = [
       {
         slug: "getting-started",
         title: "Getting started",
-        summary:
-          "From an empty account to a dry run with typed results, in about five minutes.",
+        summary: "From an empty account to a typed result, in about five minutes.",
       },
       {
         slug: "writing-a-good-goal",

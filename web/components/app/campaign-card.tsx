@@ -21,7 +21,7 @@ import { lampForOutcome, type LampSpec } from "@/lib/lamp";
  * A campaign at a glance.
  *
  * The mini lamp strip shows how the last run of this campaign actually went, which is
- * the most useful thing a card can say about a campaign — a name and a goal tell you
+ * the most useful thing a card can say about a campaign   a name and a goal tell you
  * what it intends, and only the strip tells you whether it works.
  */
 export function CampaignCard({
@@ -54,7 +54,7 @@ export function CampaignCard({
         </div>
 
         {/* Built-in templates have no destructive actions, because they cannot be
-            edited or deleted — offering the menu anyway would be a dead end. */}
+            edited or deleted   offering the menu anyway would be a dead end. */}
         {campaign.built_in ? (
           <Button variant="ghost" size="sm" onClick={() => onDuplicate(campaign)}>
             Duplicate
@@ -111,7 +111,7 @@ export function CampaignCard({
 
         <div className="flex items-center justify-between gap-2">
           <span className="font-mono text-data text-text-mute">
-            {lastRun ? formatTimestamp(lastRun.started_at) : "—"}
+            {lastRun ? formatTimestamp(lastRun.started_at) : " "}
           </span>
           <div className="flex items-center gap-1.5">
             {campaign.region ? <Tag>{campaign.region}</Tag> : null}

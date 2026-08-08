@@ -132,7 +132,7 @@ function Breadcrumb() {
 }
 
 /**
- * Credit balance — always visible, always mono.
+ * Credit balance   always visible, always mono.
  *
  * Under 20% it gains a brass dot; at zero it goes flare. The service exposes a daily
  * live-call budget rather than a credit wallet, so that is what this reports: the
@@ -145,7 +145,7 @@ function CreditBalance() {
   if (!limits) {
     return (
       <span className="hidden font-mono text-data text-text-mute sm:inline">
-        — calls left
+          calls left
       </span>
     );
   }

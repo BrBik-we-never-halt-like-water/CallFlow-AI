@@ -125,7 +125,7 @@ export interface Run {
 }
 
 /**
- * A run as it appears in the list endpoint — no outcomes, plus a settled count.
+ * A run as it appears in the list endpoint   no outcomes, plus a settled count.
  * The full run has to be fetched by id.
  */
 export interface RunSummary {
@@ -178,7 +178,7 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
         message = body.detail.map((d: { msg?: string }) => d.msg).filter(Boolean).join("; ");
       }
     } catch {
-      /* non-JSON error body — keep the status message */
+      /* non-JSON error body   keep the status message */
     }
     throw new Error(message);
   }

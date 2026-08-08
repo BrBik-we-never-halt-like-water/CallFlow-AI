@@ -25,7 +25,7 @@ const ROLES = [
   {
     value: "viewer",
     label: "Viewer",
-    hint: "Read results only — cannot start a run",
+    hint: "Read results only   cannot start a run",
   },
 ];
 
@@ -48,7 +48,7 @@ export default function TeamSettingsPage() {
       >
         <EmptyState
           title="It's just you"
-          body="Invite the people who triage escalations. Give them Operator, not Admin — only Admins can switch a run to live."
+          body="Invite the people who triage escalations. Give them Operator, not Admin   only Admins can switch a run to live."
         />
       </SettingsSection>
 

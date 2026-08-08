@@ -39,7 +39,7 @@ export function RoiCalculator({ vertical }: { vertical: Vertical }) {
   const humanCost = attempts * costPerCall;
 
   // The share of calls that settle without anyone reading them. Conservative on
-  // purpose — the remainder still needs a person, and the page should assume so.
+  // purpose   the remainder still needs a person, and the page should assume so.
   const autoClosedShare = 0.72;
   const hoursSaved = humanHours * autoClosedShare;
   const costAvoided = humanCost * autoClosedShare;
@@ -115,7 +115,7 @@ export function RoiCalculator({ vertical }: { vertical: Vertical }) {
       <p className="text-small text-text-mute">
         Assumes {formatNumber(attempts)} attempts to reach {formatNumber(contacts)} contacts,
         and that {Math.round(autoClosedShare * 100)}% of calls settle without anyone reading
-        them. Subtract your plan cost for the net figure — the last column is the point:
+        them. Subtract your plan cost for the net figure   the last column is the point:
         the work that needs judgement still gets it.
       </p>
     </Panel>

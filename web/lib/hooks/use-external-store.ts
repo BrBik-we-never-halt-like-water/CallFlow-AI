@@ -3,11 +3,11 @@
 import { useCallback, useSyncExternalStore } from "react";
 
 /**
- * Bridges to browser state that React does not own — `localStorage` and
+ * Bridges to browser state that React does not own   `localStorage` and
  * `matchMedia`.
  *
- * Both of these are genuinely external stores, and the tempting shape — read them in an
- * effect and call `setState` — causes a cascading render on every mount and is exactly
+ * Both of these are genuinely external stores, and the tempting shape   read them in an
+ * effect and call `setState`   causes a cascading render on every mount and is exactly
  * what `react-hooks/set-state-in-effect` is warning about. `useSyncExternalStore` is the
  * sanctioned tool: it subscribes, it returns a server snapshot so SSR and hydration
  * agree, and it never renders twice to arrive at the same value.
@@ -77,7 +77,7 @@ export function useStoredString(
  * A JSON value in `localStorage`, as React state.
  *
  * Parsed results are memoised against the raw string, because `getSnapshot` must return
- * a referentially stable value — parsing on every call would return a fresh object each
+ * a referentially stable value   parsing on every call would return a fresh object each
  * time and send React into an infinite loop.
  */
 const jsonCache = new Map<string, { raw: string | null; parsed: unknown }>();

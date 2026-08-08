@@ -1,7 +1,7 @@
 """Post-call triage: decide what happens to each resolved call.
 
-This is the layer that answers the operational question CallFlow AI exists for —
-"which of these calls actually needs a human?" — so that clean outcomes
+This is the layer that answers the operational question CallFlow AI exists for  
+"which of these calls actually needs a human?"   so that clean outcomes
 auto-close and only genuine problems reach a person.
 """
 
@@ -23,7 +23,7 @@ def _as_sentiment(raw: Any) -> Sentiment:
 
 
 def triage(outcome: CallOutcome, *, escalate_on_negative: bool = True) -> CallOutcome:
-    """Assign a disposition. Pure function — returns an updated copy."""
+    """Assign a disposition. Pure function   returns an updated copy."""
     extracted = outcome.extracted or {}
     status = (outcome.status or "").lower()
 
@@ -38,7 +38,7 @@ def triage(outcome: CallOutcome, *, escalate_on_negative: bool = True) -> CallOu
     # then emotional escalation, then reachability.
     if do_not_call:
         updates["disposition"] = Disposition.ESCALATED
-        updates["disposition_reason"] = "Contact requested do-not-call — suppress and log immediately."
+        updates["disposition_reason"] = "Contact requested do-not-call   suppress and log immediately."
 
     elif wants_human:
         updates["disposition"] = Disposition.ESCALATED
@@ -47,7 +47,7 @@ def triage(outcome: CallOutcome, *, escalate_on_negative: bool = True) -> CallOu
     elif frustrated:
         updates["disposition"] = Disposition.ESCALATED
         updates["disposition_reason"] = (
-            "Contact showed frustration during the call — review before dialing again."
+            "Contact showed frustration during the call   review before dialing again."
         )
 
     # Negative tone without frustration is usually "bad time, not bad mood".
@@ -55,12 +55,12 @@ def triage(outcome: CallOutcome, *, escalate_on_negative: bool = True) -> CallOu
     elif escalate_on_negative and sentiment is Sentiment.NEGATIVE:
         updates["disposition"] = Disposition.RETRY
         updates["disposition_reason"] = (
-            "Call went poorly but no frustration was detected — worth one polite retry."
+            "Call went poorly but no frustration was detected   worth one polite retry."
         )
 
     elif status in RETRYABLE_STATUSES:
         updates["disposition"] = Disposition.RETRY
-        updates["disposition_reason"] = f"Unreachable ({status}) — eligible for one retry."
+        updates["disposition_reason"] = f"Unreachable ({status})   eligible for one retry."
 
     elif status in {"failed", "canceled"}:
         updates["disposition"] = Disposition.UNREACHABLE

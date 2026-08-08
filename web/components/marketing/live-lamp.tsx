@@ -9,7 +9,7 @@ import type { LampState } from "@/lib/lamp";
  * A lamp that lights up as it scrolls into view.
  *
  * It starts unlit and runs its relay-settle the moment it enters the viewport,
- * so a row reads as coming alive with meaning rather than arriving pre-lit —
+ * so a row reads as coming alive with meaning rather than arriving pre-lit  
  * the product's signature moment, on the marketing page. Lit immediately (no
  * flicker) under prefers-reduced-motion.
  */

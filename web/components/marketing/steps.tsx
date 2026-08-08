@@ -7,7 +7,7 @@ import { Tag } from "@/components/ui/badge";
 /**
  * How it works, in four steps.
  *
- * Numbering is justified here because this is a genuine sequence — you cannot
+ * Numbering is justified here because this is a genuine sequence   you cannot
  * triage before you run, or run before you have contacts. Each step shows a small
  * panel of real UI built from the same components as the product, not a
  * screenshot: a screenshot goes stale the first time a button moves.

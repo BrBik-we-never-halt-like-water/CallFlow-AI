@@ -22,7 +22,7 @@ const PREVIEW: LampSpec[] = [
 /**
  * First-run state for the whole overview page.
  *
- * Three steps, ending with a dry run — because seeing one typed result is the moment
+ * Three steps, ending with a dry run   because seeing one typed result is the moment
  * the product makes sense, and nothing before that moment explains it as well.
  *
  * Steps tick off permanently once done, so the checklist is a record of progress
@@ -130,7 +130,7 @@ export function FirstRunChecklist({ hasCampaigns }: { hasCampaigns: boolean }) {
         <Eyebrow>What you&apos;ll see</Eyebrow>
         <LampStrip lamps={PREVIEW} size="md" />
         <p className="text-small text-text-dim">
-          One lamp per call. They light as results land — jade for a clean outcome, brass
+          One lamp per call. They light as results land   jade for a clean outcome, brass
           for a retry, flare for anything that needs a person.
         </p>
         <p className="text-small text-text-mute">

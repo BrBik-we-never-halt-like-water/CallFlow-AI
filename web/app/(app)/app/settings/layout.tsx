@@ -30,7 +30,7 @@ export default function SettingsLayout({
       </div>
 
       {/* Real links rather than a tab widget: each pane is its own URL, so a setting
-          can be linked to directly — which the safety guard popovers rely on. */}
+          can be linked to directly   which the safety guard popovers rely on. */}
       <nav aria-label="Settings sections" className="-mb-px overflow-x-auto border-b border-rule">
         <ul className="flex min-w-max gap-1">
           {TABS.map((tab) => {

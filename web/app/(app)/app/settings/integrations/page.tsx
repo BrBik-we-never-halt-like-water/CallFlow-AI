@@ -19,7 +19,7 @@ const EVENTS = [
   {
     id: "contact.suppressed",
     label: "contact.suppressed",
-    hint: "Someone opted out — wire this one even if you wire nothing else",
+    hint: "Someone opted out   wire this one even if you wire nothing else",
   },
 ];
 

@@ -48,14 +48,14 @@ import { useStoredJson } from "@/lib/hooks/use-external-store";
  * The preview is the point of the layout. A goal is a piece of writing whose effect is
  * invisible until it is rendered with a real contact substituted in, so the rendered
  * version and the schema it will return sit permanently beside the field you are
- * typing into — not behind a "preview" button nobody presses.
+ * typing into   not behind a "preview" button nobody presses.
  */
 export function CampaignEditor({ existing }: { existing?: Campaign }) {
   const router = useRouter();
   const toast = useToast();
 
   // `existing` is available on the first render, so everything it seeds is a lazy
-  // initialiser rather than an effect — the editor is never briefly empty.
+  // initialiser rather than an effect   the editor is never briefly empty.
   const [name, setName] = useState(existing?.name ?? "");
   const [goal, setGoal] = useState(existing?.goal_template ?? "");
   const [region, setRegion] = useState(existing?.region ?? "IN");
@@ -79,7 +79,7 @@ export function CampaignEditor({ existing }: { existing?: Campaign }) {
    * Pick up a duplicate handed over in sessionStorage.
    *
    * This is a genuine one-shot read of an external store that also has to *clear* the
-   * handoff, so it cannot be a subscription or a lazy initialiser — a lazy initialiser
+   * handoff, so it cannot be a subscription or a lazy initialiser   a lazy initialiser
    * would run during SSR where sessionStorage does not exist, and would disagree with
    * the client on hydration.
    */
@@ -133,14 +133,14 @@ export function CampaignEditor({ existing }: { existing?: Campaign }) {
   /**
    * Exactly why saving is blocked, as one sentence.
    *
-   * Never "please fill all fields" — the operator should not have to hunt for which
+   * Never "please fill all fields"   the operator should not have to hunt for which
    * one. This string becomes the disabled button's tooltip.
    */
   const blocker = useMemo<string | null>(() => {
     if (readOnly) return "This is a starter template. Duplicate it to make changes.";
     if (name.trim().length < 2) return "Give the campaign a name of at least 2 characters.";
     if (goal.trim().length < GOAL_MIN_LENGTH) {
-      return `The goal needs at least ${GOAL_MIN_LENGTH} characters — it has ${goal.trim().length}.`;
+      return `The goal needs at least ${GOAL_MIN_LENGTH} characters   it has ${goal.trim().length}.`;
     }
     const badField = fields.find((f) => f.key.trim() && fieldKeyError(f.key));
     if (badField) return `The field “${badField.key}” has an invalid name.`;
@@ -233,7 +233,7 @@ export function CampaignEditor({ existing }: { existing?: Campaign }) {
             <span className="eyebrow text-text-mute">Variables</span>
             {variables.length === 0 ? (
               <span className="text-small text-text-mute">
-                none yet — try <code className="font-mono text-data">{"{name}"}</code>
+                none yet   try <code className="font-mono text-data">{"{name}"}</code>
               </span>
             ) : (
               variables.map((variable) => <Tag key={variable}>{variable}</Tag>)
@@ -463,7 +463,7 @@ export function CampaignEditor({ existing }: { existing?: Campaign }) {
                     <Checkbox
                       checked={field.required}
                       onCheckedChange={(v) => updateField(field.id, { required: v })}
-                      label="Required — the call isn't complete without it"
+                      label="Required   the call isn't complete without it"
                       id={`required-${field.id}`}
                       disabled={readOnly}
                     />

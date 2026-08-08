@@ -92,7 +92,7 @@ function GuardChip({ guard }: { guard: Guard }) {
  * Builds the guard list from what the service reports.
  *
  * Where the service does not expose a value, the guard is reported as off rather
- * than guessed at — a safety indicator that shows a reassuring default it cannot
+ * than guessed at   a safety indicator that shows a reassuring default it cannot
  * actually confirm is worse than one that admits it does not know.
  */
 export function guardsFromHealth(health: Health | null): Guard[] {

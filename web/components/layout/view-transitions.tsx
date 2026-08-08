@@ -9,7 +9,7 @@ import { useEffect, useRef } from "react";
  * Mounted once in the root layout, this intercepts internal link clicks in the
  * capture phase and drives the navigation through `document.startViewTransition`,
  * so the browser crossfades the old page into the new one (and morphs any
- * elements that share a `view-transition-name` — see the app cards).
+ * elements that share a `view-transition-name`   see the app cards).
  *
  * The transition callback resolves only once the route has actually changed
  * (watched via `usePathname`), which is what makes the browser capture the *new*
@@ -17,7 +17,7 @@ import { useEffect, useRef } from "react";
  * never lands so the page can never freeze mid-transition.
  *
  * Where the API is unavailable, or for modified / new-tab / external / same-page
- * clicks, this does nothing and the normal Next.js navigation runs — the CSS
+ * clicks, this does nothing and the normal Next.js navigation runs   the CSS
  * `.page-enter` fade in globals.css is the fallback.
  */
 export function ViewTransitions() {

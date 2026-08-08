@@ -190,7 +190,7 @@ export default function ContactsPage() {
               does not bring it back.
             </p>
             <p className="measure text-small text-lamp-brass-text">
-              On this deployment the list is held in your browser only — the service has no
+              On this deployment the list is held in your browser only   the service has no
               suppression endpoint yet, so it will not apply on another device or to
               someone else on your team.
             </p>
