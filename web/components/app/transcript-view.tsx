@@ -8,6 +8,7 @@ import { CodeBlock } from "@/components/ui/code-block";
 import { Eyebrow, Panel } from "@/components/ui/panel";
 import { TabPanel, Tabs } from "@/components/ui/disclosure";
 import { MaskedPhone } from "./masked-phone";
+import { CallScrubber } from "@/components/app/call-scrubber";
 import type { Outcome } from "@/lib/api";
 import { formatDuration, formatTimestamp, humaniseKey } from "@/lib/format";
 import { lampForOutcome } from "@/lib/lamp";
@@ -49,6 +50,23 @@ export function TranscriptView({ outcome }: { outcome: Outcome }) {
           <Meta label="Ended" value={formatTimestamp(outcome.created_at)} mono />
         </dl>
       </div>
+
+      {/* ---- Timeline ----------------------------------------------------
+          Answers "where did this field come from?", which is the question a
+          reviewer actually has when a run returns something unexpected. Only
+          shown when there is a conversation to scrub through. */}
+      {turns.length > 0 ? (
+        <div className="border-b border-rule p-4 sm:p-5">
+          <CallScrubber
+            turns={turns}
+            durationSeconds={outcome.duration_seconds}
+            fields={Object.entries(outcome.extracted ?? {}).map(([key, value]) => ({
+              key,
+              value: value == null ? "—" : String(value),
+            }))}
+          />
+        </div>
+      ) : null}
 
       {/* ---- Mobile: tabs. Desktop: two columns. ------------------------- */}
       <div className="md:hidden">

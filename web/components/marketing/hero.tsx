@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Tag } from "@/components/ui/badge";
 import { Eyebrow } from "@/components/ui/panel";
 import { WaveCanvas } from "@/components/brand/wave-canvas";
-import { VoiceWave } from "./voice-wave";
+import { CrystalliseWave } from "@/components/brand/crystallise-wave";
 import { usePrefersReducedMotion, useTypewriter } from "@/lib/hooks/use-typewriter";
 
 /**
@@ -223,7 +223,14 @@ function HeardBlock({
   return (
     <PanelBlock label="What the caller hears">
       <div className="flex flex-col gap-4">
-        <VoiceWave text={spoken} progress={progress} speaking={speaking} />
+        {/* The signal settles into the result below it once the line finishes —
+            the headline's claim, animated rather than captioned. */}
+        <CrystalliseWave
+          text={spoken}
+          progress={progress}
+          speaking={speaking}
+          settled={done}
+        />
         <div className="relative">
           <p aria-hidden className="invisible text-body font-semibold">
             {`“${spoken}”`}

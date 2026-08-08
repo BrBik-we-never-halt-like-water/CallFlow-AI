@@ -6,6 +6,7 @@ import { ProblemCompare } from "@/components/marketing/problem-compare";
 import { SafetySection } from "@/components/marketing/safety-section";
 import { Steps } from "@/components/marketing/steps";
 import { VerticalStrip } from "@/components/marketing/vertical-strip";
+import { FlowLine } from "@/components/brand/flow-line";
 import { cn } from "@/lib/cn";
 
 /**
@@ -35,6 +36,12 @@ export default function HomePage() {
         <ProblemCompare />
       </Band>
 
+      {/* The stroke states the argument the next three sections then explain:
+          voice in, typed record out, and a fork for the calls that need a
+          person. Used twice on the page and nowhere else, so it stays an
+          event rather than a texture. */}
+      <FlowLine className="mx-auto max-w-(--container-marketing) px-4 sm:px-6" />
+
       <Band ground="sand">
         <Steps />
       </Band>
@@ -50,6 +57,8 @@ export default function HomePage() {
       <Band ground="sand">
         <SafetySection />
       </Band>
+
+      <FlowLine className="mx-auto max-w-(--container-marketing) px-4 sm:px-6" />
 
       <Band>
         <PricingPreview />

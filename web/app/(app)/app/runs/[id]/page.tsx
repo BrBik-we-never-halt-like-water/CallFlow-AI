@@ -13,6 +13,7 @@ import { Dialog, DialogRoot } from "@/components/ui/dialog";
 import { Sheet } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Eyebrow, Panel } from "@/components/ui/panel";
+import { CallBoard } from "@/components/app/call-board";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
 import type { Outcome } from "@/lib/api";
@@ -132,9 +133,17 @@ export default function RunDetailPage() {
       </div>
 
       {/* ---- Progress ---------------------------------------------------- */}
-      <Panel className={cn("flex flex-col gap-4 p-4 pl-4 sm:p-5", "border-l-2 border-l-lamp-brass")}>
+      {/* The accent tracks the run, rather than being pinned to brass: a finished
+          run wearing an in-conversation edge is the lamp rule breaking at its most
+          visible point. */}
+      <Panel
+        className={cn(
+          "flex flex-col gap-4 p-4 pl-4 sm:p-5 border-l-2",
+          live ? "border-l-lamp-brass" : "border-l-rule-strong",
+        )}
+      >
         <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <Eyebrow>Live · Real calls</Eyebrow>
+          <Eyebrow>{live ? "Live · Real calls" : "Run complete"}</Eyebrow>
           {live ? (
             <span className="font-mono text-data tabular-nums text-text-mute">
               {formatDuration(elapsed)} elapsed
@@ -155,7 +164,13 @@ export default function RunDetailPage() {
             <p className="font-mono text-data text-text-dim">Dialling the first contacts…</p>
           </div>
         ) : (
-          <LampStrip lamps={lamps} size="md" wrap counts />
+          <>
+            {/* One cell per contact: live calls move, settled ones go quiet and
+                lit. A run is many calls at once, and the shape of that is the
+                most useful thing on this page. */}
+            <CallBoard outcomes={run.outcomes} total={run.total} />
+            <LampStrip lamps={lamps} size="sm" wrap counts />
+          </>
         )}
 
         <div className="flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-rule pt-3">

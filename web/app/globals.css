@@ -516,6 +516,19 @@ button[data-menu][data-state="open"]:focus-visible {
   }
 }
 
+/* A live call on the run board. Transform-based so it never fights the bar's
+   inline height, and only ever applied to a call that is actually in progress —
+   movement on that board always means a live call. */
+@keyframes talk {
+  0%,
+  100% {
+    transform: scaleY(0.42);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+
 /* The 1–2 bars at the waveform's leading edge flutter as the line is spoken.
    Transform-based so it never fights the inline height. */
 @keyframes wave-active {

@@ -6,6 +6,7 @@ import { RoiCalculator } from "@/components/marketing/roi-calculator";
 import { Tag } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { CodeBlock } from "@/components/ui/code-block";
+import { KineticExtract } from "@/components/marketing/kinetic-extract";
 import { Accordion } from "@/components/ui/disclosure";
 import { Eyebrow, SectionHeading } from "@/components/ui/panel";
 import { Rule } from "@/components/ui/rule";
@@ -135,6 +136,22 @@ export default async function SolutionPage({
               ))}
             </ul>
           </div>
+        </div>
+      </section>
+
+      {/* ---- Where the fields come from ------------------------------------
+          The schema above says what you get back. This says where it came
+          from: the words leave the sentence and land in the slots, so the
+          fields read as extracted rather than invented. Plays once. */}
+      <Divider />
+      <section className="mx-auto max-w-(--container-marketing) px-4 sm:px-6">
+        <SectionHeading
+          eyebrow="From the call itself"
+          title="Every field came from something that was said."
+          sub="Nothing is inferred after the fact. Each value is traceable to the moment in the conversation it came from."
+        />
+        <div className="mt-8">
+          <KineticExtract />
         </div>
       </section>
 
