@@ -328,6 +328,31 @@ button[data-menu][data-state="open"]:focus-visible {
   border: 1px solid color-mix(in oklab, var(--rule) 45%, transparent);
 }
 
+/* The raised fill for the shared Panel primitive: a quiet top-lit gradient so
+   every panel across the app reads as raised paper rather than a flat, hard-
+   bordered box. Subtle enough for dense dashboard cards, warm enough to soften
+   the marketing surfaces. Paired in Panel with a faint hairline + shadow. */
+.panel-raised {
+  background: linear-gradient(
+    180deg,
+    color-mix(in oklab, #ffffff 55%, var(--surface-raised)) 0%,
+    var(--surface-raised) 72%
+  );
+}
+
+/* The featured plan: it earns attention by rising off the row — a soft defined
+   ring plus real elevation, and a lift on desktop — never a hard black border. */
+.plan-featured {
+  box-shadow:
+    0 0 0 1px color-mix(in oklab, var(--text) 12%, transparent),
+    0 18px 40px -22px rgba(11, 15, 18, 0.3);
+}
+@media (min-width: 1024px) {
+  .plan-featured {
+    transform: translateY(-10px);
+  }
+}
+
 /* The hero readout. Not a crisp card: a big 32px radius, a clearly visible
    top-to-bottom gradient (bright at the top, settling into the cool page grey),
    and a wide, very soft glow so the edges melt into the page rather than drawing
@@ -472,7 +497,7 @@ button[data-menu][data-state="open"]:focus-visible {
   display: grid;
   place-items: center;
   background: var(--surface);
-  animation: loader-out 0.55s var(--ease-out) 0.9s forwards;
+  animation: loader-out 0.45s var(--ease-out) 0.55s forwards;
 }
 
 @keyframes loader-out {

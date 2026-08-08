@@ -4,6 +4,7 @@ import * as RadixPopover from "@radix-ui/react-popover";
 import * as RadixDialog from "@radix-ui/react-dialog";
 import { CaretDownIcon, CaretRightIcon, ListIcon, XIcon } from "@phosphor-icons/react/dist/ssr";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/cn";
 import { BrandLockup } from "@/components/brand/wordmark";
@@ -47,9 +48,20 @@ const FLAT_LINKS = [
 ];
 
 export function SiteHeader() {
+  const pathname = usePathname();
+
   // The bottom rule appears only once the page has moved, so the header sits
   // flush with the hero on first paint.
   const [scrolled, setScrolled] = useState(false);
+
+  // Clicking the logo while already on the page it links to is a route no-op, so
+  // Next never scrolls. Take over that case and scroll to the top ourselves.
+  const scrollTopIfHere = (href: string) => (e: React.MouseEvent) => {
+    if (pathname !== href) return;
+    e.preventDefault();
+    const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    window.scrollTo({ top: 0, behavior: reduce ? "auto" : "smooth" });
+  };
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 24);
@@ -105,6 +117,7 @@ export function SiteHeader() {
       <div className="mx-auto flex h-full max-w-(--container-marketing) items-center justify-between gap-4 px-4 sm:px-6">
         <Link
           href="/"
+          onClick={scrollTopIfHere("/")}
           className="shrink-0 rounded-sm text-text transition-opacity hover:opacity-70"
         >
           <BrandLockup />

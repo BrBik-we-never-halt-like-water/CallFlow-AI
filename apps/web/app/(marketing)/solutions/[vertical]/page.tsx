@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { CaretRightIcon } from "@phosphor-icons/react/dist/ssr";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { RoiCalculator } from "@/components/marketing/roi-calculator";
@@ -72,10 +73,15 @@ export default async function SolutionPage({
       <Divider />
       <section className="mx-auto max-w-(--container-marketing) px-4 sm:px-6">
         <SectionHeading eyebrow="The problem" title="What this actually costs you today." />
-        <ol className="mt-8 grid gap-6 border-t border-rule pt-8 md:grid-cols-3">
+        <ol className="mt-8 grid items-stretch gap-4 md:grid-cols-3">
           {vertical.pain.map((line, i) => (
-            <li key={i} className="flex flex-col gap-2">
-              <Eyebrow as="span">{String(i + 1).padStart(2, "0")}</Eyebrow>
+            <li
+              key={i}
+              className="surface-flow flex h-full flex-col gap-3 p-5 shadow-sm"
+            >
+              <span className="font-display text-h3 leading-none text-text-mute">
+                {String(i + 1).padStart(2, "0")}
+              </span>
               <p className="text-body text-text-dim">{line}</p>
             </li>
           ))}
@@ -163,14 +169,21 @@ export default async function SolutionPage({
       <Divider />
       <section className="mx-auto max-w-(--container-marketing) px-4 sm:px-6">
         <Eyebrow>Other teams</Eyebrow>
-        <ul className="mt-4 flex flex-wrap gap-2">
+        <ul className="mt-4 grid gap-3 sm:grid-cols-3">
           {VERTICALS.filter((v) => v.slug !== vertical.slug).map((other) => (
             <li key={other.slug}>
               <Link
                 href={`/solutions/${other.slug}`}
-                className="inline-flex items-center rounded-sm border border-rule px-3 py-2 text-small text-text-dim transition-colors hover:bg-surface-hover hover:text-text"
+                className="group surface-flow flex items-center justify-between gap-3 p-4 shadow-sm transition-[box-shadow,transform] duration-(--dur-base) ease-(--ease-out) hover:-translate-y-0.5 hover:shadow-md"
               >
-                {other.name}
+                <span className="min-w-0">
+                  <span className="block text-body font-medium text-text">{other.name}</span>
+                  <span className="block text-small text-text-mute">{other.metricLabel}</span>
+                </span>
+                <CaretRightIcon
+                  aria-hidden
+                  className="size-4 shrink-0 text-text-mute transition-transform duration-(--dur-base) ease-(--ease-out) group-hover:translate-x-1"
+                />
               </Link>
             </li>
           ))}

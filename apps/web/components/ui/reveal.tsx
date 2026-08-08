@@ -3,22 +3,22 @@
 import { motion, useReducedMotion } from "framer-motion";
 import { cn } from "@/lib/cn";
 
+/** Shared reveal easing + entrance shape, so every section arrives the same way. */
+const EASE = [0.22, 1, 0.36, 1] as const;
+const HIDDEN = { opacity: 0, y: 28, scale: 0.98, filter: "blur(6px)" };
+const SHOWN = { opacity: 1, y: 0, scale: 1, filter: "blur(0px)" };
+
 /**
- * Scroll reveal — opacity plus a small lift, once, never re-fired on scroll up.
- *
- * Built on Motion's `whileInView` with `once: true`. Content that fades back out and in
- * as you scroll past it a second time is the single thing that makes a page feel like a
- * template rather than a product.
- *
- * Under `prefers-reduced-motion` the element renders in its final state with no
- * transition at all — Motion's own hook is the source of truth for that, so it can never
- * disagree with the CSS.
+ * Scroll reveal — the element rises, settles, and sharpens from a soft blur as it
+ * enters view, once, never re-fired on scroll up. This is the page's baseline
+ * movement: with it on every section, the page reads as arriving rather than sitting
+ * still. Under `prefers-reduced-motion` it renders finished with no transition.
  */
 export function Reveal({
   children,
   delayMs = 0,
-  /** Distance to travel. Keep it small; this is a settle, not an entrance. */
-  y = 14,
+  /** Extra travel distance for a bolder entrance where a section wants one. */
+  y = 28,
   className,
 }: {
   children: React.ReactNode;
@@ -33,15 +33,10 @@ export function Reveal({
   return (
     <motion.div
       className={cn(className)}
-      initial={{ opacity: 0, y }}
-      whileInView={{ opacity: 1, y: 0 }}
+      initial={{ ...HIDDEN, y }}
+      whileInView={SHOWN}
       viewport={{ once: true, amount: 0.2 }}
-      transition={{
-        duration: 0.42,
-        delay: delayMs / 1000,
-        // Matches --ease-out, so JS-driven and CSS-driven motion feel identical.
-        ease: [0.22, 1, 0.36, 1],
-      }}
+      transition={{ duration: 0.6, delay: delayMs / 1000, ease: EASE }}
     >
       {children}
     </motion.div>
@@ -55,7 +50,7 @@ export function Reveal({
 export function RevealGroup({
   children,
   className,
-  staggerMs = 60,
+  staggerMs = 90,
 }: {
   children: React.ReactNode;
   className?: string;
@@ -73,7 +68,6 @@ export function RevealGroup({
       viewport={{ once: true, amount: 0.15 }}
       variants={{
         hidden: {},
-        // Capped so a long grid does not end with a visibly late final card.
         shown: { transition: { staggerChildren: staggerMs / 1000, delayChildren: 0.05 } },
       }}
     >
@@ -86,7 +80,7 @@ export function RevealGroup({
 export function RevealItem({
   children,
   className,
-  y = 14,
+  y = 28,
 }: {
   children: React.ReactNode;
   className?: string;
@@ -100,12 +94,8 @@ export function RevealItem({
     <motion.div
       className={className}
       variants={{
-        hidden: { opacity: 0, y },
-        shown: {
-          opacity: 1,
-          y: 0,
-          transition: { duration: 0.42, ease: [0.22, 1, 0.36, 1] },
-        },
+        hidden: { ...HIDDEN, y },
+        shown: { ...SHOWN, transition: { duration: 0.6, ease: EASE } },
       }}
     >
       {children}

@@ -58,8 +58,30 @@ const CAPABILITIES = [
 
 export function SiteFooter() {
   return (
-    <footer className="mt-(--space-section) border-t border-rule bg-surface-raised">
-      <div className="mx-auto max-w-(--container-marketing) px-4 py-14 sm:px-6">
+    <footer
+      className="relative mt-(--space-section) overflow-hidden border-t border-rule bg-surface-raised"
+      style={{
+        background:
+          "linear-gradient(180deg, color-mix(in oklab, var(--text) 6%, var(--surface-raised)) 0%, var(--surface-raised) 42%)",
+      }}
+    >
+      {/* A faint blueprint dot-grid fading down into the links — depth and a
+          calm, operations-desk texture, distinct from the voice waveforms used
+          elsewhere on the page. */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0"
+        style={{
+          backgroundImage:
+            "radial-gradient(circle, color-mix(in oklab, var(--text) 22%, transparent) 1px, transparent 1.6px)",
+          backgroundSize: "22px 22px",
+          maskImage: "linear-gradient(to bottom, #000 0%, transparent 58%)",
+          WebkitMaskImage: "linear-gradient(to bottom, #000 0%, transparent 58%)",
+          opacity: 0.4,
+        }}
+      />
+
+      <div className="relative mx-auto max-w-(--container-marketing) px-4 py-14 sm:px-6">
         <div className="grid gap-10 sm:grid-cols-2 lg:grid-cols-[1.4fr_repeat(4,1fr)]">
           <div className="flex flex-col gap-4">
             <Link href="/" className="w-fit text-text">
@@ -130,9 +152,10 @@ export function SiteFooter() {
         </div>
       </div>
 
-      {/* Full-bleed capability band. */}
-      <div className="border-t border-rule">
-        <div className="mx-auto max-w-(--container-marketing) overflow-x-auto px-4 py-6 sm:px-6">
+      {/* Full-bleed capability band. The words stay static — a marquee reads as
+          a template. */}
+      <div className="relative border-t border-rule">
+        <div className="mx-auto max-w-(--container-marketing) overflow-x-auto px-4 py-7 sm:px-6">
           <ul className="flex min-w-max items-center justify-center gap-x-6 gap-y-2">
             {CAPABILITIES.map((capability, i) => (
               <li key={capability} className="flex items-center gap-6">

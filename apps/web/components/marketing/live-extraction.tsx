@@ -42,7 +42,7 @@ function tint(tone?: LampState): string {
     : "var(--surface-raised)";
 }
 
-type Field = { k: string; v: string; tone?: LampState };
+type Field = { k: string; v: string; tone?: LampState; from?: string };
 type Scenario = {
   name: string;
   sec: number;
@@ -62,10 +62,10 @@ const SCENARIOS: Scenario[] = [
     seed: 0.6,
     questions: ["Did it go well?", "Are they buying?", "Call back — when?", "Who follows up?"],
     fields: [
-      { k: "outcome", v: "interested", tone: "jade" },
+      { k: "outcome", v: "interested", tone: "jade", from: "still interested" },
       { k: "sentiment", v: "positive", tone: "jade" },
-      { k: "intent", v: "callback requested" },
-      { k: "callback", v: "Tomorrow, 3:00 PM" },
+      { k: "intent", v: "callback requested", from: "call me back" },
+      { k: "callback", v: "Tomorrow, 3:00 PM", from: "tomorrow around 3" },
       { k: "next step", v: "auto-scheduled", tone: "jade" },
     ],
     disposition: { state: "jade", label: "Auto-closed" },
@@ -77,9 +77,9 @@ const SCENARIOS: Scenario[] = [
     seed: 2.4,
     questions: ["Angry or fine?", "What's the issue?", "Is it urgent?", "Who owns this?"],
     fields: [
-      { k: "outcome", v: "unresolved", tone: "flare" },
-      { k: "sentiment", v: "frustrated", tone: "flare" },
-      { k: "intent", v: "billing dispute" },
+      { k: "outcome", v: "unresolved", tone: "flare", from: "it's still wrong" },
+      { k: "sentiment", v: "frustrated", tone: "flare", from: "third time I've called" },
+      { k: "intent", v: "billing dispute", from: "the same charge" },
       { k: "account", v: "#48210" },
       { k: "next step", v: "route to agent", tone: "flare" },
     ],
@@ -92,10 +92,10 @@ const SCENARIOS: Scenario[] = [
     seed: 1.5,
     questions: ["Did we connect?", "Try again — when?", "Still a lead?", "Auto or manual?"],
     fields: [
-      { k: "outcome", v: "reschedule", tone: "brass" },
+      { k: "outcome", v: "reschedule", tone: "brass", from: "try me again" },
       { k: "sentiment", v: "neutral", tone: "ice" },
-      { k: "intent", v: "bad timing" },
-      { k: "retry at", v: "Today, 6:00 PM" },
+      { k: "intent", v: "bad timing", from: "driving right now" },
+      { k: "retry at", v: "Today, 6:00 PM", from: "this evening" },
       { k: "next step", v: "queued for retry", tone: "brass" },
     ],
     disposition: { state: "brass", label: "Queued for retry", pulse: true },
@@ -107,10 +107,10 @@ const SCENARIOS: Scenario[] = [
     seed: 3.1,
     questions: ["Interested at all?", "Worth chasing?", "Send anything?", "Close or keep?"],
     fields: [
-      { k: "outcome", v: "not interested", tone: "ice" },
+      { k: "outcome", v: "not interested", tone: "ice", from: "nothing right now" },
       { k: "sentiment", v: "neutral", tone: "ice" },
-      { k: "intent", v: "information only" },
-      { k: "follow-up", v: "none" },
+      { k: "intent", v: "information only", from: "thanks for the details" },
+      { k: "follow-up", v: "none", from: "I'll think it over" },
       { k: "next step", v: "closed", tone: "ice" },
     ],
     disposition: { state: "ice", label: "Closed — no action" },
@@ -216,6 +216,7 @@ export function LiveExtraction() {
         call={call}
         done={done}
         reduced={reduced}
+        scanning={reading}
         pending={<AiReading idx={idx} reading={reading} signalCount={signalCount} />}
         output={<InsightOutput scenario={scenario} idx={idx} reduced={reduced} />}
       />
@@ -242,6 +243,7 @@ function Section({
   reduced,
   output,
   pending,
+  scanning = false,
 }: {
   eyebrow: string;
   call: CallProps;
@@ -250,18 +252,21 @@ function Section({
   output: React.ReactNode;
   /** Shown in the reveal area while the call is still running. */
   pending?: React.ReactNode;
+  /** Sweep the waveform with the reading scan (the CallFlow side only). */
+  scanning?: boolean;
 }) {
   return (
     <div className="flex flex-1 flex-col lg:min-w-0">
       <Eyebrow>{eyebrow}</Eyebrow>
 
       <div className="mt-3">
-        <CallCard {...call} />
+        <CallCard {...call} scanning={scanning} />
       </div>
 
-      {/* The reveal. Its height is reserved so the section never jumps as the
-          call ends — pending content holds the space, the result cross-fades in. */}
-      <div className="relative mt-7 min-h-[13.5rem] flex-1">
+      {/* The reveal. Height is FIXED (not min-height) to the tallest result any
+          scenario produces, so neither the call ending nor cycling scenarios can
+          change the section's height and shove the page below. */}
+      <div className="relative mt-7 h-[17rem]">
         <AnimatePresence mode="wait">
           {done ? (
             <motion.div
@@ -289,7 +294,16 @@ function Section({
   );
 }
 
-function CallCard({ scenario, idx, onCall, speaking, connecting, shownSec, reduced }: CallProps) {
+function CallCard({
+  scenario,
+  idx,
+  onCall,
+  speaking,
+  connecting,
+  shownSec,
+  reduced,
+  scanning = false,
+}: CallProps & { scanning?: boolean }) {
   return (
     <div className="rounded-[1.75rem] p-5 shadow-sm" style={{ background: softRaised }}>
       <div className="flex items-center justify-between gap-3">
@@ -305,8 +319,29 @@ function CallCard({ scenario, idx, onCall, speaking, connecting, shownSec, reduc
         </span>
       </div>
 
-      <div className={cn("mt-4 transition-opacity duration-500 ease-out", speaking ? "opacity-100" : "opacity-35")}>
+      {/* The waveform, with a jade scan sweeping it while CallFlow reads the
+          call — the visible "the AI is listening to this" moment. */}
+      <div
+        className={cn(
+          "relative mt-4 overflow-hidden rounded-md transition-opacity duration-500 ease-out",
+          speaking || scanning ? "opacity-100" : "opacity-35",
+        )}
+      >
         <WaveCanvas seed={scenario.seed} pitch={5} className="h-9 text-text" />
+        {scanning && !reduced ? (
+          <motion.span
+            aria-hidden
+            className="pointer-events-none absolute inset-y-0 w-12"
+            style={{
+              background:
+                "linear-gradient(90deg, transparent, color-mix(in oklab, var(--lamp-jade) 55%, transparent) 72%, color-mix(in oklab, var(--lamp-jade) 85%, transparent) 96%, transparent)",
+              boxShadow: "0 0 14px 0 color-mix(in oklab, var(--lamp-jade) 45%, transparent)",
+            }}
+            initial={{ left: "-14%" }}
+            animate={{ left: "100%" }}
+            transition={{ duration: 1.25, repeat: Infinity, ease: "easeInOut" }}
+          />
+        ) : null}
       </div>
 
       <AnimatePresence mode="wait">
@@ -363,11 +398,30 @@ function ConfusionOutput({ scenario, idx, reduced }: { scenario: Scenario; idx: 
   );
 }
 
-/** Shown in the Without column while the call runs — no live processing at all. */
+/** Shown in the Without column while the call runs — mirrors the reading list on
+    the right, but every line is unaided, so the columns stay balanced and the
+    contrast is explicit: none of this happens for you. */
 function ManualPending() {
   return (
-    <div className="flex h-full items-center">
-      <p className="text-small text-text-mute">No structured data — you’re on your own here.</p>
+    <div className="flex h-full flex-col justify-center">
+      <div className="flex items-center gap-2.5">
+        <span aria-hidden className="flex h-4 items-end gap-0.5">
+          {[0, 1, 2].map((i) => (
+            <span key={i} className="block w-0.5 rounded-full" style={{ height: 5, background: "var(--text-mute)" }} />
+          ))}
+        </span>
+        <span className="text-small font-semibold text-text-mute">Just you</span>
+        <span className="font-mono text-label text-text-mute">listening…</span>
+      </div>
+      <div className="mt-3 flex flex-col gap-1.5">
+        {SIGNALS.map((sig) => (
+          <span key={sig} className="flex items-center gap-2 text-small text-text-mute">
+            <span aria-hidden className="size-1.5 rounded-full" style={{ background: "var(--lamp-off)" }} />
+            <span className="line-through decoration-text-mute/40">{sig}</span>
+            <span className="ml-auto font-mono text-label">by hand</span>
+          </span>
+        ))}
+      </div>
     </div>
   );
 }
@@ -381,7 +435,7 @@ function InsightOutput({ scenario, idx, reduced }: { scenario: Scenario; idx: nu
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
         {scenario.fields.map((f, i) => (
-          <Bubble key={f.k} label={f.k} value={f.v} tone={f.tone} index={i} reduced={reduced} />
+          <Bubble key={f.k} label={f.k} value={f.v} tone={f.tone} from={f.from} index={i} reduced={reduced} />
         ))}
         <DispositionBubble
           state={scenario.disposition.state}
@@ -434,12 +488,14 @@ function Bubble({
   label,
   value,
   tone,
+  from,
   index,
   reduced,
 }: {
   label: string;
   value: string;
   tone?: LampState;
+  from?: string;
   index: number;
   reduced: boolean;
 }) {
@@ -447,12 +503,17 @@ function Bubble({
     <motion.div
       className="flex flex-col gap-0.5 rounded-2xl px-3.5 py-2 shadow-sm"
       style={{ background: tint(tone) }}
-      initial={reduced ? false : { opacity: 0, y: 18, scale: 0.85 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      transition={{ delay: reduced ? 0 : 0.1 + index * 0.1, duration: 0.42, ease: EASE }}
+      initial={reduced ? false : { opacity: 0, y: 26, scale: 0.85, filter: "blur(6px)" }}
+      animate={{ opacity: 1, y: 0, scale: 1, filter: "blur(0px)" }}
+      transition={{ delay: reduced ? 0 : 0.12 + index * 0.11, duration: 0.5, ease: EASE }}
     >
       <span className="text-label text-text-mute">{label}</span>
       <span className={cn("text-small font-semibold", tone ? TONE_TEXT[tone] : "text-text")}>{value}</span>
+      {from ? (
+        <span className="mt-0.5 text-label text-text-mute/80">
+          from “{from}”
+        </span>
+      ) : null}
     </motion.div>
   );
 }

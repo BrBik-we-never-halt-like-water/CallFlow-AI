@@ -2,15 +2,15 @@ import { CaretRightIcon } from "@phosphor-icons/react/dist/ssr";
 import Link from "next/link";
 import { SectionHeading } from "@/components/ui/panel";
 import { Reveal } from "@/components/ui/reveal";
-import { WaveCanvas } from "@/components/brand/wave-canvas";
 import { VERTICALS } from "@/lib/verticals";
 
 /**
  * Built for — the four solution pages.
  *
- * Rendered as rows, not cards. This is a list of four things, and a list should
- * look like one; three-across cards would give each vertical more visual weight
- * than it earns and make the section compete with the capability grid above it.
+ * Rendered as rows, not cards: this is a list of four things and should look
+ * like one. Each row carries the literal artefact that makes the section's claim
+ * checkable — the first typed fields the vertical's result schema returns — so
+ * the space reads as substance rather than a sparse link list.
  */
 export function VerticalStrip() {
   return (
@@ -19,7 +19,7 @@ export function VerticalStrip() {
         <SectionHeading
           eyebrow="Built for"
           title="Teams that live on the phone."
-          sub="The same engine, with the goal and the result schema already written for the way your team works."
+          sub="One engine — the goal and result schema already written for how your team works."
         />
       </Reveal>
 
@@ -29,26 +29,28 @@ export function VerticalStrip() {
             <li className="border-b border-rule">
               <Link
                 href={`/solutions/${vertical.slug}`}
-                className="group flex items-center gap-4 py-5 transition-colors duration-(--dur-micro) hover:bg-surface-hover"
+                className="group flex items-center gap-6 py-5 transition-colors duration-(--dur-micro) hover:bg-surface-hover"
               >
-                <span className="min-w-0 flex-1">
-                  <span className="block text-h4 font-medium text-text">
-                    {vertical.name}
+                <div className="min-w-0 flex-1">
+                  <span className="block text-h4 font-medium text-text">{vertical.name}</span>
+                  {/* The result schema, in the flesh: the exact fields returned. */}
+                  <span className="mt-2 hidden flex-wrap items-center gap-1.5 sm:flex">
+                    <span className="font-mono text-data text-text-mute">returns</span>
+                    {vertical.schema.slice(0, 3).map((field) => (
+                      <span
+                        key={field.key}
+                        className="rounded bg-surface-sunken px-1.5 py-0.5 font-mono text-data text-text-mute"
+                      >
+                        {field.key}
+                      </span>
+                    ))}
+                    <span className="font-mono text-data text-text-mute">
+                      +{vertical.schema.length - 3} more
+                    </span>
                   </span>
-                  <span className="mt-0.5 block text-small text-text-mute">
-                    {vertical.metricLabel}
-                  </span>
-                </span>
+                </div>
 
-                {/* Subtle voice touch: the vertical's waveform fades in on hover. */}
-                <span
-                  aria-hidden
-                  className="hidden h-5 w-24 shrink-0 opacity-0 transition-opacity duration-(--dur-base) ease-(--ease-out) group-hover:opacity-100 lg:block"
-                >
-                  <WaveCanvas seed={i * 1.3} pitch={6} className="h-full text-text-mute" />
-                </span>
-
-                <span className="hidden max-w-xs text-small text-text-dim sm:block">
+                <span className="hidden max-w-[15rem] text-small text-text-dim md:block">
                   {vertical.metric}
                 </span>
 

@@ -29,8 +29,10 @@ export function Panel({
   return (
     <Component
       className={cn(
-        "rounded-lg border border-rule",
-        sunken ? "bg-surface-sunken" : "bg-surface-raised",
+        // Soft raised surface: faint hairline + top-lit gradient instead of a
+        // hard bordered box, so panels read as paper across the whole app.
+        "rounded-lg border border-rule/60",
+        sunken ? "bg-surface-sunken" : "panel-raised",
         !sunken && !flat && "shadow-sm",
         interactive &&
           "transition-[box-shadow,transform,border-color] duration-(--dur-base) ease-(--ease-out) hover:-translate-y-0.5 hover:border-rule-strong hover:shadow-md",

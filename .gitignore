@@ -36,3 +36,7 @@ web/AGENTS.md
 
 # next.js incremental build cache
 web/tsconfig.tsbuildinfo
+
+# Playwright MCP screenshot output
+.playwright-mcp/
+apps/web/tsconfig.tsbuildinfo
