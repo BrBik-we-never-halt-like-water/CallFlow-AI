@@ -4,7 +4,7 @@ import { cn } from "@/lib/cn";
  * The logo mark: three lamps in a row, set into a 1px-rule capsule.
  *
  * The capsule inherits `currentColor` so the mark works on any surface without
- * a variant. The lamps keep their own tokens — jade, brass, flare — because the
+ * a variant. The lamps keep their own tokens   jade, brass, flare   because the
  * mark is a miniature of the product's one idea: three calls, three different
  * things that happened, visible at a glance.
  *

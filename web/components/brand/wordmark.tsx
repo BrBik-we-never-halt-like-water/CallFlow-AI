@@ -6,7 +6,7 @@ import { Mark } from "./mark";
  * wide tracking, baseline-aligned and dimmed.
  *
  * Set as live text rather than inline SVG paths. The design calls for Archivo
- * Expanded 600 and JetBrains Mono 500 — both already loaded — and real text
+ * Expanded 600 and JetBrains Mono 500   both already loaded   and real text
  * scales with the type system, stays selectable, gets read correctly by a screen
  * reader, and inherits `currentColor` for free. Outlining it to SVG would buy
  * nothing and lose all four.

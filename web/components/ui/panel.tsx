@@ -5,7 +5,7 @@ import { WaveLine } from "@/components/brand/wave-spine";
  * A surface: hairline border plus a soft shadow.
  *
  * On a light page a border alone reads as flat and a shadow alone reads as floating, so
- * every raised surface gets both — the border gives it an edge, the shadow gives it
+ * every raised surface gets both   the border gives it an edge, the shadow gives it
  * weight. `interactive` adds a hover lift, which is the only place anything in this
  * design moves on hover.
  */
@@ -13,7 +13,7 @@ export function Panel({
   as: Component = "div",
   sunken = false,
   interactive = false,
-  /** Drop the shadow — for a panel nested inside another panel. */
+  /** Drop the shadow   for a panel nested inside another panel. */
   flat = false,
   className,
   children,

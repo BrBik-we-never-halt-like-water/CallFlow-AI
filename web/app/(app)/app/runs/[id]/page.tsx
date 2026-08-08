@@ -24,7 +24,7 @@ import { useAppStore } from "@/lib/app-store";
 /**
  * The live run view.
  *
- * The lamp strip *is* the progress indicator — there is no progress bar. A bar says how
+ * The lamp strip *is* the progress indicator   there is no progress bar. A bar says how
  * much is done; the strip says how it went, and on this screen the second question is
  * the one the operator actually has.
  */
@@ -53,7 +53,7 @@ export default function RunDetailPage() {
   const announcement = useProgressAnnouncement(counts.settled, run?.total ?? 0);
   const campaign = campaigns.find((c) => c.id === run?.campaign_id);
 
-  // Newest first, with in-flight calls pinned to the top — an active call is the thing
+  // Newest first, with in-flight calls pinned to the top   an active call is the thing
   // the operator is most likely watching.
   const rows = useMemo(() => {
     if (!run) return [];
@@ -172,7 +172,7 @@ export default function RunDetailPage() {
           </span>
           {paused ? (
             <span className="font-mono text-data text-lamp-brass-text">
-              Updates paused — the run itself is still going
+              Updates paused   the run itself is still going
             </span>
           ) : null}
         </div>
@@ -246,7 +246,7 @@ export default function RunDetailPage() {
                         {formatDuration(outcome.duration_seconds)}
                       </td>
                       <td className="max-w-md truncate px-3 py-2 text-small text-text-dim">
-                        {outcome.summary ?? outcome.disposition_reason ?? "—"}
+                        {outcome.summary ?? outcome.disposition_reason ?? " "}
                       </td>
                     </tr>
                   );

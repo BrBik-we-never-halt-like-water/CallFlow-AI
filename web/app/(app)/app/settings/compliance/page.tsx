@@ -24,7 +24,7 @@ const RETENTION = [
  * Compliance.
  *
  * The disclosure line is editable and can be switched between languages, but it cannot
- * be emptied — the control refuses a blank value rather than allowing a call that never
+ * be emptied   the control refuses a blank value rather than allowing a call that never
  * says it is automated. That is the one setting in this product a user is not permitted
  * to turn all the way off.
  */
@@ -56,7 +56,7 @@ export default function ComplianceSettingsPage() {
       <SettingsSection
         title="AI disclosure"
         description="What the agent says about itself in the opening seconds of every call."
-        effect="Every call opens with this line. It is on by default and cannot be fully removed — an agent that hides being automated is not something this product will do."
+        effect="Every call opens with this line. It is on by default and cannot be fully removed   an agent that hides being automated is not something this product will do."
         footer={
           <Button size="sm" onClick={saveDisclosure}>
             Save disclosure
@@ -175,7 +175,7 @@ export default function ComplianceSettingsPage() {
         <p className="measure text-small text-text-dim">
           Deletion covers transcripts, recordings, typed results, and contacts, including
           backups, and is actioned within 30 days. The suppression list is deliberately kept
-          — deleting it would mean re-calling people who asked you not to.
+            deleting it would mean re-calling people who asked you not to.
         </p>
       </SettingsSection>
     </div>

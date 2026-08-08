@@ -79,7 +79,7 @@ export interface DataTableProps<T> {
   onRowClick?: (row: T) => void;
   /**
    * Card body for the mobile list. Below 768px the table becomes a stacked list
-   * rather than a horizontally-scrolling table — an ops manager checking
+   * rather than a horizontally-scrolling table   an ops manager checking
    * escalations on a phone should never have to scroll sideways.
    */
   mobileCard?: (row: T) => React.ReactNode;
@@ -332,7 +332,7 @@ export function DataTable<T>({
                     onClick={onRowClick ? () => onRowClick(row) : undefined}
                     className={cn(
                       "h-11 border-b border-rule transition-colors duration-(--dur-micro) last:border-0",
-                      // No zebra striping and no transform on hover — rows are
+                      // No zebra striping and no transform on hover   rows are
                       // separated by a rule, and the surface is what reacts.
                       "hover:bg-surface-sunken",
                       isSelected && "bg-surface-sunken",

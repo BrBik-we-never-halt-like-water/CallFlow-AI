@@ -7,8 +7,8 @@ import { CaretDownIcon } from "@phosphor-icons/react/dist/ssr";
 import { cn } from "@/lib/cn";
 
 /**
- * Tabs, Accordion, and Popover. Grouped because they share one job — showing one
- * thing at a time — and one visual treatment: a hairline rule marks the active
+ * Tabs, Accordion, and Popover. Grouped because they share one job   showing one
+ * thing at a time   and one visual treatment: a hairline rule marks the active
  * edge, and nothing moves except the content.
  */
 

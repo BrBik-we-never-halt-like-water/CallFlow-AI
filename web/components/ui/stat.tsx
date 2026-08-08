@@ -7,13 +7,13 @@ import { Panel } from "./panel";
  * A single figure: the value in the display face, the label in mono.
  *
  * The split is the point. Display face for the number a human reads, mono for
- * the label naming what the machine measured — the same distinction the rest of
+ * the label naming what the machine measured   the same distinction the rest of
  * the product draws between authored and produced text.
  */
 export function Stat({
   label,
   value,
-  /** Small print under the value — a delta, a denominator, a window. */
+  /** Small print under the value   a delta, a denominator, a window. */
   detail,
   /** A lamp, only where the figure genuinely describes call state. */
   lamp,
@@ -43,7 +43,7 @@ export function Stat({
 }
 
 /**
- * Seven-day sparkline. No axes, no legend, no gradient fill — a shape, not a
+ * Seven-day sparkline. No axes, no legend, no gradient fill   a shape, not a
  * chart. Rendered as a hairline path in the rule colour so it reads as texture
  * beside the figure rather than competing with it.
  */

@@ -12,7 +12,7 @@ import { PriceValue, VolumeValue } from "./price-value";
  * Compact three-plan preview on the home page, with the detail one click away.
  *
  * A visitor who cannot find out roughly what something costs assumes it is
- * expensive, so the number belongs on the landing page — but the full comparison
+ * expensive, so the number belongs on the landing page   but the full comparison
  * matrix does not, and putting it here would bury everything below it.
  */
 export function PricingPreview() {
@@ -24,7 +24,7 @@ export function PricingPreview() {
         <SectionHeading
           eyebrow="Pricing"
           title="Start free, pay when you dial."
-          sub="You only spend on calls that actually connect — on every plan, including the free one."
+          sub="You only spend on calls that actually connect   on every plan, including the free one."
         />
       </Reveal>
 
@@ -35,7 +35,7 @@ export function PricingPreview() {
               className={cn(
                 "flex h-full flex-col gap-4 p-5",
                 // The recommended plan is marked with a 1px ink border and a mono
-                // tag — not a coloured banner, which would put arbitrary colour on
+                // tag   not a coloured banner, which would put arbitrary colour on
                 // a page whose colour means call state.
                 plan.mostChosen && "border-text",
               )}

@@ -2,7 +2,7 @@
 
 Render's `fromService … property: host` injects a bare hostname with no
 scheme. CORS matching is exact, so a missing scheme silently blocks every
-browser request — worth a test.
+browser request   worth a test.
 """
 
 import pytest

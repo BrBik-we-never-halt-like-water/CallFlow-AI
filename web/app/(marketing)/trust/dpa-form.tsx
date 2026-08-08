@@ -12,7 +12,7 @@ import { useToast } from "@/components/ui/toast";
  *
  * There is no submission endpoint on the service yet, so this validates and reports
  * honestly rather than pretending to send. A form that shows a success message
- * without delivering anything is worse than one that says where to email — a
+ * without delivering anything is worse than one that says where to email   a
  * compliance reviewer who never gets a reply concludes the whole page is decorative.
  */
 export function DpaRequestForm() {
@@ -56,7 +56,7 @@ export function DpaRequestForm() {
         <p className="text-small text-text-dim">
           This form is not yet wired to a mailbox, so nothing has been delivered. Email{" "}
           <a
-            href={`mailto:legal@callflow.ai?subject=DPA request — ${encodeURIComponent(company)}`}
+            href={`mailto:legal@callflow.ai?subject=DPA request   ${encodeURIComponent(company)}`}
             className="font-medium text-text underline decoration-rule-strong underline-offset-2 hover:decoration-current"
           >
             legal@callflow.ai

@@ -54,7 +54,7 @@ def test_preview_fields_match_the_chosen_campaign() -> None:
 def test_preview_runs_real_triage() -> None:
     """The preview disposition must come from the same logic a real call uses.
 
-    Uses one runner across the batch, as the app does — profiles advance per
+    Uses one runner across the batch, as the app does   profiles advance per
     row so a short list demonstrates several outcomes.
     """
     runner = CampaignRunner(gateway=ExplodingGateway(), dry_run=True)  # type: ignore[arg-type]
@@ -82,7 +82,7 @@ def test_preview_is_stable_for_the_same_contact() -> None:
 def test_builtin_outcome_fields_match_their_schemas() -> None:
     """`outcome_fields` drives the UI and previews; the schema drives the engine.
 
-    They drift silently — a built-in once declared schema properties with no
+    They drift silently   a built-in once declared schema properties with no
     matching `outcome_fields`, so its preview showed nothing campaign-specific.
     """
     from callflow.campaigns import REGISTRY, SCHEMAS

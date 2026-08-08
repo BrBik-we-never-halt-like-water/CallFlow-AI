@@ -1,14 +1,14 @@
 @import "tailwindcss";
 
 /* ==========================================================================
-   CallFlow AI — token layer.
+   CallFlow AI   token layer.
    Every value in the design system lives here. No hard-coded hex anywhere
    else in the codebase.
 
    LIGHT MODE ONLY. There is no dark theme and no surface toggle: one set of
    surfaces, tuned properly, rather than two that are each slightly wrong.
 
-   The palette is a cool grey-green — deliberately not cream, and deliberately
+   The palette is a cool grey-green   deliberately not cream, and deliberately
    not the blue-grey every B2B dashboard defaults to. Accent colour is reserved
    for call state (the lamps, §"Lamps" below) and nothing else.
    ========================================================================== */
@@ -24,8 +24,8 @@
 
   /* ---- Text -------------------------------------------------------------- */
   --text: #0b0f12; /* primary */
-  --text-dim: #47545a; /* secondary — 7.4:1 on --surface */
-  --text-mute: #6b787e; /* tertiary, placeholders — 4.6:1 on --surface */
+  --text-dim: #47545a; /* secondary   7.4:1 on --surface */
+  --text-mute: #6b787e; /* tertiary, placeholders   4.6:1 on --surface */
   --text-inverse: #ffffff; /* on --surface-inverse */
 
   /* Inverted surface. The primary CTA is monochrome, never brand-coloured. */
@@ -35,7 +35,7 @@
   --rule: #dde2e1;
   --rule-strong: #c2cac8;
 
-  /* ---- Lamps — semantic only --------------------------------------------
+  /* ---- Lamps   semantic only --------------------------------------------
      These five colours communicate call state and nothing else. They are
      never used for buttons, links, headings, hovers, or decoration. That
      discipline is what makes a lit lamp mean something on an otherwise
@@ -90,7 +90,7 @@
   --shadow-overlay:
     0 1px 2px rgba(11, 15, 18, 0.08), 0 16px 40px -8px rgba(11, 15, 18, 0.22);
 
-  /* ---- Motion — 200-300ms with gentle easing ---------------------------- */
+  /* ---- Motion   200-300ms with gentle easing ---------------------------- */
   --dur-micro: 150ms;
   --dur-base: 240ms;
   --dur-enter: 420ms;
@@ -141,6 +141,11 @@
   --font-display: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
   --font-sans: var(--font-inter-tight), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-jetbrains-mono), ui-monospace, monospace;
+
+  /* Docs-only face. IBM Plex Sans reads as precise and engineering-grade  
+     distinct from the marketing/app pairing above   scoped to `/docs` via the
+     `.docs-face` wrapper rather than replacing the site-wide `--font-sans`. */
+  --font-docs: var(--font-ibm-plex-sans), ui-sans-serif, system-ui, sans-serif;
 
   --text-display-xl: var(--t-display-xl);
   --text-display-xl--line-height: 0.98;
@@ -207,12 +212,24 @@ body {
   text-rendering: optimizeLegibility;
 }
 
-/* Archivo at width 112 ("Expanded"). Applied through a class rather than an
-   element selector so it is never inherited by body copy. */
+/* Archivo at width 100 (normal width, not expanded) and a medium weight  
+   confident without reading as heavy or shouty. Applied through a class
+   rather than an element selector so it is never inherited by body copy. */
 .font-display {
   font-family: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
-  font-variation-settings: "wdth" 112;
-  font-weight: 600;
+  font-variation-settings: "wdth" 100;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+
+.font-docs {
+  font-family: var(--font-docs), ui-sans-serif, system-ui, sans-serif;
+}
+
+/* Scopes IBM Plex Sans to the docs route only, so the rest of the site keeps
+   the Inter Tight / Archivo pairing. Wraps `<DocsShell>`'s content. */
+.docs-face {
+  font-family: var(--font-docs), ui-sans-serif, system-ui, sans-serif;
 }
 
 /* Every piece of machine-produced data in this product is set in mono, with
@@ -225,7 +242,7 @@ pre {
   font-variant-numeric: tabular-nums;
 }
 
-/* The uppercase mono eyebrow — the one place uppercase is used by design. */
+/* The uppercase mono eyebrow   the one place uppercase is used by design. */
 .eyebrow {
   font-family: var(--font-jetbrains-mono), ui-monospace, monospace;
   font-size: var(--t-label);
@@ -255,7 +272,7 @@ pre {
 
 /* The mega-menu triggers open on hover; while a menu is open, the panel itself
    is the affordance, so a focus outline on the trigger reads as an ugly box.
-   Suppress it only in the open state — a closed trigger still shows a focus ring
+   Suppress it only in the open state   a closed trigger still shows a focus ring
    for keyboard navigation. Higher specificity than :focus-visible, so no
    !important needed. */
 button[data-menu][data-state="open"]:focus-visible {
@@ -288,7 +305,7 @@ button[data-menu][data-state="open"]:focus-visible {
 }
 
 /* --------------------------------------------------------------------------
-   Water — the flow language.
+   Water   the flow language.
 
    Where a section used to be two hard-bordered boxes, it becomes one soft
    basin: content sits *in* a shallow, gradient-lit pool with no rectangular
@@ -311,7 +328,7 @@ button[data-menu][data-state="open"]:focus-visible {
     var(--shadow-sm);
 }
 
-/* A card: a flat raised surface with a soft hairline edge and a tighter radius —
+/* A card: a flat raised surface with a soft hairline edge and a tighter radius  
    defined without reading as a hard instrument-panel box. Shadow is left to the
    element so the same surface can be a quiet card (shadow-sm) or lift on hover. */
 .surface-flow {
@@ -338,7 +355,7 @@ button[data-menu][data-state="open"]:focus-visible {
     0 40px 80px -32px rgba(11, 15, 18, 0.4);
 }
 
-/* Hairlines that fade at both ends — the flow-language replacement for a hard
+/* Hairlines that fade at both ends   the flow-language replacement for a hard
    full-width / full-height divider. `seam-x` is horizontal, `seam-y` vertical;
    `flow-seam-l` is the desktop-only fading left border used between columns. */
 .seam-x {
@@ -371,7 +388,7 @@ button[data-menu][data-state="open"]:focus-visible {
    Page texture.
 
    A single, very quiet grid behind the hero. Not a gradient blob and not a
-   mesh — a draughtsman's grid, masked so it fades out rather than ending at a
+   mesh   a draughtsman's grid, masked so it fades out rather than ending at a
    hard edge. It reads as paper, which is the point.
    -------------------------------------------------------------------------- */
 
@@ -384,7 +401,7 @@ button[data-menu][data-state="open"]:focus-visible {
 }
 
 /* Ambient voice field: a very faint waveform, tiled and drifting slowly, that
-   replaces the draughtsman's grid behind the hero and closing CTA — so even the
+   replaces the draughtsman's grid behind the hero and closing CTA   so even the
    background reads as voice. Masked to fade out; still under prefers-reduced-
    motion it simply stops drifting. */
 .wave-field {
@@ -403,7 +420,7 @@ button[data-menu][data-state="open"]:focus-visible {
 }
 
 /* --------------------------------------------------------------------------
-   The relay settle — the signature micro-interaction.
+   The relay settle   the signature micro-interaction.
 
    One fast flicker, then hold, plus the lamp's own glow fading in over the
    last 300ms. It reads as an electromechanical relay closing. Never loops.
@@ -450,7 +467,7 @@ button[data-menu][data-state="open"]:focus-visible {
 }
 
 /* --------------------------------------------------------------------------
-   Site loader — the first-paint brand splash.
+   Site loader   the first-paint brand splash.
 
    A full surface with the wordmark over a listening waveform, which holds
    briefly then fades and hides itself. Self-dismissing in pure CSS so it can
@@ -599,7 +616,7 @@ button[data-menu][data-state="open"]:focus-visible {
 }
 
 /* --------------------------------------------------------------------------
-   Overlays — mega-menu popover and the mobile sheet.
+   Overlays   mega-menu popover and the mobile sheet.
 
    The menu grows from its top edge with a small lift; the sheet fades up. The
    menu closes instantly (see below); both collapse to an instant appearance
@@ -644,7 +661,7 @@ button[data-menu][data-state="open"]:focus-visible {
    Page transition.
 
    Next remounts `template.tsx` on every navigation, so a fresh `.page-enter`
-   element is created each time and this animation replays — a gentle fade and
+   element is created each time and this animation replays   a gentle fade and
    settle as the new route lands, while the persistent header/footer stay put.
 
    CSS rather than a JS library on purpose: the resting state is fully visible,
@@ -670,13 +687,13 @@ button[data-menu][data-state="open"]:focus-visible {
 }
 
 /* --------------------------------------------------------------------------
-   View Transitions — the real cross-dissolve between routes.
+   View Transitions   the real cross-dissolve between routes.
 
    Where the browser supports it, navigation is driven through
    startViewTransition (see components/layout/view-transitions.tsx) and the old
    page dissolves into the new one. Tuned to the design's own duration and
    easing rather than the UA default. The `.page-enter` fade is redundant here,
-   so it is switched off wherever View Transitions run — the two would otherwise
+   so it is switched off wherever View Transitions run   the two would otherwise
    stack into a double animation.
    -------------------------------------------------------------------------- */
 
@@ -702,7 +719,7 @@ button[data-menu][data-state="open"]:focus-visible {
 
 /* --------------------------------------------------------------------------
    Reduced motion. Durations collapse and transforms are removed. Lamps still
-   change colour — they simply stop flickering. Parallax is switched off
+   change colour   they simply stop flickering. Parallax is switched off
    entirely by the components that use it.
    -------------------------------------------------------------------------- */
 

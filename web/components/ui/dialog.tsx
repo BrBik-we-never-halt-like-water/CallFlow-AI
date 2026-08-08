@@ -5,7 +5,7 @@ import { XIcon } from "@phosphor-icons/react/dist/ssr";
 import { cn } from "@/lib/cn";
 
 /**
- * Dialog and Sheet, both on Radix Dialog — so both get a focus trap, `Esc` to
+ * Dialog and Sheet, both on Radix Dialog   so both get a focus trap, `Esc` to
  * close, and focus returned to the trigger on close without us reimplementing
  * any of it.
  *

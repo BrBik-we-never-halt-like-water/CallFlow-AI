@@ -1,7 +1,7 @@
 import { cn } from "@/lib/cn";
 
 /**
- * Loading placeholder — a static block, with no shimmer.
+ * Loading placeholder   a static block, with no shimmer.
  *
  * A shimmer is ambient looping animation, which this design does not use: it
  * draws the eye to the thing that has no information yet. A quiet block holds

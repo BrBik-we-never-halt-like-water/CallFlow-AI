@@ -17,7 +17,7 @@ import { parseSheet, SAMPLE_CSV, validateRow, type ParsedRow } from "@/lib/conta
  *
  *  - An invalid row is flagged in place with the reason, never dropped. A dropped row
  *    is a person who never got called and nobody ever finds out why.
- *  - The reason is specific. "Not a valid E.164 number — try +919876543210" tells you
+ *  - The reason is specific. "Not a valid E.164 number   try +919876543210" tells you
  *    what to type; "invalid" does not.
  *  - Paste works. Almost every real list starts life in a spreadsheet, and making
  *    someone retype it is how a tool gets abandoned on day one.
@@ -46,7 +46,7 @@ export function ContactGrid({
       toast({
         tone: "warning",
         title: "Nothing to import",
-        body: "Expected columns name, phone, and note — with or without a header row.",
+        body: "Expected columns name, phone, and note   with or without a header row.",
       });
       return;
     }

@@ -11,5 +11,9 @@ export const metadata: Metadata = {
 export default function DocsLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
-  return <DocsShell>{children}</DocsShell>;
+  return (
+    <div className="docs-face">
+      <DocsShell>{children}</DocsShell>
+    </div>
+  );
 }

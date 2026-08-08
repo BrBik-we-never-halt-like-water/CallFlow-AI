@@ -3,7 +3,7 @@ import { Lamp } from "@/components/brand/lamp";
 import type { LampState } from "@/lib/lamp";
 
 /**
- * Status badge — a lamp plus its label, in one pill.
+ * Status badge   a lamp plus its label, in one pill.
  *
  * Construction follows §4.2 exactly: the surface and rule are mixed from the
  * lamp colour, but the *text* uses the `-text` alias. On a light surface that
@@ -12,7 +12,7 @@ import type { LampState } from "@/lib/lamp";
  * lamp it refers to are visibly the same thing.
  *
  * The label is never optional. Colour is not allowed to be the only carrier of
- * meaning — a colourblind operator has to be able to run this product.
+ * meaning   a colourblind operator has to be able to run this product.
  */
 const LAMP_VAR: Record<LampState, string> = {
   off: "var(--lamp-off)",
@@ -61,8 +61,8 @@ export function LampBadge({
 }
 
 /**
- * Neutral tag. Used for structural labels — `TEMPLATE`, `SUPPRESSED`, field
- * names — where nothing about call state is being communicated and a lamp
+ * Neutral tag. Used for structural labels   `TEMPLATE`, `SUPPRESSED`, field
+ * names   where nothing about call state is being communicated and a lamp
  * colour would therefore be wrong.
  */
 export function Tag({

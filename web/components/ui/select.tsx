@@ -13,7 +13,7 @@ export interface SelectOption {
 }
 
 /**
- * Select built on Radix, which brings keyboard navigation and typeahead — both
+ * Select built on Radix, which brings keyboard navigation and typeahead   both
  * of which matter here because the longest selects in this product (timezone,
  * calling region) are ones a keyboard user will want to type into.
  */

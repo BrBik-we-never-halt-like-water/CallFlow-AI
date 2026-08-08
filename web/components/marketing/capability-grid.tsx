@@ -14,7 +14,7 @@ import { Reveal, RevealGroup, RevealItem } from "@/components/ui/reveal";
  * The six capabilities.
  *
  * Every line names something the operator controls or receives, never how the system is
- * built — "returns schema-validated data", not "calls a structured extraction endpoint".
+ * built   "returns schema-validated data", not "calls a structured extraction endpoint".
  * One icon set, one stroke weight, and no colour: these are capabilities, not call
  * states, so they get none of the lamp palette.
  */
@@ -28,14 +28,14 @@ const CAPABILITIES: { icon: Icon; title: string; body: string; detail: string }[
   {
     icon: TableIcon,
     title: "Typed results, not transcripts",
-    body: "Every call returns schema-validated data — outcome, sentiment, and your own fields — ready for your systems.",
+    body: "Every call returns schema-validated data   outcome, sentiment, and your own fields   ready for your systems.",
     detail: "You define the fields; they come back the same shape every time.",
   },
   {
     icon: UserSoundIcon,
     title: "Knows when to back off",
     body: "Frustration and opt-outs go to a person. Bad timing is queued for a polite retry instead.",
-    detail: "A bad time isn't a bad mood — and the difference is in your data.",
+    detail: "A bad time isn't a bad mood   and the difference is in your data.",
   },
   {
     icon: ShieldCheckIcon,

@@ -6,7 +6,7 @@ import { formatCurrency, formatNumber, formatRate, type Currency } from "@/lib/f
  *
  * Deliberately loud about the gap. Every price in `lib/pricing.ts` starts unset,
  * and an obviously missing number is far safer to ship than a plausible invented
- * one — nobody signs a contract off a placeholder, but they will quote one back
+ * one   nobody signs a contract off a placeholder, but they will quote one back
  * at you.
  */
 export function PriceValue({

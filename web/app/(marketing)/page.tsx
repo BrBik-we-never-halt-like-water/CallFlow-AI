@@ -46,7 +46,7 @@ export default function HomePage() {
   );
 }
 
-/** Open space between sections — the page's only separator. */
+/** Open space between sections   the page's only separator. */
 function SpineDivider() {
   return <div aria-hidden className="h-(--space-section)" />;
 }

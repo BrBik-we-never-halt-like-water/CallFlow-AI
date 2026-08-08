@@ -73,7 +73,7 @@ export default function SignupPage() {
             error={errors.email}
             help={
               showWorkEmailNudge
-                ? "A work address makes it easier to add teammates later — but this one is fine."
+                ? "A work address makes it easier to add teammates later   but this one is fine."
                 : undefined
             }
             required

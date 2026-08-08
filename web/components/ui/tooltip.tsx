@@ -6,7 +6,7 @@ import { cn } from "@/lib/cn";
 /**
  * Tooltip. 400ms open delay, keyboard-reachable via the trigger's focus.
  *
- * A tooltip may explain, but it may never be the only place information lives —
+ * A tooltip may explain, but it may never be the only place information lives  
  * anything required to complete a task belongs in the layout. The one thing it
  * is genuinely responsible for: every disabled control in this product carries a
  * tooltip saying *why* it is disabled.

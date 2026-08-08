@@ -10,7 +10,7 @@ import type { LampSpec } from "@/lib/lamp";
  * Connection state, shown as lamps rather than a spinner.
  *
  * A spinner says "wait" and nothing else. A sequence of lamps lighting says something
- * is progressing, which is what is actually true while a sleeping service starts —
+ * is progressing, which is what is actually true while a sleeping service starts  
  * and the count of seconds turns a wait into visible progress.
  *
  * The copy never says "backend". The user does not have one.

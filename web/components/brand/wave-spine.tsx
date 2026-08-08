@@ -2,7 +2,7 @@ import { cn } from "@/lib/cn";
 
 /**
  * The finer voice-flow accent: a small flowing wave line that replaces the plain
- * rules beside section eyebrows. Static and quiet — the shape alone carries the
+ * rules beside section eyebrows. Static and quiet   the shape alone carries the
  * voice motif; the WaveCanvas dividers and hero carry the motion. Stretches to
  * its container.
  */

@@ -32,7 +32,7 @@ def _origins(name: str) -> list[str]:
     """Parse CORS origins, tolerating Render's bare-hostname form.
 
     `fromService … property: host` yields "callflow-web.onrender.com" with no
-    scheme, but CORS matching is exact — a missing scheme silently blocks every
+    scheme, but CORS matching is exact   a missing scheme silently blocks every
     request. Add https:// when absent and strip any trailing slash.
     """
     out: list[str] = []

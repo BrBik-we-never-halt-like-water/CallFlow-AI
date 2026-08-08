@@ -27,7 +27,7 @@ import { toContactInputs, type ParsedRow } from "@/lib/contacts";
  * The run composer.
  *
  * Three stacked steps on one page, not a wizard. Someone starting their fifth run of
- * the day should be able to see everything at once and change any of it — a wizard
+ * the day should be able to see everything at once and change any of it   a wizard
  * makes the second run as slow as the first, and hides the safety state behind a step
  * you have already clicked past.
  */
@@ -41,7 +41,7 @@ export default function NewRunPage() {
 
 /**
  * The composer reads the `?campaign=` parameter to pre-select what a "Run" button sent
- * it, which means it has to sit inside a Suspense boundary — `useSearchParams` opts a
+ * it, which means it has to sit inside a Suspense boundary   `useSearchParams` opts a
  * route out of prerendering otherwise.
  */
 function RunComposer() {
@@ -122,7 +122,7 @@ function RunComposer() {
       toast({
         tone: "success",
         title: "Run started",
-        body: dryRun ? "Dry run — nothing is being dialled." : undefined,
+        body: dryRun ? "Dry run   nothing is being dialled." : undefined,
       });
       refresh();
       router.push(`/app/runs/${run_id}`);

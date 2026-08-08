@@ -4,14 +4,14 @@ import { motion, useReducedMotion } from "framer-motion";
 import { cn } from "@/lib/cn";
 
 /**
- * Scroll reveal — opacity plus a small lift, once, never re-fired on scroll up.
+ * Scroll reveal   opacity plus a small lift, once, never re-fired on scroll up.
  *
  * Built on Motion's `whileInView` with `once: true`. Content that fades back out and in
  * as you scroll past it a second time is the single thing that makes a page feel like a
  * template rather than a product.
  *
  * Under `prefers-reduced-motion` the element renders in its final state with no
- * transition at all — Motion's own hook is the source of truth for that, so it can never
+ * transition at all   Motion's own hook is the source of truth for that, so it can never
  * disagree with the CSS.
  */
 export function Reveal({

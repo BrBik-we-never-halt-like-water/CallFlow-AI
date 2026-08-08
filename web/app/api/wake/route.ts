@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
  * Keep-alive proxy for the backend.
  *
  * Render's free tier sleeps a service after ~15 minutes of no traffic, and a
- * cold start can take a couple of minutes — long enough that a visitor would
+ * cold start can take a couple of minutes   long enough that a visitor would
  * conclude the app is broken. Pinging from the server side avoids the CORS
  * preflight and browser timeout that make this hard from the client.
  */
@@ -17,7 +17,7 @@ const PUBLIC_API = "https://callflow-api.onrender.com";
 /**
  * An internal Render address (`callflow-api`, `callflow-api:10000`) is not
  * reachable from here and produces an opaque "fetch failed". Anything without
- * a dot — or with a non-standard port — is treated as internal.
+ * a dot   or with a non-standard port   is treated as internal.
  */
 function isPublicHost(url: string): boolean {
   try {
@@ -41,7 +41,7 @@ function normalise(raw: string): string {
  *
  * Tries the configured values first, but silently falls back to the known
  * public URL rather than failing when the environment holds an internal
- * address — the wake path must keep working even when config drifts.
+ * address   the wake path must keep working even when config drifts.
  */
 function resolveApi(): { url: string; source: string } {
   for (const [source, raw] of [

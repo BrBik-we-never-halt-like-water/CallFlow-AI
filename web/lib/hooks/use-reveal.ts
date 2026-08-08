@@ -10,7 +10,7 @@ import { usePrefersReducedMotion } from "./use-external-store";
  * as you scroll past it a second time is the thing that makes a page feel like a
  * template.
  *
- * Under reduced motion the element is simply shown — `shown` is derived rather than set,
+ * Under reduced motion the element is simply shown   `shown` is derived rather than set,
  * so there is no render where the content is hidden from someone who asked for less
  * animation.
  */

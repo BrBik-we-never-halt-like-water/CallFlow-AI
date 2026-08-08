@@ -4,8 +4,8 @@ import { Eyebrow, Panel } from "@/components/ui/panel";
  * A settings group: heading, one line of explanation, then the controls.
  *
  * `effect` is the important prop. Every safety control in this product shows its current
- * effect in plain language underneath it — "Only 1 number can be dialled" rather than
- * just an allowlist field — because a guard whose consequence you have to infer is a
+ * effect in plain language underneath it   "Only 1 number can be dialled" rather than
+ * just an allowlist field   because a guard whose consequence you have to infer is a
  * guard people set wrong.
  */
 export function SettingsSection({

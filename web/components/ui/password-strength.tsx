@@ -11,7 +11,7 @@ export interface PasswordRule {
 }
 
 /**
- * Requirements are listed upfront and tick off as they are satisfied — never revealed
+ * Requirements are listed upfront and tick off as they are satisfied   never revealed
  * only on failure. Someone should be able to write a valid password on the first
  * attempt, which means telling them the rules before they type, not after.
  */
@@ -88,7 +88,7 @@ export function PasswordStrength({
                 </span>
               )}
               {rule.label}
-              <span className="sr-only">{met ? " — met" : " — not yet met"}</span>
+              <span className="sr-only">{met ? "   met" : "   not yet met"}</span>
             </li>
           );
         })}

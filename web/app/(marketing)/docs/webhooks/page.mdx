@@ -7,9 +7,9 @@ export const metadata = {
 # Webhooks
 
 Polling is fine for a dashboard and wrong for a system of record. Webhooks push each
-result to you as the call settles.
+result to you the moment a call settles.
 
-Configure endpoints in **Settings → Integrations**. Available from the Growth plan.
+Configure endpoints in **Settings → Integrations**   available from the Growth plan.
 
 ## Events
 
@@ -20,7 +20,7 @@ Configure endpoints in **Settings → Integrations**. Available from the Growth 
 | `run.finished` | Every contact in a run has settled. |
 | `contact.suppressed` | Someone opted out and was added to the suppression list. |
 
-`contact.suppressed` is the one worth wiring even if you wire nothing else — it is how
+`contact.suppressed` is the one worth wiring even if you wire nothing else   it is how
 your CRM learns not to contact that person again through any other channel.
 
 ## Payload
@@ -45,7 +45,7 @@ your CRM learns not to contact that person again through any other channel.
 ```
 
 The number is masked in the payload, the same as everywhere else. If your system needs
-the full number, you already have it — it is the one you uploaded.
+the full number, you already have it   it is the one you uploaded.
 
 Dry-run calls fire webhooks too, with `dry_run: true`. Check that field before writing
 to production tables; a simulated result is not a call.
@@ -53,22 +53,30 @@ to production tables; a simulated result is not a call.
 ## Verifying a delivery
 
 Each request carries a signature over the raw body, using the signing secret shown when
-you create the endpoint.
+you create the endpoint:
 
 ```text
 X-CallFlow-Signature: sha256=<hex>
 X-CallFlow-Timestamp: 1775394129
 ```
 
-Compute HMAC-SHA256 over `timestamp + "." + body` and compare in constant time. Reject
-anything with a timestamp more than five minutes old, which is what stops a captured
-request being replayed at you.
+Compute HMAC-SHA256 over `timestamp + "." + body` and compare in constant time  
+worth checking by hand once against a real delivery:
+
+```bash
+BODY='{"event":"call.settled","run_id":"run_8f2a1c"}'
+TIMESTAMP=1775394129
+echo -n "${TIMESTAMP}.${BODY}" | openssl dgst -sha256 -hmac "$CALLFLOW_SIGNING_SECRET"
+```
+
+Reject anything with a timestamp more than five minutes old   that's what stops a
+captured request being replayed at you.
 
 ## Retries and the delivery log
 
 A non-2xx response is retried with exponential backoff for up to 24 hours. Respond
 `2xx` as soon as you have persisted the payload and do the rest of your work
-afterwards — a slow handler looks like a failure and gets sent the same event again.
+afterwards   a slow handler looks like a failure and gets sent the same event again.
 
 Every attempt is recorded in the delivery log with the status, the response body, and
 the timing. Any delivery can be replayed by hand from there, which is the fastest way
