@@ -24,8 +24,24 @@ is beyond `CALLFLOW_ENV`.
 | Directory | `/var/www/callflow-ai` | `/var/www/callflow-ai-dev` |
 | Hostname | `callflow.com` | `dev.callflow.com` |
 | pm2 processes | `callflow-api`, `callflow-web` | `callflow-api-dev`, `callflow-web-dev` |
-| Ports | 8000 (api), **3001** (web) | 8001 (api), 3002 (web) |
+| Ports | 8000 (api), **3001** (web) | 8001 (api), 3003 (web) |
 | Supabase project | the production project | **a separate project** |
+
+The VM hosts other sites, so these are the numbers that were free rather than a tidy
+sequence. What nginx currently fronts:
+
+| Port | Serves |
+| --- | --- |
+| 3000 | `brbik.com` |
+| 3001 | `callflow-ai.brbik.com` web - **this app in production** |
+| 3002 | `dns.brbik.com` (dnsentinel) |
+| 3003 | dev web |
+| 8000 | production API |
+| 8001 | dev API |
+
+Production is on 3001 because that is what its nginx site has always proxied to; moving
+it would be a 502 with nothing in any log explaining why. Confirm with `ss -ltnp` before
+claiming another - that table only covers what nginx fronts, not everything listening.
 
 Process names and ports come from `ecosystem.config.js`, keyed on `CALLFLOW_ENV`.
 `scripts/bootstrap.sh` reads the ports from that same file when it renders nginx, so
@@ -159,7 +175,8 @@ base64 -w0 origin.key   # -> ORIGIN_KEY_B64
 The same pair serves both environments, since `*.callflow.com` covers `dev`. Set them on
 both the `main` and `dev` environments, or once at repo level to be inherited.
 
-`bootstrap.sh` installs them to `/etc/ssl/callflow/<env>.pem` and `.key` on every run, so
+`bootstrap.sh` installs them to `/etc/ssl/cloudflare/callflow.pem` and `.key` on every run
+- matching the convention already used on this box for the brbik zone - so
 rotating the secret rotates the certificate. It verifies the certificate's modulus
 against the key first and leaves the existing pair alone if they do not match - finding
 that out from nginx refusing to start, after the working pair has already been
