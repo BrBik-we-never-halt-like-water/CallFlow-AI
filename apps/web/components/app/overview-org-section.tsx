@@ -16,7 +16,7 @@ import type { SessionProfile, SessionState } from '@/lib/hooks/use-session';
 /**
  * The dashboard's team roster popover - who else is in this organisation.
  *
- * Switching organisations lives in exactly one place now: `HeaderOrgSwitcher`
+ * Switching organisations lives in exactly one place now: `SidebarOrgSwitcher`
  * in `components/layout/app-shell.tsx`. This used to also render its own
  * org-switching dropdown here,
  * which - alongside a third copy inside the user menu - meant three controls

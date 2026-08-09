@@ -1,31 +1,60 @@
 'use client';
 
-import { MegaphoneIcon } from '@phosphor-icons/react/dist/ssr';
+import {
+  MagnifyingGlassIcon,
+  MegaphoneIcon,
+  PlusIcon,
+  SlidersIcon,
+} from '@phosphor-icons/react/dist/ssr';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
 import { CampaignCard } from '@/components/app/campaign-card';
 import { ConnectionBanner } from '@/components/app/connection-banner';
 import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Dialog, DialogRoot } from '@/components/ui/dialog';
 import { EmptyState } from '@/components/ui/empty-state';
+import { SearchInput } from '@/components/ui/input';
 import { Panel } from '@/components/ui/panel';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Tabs, TabPanel } from '@/components/ui/disclosure';
 import { useToast } from '@/components/ui/toast';
 import { api, type Campaign } from '@/lib/api';
 import { useAppStore } from '@/lib/app-store';
 import { CAMPAIGN_DRAFT_KEY } from '@/lib/campaign-draft';
+import type { RunStatus } from '@/lib/lamp';
+
+type TypeFilter = 'all' | 'template' | 'custom';
+type StatusFilter = 'all' | 'not_run' | RunStatus;
+
+const STATUS_FILTER_LABEL: Record<StatusFilter, string> = {
+  all: 'All',
+  not_run: 'Not run yet',
+  running: 'Running',
+  completed: 'Completed',
+  failed: 'Failed',
+};
 
 export default function CampaignsPage() {
   const router = useRouter();
   const toast = useToast();
   const { campaigns, hydratedRuns, phase, refresh } = useAppStore();
-  const [filter, setFilter] = useState('all');
+  const [search, setSearch] = useState('');
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [pendingDelete, setPendingDelete] = useState<Campaign | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  /** The most recent run per campaign, for each card's mini strip. */
+  /** The most recent run per campaign, for each card's status lamp. */
   const lastRunByCampaign = useMemo(() => {
     const map = new Map<string, (typeof hydratedRuns)[number]>();
     for (const run of hydratedRuns) {
@@ -37,10 +66,29 @@ export default function CampaignsPage() {
     return map;
   }, [hydratedRuns]);
 
-  const builtIn = campaigns.filter((c) => c.built_in);
-  const custom = campaigns.filter((c) => !c.built_in);
-  const shown =
-    filter === 'templates' ? builtIn : filter === 'custom' ? custom : campaigns;
+  const builtInCount = campaigns.filter((c) => c.built_in).length;
+  const customCount = campaigns.length - builtInCount;
+
+  const shown = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    return campaigns.filter((campaign) => {
+      if (query && !campaign.name.toLowerCase().includes(query)) return false;
+      if (typeFilter === 'template' && !campaign.built_in) return false;
+      if (typeFilter === 'custom' && campaign.built_in) return false;
+      if (statusFilter !== 'all') {
+        const status = lastRunByCampaign.get(campaign.id)?.status ?? 'not_run';
+        if (status !== statusFilter) return false;
+      }
+      return true;
+    });
+  }, [campaigns, search, typeFilter, statusFilter, lastRunByCampaign]);
+
+  const filtersActive = typeFilter !== 'all' || statusFilter !== 'all';
+
+  function clearFilters() {
+    setTypeFilter('all');
+    setStatusFilter('all');
+  }
 
   /**
    * Duplicating hands the source campaign to the editor as a draft rather than
@@ -91,79 +139,168 @@ export default function CampaignsPage() {
   }
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="flex flex-col gap-1">
-          <p className="text-small font-bold text-text-mute">Campaigns</p>
-          <h1 className="font-display text-h2 text-text">
-            What you&apos;re calling about
-          </h1>
-          <p className="measure text-small text-text-dim">
-            Built-in templates plus what your team has written - a goal in plain
-            English and the fields you want back from every call.
-          </p>
-        </div>
-        <Button asChild>
-          <Link href="/app/campaigns/new">New campaign</Link>
-        </Button>
-      </div>
+    <>
+      <div className="flex flex-col gap-6">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-2xl font-bold text-text">Campaigns</p>
 
-      <ConnectionBanner phase={phase} />
-
-      <Tabs
-        value={filter}
-        onValueChange={setFilter}
-        tabs={[
-          { value: 'all', label: 'All', count: campaigns.length },
-          { value: 'templates', label: 'Templates', count: builtIn.length },
-          { value: 'custom', label: 'Yours', count: custom.length },
-        ]}
-      >
-        <TabPanel value={filter} className="pt-6">
-          {phase === 'connecting' ? (
-            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-              {Array.from({ length: 3 }, (_, i) => (
-                <Panel key={i} className="flex flex-col gap-3 p-4">
-                  <Skeleton className="h-5 w-40" />
-                  <Skeleton className="h-3 w-full" />
-                  <Skeleton className="h-3 w-2/3" />
-                  <Skeleton className="mt-2 h-3 w-24" />
-                </Panel>
-              ))}
-            </div>
-          ) : shown.length === 0 ? (
-            <Panel>
-              <EmptyState
-                icon={MegaphoneIcon}
-                title={
-                  filter === 'custom'
-                    ? "You haven't made one yet"
-                    : 'No campaigns yet'
-                }
-                body="Start from a built-in template, or write your own from a blank goal - either way, it's ready to run in a minute."
-                action={
-                  <Button asChild>
-                    <Link href="/app/campaigns/new">New campaign</Link>
-                  </Button>
-                }
+          <div className="flex items-center gap-2">
+            {searchOpen || search ? (
+              <SearchInput
+                autoFocus={searchOpen}
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                onClear={() => {
+                  setSearch('');
+                  setSearchOpen(false);
+                }}
+                onBlur={() => {
+                  if (!search) setSearchOpen(false);
+                }}
+                placeholder="Search campaigns"
+                aria-label="Search campaigns by name"
+                className="h-10 w-48 rounded-full sm:w-64"
               />
-            </Panel>
-          ) : (
-            <ul className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-              {shown.map((campaign) => (
-                <li key={campaign.id} className="flex">
-                  <CampaignCard
-                    campaign={campaign}
-                    lastRun={lastRunByCampaign.get(campaign.id)}
-                    onDuplicate={duplicate}
-                    onDelete={setPendingDelete}
-                  />
-                </li>
-              ))}
-            </ul>
-          )}
-        </TabPanel>
-      </Tabs>
+            ) : (
+              <button
+                type="button"
+                aria-label="Search campaigns"
+                onClick={() => setSearchOpen(true)}
+                className="flex size-10 shrink-0 cursor-pointer items-center justify-center rounded-full border border-rule text-text-dim transition-colors hover:bg-surface-hover hover:text-text"
+              >
+                <MagnifyingGlassIcon aria-hidden weight="bold" className="size-4" />
+              </button>
+            )}
+
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  aria-label="Filter campaigns"
+                  className={
+                    'flex size-10 shrink-0 cursor-pointer items-center justify-center rounded-full border transition-colors hover:bg-surface-hover ' +
+                    (filtersActive
+                      ? 'border-rule-strong text-text'
+                      : 'border-rule text-text-dim hover:text-text')
+                  }
+                >
+                  <SlidersIcon aria-hidden weight="bold" className="size-4" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                <DropdownMenuLabel>Type</DropdownMenuLabel>
+                <DropdownMenuCheckboxItem
+                  checked={typeFilter === 'template'}
+                  onCheckedChange={(checked) =>
+                    setTypeFilter(checked ? 'template' : 'all')
+                  }
+                >
+                  Templates · {builtInCount}
+                </DropdownMenuCheckboxItem>
+                <DropdownMenuCheckboxItem
+                  checked={typeFilter === 'custom'}
+                  onCheckedChange={(checked) =>
+                    setTypeFilter(checked ? 'custom' : 'all')
+                  }
+                >
+                  Yours · {customCount}
+                </DropdownMenuCheckboxItem>
+
+                <DropdownMenuSeparator />
+
+                <DropdownMenuLabel>Status</DropdownMenuLabel>
+                {(['not_run', 'running', 'completed', 'failed'] as const).map(
+                  (value) => (
+                    <DropdownMenuCheckboxItem
+                      key={value}
+                      checked={statusFilter === value}
+                      onCheckedChange={(checked) =>
+                        setStatusFilter(checked ? value : 'all')
+                      }
+                    >
+                      {STATUS_FILTER_LABEL[value]}
+                    </DropdownMenuCheckboxItem>
+                  ),
+                )}
+
+                {filtersActive ? (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onSelect={clearFilters}>
+                      Clear filters
+                    </DropdownMenuItem>
+                  </>
+                ) : null}
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            <Link
+              href="/app/campaigns/new"
+              aria-label="New campaign"
+              className="flex size-10 shrink-0 items-center justify-center rounded-full border border-rule text-text-dim transition-colors hover:bg-surface-hover hover:text-text"
+            >
+              <PlusIcon aria-hidden weight="bold" className="size-4" />
+            </Link>
+          </div>
+        </div>
+
+        <ConnectionBanner phase={phase} />
+
+        {phase === 'connecting' ? (
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            {Array.from({ length: 3 }, (_, i) => (
+              <Panel
+                key={i}
+                className="dark-panel-glass flex flex-col gap-3 p-4"
+              >
+                <Skeleton className="h-5 w-40" />
+                <Skeleton className="h-3 w-full" />
+                <Skeleton className="h-3 w-2/3" />
+                <Skeleton className="mt-2 h-3 w-24" />
+              </Panel>
+            ))}
+          </div>
+        ) : campaigns.length === 0 ? (
+          <Panel className="dark-panel-glass">
+            <EmptyState
+              icon={MegaphoneIcon}
+              title="No campaigns yet"
+              body="Start from a template, or write your own."
+              action={
+                <Button asChild>
+                  <Link href="/app/campaigns/new">New campaign</Link>
+                </Button>
+              }
+            />
+          </Panel>
+        ) : shown.length === 0 ? (
+          <Panel className="dark-panel-glass">
+            <EmptyState
+              icon={MegaphoneIcon}
+              title="No campaigns match"
+              body="Try a different search, or clear the filters."
+              action={
+                <Button variant="secondary" onClick={clearFilters}>
+                  Clear filters
+                </Button>
+              }
+            />
+          </Panel>
+        ) : (
+          <ul className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            {shown.map((campaign) => (
+              <li key={campaign.id} className="flex">
+                <CampaignCard
+                  campaign={campaign}
+                  lastRun={lastRunByCampaign.get(campaign.id)}
+                  onDuplicate={duplicate}
+                  onDelete={setPendingDelete}
+                />
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
 
       <DialogRoot
         open={pendingDelete !== null}
@@ -196,6 +333,6 @@ export default function CampaignsPage() {
           }
         />
       </DialogRoot>
-    </div>
+    </>
   );
 }

@@ -695,14 +695,25 @@ check · consent flag.
 
 - **`(marketing)`** - `/`, `/pricing`, `/solutions/[vertical]` (4 static), `/trust`, `/about`, `/demo`, `/status`, `/maintenance`, `/docs` + 8 MDX pages
 - **`(auth)`** - `/login`, `/signup`, `/forgot-password`, `/reset-password`, `/verify-email`, `/accept-invite/[token]`
-- **`(app)/app`** - dashboard (`/app`), `campaigns` + `new` + `[id]`, `runs` + `new` + `[id]`, `escalations`, `contacts`, `profile`, `organisation` + `new`, `settings` + 4 panes (`safety`, `api-keys`, `integrations`, `billing`). Organisation and Team are their own route, `/app/organisation` (`Suspense`-wrapped for `useSearchParams()`, `?tab=team` selects the Team pane) - not a dialog and not a Settings pane; `/app/settings` and `/app/settings/team` both redirect to `/app/settings/safety` so pre-existing generic "Settings" links still resolve; "Organisation" lives in the account menu (`user-menu.tsx`/`app-nav.tsx`'s dropdown), not a sidebar item, since there is no sidebar. Creating a second organisation is a dedicated two-step page, `/app/organisation/new` (name, then an optional logo - logo upload has to be a second step because Storage RLS scopes the upload path by `org_id`, which doesn't exist until the create call returns). There is no `/app/welcome` - the mandatory org-setup step + its skippable profile follow-up are **not routes at all**; `OnboardingGate` renders them as a modal over whatever page is active (see §3/§12), specifically to avoid the two-independent-`useSession()`-instances bug a page-per-step version had (`ISSUES.md`)
+- **`(app)/app`** - dashboard (`/app`), `campaigns` + `new` + `[id]`, `runs` + `new` + `[id]`, `escalations`, `contacts`, `profile`, `organisation` + `new`, `settings` + 4 panes (`safety`, `api-keys`, `integrations`, `billing`). Organisation and Team are their own route, `/app/organisation` (`Suspense`-wrapped for `useSearchParams()`, `?tab=team` selects the Team pane) - not a dialog and not a Settings pane; `/app/settings` and `/app/settings/team` both redirect to `/app/settings/safety` so pre-existing generic "Settings" links still resolve; "Organisation" lives in the account menu (`user-menu.tsx`'s dropdown) and, as of the dark-theme-pivot foundation task, also as a direct link in the sidebar's footer section (`app-shell.tsx`'s `AppSidebar`, below the five-item primary nav list) - it and Settings are lower-frequency than those five, so neither joins `PRIMARY_NAV_ITEMS` itself; the footer is a second path to the same three destinations (Profile/Organisation/Settings), not a replacement for the account menu, since the sidebar disappears below `lg` and the account menu is mobile's only way to reach them (or to sign out). Creating a second organisation is a dedicated two-step page, `/app/organisation/new` (name, then an optional logo - logo upload has to be a second step because Storage RLS scopes the upload path by `org_id`, which doesn't exist until the create call returns). There is no `/app/welcome` - the mandatory org-setup step + its skippable profile follow-up are **not routes at all**; `OnboardingGate` renders them as a modal over whatever page is active (see §3/§12), specifically to avoid the two-independent-`useSession()`-instances bug a page-per-step version had (`ISSUES.md`)
 - **Generated** - `icon.svg`, `apple-icon`, `opengraph-image`, `manifest.webmanifest`, `not-found` (`error.tsx` is a boundary, not a routed page)
 
-### Design layer - `app/globals.css`, 714 lines
+### Design layer - `app/globals.css`
 
-Light mode only; no dark theme, no surface toggle. Semantic tokens (`--surface*`,
-`--text*`, `--rule*`), five lamp colours plus `-text` variants for contrast, a fluid type
-scale, a 4-step shadow scale, and motion tokens.
+Light mode, product-wide, with one in-progress exception: `/app/*` is mid-pivot to a dark-
+glassmorphism surface (round-3 dashboard-polish, dark theme). Marketing and auth stay light-
+only, no toggle. Semantic tokens (`--surface*`, `--text*`, `--rule*`), five lamp colours plus
+`-text` variants for contrast, a fluid type scale, a 4-step shadow scale, and motion tokens.
+
+A parallel `--dark-*` token set (background/glow, glass surface, text tiers, a cyan accent, and
+muted `--dark-lamp-*`/`-text` variants reusing the same lamp semantics, never a second status-
+colour system) is declared inside `.app-font-scope` - the same `/app/*`-only scoping trick that
+rule already used for the Ubuntu font swap - so it resolves only under the dashboard and is
+inert everywhere else. `.dark-canvas`/`.dark-panel-glass` are the dark equivalents of
+`.canvas-tint`/`.panel-glass`. As of this task, the tokens exist and the sidebar footer consumes
+plain light-scoped classes; no page has opted into the dark classes yet - see
+`.superpowers/sdd/round3-dashboard-polish/dark-theme-D1-report.md` for the full palette, the
+contrast method, and what's still unstyled (the sidebar/top-bar chrome itself).
 
 The "flow" surface language (added after the initial build):
 
@@ -824,9 +835,9 @@ left to pre-warm (`hooks/use-connection.ts` below no longer has wake/retry logic
 | `site-footer.tsx`                 | 4 columns, legal row, capability band, BrBik credit                                                                                                                                |
 | `site-loader.tsx`                 | First-paint brand loader; CSS fade + JS unmount at 1700ms so it can never trap the page                                                                                            |
 | `view-transitions.tsx`            | Intercepts internal links, drives `document.startViewTransition`, resolves on real route change with a timeout backstop                                                            |
-| `app-shell.tsx`                   | No sidebar: a `grid-cols-[1fr_auto_1fr]` header (brand, primary nav, credit balance + org switcher + account menu) plus a bottom `AppTabBar` below `lg`                            |
-| `app-nav.tsx`                     | Nav constants (`NAV_ITEMS`/`PRIMARY_NAV_ITEMS`), `OrgMark`, and `AppTabBar` (the mobile tab bar) - not a sidebar component                                                         |
-| `user-menu.tsx`                   | `UserMenu` - avatar dropdown: profile, settings, sign out. No org switcher here - that's `HeaderOrgSwitcher` in `app-shell.tsx`, so the action doesn't exist in two places at once |
+| `app-shell.tsx`                   | Left sidebar (`AppSidebar`: brand, `SidebarOrgSwitcher`, primary nav list, collapsible, `ProfileFooterLink` at the bottom) fixed-width at `lg`+, no header - `AppTopBar` is gone - and a bottom `AppTabBar` (with `UserMenu` as a 5th slot) below `lg`                            |
+| `app-nav.tsx`                     | Nav constants (`NAV_ITEMS`/`PRIMARY_NAV_ITEMS`), `OrgMark`, and `AppTabBar` (the mobile tab bar) - the sidebar itself is `AppShell`'s `AppSidebar`, not defined here                                                         |
+| `user-menu.tsx`                   | `UserMenu` - avatar dropdown: profile, settings, sign out. No org switcher here - that's `SidebarOrgSwitcher` in `app-shell.tsx`, so the action doesn't exist in two places at once |
 | `docs-shell.tsx`                  | Three-pane docs; TOC read from rendered DOM headings                                                                                                                               |
 | `auth-card.tsx` `auth-notice.tsx` | Auth card shell; the honest "not connected" notice                                                                                                                                 |
 

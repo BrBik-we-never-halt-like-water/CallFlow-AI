@@ -17,6 +17,9 @@ const CONTROL = [
   'transition-[border-color,background-color] duration-(--dur-micro) ease-(--ease-out)',
   'disabled:cursor-not-allowed disabled:opacity-45',
   'read-only:bg-surface-sunken read-only:text-text-dim',
+  // `SearchInput` draws its own clear button; without this, WebKit/Chromium
+  // also render their native `type="search"` cancel icon, showing two.
+  '[&::-webkit-search-cancel-button]:appearance-none',
 ].join(' ');
 
 function ruleClass(invalid: boolean) {

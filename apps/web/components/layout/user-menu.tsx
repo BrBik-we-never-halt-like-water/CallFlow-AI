@@ -9,6 +9,7 @@ import {
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useState } from 'react';
+import { cn } from '@/lib/cn';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -22,24 +23,42 @@ import { signOut } from '@/lib/auth/actions';
 import type { SessionProfile } from '@/lib/hooks/use-session';
 
 /**
- * The signed-in user's own menu - the one account entry point now that there
- * is no sidebar to also carry one. Organisation and Settings are lower-
- * frequency than the header's primary nav row (`PrimaryNav`, app-shell.tsx),
- * so they fold in here rather than compressing that row to fit all seven
- * destinations. Organisation *switching* stays a separate control
- * (`HeaderOrgSwitcher`) - this menu is "you," not "which workspace."
+ * The signed-in user's own menu - the one account entry point. Organisation
+ * and Settings are lower-frequency than the sidebar's primary nav list
+ * (`AppSidebar`, app-shell.tsx), so they fold in here rather than adding two
+ * more rows to that list for two rarely-visited destinations. Organisation
+ * *switching* stays a separate control (`SidebarOrgSwitcher`) - this menu is
+ * "you," not "which workspace."
+ *
+ * `variant="tab"` (default `"avatar"`) swaps only the trigger's own shape -
+ * the round avatar button becomes a tab-bar-style column (photo/initial on
+ * top, a short label below), matching `AppTabBar`'s other items
+ * (`app-nav.tsx`) exactly, since that is now this menu's only mobile entry
+ * point with `AppTopBar` removed. The dropdown content, and everything in
+ * it including sign-out, is identical either way - one account menu, two
+ * trigger shapes for the two surfaces it can sit on.
  */
 export function UserMenu({
   profile,
   loading,
+  variant = 'avatar',
 }: {
   profile: SessionProfile | null;
   loading: boolean;
+  variant?: 'avatar' | 'tab';
 }) {
   const router = useRouter();
   const [signingOut, setSigningOut] = useState(false);
 
-  if (loading) return <Skeleton className="size-9 rounded-full" />;
+  if (loading) {
+    return variant === 'tab' ? (
+      <div className="flex min-h-14 flex-1 items-center justify-center">
+        <Skeleton className="size-6 rounded-full" />
+      </div>
+    ) : (
+      <Skeleton className="size-9 rounded-full" />
+    );
+  }
   if (!profile) return null;
 
   const label = profile.name?.trim() || profile.email;
@@ -54,17 +73,57 @@ export function UserMenu({
     router.refresh();
   }
 
+  const avatar = profile.avatar_url ? (
+    <img
+      src={profile.avatar_url}
+      alt=""
+      className={cn(
+        'shrink-0 rounded-full object-cover',
+        variant === 'tab' ? 'size-5' : 'size-full',
+      )}
+    />
+  ) : (
+    <span
+      className={cn(
+        'flex shrink-0 items-center justify-center rounded-full font-medium text-text',
+        variant === 'tab'
+          ? 'size-5 bg-surface-sunken text-label'
+          : 'size-full bg-surface-sunken text-small',
+      )}
+    >
+      {initial}
+    </span>
+  );
+
+  const trigger =
+    variant === 'tab' ? (
+      <button
+        type="button"
+        aria-label={`Account menu for ${label}`}
+        className="relative flex min-h-14 flex-1 flex-col items-center justify-center gap-1 px-1 py-2 text-text-mute"
+      >
+        {avatar}
+        <span className="truncate text-[0.6875rem] leading-none">
+          Account
+        </span>
+      </button>
+    ) : (
+      <button
+        type="button"
+        aria-label={`Account menu for ${label}`}
+        // The avatar (a photo or an opaque initials fallback) fills the
+        // whole button, so a hover *background* would never show through
+        // it - a ring around the outside is the one hover treatment that
+        // still reads regardless of which fallback state is showing.
+        className="flex size-9 cursor-pointer items-center justify-center overflow-hidden rounded-full border border-rule ring-2 ring-transparent transition-[background-color,box-shadow] hover:ring-surface-hover"
+      >
+        {avatar}
+      </button>
+    );
+
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <button
-          type="button"
-          aria-label={`Account menu for ${label}`}
-          className="flex size-9 cursor-pointer items-center justify-center rounded-full border border-rule bg-surface-sunken text-small font-medium text-text transition-colors hover:bg-surface-hover"
-        >
-          {initial}
-        </button>
-      </DropdownMenuTrigger>
+      <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
 
       <DropdownMenuContent>
         <DropdownMenuLabel>Signed in</DropdownMenuLabel>

@@ -1,9 +1,13 @@
 'use client';
 
+import type { Icon } from '@phosphor-icons/react';
 import {
+  BuildingsIcon,
   CaretUpDownIcon,
   CheckIcon,
+  GearSixIcon,
   PlusIcon,
+  SidebarSimpleIcon,
   XIcon,
 } from '@phosphor-icons/react/dist/ssr';
 import Link from 'next/link';
@@ -11,7 +15,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { cn } from '@/lib/cn';
 import { BrandLockup } from '@/components/brand/wordmark';
-import { Lamp } from '@/components/brand/lamp';
+import { Mark } from '@/components/brand/mark';
 import { Tag } from '@/components/ui/badge';
 import {
   DropdownMenu,
@@ -25,9 +29,10 @@ import { Tooltip } from '@/components/ui/tooltip';
 import { VRule } from '@/components/ui/rule';
 import { useActiveOrg } from '@/lib/hooks/use-active-org';
 import { useOrganisations } from '@/lib/hooks/use-organisations';
+import { useSidebarCollapsed } from '@/lib/hooks/use-sidebar-collapsed';
+import { usePrefersReducedMotion } from '@/lib/hooks/use-external-store';
 import { useAppStore } from '@/lib/app-store';
 import { AppTabBar, isActive, OrgMark, PRIMARY_NAV_ITEMS } from './app-nav';
-import { UserMenu } from './user-menu';
 import { type SessionProfile, useSession } from '@/lib/hooks/use-session';
 
 /** Routes that get a focused destination, not the persistent app chrome - see
@@ -40,9 +45,29 @@ const MINIMAL_CHROME_ROUTES: { path: string; label: string }[] = [
 ];
 
 /**
- * Dashboard shell: header, content. No sidebar - every /app/* destination
- * lives in the header's primary nav row (or the account menu, for the two
- * lower-frequency ones), the same structural decision Twisty makes.
+ * Organisation, Settings - two of the three destinations `UserMenu`'s account
+ * dropdown already covers (user-menu.tsx), offered a second way for anyone
+ * working from the desktop sidebar. The third, Profile, gets its own bespoke
+ * row instead of a slot in this list (`ProfileFooterLink`, below) - it needs
+ * to show the signed-in person's actual avatar and name, not a generic icon
+ * and label. Deliberately *not* a replacement for `UserMenu`: with `AppTopBar`
+ * removed entirely (the user asked for no persistent top bar), `AppSidebar`
+ * is still `lg:flex`-only and still disappears below that breakpoint, where
+ * `AppTabBar` (app-nav.tsx) now carries its own account-menu trigger instead
+ * (`UserMenu`'s `variant="tab"`) rather than losing account access on mobile
+ * altogether. Sign out itself stays `UserMenu`-only everywhere: this list is
+ * destinations, not actions, and duplicating a destructive action across two
+ * surfaces is worse than duplicating a couple of plain links.
+ */
+const SIDEBAR_FOOTER_ITEMS: { label: string; href: string; icon: Icon }[] = [
+  { label: 'Organisation', href: '/app/organisation', icon: BuildingsIcon },
+  { label: 'Settings', href: '/app/settings', icon: GearSixIcon },
+];
+
+/**
+ * Dashboard shell: a fixed-width left sidebar (brand, org switcher, primary
+ * nav) plus a header+content column that takes the remaining space. Below
+ * `lg`, the sidebar disappears and `AppTabBar` carries navigation instead.
  */
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname() ?? '';
@@ -90,34 +115,43 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div
-      className={cn(
-        'flex min-h-dvh flex-col',
-        // Only the dashboard gets the tinted canvas today - every other page
-        // keeps the plain surface until this look is approved to roll out
-        // further.
-        pathname === '/app' && 'canvas-tint',
-      )}
-    >
+    // `bg-dark-bg` is flat, deliberately no gradient - the purple lives on
+    // the content column below (`dark-canvas`), not here. This wrapper is
+    // what actually shows through the sidebar's translucent glass (they're
+    // flex siblings, not stacked), so it stays plain near-black, never
+    // purple - see `.dark-canvas`'s own comment in globals.css.
+    <div className="flex min-h-dvh bg-dark-bg">
       <a href="#app-main" className="skip-link">
         Skip to content
       </a>
 
-      <AppTopBar
+      <AppSidebar
         profile={profile}
-        loading={session.status === 'loading'}
-        escalationCount={escalations.length}
         refreshSession={session.refresh}
+        escalationCount={escalations.length}
       />
 
-      <main
-        id="app-main"
-        className="mx-auto w-full max-w-(--container-app) flex-1 px-4 py-6 sm:px-6"
-      >
-        {children}
-      </main>
+      {/* No more per-page opt-in (`pathname === '/app' && 'canvas-tint'`) -
+          the dark canvas is the content column's resting background on
+          every /app/* route now, not a dashboard-only accent. Page content
+          itself (cards, tables) is still the light theme until D2-D4 rebuild
+          it - the same "chrome/canvas dark, content light" transitional
+          state this round's report documents as expected, just now visible
+          on every route instead of only behind the sidebar. */}
+      <div className="dark-canvas flex min-w-0 flex-1 flex-col">
+        <main
+          id="app-main"
+          className="mx-auto w-full max-w-(--container-app) flex-1 px-4 py-6 sm:px-6"
+        >
+          {children}
+        </main>
 
-      <AppTabBar escalationCount={escalations.length} />
+        <AppTabBar
+          escalationCount={escalations.length}
+          profile={profile}
+          loading={session.status === 'loading'}
+        />
+      </div>
     </div>
   );
 }
@@ -152,7 +186,7 @@ function MinimalTopBar({
   }
 
   return (
-    <header className="header-glass sticky top-0 z-30 flex h-(--h-app-topbar) shrink-0 items-center gap-3 border-b px-4 sm:px-6">
+    <header className="dark-chrome sticky top-0 z-30 flex h-(--h-app-topbar) shrink-0 items-center gap-3 border-b px-4 sm:px-6">
       <Link
         href="/app"
         className="flex shrink-0 items-center gap-2.5 text-text"
@@ -179,108 +213,282 @@ function MinimalTopBar({
 }
 
 /**
- * A true 3-column grid - `1fr auto 1fr` - so the center column (primary nav)
- * centers against the full header width rather than against whatever space
- * two unequal side clusters happen to leave behind. Left: brand only. Right:
- * credits, org switcher, account. Shares `main`'s exact max-width and padding
- * so the header's edges land on the same x-position as the first card's edges
- * below it.
- *
- * There is no sidebar: this row is the only navigation surface at `lg` and
- * above (`AppTabBar` covers everything narrower).
+ * The left nav column: brand, organisation switcher, then every primary
+ * destination as a vertical list. The only nav surface at `lg` and above -
+ * `AppTabBar` (app-nav.tsx) is its equivalent below `lg`, where there's no
+ * room for a fixed column.
  */
-function AppTopBar({
+function AppSidebar({
   profile,
-  loading,
-  escalationCount,
   refreshSession,
+  escalationCount,
 }: {
   profile: SessionProfile | null;
-  loading: boolean;
-  escalationCount: number;
   refreshSession: () => void;
+  escalationCount: number;
 }) {
-  return (
-    <header className="header-glass sticky top-0 z-30 flex h-(--h-app-topbar) shrink-0 items-center border-b px-4 sm:px-6">
-      <div className="mx-auto grid w-full max-w-(--container-app) grid-cols-[1fr_auto_1fr] items-center gap-4">
-        <Link href="/app" className="flex min-w-0 items-center gap-2 text-text">
-          <BrandLockup />
-          <span className="sr-only">CallFlow AI dashboard</span>
-        </Link>
-
-        <PrimaryNav escalationCount={escalationCount} />
-
-        <div className="flex min-w-0 items-center justify-end gap-2">
-          <CreditBalance />
-          <HeaderOrgSwitcher
-            profile={profile}
-            refreshSession={refreshSession}
-          />
-          <UserMenu profile={profile} loading={loading} />
-        </div>
-      </div>
-    </header>
-  );
-}
-
-/** Every /app/* destination worth a permanent, one-click slot - the same
- *  five links that become the mobile tab bar, as text rather than icons,
- *  hidden below `lg` where the tab bar takes over instead. */
-function PrimaryNav({ escalationCount }: { escalationCount: number }) {
   const pathname = usePathname() ?? '';
+  const [collapsed, setCollapsed] = useSidebarCollapsed();
+  const reducedMotion = usePrefersReducedMotion();
 
   return (
-    <nav
-      aria-label="Primary"
-      className="hidden min-w-0 items-center justify-center gap-1 lg:flex"
+    <aside
+      className={cn(
+        'dark-chrome sticky top-0 hidden h-dvh shrink-0 flex-col border-r lg:flex',
+        collapsed ? 'w-(--w-app-sidebar-collapsed)' : 'w-(--w-app-sidebar)',
+        !reducedMotion &&
+          'transition-[width] duration-(--dur-base) ease-(--ease-out)',
+      )}
     >
-      {PRIMARY_NAV_ITEMS.map((item) => {
-        const active = isActive(pathname, item.href);
-        const badge = item.href === '/app/escalations' ? escalationCount : 0;
+      <Link
+        href="/app"
+        className={cn(
+          'flex h-(--h-app-topbar) shrink-0 items-center border-b border-rule text-text',
+          collapsed ? 'justify-center px-0' : 'gap-2 px-4',
+        )}
+      >
+        {collapsed ? <Mark title={null} /> : <BrandLockup />}
+        <span className="sr-only">CallFlow AI dashboard</span>
+      </Link>
 
-        return (
-          <Link
-            key={item.href}
-            href={item.href}
-            aria-current={active ? 'page' : undefined}
+      <div
+        className={cn('border-b border-rule p-3', collapsed && 'flex justify-center')}
+      >
+        <SidebarOrgSwitcher
+          profile={profile}
+          refreshSession={refreshSession}
+          collapsed={collapsed}
+        />
+      </div>
+
+      <nav
+        aria-label="Primary"
+        className={cn(
+          'flex flex-1 flex-col gap-1 overflow-y-auto p-3',
+          collapsed && 'items-center',
+        )}
+      >
+        {PRIMARY_NAV_ITEMS.map((item) => {
+          const active = isActive(pathname, item.href);
+          const badge = item.href === '/app/escalations' ? escalationCount : 0;
+
+          const link = (
+            <Link
+              href={item.href}
+              aria-current={active ? 'page' : undefined}
+              className={cn(
+                'relative flex items-center gap-2.5 rounded-md text-small transition-colors duration-(--dur-micro) hover:bg-surface-hover',
+                collapsed ? 'size-10 justify-center' : 'px-2.5 py-2',
+                active
+                  ? 'font-medium text-text'
+                  : 'text-text-mute hover:text-text',
+              )}
+            >
+              <item.icon
+                aria-hidden
+                weight={active ? 'fill' : 'regular'}
+                className="size-4.5 shrink-0"
+              />
+              {!collapsed && (
+                <span className="min-w-0 flex-1 truncate">{item.label}</span>
+              )}
+              {/* Always a plain dot, never a numeric pill, in either sidebar
+                  state - the only persistently-coloured element in the
+                  sidebar, because it is the only thing in the product that
+                  needs immediate human action. A count of zero renders
+                  nothing at all - not a grey dot. The exact count still
+                  reaches a screen reader either way. */}
+              {badge > 0 ? (
+                <span
+                  aria-hidden
+                  className="absolute right-1.5 top-1.5 size-2 rounded-full"
+                  style={{ background: 'var(--lamp-flare)' }}
+                />
+              ) : null}
+              {badge > 0 ? (
+                <span className="sr-only">{badge} waiting for a person</span>
+              ) : null}
+            </Link>
+          );
+
+          return collapsed ? (
+            <Tooltip key={item.href} content={item.label} side="right">
+              {link}
+            </Tooltip>
+          ) : (
+            <span key={item.href} className="contents">
+              {link}
+            </span>
+          );
+        })}
+      </nav>
+
+      {/* Plain icon+label rows, no filled pill even when active - the same
+          "weight/colour shift only" active-state rule every other nav
+          surface in this product follows (DESIGN_NOTES §14), not the
+          primary list's look above it. See SIDEBAR_FOOTER_ITEMS and
+          ProfileFooterLink for why these exist alongside, not instead of,
+          UserMenu. */}
+      <div
+        className={cn(
+          'flex flex-col gap-1 border-t border-rule p-3',
+          collapsed && 'items-center',
+        )}
+      >
+        <ProfileFooterLink
+          profile={profile}
+          collapsed={collapsed}
+          active={isActive(pathname, '/app/profile')}
+        />
+
+        {SIDEBAR_FOOTER_ITEMS.map((item) => {
+          const active = isActive(pathname, item.href);
+
+          const link = (
+            <Link
+              href={item.href}
+              aria-current={active ? 'page' : undefined}
+              className={cn(
+                'flex items-center gap-2.5 rounded-md text-small transition-colors duration-(--dur-micro) hover:bg-surface-hover',
+                collapsed ? 'size-10 justify-center' : 'px-2.5 py-2',
+                active
+                  ? 'font-medium text-text'
+                  : 'text-text-mute hover:text-text',
+              )}
+            >
+              <item.icon
+                aria-hidden
+                weight={active ? 'fill' : 'regular'}
+                className="size-4.5 shrink-0"
+              />
+              {!collapsed && (
+                <span className="min-w-0 flex-1 truncate">{item.label}</span>
+              )}
+            </Link>
+          );
+
+          return collapsed ? (
+            <Tooltip key={item.href} content={item.label} side="right">
+              {link}
+            </Tooltip>
+          ) : (
+            <span key={item.href} className="contents">
+              {link}
+            </span>
+          );
+        })}
+      </div>
+
+      <div
+        className={cn('border-t border-rule p-3', collapsed && 'flex justify-center')}
+      >
+        <Tooltip
+          content={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          side="right"
+        >
+          <button
+            type="button"
+            onClick={() => setCollapsed(!collapsed)}
+            aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            aria-pressed={collapsed}
             className={cn(
-              'flex items-center gap-1.5 rounded-full px-3 py-2 text-small transition-colors duration-(--dur-micro)',
-              active
-                ? 'font-medium text-text'
-                : 'text-text-mute hover:text-text',
+              'flex items-center gap-2.5 rounded-md text-small text-text-mute transition-colors hover:bg-surface-hover hover:text-text',
+              collapsed ? 'size-10 justify-center' : 'w-full px-2.5 py-2',
             )}
           >
-            {item.label}
-            {/* The only persistently-coloured element in the header, because it is
-                the only thing in the product that needs immediate human action. A
-                count of zero renders nothing at all - not a grey zero. */}
-            {badge > 0 ? (
-              <span
-                className="inline-flex min-w-5 items-center justify-center rounded-full px-1.5 py-0.5 text-label text-white"
-                style={{ background: 'var(--lamp-flare)' }}
-              >
-                {badge > 99 ? '99+' : badge}
-                <span className="sr-only"> waiting for a person</span>
-              </span>
-            ) : null}
-          </Link>
-        );
-      })}
-    </nav>
+            <SidebarSimpleIcon
+              aria-hidden
+              weight={collapsed ? 'fill' : 'regular'}
+              className="size-4.5 shrink-0"
+            />
+            {!collapsed && <span>Collapse sidebar</span>}
+          </button>
+        </Tooltip>
+      </div>
+    </aside>
   );
 }
 
 /**
- * The one real place to switch, create, or manage organisations - relocated
- * from the sidebar into the header now that there is no sidebar. Same
- * behaviour, compact horizontal trigger instead of a full-width block.
+ * The sidebar footer's Profile row - the signed-in person's actual avatar
+ * (or their initial, the same fallback `OrgMark` already uses for a
+ * logo-less organisation - not a new pattern) plus their name, instead of a
+ * generic icon and the word "Profile". Collapsed, the name drops the same
+ * way every other row's label does, leaving just the photo - still enough
+ * to recognise at a glance, which a generic person-outline icon never was.
  */
-function HeaderOrgSwitcher({
+function ProfileFooterLink({
+  profile,
+  collapsed,
+  active,
+}: {
+  profile: SessionProfile | null;
+  collapsed: boolean;
+  active: boolean;
+}) {
+  if (!profile) {
+    return (
+      <span
+        className={cn(
+          'block h-9 rounded-md bg-surface-sunken',
+          collapsed ? 'w-9' : 'w-full',
+        )}
+      />
+    );
+  }
+
+  const label = profile.name?.trim() || profile.email;
+  const initial = label.charAt(0).toUpperCase();
+
+  const avatar = profile.avatar_url ? (
+    <img
+      src={profile.avatar_url}
+      alt=""
+      className="size-6 shrink-0 rounded-full border border-rule object-cover"
+    />
+  ) : (
+    <span className="flex size-6 shrink-0 items-center justify-center rounded-full border border-rule bg-surface-sunken font-mono text-label text-text">
+      {initial}
+    </span>
+  );
+
+  const link = (
+    <Link
+      href="/app/profile"
+      aria-current={active ? 'page' : undefined}
+      className={cn(
+        'flex items-center gap-2.5 rounded-md text-small transition-colors duration-(--dur-micro) hover:bg-surface-hover',
+        collapsed ? 'size-10 justify-center' : 'px-2.5 py-2',
+        active ? 'font-medium text-text' : 'text-text-mute hover:text-text',
+      )}
+    >
+      {avatar}
+      {!collapsed && <span className="min-w-0 flex-1 truncate">{label}</span>}
+    </Link>
+  );
+
+  return collapsed ? (
+    <Tooltip content={label} side="right">
+      {link}
+    </Tooltip>
+  ) : (
+    <span className="contents">{link}</span>
+  );
+}
+
+/**
+ * The one real place to switch, create, or manage organisations. Same
+ * behaviour as before the header rebuild, now a full-width vertical trigger
+ * instead of a compact horizontal one to match the sidebar it lives in.
+ */
+function SidebarOrgSwitcher({
   profile,
   refreshSession,
+  collapsed,
 }: {
   profile: SessionProfile | null;
   refreshSession: () => void;
+  collapsed: boolean;
 }) {
   const { orgs } = useOrganisations(profile);
   const [, setActiveOrgId] = useActiveOrg();
@@ -289,7 +497,12 @@ function HeaderOrgSwitcher({
 
   if (!profile) {
     return (
-      <span className="hidden h-8 w-28 shrink-0 rounded-full bg-surface-sunken sm:block" />
+      <span
+        className={cn(
+          'block h-9 rounded-md bg-surface-sunken',
+          collapsed ? 'w-9' : 'w-full',
+        )}
+      />
     );
   }
 
@@ -309,28 +522,43 @@ function HeaderOrgSwitcher({
     },
   ];
 
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <button
-          type="button"
-          aria-label={`Switch organisation - currently ${label}`}
-          className="hidden shrink-0 cursor-pointer items-center gap-1.5 rounded-full px-2 py-1.5 text-small transition-colors hover:bg-surface-hover sm:inline-flex"
-        >
-          <OrgMark
-            name={label}
-            logoUrl={profile.active.org_logo_url}
-            size="sm"
-          />
-          <span className="max-w-28 truncate font-medium text-text">
+  const trigger = (
+    <button
+      type="button"
+      aria-label={`Switch organisation - currently ${label}`}
+      className={cn(
+        'flex cursor-pointer items-center gap-2 rounded-md text-small transition-colors hover:bg-surface-hover',
+        collapsed ? 'size-9 justify-center' : 'w-full px-2 py-2',
+      )}
+    >
+      <OrgMark
+        name={label}
+        logoUrl={profile.active.org_logo_url}
+        size="sm"
+      />
+      {!collapsed && (
+        <>
+          <span className="min-w-0 flex-1 truncate text-left font-medium text-text">
             {label}
           </span>
           <CaretUpDownIcon
             aria-hidden
             className="size-3.5 shrink-0 text-text-mute"
           />
-        </button>
-      </DropdownMenuTrigger>
+        </>
+      )}
+    </button>
+  );
+
+  return (
+    <DropdownMenu>
+      {collapsed ? (
+        <Tooltip content={label} side="right">
+          <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
+        </Tooltip>
+      ) : (
+        <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
+      )}
 
       <DropdownMenuContent align="start" className="min-w-64">
         <DropdownMenuLabel>Organisations</DropdownMenuLabel>
@@ -367,59 +595,3 @@ function HeaderOrgSwitcher({
   );
 }
 
-/**
- * Credit balance pill.
- *
- * Under 20% it gains a brass dot; at zero it goes flare. The service exposes a daily
- * live-call budget rather than a credit wallet, so that is what this reports: the
- * number that actually governs whether the next run can dial.
- *
- * Deliberate, flagged exception to "every machine-produced value is set in mono"
- * (CLAUDE.md conventions): every other pill in the header (search, org switcher) is
- * body-font, and a monospace badge read as visually inconsistent with the rest of
- * the row rather than as a meaningful "this is data" signal. `tabular-nums` stays -
- * that's what actually stops the count jittering as it changes, independent of typeface.
- */
-function CreditBalance() {
-  const { safetySettings } = useAppStore();
-
-  if (!safetySettings) {
-    return (
-      <span className="hidden text-small text-text-mute sm:inline">
-        - calls left
-      </span>
-    );
-  }
-
-  const remaining = Math.max(
-    0,
-    safetySettings.daily_budget - safetySettings.used_today,
-  );
-  const share =
-    safetySettings.daily_budget > 0
-      ? remaining / safetySettings.daily_budget
-      : 0;
-  const lamp = remaining === 0 ? 'flare' : share < 0.2 ? 'brass' : null;
-
-  return (
-    <Tooltip
-      content={
-        remaining === 0
-          ? "You're out of calls for today. Resets tomorrow."
-          : `${remaining} of ${safetySettings.daily_budget} calls left today.`
-      }
-    >
-      <Link
-        href="/app/settings/safety"
-        className={cn(
-          'hidden items-center gap-1.5 rounded-full bg-surface-sunken px-3 py-1.5 sm:inline-flex',
-          'text-small tabular-nums transition-colors hover:bg-surface-hover',
-          remaining === 0 ? 'text-lamp-flare-text' : 'text-text-dim',
-        )}
-      >
-        {lamp ? <Lamp state={lamp} size="sm" /> : null}
-        {remaining} left
-      </Link>
-    </Tooltip>
-  );
-}

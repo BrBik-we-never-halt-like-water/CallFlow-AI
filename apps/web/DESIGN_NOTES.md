@@ -110,10 +110,13 @@ Current uses, all on `/app` only:
 - **New this round:** `.header-glass` (`globals.css`) - the dashboard's sticky top bar,
   previously plain frosted white regardless of page, now tinted `50% --surface-raised /
 50% --accent-wash` before the usual glass alpha. `.header-glass` needed no
-  `.app-font-scope` scoping trick, unlike `Button` - its only two call sites
-  (`components/layout/app-shell.tsx`) are both `/app/*`-exclusive. Deliberately **not**
-  extended to the active-state indicator on `PrimaryNav`, `AppTabBar`, the shared `Tabs`
-  component, or the Settings sub-nav - see §14 for why.
+  `.app-font-scope` scoping trick, unlike `Button` - all of its call sites
+  (`components/layout/app-shell.tsx`: the top bar, the minimal-chrome top bar, and now
+  the sidebar) are `/app/*`-exclusive. Deliberately **not** extended to the active-state
+  indicator on `AppSidebar`'s nav, `AppTabBar`, the shared `Tabs` component, or the
+  Settings sub-nav - see §14 for why. **Superseded by `.dark-chrome` as of the dark-
+  theme-pivot chrome reskin - see §15.** `.header-glass` itself is left defined, just
+  unused, in case `/app/*` ever needs a light-chrome path again.
 
 If you add a colour to this product, check it against the rule above first - and if it's
 genuinely decorative, not state, it belongs in `--accent`'s job, not a new token.
@@ -358,12 +361,12 @@ tint recipe and contrast numbers.
 
 **Left neutral, on purpose:**
 
-- **Active-state indicators on `PrimaryNav` (desktop header nav), `AppTabBar` (mobile tab
-  bar), the shared `Tabs` component (`components/ui/disclosure.tsx`), and the Settings
-  sub-nav (`app/(app)/app/settings/layout.tsx`).** All four mark "you are here" the same
-  way - a weight/colour shift to `--text`, never a filled colour - and two of them say so
-  explicitly in their own comments: `PrimaryNav`'s escalation badge is "the only
-  persistently-coloured element in the header, because it is the only thing in the
+- **Active-state indicators on `AppSidebar`'s nav (desktop sidebar), `AppTabBar` (mobile
+  tab bar), the shared `Tabs` component (`components/ui/disclosure.tsx`), and the
+  Settings sub-nav (`app/(app)/app/settings/layout.tsx`).** All four mark "you are here"
+  the same way - a weight/colour shift to `--text`, never a filled colour - and two of
+  them say so explicitly in their own comments: `AppSidebar`'s escalation badge is "the
+  only persistently-coloured element in the sidebar, because it is the only thing in the
   product that needs immediate human action," and `Tabs` marks its active edge with "a
   hairline rule... not a filled pill: the rest of the design separates with hairlines,
   and a pill here would be the only pill on the page." Recolouring just one of these four
@@ -388,10 +391,139 @@ tint recipe and contrast numbers.
 - **`:focus-visible` outline.** Product-wide, not `/app/*`-specific, and load-bearing for
   accessibility - stays `--text`, the highest-contrast choice available on every surface
   it needs to work on, including ones this palette doesn't touch.
-- **`CreditBalance`'s pill** (`app-shell.tsx`). Already carries its own semantic colour -
-  brass under 20% remaining, flare at zero, via the lamp tokens - reporting a real budget
-  state. Layering a second, unrelated colour signal (decorative accent) on the same small
-  pill would blur two different meanings into one swatch.
 - **Popover/`DropdownMenu` chrome.** Shared, product-wide components (like `Panel` and
   `Button` before their explicit `/app/*` overrides) with no call site asking for a
   scoped exception yet - left alone rather than guessed at.
+
+---
+
+## 15. Dark-theme pivot: the chrome reskin, and the token-inheritance trick that made it a one-class change
+
+The dark-theme foundation task (tokens + sidebar footer) deliberately left `AppSidebar`,
+`AppTopBar`, `MinimalTopBar`, and `AppTabBar` rendering their existing light chrome, since its
+own file scope named only the sidebar footer addition. That was flagged as an open gap - a
+round where dashboard/campaigns/runs go dark while the chrome around them stays light would
+look actively broken, not just transitional - and closing it is this entry's subject.
+
+**`.dark-chrome` (`globals.css`), not a second `.header-glass`.** Every chrome child - nav
+links, `SidebarOrgSwitcher`'s skeleton, `Wordmark`'s hardcoded `text-text-dim` "AI" suffix,
+the escalation badge's inline `var(--lamp-flare)` - was already styled
+entirely in *generic* tokens (`--text`, `--text-mute`, `--surface-sunken`, `--lamp-flare`, ...).
+Rather than hand-editing every one of those call sites to a `dark-` prefixed token, `.dark-
+chrome` re-declares the generic custom properties themselves, scoped to whichever element
+carries the class. CSS custom properties inherit through the DOM regardless of which component
+drew which node, so every descendant's existing class picks up the dark value automatically -
+the identical mechanism `.app-font-scope` already uses to flip `--font-sans` to Ubuntu for all
+of `/app/*`, just scoped to one chrome element instead of the whole dashboard. Net result: zero
+text-colour edits in `app-shell.tsx` or `app-nav.tsx` - only a class swap (`header-glass` /
+`bg-surface-raised` -> `dark-chrome`) on four elements. `.dark-panel-glass` (the floating-card
+material for the D2-D4 page rebuilds) picked up the same re-scoping block for the same reason,
+proactively, so those tasks get legible children for free too.
+
+**Radix portals make this safe, not accidentally leaky.** `DropdownMenu`/`Tooltip` content
+renders outside the triggering element's DOM subtree (portaled to `document.body`), so
+overriding tokens on `<aside>`/`<header>`/`<nav>` cannot reach the org-switcher dropdown or a
+tooltip bubble - they keep reading light, consistent with this file's existing "leave popover
+chrome alone" call (§14) without needing a fresh decision to preserve it.
+
+**Opaque, not translucent - a corrected assumption, not a taste call.** `.dark-panel-glass`
+(content cards) stays translucent (42% as of the later card-glassmorphism tuning pass - see
+`--dark-glass-surface`'s own citation in globals.css for the current number and its contrast
+math), matching every other glass surface in this file. The
+chrome does not, for a reason specific to this transitional moment: D2-D4 haven't landed, so the
+content that actually scrolls behind these `sticky` bars today is still light. Computing the
+composite both ways - against the eventual dark page canvas *and* against today's real light
+backdrop - showed translucency pulls `--dark-text-mute` down toward the 4.5:1 AA floor
+specifically in the direction that only shows up before the rest of the pivot lands (4.69:1 at
+88% opacity against today's backdrop, vs. a stable 6.6:1 either way once fully opaque). Fully
+opaque removes the variable entirely rather than threading a needle that moves as later tasks
+land. It also happens to match the plan's own screenshot analysis, which calls the reference
+sidebar a "solid dark surface" - the two reasons agree, not by coincidence.
+
+**One real bug caught in the process: the escalation badge's white count text.** The first
+`--dark-lamp-flare` pick (`#c15f4d`) only gave white badge text 4.19:1 against it - below AA,
+and worse than the light theme's own already-thin 4.66:1 for the identical white-on-`--lamp-
+flare` pair. Darkened one step (`#b45342`, OKLCH L 0.60 -> 0.56) to 4.93:1, while the dot itself
+still clears 3:1 against the opaque chrome background as a small decorative mark. The other four
+`--dark-lamp-*` dots were not touched - only flare carries solid white text on top of it anywhere
+in this chrome.
+
+## 16. Dashboard dark rebuild (D2) - a stacking-context bug worth knowing about before D3/D4
+
+`page.tsx`'s own file scope can't touch `app-shell.tsx`, so the page bleeds its own
+`.dark-canvas` backdrop into `<main>`'s padding with an absolutely-positioned, negative-inset
+sibling (`-inset-x-4 -inset-y-6 sm:-inset-x-6`, `-z-10`) rather than asking `AppShell` to add the
+class itself. The generic-token re-scope (`--text`, `--surface-raised`, the ten `--lamp-*`
+pairs, ...) is applied the same way `.dark-chrome`/`.dark-panel-glass` do it (§15), but inline via
+a `style` object on the page's own root instead of a new global class, since the only thing
+outside a `.dark-panel-glass` card on this page is the header row's buttons and
+`ConnectionBanner` - not enough surface area to justify a new class in `globals.css` for a single
+page task.
+
+**The bug, for whoever builds D3/D4 next.** The negative-`z-index` backdrop rendered correctly
+almost everywhere, except for a band exactly the height of the page's own header row, which
+showed `.canvas-tint`'s light mint wash bleeding through *in front of* the dark backdrop. Root
+cause: `template.tsx`'s `.page-enter` wrapper (the route-transition fade, `animation: page-enter
+… backwards`) animates `transform`, and a `transform` value other than `none` creates a stacking
+context for as long as it's active - which is exactly the ~240ms (`--dur-base`) after every
+navigation, confirmed by forcing the backdrop's `z-index` to `999` (the mint disappeared
+entirely, proving it was a paint-order issue, not a geometry one) and by disabling the animation
+via `prefers-reduced-motion` emulation (same result, cleanly). Without an explicit stacking
+context of its own, this page's backdrop-plus-content pairing had its ordering decided by
+whatever ancestor happened to be the nearest real stacking context at that instant, which
+briefly became `.page-enter` on every route change. **Fix: `isolate` on the page's own wrapper**
+(`relative isolate min-h-full`), so the backdrop's negative `z-index` is always resolved against
+its one sibling and never depends on what an unrelated ancestor's animation is doing. Any future
+page that bleeds its own full-bleed backdrop this way (rather than through a class on `AppShell`)
+needs the same `isolate`, not just the negative inset.
+
+**Chart colour, not chart mechanism.** `area-chart.tsx` (`components/ui/`) gained a `tone?:
+'light' | 'dark'` prop rather than being hard-converted to dark colours - it's used nowhere else
+today, but a colour-only prop keeps it honestly reusable rather than dark-only by accident, and
+keeps the diff a colour swap, not a rebuild, per the plan's own instruction. `dark` swaps the
+point markers and the "today" callout pill from `--accent`/`--surface-inverse` to `--dark-accent`
+or with a soft `drop-shadow` glow (the plan's "glowing chart" ask) - the pill's text flips from
+white to `--dark-bg` alongside it, since white-on-solid-`--dark-accent` only clears ~2.4:1 while
+near-black-on-it clears ~8.7:1. Picked up `usePrefersReducedMotion` for the dot-entrance
+animation while in there, which the previous version didn't gate on that preference.
+
+**The primary button's `--accent` tint, left alone on purpose.** `.app-font-scope
+.btn-glass-primary` already tints every primary `Button` on `/app/*` with `--accent` (light
+theme's forest green - DESIGN_NOTES §2's "extend `--accent` into primary buttons/CTAs" call).
+`--accent` and `--dark-accent` are deliberately independent tokens (CLAUDE.md §4 #10), so that
+tint doesn't flip on a dark page by itself. Rather than edit the shared `Button`/`globals.css`
+rule (out of this task's file scope, and shared with every other `/app/*` page mid-edit by other
+tasks this round), every primary `Button` on the dashboard gets a local inline `style` override -
+`background: color-mix(in oklab, var(--dark-accent) 92%, transparent)`, text flipped to
+`--dark-bg` for the same contrast reason as the chart's pill above. Still token-only (no raw
+hex), just applied per-button instead of through the shared class. D3/D4 should expect the same
+green-on-primary-button seam if they don't apply an equivalent override.
+
+**Status color, applied per the plan's resolution (§ shared plan doc, "Status color handling"):
+label first, color as a small secondary accent.** The "Needs a person" list re-uses `LampBadge`
+as-is (a small dot plus a low-opacity tinted pill, never a solid fill) for its urgency indicator,
+and the "Recent calls" table renders outcome as a small `Lamp` dot *plus* the plain-text label
+right next to it - color never carries the row's meaning alone. This is also the first real
+dark-mode render of `--dark-lamp-off`/`-ice`/`-brass`/`-jade` (only `-flare` had shipped before,
+via the escalation badge) - all four read fine at a glance against `.dark-panel-glass` cards in
+manual testing; none needed the kind of value correction `-flare` did in §15.
+
+**"Review", not "Takeover".** The plan's own dashboard-card spec suggested a `Takeover` action;
+this product has no live call-transfer/takeover feature anywhere, and CLAUDE.md §4 #9 rules out
+labelling a link with a verb it can't perform. Each "Needs a person" row links to
+`/app/escalations` (the same destination as the card header's own "See all N") labelled "Review
+→" instead - an honest link to the one place the real actions (call back, reassign, mark
+resolved) already live, not a fabricated per-row deep link (there's no per-outcome id yet to link
+to, `ISSUES.md` #7).
+
+**A fixed "outbound" glyph, not a direction toggle.** The reference's recent-calls row has a
+small in/out arrow per call. CallFlow only ever dials out - there is no inbound leg - so every row
+gets the same `PhoneOutgoingIcon` rather than a direction indicator with only one direction to
+show, which would silently imply a capability (inbound calls) this product doesn't have.
+
+**One pre-existing Tailwind gotcha, fixed while it was found:** the campaign-name pill's
+`truncate` was applied directly to `Tag`'s own `inline-flex` root - Chrome clips the overflow
+correctly there but does not reliably paint the `…` ellipsis for text that's a direct child of a
+flex container. Moving `max-w-32 truncate` onto a `block`-level `<span>` *inside* the pill (the
+standard "truncate needs a block box of its own inside a flex row" fix) resolved it; worth
+remembering for `Tag` composed inside any other flex row in D3/D4.
