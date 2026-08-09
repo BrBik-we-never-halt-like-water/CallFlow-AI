@@ -126,6 +126,30 @@ if [ -n "${ORIGIN_CERT_B64:-}" ] && [ -n "${ORIGIN_KEY_B64:-}" ] && have_sudo; t
   fi
 fi
 
+# An https PUBLIC_URL with nothing able to produce a certificate is a
+# misconfiguration, not a degraded mode. Left alone it renders nginx on port 80
+# only, and the first sign of trouble is the deploy job's health check failing
+# against a URL the site was never going to answer on.
+#
+# `gh secret set` will happily store an empty value - `base64 missing-file | gh
+# secret set X` prints an error, exits, and still sets X to "" - so a secret can
+# look configured in the UI and be empty here. This catches that.
+case "$PUBLIC_URL" in
+  https://*)
+    if [ ! -f "$CERT" ] && [ -z "${CERTBOT_EMAIL:-}" ]; then
+      echo "FATAL: PUBLIC_URL is $PUBLIC_URL but no TLS certificate is available." >&2
+      if [ -n "${ORIGIN_CERT_B64:-}" ] || [ -n "${ORIGIN_KEY_B64:-}" ]; then
+        echo "       ORIGIN_CERT_B64/ORIGIN_KEY_B64 are set but did not yield a" >&2
+        echo "       usable pair - check they are not empty and that they match." >&2
+      else
+        echo "       Set ORIGIN_CERT_B64 and ORIGIN_KEY_B64 from a Cloudflare Origin" >&2
+        echo "       certificate, or CERTBOT_EMAIL for a host not behind Cloudflare." >&2
+      fi
+      exit 1
+    fi
+    ;;
+esac
+
 if [ ! -f "$SITE" ] && have_sudo; then
   # Ports come from ecosystem.config.js so the proxy cannot point somewhere pm2
   # is not listening. Read here rather than at the top of the script: node is on
