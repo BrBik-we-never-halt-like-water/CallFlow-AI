@@ -85,7 +85,7 @@ CLAUDE.md's non-negotiable #9 rules out.
 | `SUPABASE_SECRET_KEY`      | Settings → API Keys → secret (`sb_secret_…`). **Server only**                                                                |
 | `SUPABASE_JWKS_URL`        | `https://<ref>.supabase.co/auth/v1/.well-known/jwks.json`                                                                    |
 | `DATABASE_URL`             | Settings → Database → connection string, port **5432**                                                                       |
-| `DIRECT_URL`               | The same. Used by Alembic                                                                                                    |
+
 | `PHONE_HASH_PEPPER`        | Generate once: `python -c "import secrets; print(secrets.token_urlsafe(32))"`                                                |
 | `RESEND_API_KEY`           | resend.com dashboard → API Keys. A send-only restricted key is fine                                                          |
 | `RESEND_FROM_EMAIL`        | `Name <address@your-verified-domain>` - the domain must be verified under resend.com dashboard → Domains first; see §3 above |

@@ -6,7 +6,8 @@ than mocking anything. They exercise the same role switch the API uses, which is
 only configuration where RLS is actually in force - `postgres` holds BYPASSRLS, so a
 plain connection proves nothing.
 
-Skipped when DIRECT_URL is unset, so the suite still runs offline.
+Skipped when DATABASE_URL is unset, so the suite still runs offline - which is also
+why CI, which sets no database, never exercises any of this.
 """
 
 from __future__ import annotations
