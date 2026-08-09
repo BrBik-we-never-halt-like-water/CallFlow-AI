@@ -165,15 +165,45 @@ unencrypted (Flexible) or unverified (Full), which is most of the point of doing
 Turn on **Always Use HTTPS**, and set HSTS here rather than on the origin - Cloudflare
 terminates the connection the browser actually sees.
 
-### 4. Hand them to the pipeline
+### 4. Get them onto the VM
+
+Either route works, and `bootstrap.sh` treats them identically - every decision it
+makes keys on whether `/etc/ssl/cloudflare/callflow.pem` and `.key` exist, not on
+where they came from.
+
+**Route A - place them on the VM directly**, the same way `brbik.pem` already is:
 
 ```bash
-base64 -w0 origin.pem   # -> ORIGIN_CERT_B64
-base64 -w0 origin.key   # -> ORIGIN_KEY_B64
+sudo mkdir -p /etc/ssl/cloudflare
+sudo tee /etc/ssl/cloudflare/callflow.pem > /dev/null   # paste, then Ctrl-D
+sudo tee /etc/ssl/cloudflare/callflow.key > /dev/null
+sudo chmod 644 /etc/ssl/cloudflare/callflow.pem
+sudo chmod 600 /etc/ssl/cloudflare/callflow.key
+sudo chown root:root /etc/ssl/cloudflare/callflow.*
 ```
 
-The same pair serves both environments, since `*.callflow.com` covers `dev`. Set them on
-both the `main` and `dev` environments, or once at repo level to be inherited.
+Simplest, and the private key exists in exactly one place instead of two. The cost is
+that it is state no one can reproduce from the repository - if the machine is lost, so
+is the arrangement. For a 15-year certificate that is a fair trade; for anything that
+rotates it would not be.
+
+**Route B - hand them to the pipeline**, so a rebuilt VM re-provisions itself:
+
+```bash
+base64 -w0 origin.pem | gh secret set ORIGIN_CERT_B64
+base64 -w0 origin.key | gh secret set ORIGIN_KEY_B64
+```
+
+Chain with `&&` and never on separate lines: `gh secret set` reads stdin, and
+`base64 missing-file | gh secret set X` still sets `X` to an empty string after
+printing its error - a secret that reads as configured in the UI and is empty on the
+machine.
+
+Route B can be added later without changing anything: with the secrets set, the
+install block simply starts overwriting the files each run.
+
+The same pair serves both environments, since `*.callflow.com` covers `dev`. With Route B,
+set them once at repo level rather than per environment.
 
 `bootstrap.sh` installs them to `/etc/ssl/cloudflare/callflow.pem` and `.key` on every run
 - matching the convention already used on this box for the brbik zone - so
