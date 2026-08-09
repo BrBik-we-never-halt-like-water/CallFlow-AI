@@ -2,7 +2,6 @@ import Link from "next/link";
 import { LampStrip } from "@/components/brand/lamp-strip";
 import { WaveCanvas } from "@/components/brand/wave-canvas";
 import { Button } from "@/components/ui/button";
-import { Eyebrow } from "@/components/ui/panel";
 import { Reveal } from "@/components/ui/reveal";
 import type { LampSpec } from "@/lib/lamp";
 
@@ -38,10 +37,8 @@ export function FinalCta() {
           </div>
 
           <div className="relative flex flex-col items-center gap-6 px-6 py-(--space-section) text-center">
-            <Eyebrow>Start free</Eyebrow>
-
-            <h2 className="measure-display font-display text-display-l text-text">
-              Put your list to work.
+            <h2 className="measure-display font-display text-text text-4xl sm:text-5xl lg:text-7xl">
+              Handover the list and let CallFlow do the rest.
             </h2>
 
             <p className="measure text-body-l text-text-dim">
@@ -59,8 +56,6 @@ export function FinalCta() {
                 <Link href="/demo">Book a 15-min demo</Link>
               </Button>
             </div>
-
-            <p className="text-small text-text-mute">No card required.</p>
           </div>
         </div>
       </Reveal>

@@ -68,7 +68,11 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
         <RadixToast.Viewport
           className={cn(
             "fixed right-0 top-0 z-100 flex w-[min(400px,calc(100vw-24px))] flex-col gap-2 p-3",
-            "outline-none",
+            // Clip horizontally so a toast animating in/out from off-screen right
+            // (translate-x-full) can't extend the document width and add a
+            // horizontal scrollbar on mobile. `clip` (not `hidden`) keeps the
+            // vertical axis visible — no stray scrollbar on the viewport itself.
+            "overflow-x-clip outline-none",
           )}
         />
       </RadixToast.Provider>

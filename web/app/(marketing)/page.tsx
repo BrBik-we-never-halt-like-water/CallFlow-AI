@@ -6,7 +6,6 @@ import { ProblemCompare } from "@/components/marketing/problem-compare";
 import { SafetySection } from "@/components/marketing/safety-section";
 import { Steps } from "@/components/marketing/steps";
 import { VerticalStrip } from "@/components/marketing/vertical-strip";
-import { WaveCanvas } from "@/components/brand/wave-canvas";
 
 /**
  * The home page.
@@ -15,8 +14,9 @@ import { WaveCanvas } from "@/components/brand/wave-canvas";
  * call log is not enough, show the four steps, list what you get, name who it is
  * for, prove the guards, price it, then close on the free dry run.
  *
- * Sections are separated by a lamped rule rather than by alternating background
- * bands. The one surface inversion on the page is saved for the closing CTA.
+ * Sections are separated by open space rather than by rules or alternating
+ * background bands. The one surface inversion on the page is saved for the
+ * closing CTA.
  */
 export default function HomePage() {
   return (
@@ -26,16 +26,16 @@ export default function HomePage() {
       <SpineDivider />
       <ProblemCompare />
 
-      <SpineDivider bold />
+      <SpineDivider />
       <Steps />
 
-      <SpineDivider bold />
+      <SpineDivider />
       <CapabilityGrid />
 
       <SpineDivider />
       <VerticalStrip />
 
-      <SpineDivider bold />
+      <SpineDivider />
       <SafetySection />
 
       <SpineDivider />
@@ -46,13 +46,7 @@ export default function HomePage() {
   );
 }
 
-function SpineDivider({ bold = false }: { bold?: boolean }) {
-  return (
-    <div className="mx-auto max-w-(--container-marketing) px-4 py-(--space-section) sm:px-6">
-      <WaveCanvas
-        pitch={bold ? 7 : 11}
-        className={bold ? "h-16 text-text opacity-80" : "h-9 text-text opacity-40"}
-      />
-    </div>
-  );
+/** Open space between sections — the page's only separator. */
+function SpineDivider() {
+  return <div aria-hidden className="h-(--space-section)" />;
 }
