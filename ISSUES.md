@@ -81,7 +81,16 @@ exist in this repo**; `SYSTEM.md` §12 is the closest real gap map until it's wr
 | [#51](#51--team-invitations-failed-outright--the-from-domain-was-never-verified-in-resend-and-the-error-leaked-a-raw-httpx-dump)  | S2  | Team invitations failed outright - the from-domain was never verified in Resend                                       | backend + docs | it-12 | **PARTLY FIXED** |
 | [#52](#52--transcript-extraction-read-a-top-level-key-that-doesnt-exist-anywhere-in-call-es-real-response)                        | S2  | Transcript extraction read a top-level key that doesn't exist anywhere in CALL-E's real response                      | backend        | it-13 | **FIXED**        |
 | [#53](#53--one-flaky-status-poll-could-mark-an-entire-successfully-completed-call-as-failed)                                      | S2  | One flaky status poll could mark an entire, successfully-completed call as failed                                     | backend        | it-13 | **FIXED**        |
-| [#54](#54--a-retried-call-after-a-connection-error-classification-could-double-dial-without-counting-against-the-per-run-ceiling) | S3  | A retried call after a connection-error classification could double-dial without counting against the per-run ceiling | backend        | it-13 | OPEN             |
+| [#54](#54--a-retried-call-after-a-connection-error-classification-could-double-dial-without-counting-against-the-per-run-ceiling) | S3  | A retried call after a connection-error classification could double-dial without counting against the per-run ceiling | backend        | it-13 | **FIXED**        |
+| [#55](#55--7-of-call-es-reachable-error-codes-fell-through-to-a-generic-internal-error)                                          | S3  | 7 of CALL-E's reachable error codes fell through to a generic internal error                                          | backend        | it-14 | **FIXED**        |
+| [#56](#56--a-vendor-specific-key-leaked-above-the-integration-boundary)                                                          | S4  | A vendor-specific key leaked above the integration boundary                                                           | backend        | it-14 | **FIXED**        |
+| [#57](#57--list_events-dropped-cursor-pagination)                                                                                | S4  | `list_events()` dropped cursor pagination                                                                             | backend        | it-14 | **FIXED**        |
+| [#58](#58--claude-mds-no-pii-in-logs-guarantee-had-no-actual-filter-behind-it)                                                    | S2  | CLAUDE.md's "No PII in logs" guarantee had no actual filter behind it                                                 | backend        | it-14 | **FIXED**        |
+| [#59](#59--idempotency-key-is-now-stable-per-run-and-contact-half-of-54)                                                          | S3  | Idempotency key is now stable per run and contact (half of #54)                                                       | backend        | it-16 | **FIXED**        |
+| [#60](#60--campaigns-dialled-contacts-strictly-one-at-a-time)                                                                     | S2  | Campaigns dialled contacts strictly one at a time                                                                     | backend        | it-17 | **FIXED**        |
+| [#61](#61--no-webhook-receiver--every-call-outcome-only-ever-arrived-via-polling)                                                 | S3  | No webhook receiver - every call outcome only ever arrived via polling                                                | backend        | it-18 | **FIXED**        |
+| [#62](#62--call-es-own-task_completedcompletion_confidenceevidence-and-full-retry-history-were-discarded)                        | S3  | CALL-E's own `task_completed`/`completion_confidence`/`evidence` and full retry history were discarded                | backend        | it-19 | **FIXED**        |
+| [#63](#63--live-per-call-events-were-declared-and-plumbed-but-had-no-consumer)                                                    | S4  | Live per-call events were declared and plumbed but had no consumer                                                    | backend        | it-20 | **FIXED**        |
 
 ---
 
@@ -1903,14 +1912,331 @@ phone call to the same contact, uncounted by the per-run ceiling.
 request whose response CallFlow never saw, combined with something acting on the advisory
 `RETRY` disposition. Not reachable today since nothing auto-retries.
 
-**Fix.** Not fixed here. Would need either a stable (non-regenerated) idempotency key per
-contact-attempt, or `_calls_made` incremented before the request is sent rather than after
-it returns successfully, to close - either changes retry semantics enough to deserve its
-own deliberate pass rather than a drive-by fix.
+**Fix.** **Fixed in two parts.** Iteration 16 (module 3): the idempotency key is now
+stable per `(run_id, contact)` (`CampaignRunner._idempotency_key()`) instead of a fresh
+random suffix every attempt, so a retry is recognisable to CALL-E as a duplicate. Iteration
+17 (module 4, concurrent dialling): `_calls_made` is now incremented as part of the same
+locked check-and-reserve that admits a contact past the ceiling, *before* the dial is
+attempted rather than after it returns successfully - a failed or lost-response attempt
+still spent a real slot at CALL-E and now still counts, closing the other half of this
+issue as a direct side effect of making the ceiling check race-safe under concurrency
+(see `#60`).
 
 **Depends on / Blocks:** related to `CALLE_INTEGRATION_STATUS.md` §3.5 (idempotency key
 regenerated per attempt) and `#53` (introduced the reclassification that makes this
 reachable).
+
+## Iteration 14 - 2026-08-09 · CALL-E integration rebuild, module 1: error taxonomy completeness
+
+First of a planned seven-module pass rebuilding the CALL-E integration for real - not
+speculative feature work, each module targets a specific gap already documented in
+`CALLE.md`/`CALLE_INTEGRATION_STATUS.md`/this file's own #37/#52/#53/#54. Module 1 closes
+the three smallest, most mechanical gaps before the riskier concurrency/idempotency work
+(modules 2-4) builds on top of a complete, correctly-classified failure taxonomy.
+
+### #55 - 7 of CALL-E's reachable error codes fell through to a generic internal error
+
+**S3 · FIXED · backend · `apps/api/app/integrations/voice/engine.py`**
+
+`_ERROR_CODE_MAP` mapped 12 of the 19 error codes actually reachable from `/v1/calls`
+(the other 5 of CALL-E's 24 documented codes are Goals-only, correctly excluded since
+Goals aren't integrated). The other 7 - `call_not_ready`, `not_found`, `invalid_request`,
+`idempotency_conflict`, `result_schema_invalid`, `recipient_result_schema_invalid`,
+`internal_error` - fell through to the unmapped-code default. Fail-closed to `INTERNAL`
+either way, so no behaviour actually changed for most of them, but a future reader
+couldn't tell "considered and mapped to INTERNAL" apart from "never looked at."
+
+**Fix.** All 7 now map explicitly: `call_not_ready`/`not_found` (poll-only, transient read-
+after-write races) join `provider_unavailable` in the retryable bucket; the rest map to
+`INTERNAL` as configuration/request-shape problems, explicitly rather than by omission.
+
+### #56 - A vendor-specific key leaked above the integration boundary
+
+**S4 · FIXED · backend · `apps/api/app/services/campaign_runner.py`**
+
+`campaign_runner.py` (in `services/`, above `integrations/voice/`) built
+`metadata = {"call-e/customerMetadata": {...}}` - a vendor-flavoured key living outside the
+one file CLAUDE.md's dependency-inversion rule says should ever speak CALL-E's name. Not a
+functional bug (`metadata` is a fully free-form bag on CALL-E's side, confirmed against the
+generated SDK model - no required shape or namespacing), just a boundary breach.
+
+**Fix.** Metadata is now built as a plain, vendor-neutral dict; the vendor-named wrapper is
+gone entirely rather than moved, since nothing ever required it.
+
+### #57 - `list_events()` dropped cursor pagination
+
+**S4 · FIXED · backend · `apps/api/app/integrations/voice/engine.py`, `protocol.py`**
+
+`EngineGateway.list_events()` forwarded `limit` to the SDK but never `cursor`, even though
+the endpoint is documented as cursor-paginated and the SDK's own `list_events()` accepts
+one. Moot today - nothing calls this method yet (module 7 of this same rebuild plans to) -
+but would have silently truncated every long call's events to page one the moment
+something did.
+
+**Fix.** `cursor` now threads through `EngineGateway.list_events()` and the `VoiceProvider`
+protocol signature it conforms to.
+
+## Iteration 15 - 2026-08-09 · CALL-E integration rebuild, module 2: structured logging + a real redaction filter
+
+### #58 - CLAUDE.md's "No PII in logs" guarantee had no actual filter behind it
+
+**S2 · FIXED · backend · `apps/api/app/core/logging.py` (new), `main.py`, `campaign_runner.py`, `api/v1/routes/runs.py`**
+
+CLAUDE.md's non-negotiable #5 stated, as fact, that "Numbers, tokens, keys, and transcript
+bodies are redacted by a global filter - and the redaction is tested." No such filter
+existed anywhere in the codebase - `logging.basicConfig(level=logging.INFO)` was the entire
+logging setup (`main.py`). Redaction was real but 100% dependent on every call site
+remembering to call `mask()` (`domain/safety.py`) before logging a phone number; a stated
+safety guarantee resting entirely on discipline, with no backstop, is exactly the kind of
+gap that stays invisible until the one call site that forgot.
+
+Separately: no log line carried enough context to trace one call's whole lifecycle (dial →
+poll → resolve) as a single unit - each line stood alone, correlated only by eye.
+
+**Fix.** `app/core/logging.py`: `RedactingFilter`, attached to every handler by the new
+`configure_logging()`, redacts E.164-shaped numbers and bearer/key-style tokens found in a
+rendered message, and fully redacts known-sensitive `extra=` field values by name
+(`transcript`, `phone`, `api_key`, `token`, `authorization`, `password`, `secret`) -
+regardless of content, since a transcript is free text and not pattern-matchable the way a
+phone number is. `mask()` stays the primary defence; this is the safety net for whatever a
+call site misses. Also added `CallContext` (contextvars-based, composes across nesting):
+`api/v1/routes/runs.py`'s background run task binds `run_id`/`org_id` for the run's whole
+lifetime; `campaign_runner.py` binds `call_id` once a dial is placed, so every log line
+touching one call - in this module and in `engine.py` - can be grepped together. Output is
+text (human-readable, unchanged default) or one-JSON-object-per-line via
+`CALLFLOW_LOG_FORMAT=json`, for a deployment that ships to a log aggregator.
+
+**Tests.** `tests/test_logging.py` - redaction of raw numbers, format-arg numbers, and
+several token shapes; sensitive-field-by-name redaction; context binding, nesting, and
+leak-after-exit; both formatters. 16 new tests, 198/198 passing overall.
+
+## Iteration 16 - 2026-08-09 · CALL-E integration rebuild, module 3: idempotency key correctness
+
+### #59 - Idempotency key is now stable per run and contact (half of #54)
+
+**S3 · FIXED · backend · `apps/api/app/services/campaign_runner.py`, `api/v1/routes/runs.py`**
+
+Closes the idempotency-key half of `#54` and the previously-open item 5 in
+`CALLE_INTEGRATION_STATUS.md` §3. `campaign_runner.py` built `Idempotency-Key` as
+`f"{campaign.id}-{contact.phone}-{uuid.uuid4().hex[:8]}"` - a fresh random suffix on every
+single dial, including a retry of the exact same logical attempt. `Idempotency-Key` exists
+to protect exactly one scenario - a create-call request reaches CALL-E and a call gets
+placed, but the response is lost before CallFlow sees it - and a random suffix defeats that
+protection entirely: a retry with a new key cannot be recognised as a duplicate of anything.
+
+**Fix.** `CampaignRunner` now takes an optional `run_id` (threaded from
+`api/v1/routes/runs.py`, the persisted run's own id). `_idempotency_key()` builds
+`f"{run_id}:{phone_hash(contact.phone)}"` when a run_id is present - stable across any
+retry of this exact (run, contact) pair, since the rendered goal text for a given
+(campaign, contact) is deterministic within one run, and distinct across two different runs
+dialling the same contact, so an old run's key can never be replayed against a new one. Uses
+`phone_hash()` rather than the raw number, in case the header value ever surfaces in a trace
+or log outside CallFlow's own control. Without a `run_id` (ad hoc use, tests, no stable job
+identity to key off of) it falls back to a fresh key every call, same as before this fix -
+not idempotent, but no worse than the prior default either.
+
+Does **not** close `#54` fully: `_calls_made` is still only incremented after `start_call`
+returns successfully, so a retry after a connection-error classification still wouldn't
+count against `max_calls_per_run`. Left for module 4, which has to redesign how
+`_calls_made` is guarded anyway to be race-safe under concurrent dialling.
+
+**Tests.** `tests/test_orchestrator.py` - same key across two calls for the same
+(run_id, contact); different keys across two different run_ids for the same contact; raw
+phone never appears in the key; falls back to a fresh key with no run_id. 4 new tests,
+202/202 passing overall.
+
+## Iteration 17 - 2026-08-09 · CALL-E integration rebuild, module 4: concurrent dialling
+
+### #60 - Campaigns dialled contacts strictly one at a time
+
+**S2 · FIXED · backend · `apps/api/app/services/campaign_runner.py`, `core/config.py`**
+
+`CampaignRunner.run()` was `for contact in contacts: await self.run_one(...)` - every
+contact dialled, polled to a terminal status (up to 900s), and resolved before the next
+contact was even attempted. For a run of N contacts at roughly a minute or two per real
+call, that's N times the wall-clock time the run actually needed. This is very likely the
+real cause behind a user report that "calls placed take a little bit of time" - not
+per-call dial latency (CALL-E's own infrastructure, outside this codebase's control - and,
+per a live research pass, not a figure CALL-E publishes anywhere), but the *whole run*
+taking N times longer than necessary because contacts were never allowed to overlap.
+
+**Fix.** `run()` now dials up to `CALLFLOW_MAX_CONCURRENT_CALLS` (default 5 - CALL-E
+publishes no rate-limit numbers, so this starts conservative) contacts at once via an
+`asyncio.Semaphore`, using `asyncio.gather(..., return_exceptions=True)` so one contact's
+own bug can't cancel every other contact's real, already-in-flight phone call - a failure
+mode with no sequential analog, since a one-at-a-time loop never has more than one contact
+in flight to abandon. `run()`'s returned list still matches the input contact order
+regardless of which contact's call actually finishes first (`gather`'s own ordering
+guarantee) - confirmed by test, not assumed.
+
+Concurrency exposed a real, load-bearing race that a sequential loop could never trigger:
+`run_one()` read `self._calls_made` (the per-run ceiling counter) and incremented it only
+*after* a successful dial, so two contacts dialled at the same moment could both read the
+same under-the-ceiling count before either incremented, admitting more calls than
+`max_calls_per_run` allows. Fixed by making the check-and-reserve one atomic step under a
+new `asyncio.Lock`, held only for that brief moment (never around the dial/poll itself, so
+concurrency is preserved) - and the reservation now happens *before* the dial is attempted,
+not after it succeeds, which is also the second half of `#54`'s fix (a failed or
+lost-response attempt still spent a real slot at CALL-E and must still count, per
+CLAUDE.md's fail-closed rule).
+
+**Tests.** `tests/test_orchestrator.py` - `ConcurrencyTrackingGateway` proves contacts
+genuinely overlap in wall-clock time (a real `time.sleep()` inside the worker thread, not
+the mocked event-loop sleep) and never exceed the configured limit; the ceiling holds
+under real concurrent dialling (5 contacts, ceiling 2 → exactly 2 admitted); output order
+survives concurrency. `test_progress_hook_fires_per_contact` updated - concurrent dialling
+means two contacts' progress events can now interleave with each other, so it checks each
+contact's own event order (dialing, then resolved) rather than a fixed global sequence.
+6 new/changed tests, 206/206 passing overall.
+
+## Iteration 18 - 2026-08-09 · CALL-E integration rebuild, module 5: webhook receiver
+
+### #61 - No webhook receiver - every call outcome only ever arrived via polling
+
+**S3 · FIXED · backend · `api/v1/routes/webhooks.py` (new), `services/campaign_runner.py`, `database/repositories/runs.py`, migration `202608091200`**
+
+CALL-E supports a per-request `webhook_url` on `POST /v1/calls`, delivering terminal events
+(`call.completed`, `call.failed`, `call.result_validation_failed`) with a full `CallTask`
+snapshot - and even ships an SDK module for it - but this codebase never populated
+`webhook_url`, and no receiver endpoint existed. Every outcome, always, arrived via
+`_poll_until_done`'s 2-second polling loop - a self-imposed floor on how fast a completed
+call is *noticed*, on top of module 4's fix for how fast contacts are *dialled*.
+
+The real complication, not just missing plumbing: a webhook has no signed-in user behind
+it, and CLAUDE.md is explicit that `privileged.acquire()` must never appear in a request
+handler. Raised to the user as a genuine architectural fork rather than worked around
+silently; the chosen approach (below) follows the exact precedent
+`GET /api/v1/invitations/{token}` already set for the same shape of problem.
+
+**Fix.**
+- New migration `202608091200_calle_webhook_run_lookup.py`: one narrow SECURITY DEFINER
+  function, `lookup_run_owner_for_webhook(run_id)`, resolving a run's `org_id`,
+  `campaign_id`, and starter's `auth_user_id` - a lookup only, no write, matching
+  `lookup_invitation`'s own shape and requiring no new grant (function EXECUTE defaults to
+  PUBLIC in Postgres, confirmed by that same precedent having none either).
+- New route `POST /api/v1/webhooks/calle/{secret}`: `database.anonymous()` calls the lookup
+  function to resolve identity, then the actual write goes through the *ordinary*,
+  already-RLS-correct `database.as_user()` path - as the run's own starter, who already
+  held sufficient permission to start it in the first place. No new RLS-bypassing write
+  path was needed at all. Unsigned by CALL-E (confirmed: its SDK's HMAC helpers are
+  deprecated, "must not be used to parse current deliveries"), so `secret` - compared in
+  constant time - is the entire trust boundary; a wrong secret gets 404, not 401/403.
+- `CampaignRunner`'s metadata now includes `run_id` (omitted when there isn't one) so the
+  receiver can attribute an event back to a run once CALL-E echoes it. The outcome-
+  resolution logic (`_extract_result`/`_extract_transcript`/`triage`) that used to live
+  only in `run_one()`'s tail is now `_resolve_outcome()`, a shared function both the
+  polling path and the webhook call identically - one triage implementation, not two.
+- `CALLFLOW_PUBLIC_API_URL` + `CALLFLOW_WEBHOOK_SECRET` (both empty by default) gate
+  whether `webhook_url` is ever sent at all - unset either and this deployment falls back
+  to polling only, unchanged from before this fix.
+- Polling is **not** removed - it stays the backstop for a dropped delivery or a
+  deployment with no webhook configured. Whichever path notices a call's terminal state
+  first writes it; the other's eventual write is a harmless no-op update of the same data.
+
+**Tests.** `tests/test_webhooks.py` - against the real database (skipped without
+`DATABASE_URL`), following `test_rls_isolation.py`'s own precedent for exactly this reason:
+a SECURITY DEFINER function or an RLS policy that looks right on paper is the expensive bug
+to ship. Wrong/unconfigured secret → 404; unknown run → acked without error; missing
+`run_id` in metadata → acked without error; a real tenant + real run → the persisted
+outcome matches what polling would have produced (contact name, masked phone, disposition,
+extracted fields, transcript); a second real tenant cannot see the first tenant's outcome
+through this path. 6 new tests, 212/212 passing overall.
+
+## Iteration 19 - 2026-08-09 · CALL-E integration rebuild, module 6: richer outcome data
+
+### #62 - CALL-E's own `task_completed`/`completion_confidence`/`evidence` and full retry history were discarded
+
+**S3 · FIXED · backend · `domain/entities.py`, `domain/triage.py`, `services/campaign_runner.py`, `database/repositories/runs.py`, `api/v1/routes/runs.py`, migration `202608091600`**
+
+CALL-E computes a holistic judgment of whether each call actually accomplished its task -
+`task_completed` (bool), `completion_confidence` (`{score, label}`), `evidence[]` (short
+supporting strings) - on every terminal call, independent of whatever a campaign's own
+`result_schema` extracts. None of the three had a field on `CallOutcome`; all three were
+silently dropped on arrival. Separately, CALL-E tracks every dial attempt at a recipient in
+`recipients[0].attempts[]`, but `campaign_runner.py` kept only whichever one
+`_final_attempt()` picked for its transcript - a redialled contact's earlier attempts (a
+`no_answer` before the one that connected, say) left no trace at all.
+
+Re-confirmed against the *live* OpenAPI spec before writing any code against it (not just
+this doc's Aug-8 research pass) - the installed SDK doesn't type these fields at all
+(`get_call()`'s success response is untyped `dict[str, Any]`, confirmed by reading
+`calle/generated/api/calls/get_call.py` directly), so the SDK alone could neither confirm
+nor deny they exist. The live spec confirms both: task-level only, never per-recipient.
+
+**Fix.**
+- New migration `202608091600_call_outcome_completion_signals.py`: five new columns on
+  `call_outcomes` (`task_completed`, `completion_confidence_score`,
+  `completion_confidence_label`, `evidence` jsonb, `attempts` jsonb). Kept separate from
+  the existing `extracted` jsonb column deliberately - `extracted` is what a *campaign's*
+  schema asked for; these are CALL-E's own meta-judgment, a different concern that could
+  collide in field name with a campaign-defined one if merged together.
+- `CallOutcome` gains the four scalar/list fields plus `attempts: list[AttemptSummary]`
+  (a new small model: `status`/`started_at`/`completed_at`/`had_transcript` per attempt).
+- `campaign_runner._resolve_outcome()` (shared by both the polling path and the module-5
+  webhook receiver, so both extract and persist identically) now pulls all of these from
+  the terminal payload; a new `_extract_attempts()` walks the full `attempts[]` list
+  instead of `_final_attempt()`'s single pick.
+- `triage()`: a new precedence rule - `task_completed is False` escalates, ranked below
+  the explicit human-said-so signals (do_not_call/wants_human/frustration, which are more
+  specific and more actionable) and above the plain status-based buckets (which have no
+  signal at all to work with otherwise). `completion_confidence`/`evidence` are persisted
+  and exposed but deliberately *not* weighted in `triage()` - a softer, fuzzier signal
+  than a boolean judgment; left as data for now rather than another precedence branch.
+- `GET /api/v1/runs/{id}` now serves all five new fields per outcome.
+
+**Tests.** `test_triage.py` - `task_completed is False` escalates, beats negative-sentiment
+retry, loses to `do_not_call`, and `None`/`True` are correctly *not* treated as `False`.
+`test_orchestrator.py` - `_extract_attempts()` preserves every attempt (not just the
+final one) and each attempt's `had_transcript` flag, empty-list fallbacks for malformed
+input; `_resolve_outcome()` extraction of the three task-level fields, and correct
+defaults when absent. `test_webhooks.py`'s real-database happy path extended to assert
+all five new fields round-trip correctly end to end, including a two-attempt retry
+history. 12 new tests, 224/224 passing overall.
+
+## Iteration 20 - 2026-08-09 · CALL-E integration rebuild, module 7 (final): live per-call events
+
+### #63 - Live per-call events were declared and plumbed but had no consumer
+
+**S4 · FIXED (backend) · `api/v1/routes/runs.py`, `integrations/voice/engine.py` (cursor fix already in `#57`)**
+
+`EngineGateway.list_events()` existed and `VoiceCapability.LIVE_EVENTS` was declared
+`supported=True`, but nothing in `campaign_runner.py` or any route ever called it -
+dashboard progress came entirely from polling `get_call()`'s coarse `status` field, unable
+to see any transition faster than the 2-second poll interval, or any warning/error-level
+diagnostic CALL-E logged mid-call.
+
+Checked the actual response shape before building against it, since the SDK doesn't type
+this endpoint's success response either (same `dict[str, Any]` pattern as `#62`'s
+finding): it's a **developer/ops event log** (`debug`/`info`/`warning`/`error` levels, a
+human-readable `message`, the `status` at that moment), not a turn-by-turn *conversation*
+stream - a correction to this doc's and `CALLE_INTEGRATION_STATUS.md`'s original framing
+of what this capability actually is.
+
+**Fix.** New `GET /api/v1/runs/{run_id}/calls/{provider_call_id}/events`, on demand rather
+than fetched automatically for every call - most calls never need this level of detail, and
+fetching it unconditionally would double the request volume against CALL-E for data most
+calls don't need inspected. Confirms the requested `provider_call_id` actually belongs to a
+contact in the caller's own run (itself org-scoped via RLS) before proxying, so a caller
+cannot probe an arbitrary CALL-E call id through their session. A real engine error (rate
+limited, provider down) becomes a `502` with the classified `DialFailure`, not an unhandled
+exception.
+
+**Explicitly out of scope.** No frontend consumption of this endpoint was built - this
+whole rebuild (modules 1-7) was scoped to the backend integration itself; an actual
+dashboard control to view a call's event log is a real, separate decision, flagged back to
+the user rather than built silently as scope creep.
+
+**Tests.** `test_run_events.py` - against the real database, following this suite's own
+precedent for anything RLS-adjacent: unknown run and call-id-not-in-this-run both 404;
+missing API key 400; a classified engine error 502, not an unhandled exception; the happy
+path returns events in order with `details` intact; `cursor` forwards to the engine. 6 new
+tests, 230/230 passing overall.
+
+---
+
+**This closes the CALL-E integration rebuild** (modules 1-7, iterations 14-20). Every item
+`CALLE_INTEGRATION_STATUS.md` tracked as open is now fixed; that doc's own status line has
+been updated to say so rather than left to go stale again.
 
 ## Template for the next iteration
 

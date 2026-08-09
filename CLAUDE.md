@@ -191,7 +191,10 @@ These override style preference, convenience, and personal taste.
 4. **Phone numbers are masked by default,** through the one shared formatter. Revealing a
    full number is a separate permissioned, audit-logged action.
 5. **No PII in logs.** Numbers, tokens, keys, and transcript bodies are redacted by a global
-   filter - and the redaction is tested.
+   filter - `app/core/logging.py`'s `RedactingFilter`, attached to every handler by
+   `configure_logging()` - and the redaction is tested (`tests/test_logging.py`). Manual
+   `mask()` discipline (`domain/safety.py`) at each call site is still the primary defence;
+   the filter is the backstop for whatever a call site misses, not a replacement for it.
 6. **Idempotency.** Every mutating endpoint and every background job is safe to run twice.
 7. **Explicit state machines.** Runs, calls, subscriptions, escalations: enum states with
    declared transitions. An invalid transition raises rather than quietly succeeding.
