@@ -18,16 +18,23 @@
 const isDev = process.env.CALLFLOW_ENV === 'dev';
 const suffix = isDev ? '-dev' : '';
 
-// Production's web port is 3001, not the 3000 you would guess: that is what the
-// live nginx site has proxied `/` to since before this file existed. Changing it
-// here would restart the app on a port nginx is not pointed at, which is a 502
-// for production and no error anywhere that says why. Dev therefore starts at
-// 3002 rather than colliding with it.
+// These are not the numbers you would guess, and both surprises are load-bearing.
+// The VM hosts several sites; as of this writing nginx proxies:
 //
-// The whole box also hosts other sites, so confirm a port is actually free
-// before claiming it:  ss -ltnp
+//   3000  brbik.com
+//   3001  callflow-ai.brbik.com  <- this app's web process
+//   3002  dns.brbik.com (dnsentinel)
+//   8000  this app's API
+//
+// So production's web port is 3001, not 3000: that is what the live nginx site
+// has proxied `/` to since before this file existed, and restarting the app on a
+// different port would be a 502 with no error anywhere saying why. Dev takes 3003
+// because 3002 belongs to dnsentinel.
+//
+// Confirm before claiming anything new here - the list above only covers what
+// nginx fronts, not everything listening:  ss -ltnp
 const apiPort = process.env.API_PORT || (isDev ? '8001' : '8000');
-const webPort = process.env.WEB_PORT || (isDev ? '3002' : '3001');
+const webPort = process.env.WEB_PORT || (isDev ? '3003' : '3001');
 
 // Also read by scripts/bootstrap.sh, to render the nginx server block against the
 // same numbers pm2 binds. pm2 only looks at `apps`, so the extra key is inert.

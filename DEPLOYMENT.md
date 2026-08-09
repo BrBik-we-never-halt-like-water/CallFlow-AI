@@ -22,9 +22,9 @@ is beyond `CALLFLOW_ENV`.
 | --- | --- | --- |
 | Branch | `main` | `dev` |
 | Directory | `/var/www/callflow-ai` | `/var/www/callflow-ai-dev` |
-| Hostname | `callflow-ai.brbik.com` | `dev.callflow-ai.brbik.com` |
+| Hostname | `callflow.com` | `dev.callflow.com` |
 | pm2 processes | `callflow-api`, `callflow-web` | `callflow-api-dev`, `callflow-web-dev` |
-| Ports | 8000 (api), 3000 (web) | 8001 (api), 3001 (web) |
+| Ports | 8000 (api), **3001** (web) | 8001 (api), 3002 (web) |
 | Supabase project | the production project | **a separate project** |
 
 Process names and ports come from `ecosystem.config.js`, keyed on `CALLFLOW_ENV`.
@@ -61,10 +61,12 @@ place environment configuration lives.
 | Name | Kind | Example | Notes |
 | --- | --- | --- | --- |
 | `APP_DIR` | var | `/var/www/callflow-ai-dev` | Created if absent |
-| `PUBLIC_URL` | var | `https://dev.callflow-ai.brbik.com` | Full origin, with scheme |
+| `PUBLIC_URL` | var | `https://dev.callflow.com` | Full origin, with scheme |
 | `VM_HOST` | var | `203.0.113.10` | Inherited from repo-level if the same box |
 | `VM_USER` | var | `deploy` | " |
-| `CERTBOT_EMAIL` | var | `ops@brbik.com` | Optional. Set it and TLS is issued automatically |
+| `ORIGIN_CERT_B64` | secret | `base64 -w0 origin.pem` | Cloudflare Origin certificate |
+| `ORIGIN_KEY_B64` | secret | `base64 -w0 origin.key` | Its private key |
+| `CERTBOT_EMAIL` | var | `ops@brbik.com` | Only for a host **not** behind Cloudflare |
 | `REPO_URL` | var | `git@github.com:…/CallFlow-AI.git` | Optional, defaults to this repo |
 | `VM_SSH_KEY` | secret | private key | Inherited from repo-level if the same box |
 | `ENV_FILE_B64` | secret | `base64 -w0 .env` | The API's `.env`, base64'd |
@@ -101,18 +103,74 @@ directory.
 
 ---
 
-## 3a. Point DNS before the first deploy
+## 3a. Cloudflare: DNS and the Origin certificate
 
-An `A` record for the hostname must resolve to the VM **before** the first push, not
-after. Two things depend on it and neither is retried:
+`callflow.com` is on Cloudflare, which changes how TLS works and rules certbot out:
+ACME's HTTP-01 challenge cannot validate through a proxied record, so certbot fails on
+every run. Use a **Cloudflare Origin CA certificate** instead - a static 15-year pair
+with nothing to renew, no challenge to keep reachable, and no rate limit to trip.
 
-- certbot cannot validate a domain that does not point at the machine, so no certificate
-  is issued and the site stays HTTP-only.
-- the health check curls `PUBLIC_URL`, which is `https://…`, and fails - so a first
-  deploy that otherwise worked perfectly reports red.
+The trade is that an Origin certificate is **not publicly trusted**. No browser accepts
+it directly; it is only ever presented to Cloudflare. Two things must therefore be true
+or the site is broken:
 
-If you get this order wrong: point DNS, then re-run the failed jobs. `provision` is
-idempotent and will request the certificate on the second attempt.
+1. the DNS record is **proxied** (orange cloud), so Cloudflare is the only client that
+   ever completes the handshake
+2. SSL/TLS mode is **Full (strict)**, so Cloudflare actually verifies it
+
+### 1. DNS records
+
+**DNS → Records.** Both proxied:
+
+| Type | Name | Content | Proxy |
+| --- | --- | --- | --- |
+| A | `callflow.com` | `140.245.235.251` | Proxied |
+| A | `dev` | `140.245.235.251` | Proxied |
+
+### 2. Issue the certificate
+
+**SSL/TLS → Origin Server → Create Certificate.** Take the defaults (RSA, 15 years) and
+set the hostnames to cover both environments with one certificate:
+
+```
+callflow.com
+*.callflow.com
+```
+
+Cloudflare shows the certificate and the key **once**. Copy both before closing the
+dialog - the key is not recoverable afterwards, and re-issuing means replacing it
+everywhere.
+
+### 3. Set the mode
+
+**SSL/TLS → Overview → Full (strict).** Anything less makes the origin leg either
+unencrypted (Flexible) or unverified (Full), which is most of the point of doing this.
+
+Turn on **Always Use HTTPS**, and set HSTS here rather than on the origin - Cloudflare
+terminates the connection the browser actually sees.
+
+### 4. Hand them to the pipeline
+
+```bash
+base64 -w0 origin.pem   # -> ORIGIN_CERT_B64
+base64 -w0 origin.key   # -> ORIGIN_KEY_B64
+```
+
+The same pair serves both environments, since `*.callflow.com` covers `dev`. Set them on
+both the `main` and `dev` environments, or once at repo level to be inherited.
+
+`bootstrap.sh` installs them to `/etc/ssl/callflow/<env>.pem` and `.key` on every run, so
+rotating the secret rotates the certificate. It verifies the certificate's modulus
+against the key first and leaves the existing pair alone if they do not match - finding
+that out from nginx refusing to start, after the working pair has already been
+overwritten, is not a good way to learn it.
+
+### Order matters
+
+Point DNS **before** the first push. The health check curls `PUBLIC_URL`, which is
+`https://…`, so a first deploy that otherwise worked perfectly reports red if the name
+does not resolve yet. If you get the order wrong: fix DNS, then re-run the failed jobs.
+`provision` is idempotent.
 
 ---
 
@@ -174,7 +232,7 @@ write it, then re-run certbot.
 
 ```bash
 pm2 list                                    # both processes online
-curl -fsS https://dev.callflow-ai.brbik.com/api/health
+curl -fsS https://dev.callflow.com/api/health
 cd /var/www/callflow-ai-dev/apps/api && ../../.venv/bin/alembic current
 ```
 

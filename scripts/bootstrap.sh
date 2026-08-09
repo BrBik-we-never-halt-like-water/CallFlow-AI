@@ -93,9 +93,12 @@ done
 # ---------------------------------------------------------------------- nginx
 SITE="/etc/nginx/sites-available/callflow-$CALLFLOW_ENV"
 
-CERT_DIR=/etc/ssl/callflow
-CERT="$CERT_DIR/$CALLFLOW_ENV.pem"
-KEY="$CERT_DIR/$CALLFLOW_ENV.key"
+# One Origin certificate covers callflow.com and *.callflow.com, so it is not
+# per-environment. Path follows the convention already on this box for the other
+# zone, /etc/ssl/cloudflare/<zone>.{pem,key}.
+CERT_DIR=/etc/ssl/cloudflare
+CERT="$CERT_DIR/callflow.pem"
+KEY="$CERT_DIR/callflow.key"
 
 # A Cloudflare Origin CA certificate is a static 15-year file pair, so unlike ACME
 # there is nothing to renew and nothing to keep reachable - it just has to be on
