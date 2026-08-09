@@ -120,11 +120,18 @@ async def lookup_owner_for_webhook(conn: asyncpg.Connection, run_id: str) -> asy
 
 
 async def get_run(conn: asyncpg.Connection, org_id: UUID, run_id: str) -> asyncpg.Record | None:
+    # `started_by` was write-only until the role-based UI roadmap's Phase 1 -
+    # RLS (`runs_select`, migration 202608092000) already narrows *which* runs
+    # an operator's plain org-member query returns; this join is what lets an
+    # admin/owner/viewer (who see every run) tell whose run each one is.
     return await conn.fetchrow(
         """
-        select id, org_id, campaign_id, total, status, started_at, finished_at, error
-        from public.runs
-        where org_id = $1 and id = $2
+        select r.id, r.org_id, r.campaign_id, r.total, r.status, r.started_at, r.finished_at,
+               r.error, r.started_by, u.name as started_by_name,
+               u.avatar_url as started_by_avatar_url
+        from public.runs r
+        left join public.users u on u.id = r.started_by
+        where r.org_id = $1 and r.id = $2
         """,
         org_id,
         run_id,
@@ -146,16 +153,43 @@ async def list_outcomes(conn: asyncpg.Connection, run_id: str) -> list[asyncpg.R
     )
 
 
+async def summarize_by_member(conn: asyncpg.Connection, org_id: UUID) -> list[asyncpg.Record]:
+    """Call volume per teammate, for the admin/owner dashboard breakdown.
+
+    Relies on RLS (`runs_select`) to do the actual narrowing: an admin/owner/
+    viewer's connection sees every run in the org, so the aggregate below
+    covers the whole team; an operator's connection would only ever see
+    their own runs here too, which is why the route this backs is gated on
+    `Permission.RUNS_READ_TEAM` rather than trusting the query alone.
+    """
+    return await conn.fetch(
+        """
+        select r.started_by, u.name as started_by_name, u.avatar_url as started_by_avatar_url,
+               count(distinct r.id) as total_runs,
+               count(c.id) filter (where c.disposition <> 'in_flight') as total_calls
+        from public.runs r
+        left join public.call_outcomes c on c.run_id = r.id
+        left join public.users u on u.id = r.started_by
+        where r.org_id = $1
+        group by r.started_by, u.name, u.avatar_url
+        order by total_calls desc
+        """,
+        org_id,
+    )
+
+
 async def list_runs(conn: asyncpg.Connection, org_id: UUID) -> list[asyncpg.Record]:
     return await conn.fetch(
         """
         select r.id, r.campaign_id, r.total, r.status, r.started_at, r.finished_at, r.error,
+               r.started_by, u.name as started_by_name, u.avatar_url as started_by_avatar_url,
                count(c.id) as completed
         from public.runs r
         left join public.call_outcomes c
           on c.run_id = r.id and c.disposition <> 'in_flight'
+        left join public.users u on u.id = r.started_by
         where r.org_id = $1
-        group by r.id
+        group by r.id, r.started_by, u.name, u.avatar_url
         order by r.started_at desc
         """,
         org_id,

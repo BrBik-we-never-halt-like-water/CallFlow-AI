@@ -8,14 +8,14 @@ import pytest
 
 from app.domain.campaigns import TRAVEL_DISCOVERY
 from app.domain.entities import CallOutcome, Contact, Disposition
-from app.services.campaign_runner import (
-    CampaignRunner,
+from app.domain.goal_rendering import render_goal
+from app.domain.outcome_extraction import (
     _extract_attempts,
     _extract_result,
     _extract_transcript,
     _resolve_outcome,
-    render_goal,
 )
+from app.services.campaign_runner import CampaignRunner
 
 
 class ExplodingGateway:

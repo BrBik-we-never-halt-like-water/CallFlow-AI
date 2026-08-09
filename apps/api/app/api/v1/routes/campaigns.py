@@ -46,6 +46,13 @@ class CampaignOut(BaseModel):
     goal_template: str
     goal_preview: str
     built_in: bool
+    # `None` for a built-in template (no owner) and, harmlessly, for a
+    # create/update response - the actor already knows it's their own edit,
+    # so those two repository calls don't pay for the name/avatar join
+    # `list`/`get` need to attribute *other* people's campaigns.
+    created_by: str | None = None
+    created_by_name: str | None = None
+    created_by_avatar_url: str | None = None
 
 
 class PreviewIn(BaseModel):
@@ -90,6 +97,7 @@ def _built_in_json(c: CampaignEntity) -> CampaignOut:
 
 
 def _row_json(row: Any) -> CampaignOut:
+    created_by = row["created_by"]
     return CampaignOut(
         id=row["id"],
         name=row["name"],
@@ -99,6 +107,9 @@ def _row_json(row: Any) -> CampaignOut:
         goal_template=row["goal_template"],
         goal_preview=row["goal_template"][:280],
         built_in=False,
+        created_by=str(created_by) if created_by else None,
+        created_by_name=row.get("created_by_name"),
+        created_by_avatar_url=row.get("created_by_avatar_url"),
     )
 
 

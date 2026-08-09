@@ -2,6 +2,7 @@
 
 import {
   BuildingsIcon,
+  CoinsIcon,
   GearSixIcon,
   SignOutIcon,
   UserCircleIcon,
@@ -20,6 +21,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Skeleton } from '@/components/ui/skeleton';
 import { signOut } from '@/lib/auth/actions';
+import { hasRole } from '@/lib/hooks/use-permission';
 import type { SessionProfile } from '@/lib/hooks/use-session';
 
 /**
@@ -28,7 +30,10 @@ import type { SessionProfile } from '@/lib/hooks/use-session';
  * (`AppSidebar`, app-shell.tsx), so they fold in here rather than adding two
  * more rows to that list for two rarely-visited destinations. Organisation
  * *switching* stays a separate control (`SidebarOrgSwitcher`) - this menu is
- * "you," not "which workspace."
+ * "you," not "which workspace." Both entries are owner/admin-only - an
+ * operator or viewer gets "My credits" in Settings' place instead, since
+ * neither section has anything relevant to them (role-based UI roadmap,
+ * Phase 0).
  *
  * `variant="tab"` (default `"avatar"`) swaps only the trigger's own shape -
  * the round avatar button becomes a tab-bar-style column (photo/initial on
@@ -63,6 +68,7 @@ export function UserMenu({
 
   const label = profile.name?.trim() || profile.email;
   const initial = label.charAt(0).toUpperCase();
+  const isOwnerOrAdmin = hasRole(profile, 'owner', 'admin');
 
   async function handleSignOut() {
     setSigningOut(true);
@@ -146,22 +152,41 @@ export function UserMenu({
           </Link>
         </DropdownMenuItem>
 
-        <DropdownMenuItem>
-          <Link
-            href="/app/organisation"
-            className="flex flex-1 items-center gap-2"
-          >
-            <BuildingsIcon aria-hidden className="size-4" />
-            Organisation
-          </Link>
-        </DropdownMenuItem>
+        {/* Organisation/Settings are owner+admin destinations - an operator
+            or viewer gets "My credits" instead of Settings (their one
+            relevant corner of it, Phase 5), and no Organisation entry at
+            all, matching the same restriction the sidebar's footer links
+            apply (app-shell.tsx). */}
+        {isOwnerOrAdmin ? (
+          <>
+            <DropdownMenuItem>
+              <Link
+                href="/app/organisation"
+                className="flex flex-1 items-center gap-2"
+              >
+                <BuildingsIcon aria-hidden className="size-4" />
+                Organisation
+              </Link>
+            </DropdownMenuItem>
 
-        <DropdownMenuItem>
-          <Link href="/app/settings" className="flex flex-1 items-center gap-2">
-            <GearSixIcon aria-hidden className="size-4" />
-            Settings
-          </Link>
-        </DropdownMenuItem>
+            <DropdownMenuItem>
+              <Link href="/app/settings" className="flex flex-1 items-center gap-2">
+                <GearSixIcon aria-hidden className="size-4" />
+                Settings
+              </Link>
+            </DropdownMenuItem>
+          </>
+        ) : (
+          <DropdownMenuItem>
+            <Link
+              href="/app/settings/billing"
+              className="flex flex-1 items-center gap-2"
+            >
+              <CoinsIcon aria-hidden className="size-4" />
+              My credits
+            </Link>
+          </DropdownMenuItem>
+        )}
 
         <DropdownMenuItem onSelect={handleSignOut} disabled={signingOut}>
           <SignOutIcon aria-hidden className="size-4" />

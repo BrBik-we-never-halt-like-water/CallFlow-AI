@@ -30,6 +30,7 @@ import { useToast } from '@/components/ui/toast';
 import { api, type Campaign } from '@/lib/api';
 import { useAppStore } from '@/lib/app-store';
 import { CAMPAIGN_DRAFT_KEY } from '@/lib/campaign-draft';
+import { useSession } from '@/lib/hooks/use-session';
 import type { RunStatus } from '@/lib/lamp';
 
 type TypeFilter = 'all' | 'template' | 'custom';
@@ -46,6 +47,12 @@ const STATUS_FILTER_LABEL: Record<StatusFilter, string> = {
 export default function CampaignsPage() {
   const router = useRouter();
   const toast = useToast();
+  const session = useSession();
+  const permissions =
+    session.status === 'signed-in' ? session.profile.permissions : [];
+  const canWrite = permissions.includes('campaigns:write');
+  const canDelete = permissions.includes('campaigns:delete');
+  const canStart = permissions.includes('runs:start');
   const { campaigns, hydratedRuns, phase, refresh } = useAppStore();
   const [search, setSearch] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
@@ -234,13 +241,15 @@ export default function CampaignsPage() {
               </DropdownMenuContent>
             </DropdownMenu>
 
-            <Link
-              href="/app/campaigns/new"
-              aria-label="New campaign"
-              className="flex size-10 shrink-0 items-center justify-center rounded-full border border-rule text-text-dim transition-colors hover:bg-surface-hover hover:text-text"
-            >
-              <PlusIcon aria-hidden weight="bold" className="size-4" />
-            </Link>
+            {canWrite ? (
+              <Link
+                href="/app/campaigns/new"
+                aria-label="New campaign"
+                className="flex size-10 shrink-0 items-center justify-center rounded-full border border-rule text-text-dim transition-colors hover:bg-surface-hover hover:text-text"
+              >
+                <PlusIcon aria-hidden weight="bold" className="size-4" />
+              </Link>
+            ) : null}
           </div>
         </div>
 
@@ -267,9 +276,11 @@ export default function CampaignsPage() {
               title="No campaigns yet"
               body="Start from a template, or write your own."
               action={
-                <Button asChild>
-                  <Link href="/app/campaigns/new">New campaign</Link>
-                </Button>
+                canWrite ? (
+                  <Button asChild>
+                    <Link href="/app/campaigns/new">New campaign</Link>
+                  </Button>
+                ) : undefined
               }
             />
           </Panel>
@@ -295,6 +306,9 @@ export default function CampaignsPage() {
                   lastRun={lastRunByCampaign.get(campaign.id)}
                   onDuplicate={duplicate}
                   onDelete={setPendingDelete}
+                  canWrite={canWrite}
+                  canDelete={canDelete}
+                  canStart={canStart}
                 />
               </li>
             ))}

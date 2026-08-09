@@ -393,7 +393,9 @@ tint recipe and contrast numbers.
   it needs to work on, including ones this palette doesn't touch.
 - **Popover/`DropdownMenu` chrome.** Shared, product-wide components (like `Panel` and
   `Button` before their explicit `/app/*` overrides) with no call site asking for a
-  scoped exception yet - left alone rather than guessed at.
+  scoped exception yet - left alone rather than guessed at. **Superseded by §17** - that
+  call site arrived (the user asked directly), and it turned out to be a font/color
+  inheritance bug (`ISSUES.md` #49, #69) as much as an unmade design decision.
 
 ---
 
@@ -425,6 +427,11 @@ renders outside the triggering element's DOM subtree (portaled to `document.body
 overriding tokens on `<aside>`/`<header>`/`<nav>` cannot reach the org-switcher dropdown or a
 tooltip bubble - they keep reading light, consistent with this file's existing "leave popover
 chrome alone" call (§14) without needing a fresh decision to preserve it.
+
+**Superseded by §17.** This paragraph's "keep reading light... without needing a fresh
+decision" framing held until the user asked, twice, for exactly that fresh decision.
+`DropdownMenu`/`Popover`/`Dialog` (not `Tooltip`/`Select` - see §17) now portal inside
+`.app-font-scope` on purpose and pick up real dark styling there.
 
 **Opaque, not translucent - a corrected assumption, not a taste call.** `.dark-panel-glass`
 (content cards) stays translucent (42% as of the later card-glassmorphism tuning pass - see
@@ -527,3 +534,190 @@ correctly there but does not reliably paint the `…` ellipsis for text that's a
 flex container. Moving `max-w-32 truncate` onto a `block`-level `<span>` *inside* the pill (the
 standard "truncate needs a block box of its own inside a flex row" fix) resolved it; worth
 remembering for `Tag` composed inside any other flex row in D3/D4.
+
+## 17. Popover chrome joins the dark pivot - reversing §14/§15's "leave it alone" call
+
+§14 left `DropdownMenu`/`Popover` chrome untinted "with no call site asking for a scoped
+exception yet." §15 went further and treated the fact that Radix portals these components to
+`document.body` - outside every dark-scoped element's DOM subtree - as a *feature*: proof the
+"leave popover chrome alone" call needed no active maintenance, since there was structurally no
+way for dark tokens to reach them. Both were reasonable calls at the time. Neither survived the
+user asking, twice, for the org-switcher dropdown, the Team popover, and the invite dialog to
+read as part of the same dark, purple-tinted product as everything around them - the missing
+"call site" §14 was waiting for.
+
+**First fix attempt was itself broken - worth recording exactly why.** The obvious fix looked
+like a new `.dark-overlay` class, applied directly to `DropdownMenuContent`/`PopoverContent`/
+`Dialog`'s content, re-scoping the same `--text`/`--surface-raised`/etc. tokens `.dark-chrome`
+already does. Shipped, and the user's very next message was a screenshot of the invite dialog
+with no visible background, border, or text at all - only the footer buttons, which carry their
+own styling independent of the container, were visible. The bug: `.dark-overlay` referenced
+`var(--dark-text)`, `var(--dark-surface)`, and friends - but those raw palette values are
+themselves declared inside `.app-font-scope` (the `/app` layout's own wrapper `<div>`), not at
+`:root`. §15's own "portals render outside this element's DOM subtree" observation applies just
+as much to `.app-font-scope` as it does to `.dark-chrome` - a portal is a sibling of
+`.app-font-scope`, not a descendant, so it never inherited the raw dark tokens either. Setting
+`--text: var(--dark-text)` when `--dark-text` itself resolves to nothing collapses every
+property built on it to its initial value - `transparent` for a background, invisible for text.
+The same gap `ISSUES.md` #49 already flagged for the *font* was quietly also blocking the
+*color* fix, for the identical reason.
+
+**Real fix: move the portal, not just the tokens.** `usePortalContainer()`
+(`lib/hooks/use-portal-container.ts`) resolves `document.getElementById('app-font-scope')` and
+passes it as the `container` prop on `DropdownMenu`/`Popover`/`Dialog`/`Sheet`/`Select`'s Radix
+`Portal`, so the portaled content becomes a genuine DOM descendant of `.app-font-scope` and
+correctly inherits both the font class (closing #49 for these five components specifically, not
+universally - see below) and the raw `--dark-*` tokens `.dark-overlay` depends on.
+`useSyncExternalStore`, not an effect + `setState` - the container is stable for the whole
+mounted lifetime once the DOM exists, so there's nothing to subscribe to, only a value that must
+not be read during SSR (`react-hooks/set-state-in-effect` is an error on the naive version; see
+`lib/hooks/use-external-store.ts` for the same reasoning already applied to
+`localStorage`/`matchMedia`).
+
+**The gradient, not a flat fill.** The ask was specifically "the same purple gradient as the
+main content", not just "make it dark" - so `.dark-overlay`'s `background` is `.dark-canvas`'s
+own radial-gradient formula verbatim, not a flat `--dark-surface` fill or `.dark-chrome`'s
+glass/blur treatment (deliberately neutral there so nothing behind its translucency reads as
+coloured chrome - the opposite of what's wanted for an opaque popover). Percentages in a
+`radial-gradient()` are relative to the element's own box, so a small popover naturally gets a
+tighter, more concentrated version of the same top-anchored purple glow rather than a literal
+crop of the page-wide one - same recipe, correctly proportioned per surface, no new constant to
+maintain.
+
+**Not universal - `Tooltip` and `Select` are the genuine exception.** Both are shared with a
+light-themed marketing page (`pricing-table.tsx`'s row hints; `demo-form.tsx`'s selects) -
+grepped every import site of all five components before touching any of them, specifically to
+avoid repeating this task's own first mistake in the opposite direction (breaking a light page
+to fix a dark one). Both get the portal-container fix unconditionally (harmless everywhere, and
+it closes the same font gap there) but only add `.dark-overlay` when
+`container.id === 'app-font-scope'` - i.e., only when actually rendered inside `/app`
+(`isAppScopeContainer()`, `lib/hooks/use-portal-container.ts`). **Correction, §18: `Tooltip` was
+initially left untouched** on the theory that nothing had reported a problem with it - the very
+next ask was the sidebar's own collapsed-state tooltips, so it now follows the identical
+conditional pattern `Select` already did.
+
+## 18. Finishing the dark pivot: chrome background, Toast, sidebar dividers, the profile route
+
+Four more surfaces, found the same way §17's were - real use, real screenshots, in rapid
+succession rather than one planned sweep.
+
+**`.dark-chrome`'s background: opaque purple gradient, not translucent neutral glass.** §15
+made a considered, documented call to keep the sidebar/topbar/tab-bar ("the taskbar") neutral -
+"no purple mixed into its own resting fill" - specifically so nothing behind its translucency
+would read as coloured chrome. The user asked directly for the opposite: the same purple,
+gradient-lit look as the content column and the popovers, not a neutral black surface next to
+them. `.dark-chrome`'s `background` is now `.dark-canvas`'s exact radial-gradient formula,
+verbatim - same reasoning as `.dark-overlay` (§17), same recipe, correctly proportioned per
+element regardless of its shape (a tall sidebar and a wide top bar both anchor the same
+top-centre glow, just stretched to their own box). `backdrop-filter` and its two dedicated
+fallback blocks (`@supports not (backdrop-filter)`, `prefers-reduced-transparency`) are removed
+entirely, not just left inert - an opaque background has nothing left to blur, and a
+feature-detection fallback for a feature no longer in use is dead code, not defensive code.
+
+**Sidebar section dividers: shown expanded, hidden collapsed.** `AppSidebar`'s four
+`border-b`/`border-t border-rule` hairlines (logo row, org-switcher, footer nav, collapse
+button) rendered unconditionally regardless of `collapsed` state. Full-width, they read as
+intentional section breaks; compressed to the collapsed rail's icon-only width, the same
+hairlines just look like stray, unexplained cuts across the icon column. Each now switches to
+`border-transparent` when `collapsed` - keeping `border-b`/`border-t` itself (not removing the
+class) preserves the exact same spacing in both states, so toggling collapsed never shifts
+anything vertically, only the line's visibility.
+
+**Toast joins the dark pivot too - via `createPortal`, not a `container` prop.**
+`ToastProvider` is mounted at the true root layout (`app/layout.tsx`), shared by every route,
+and its `Viewport` was never inside `.app-font-scope` - not portaled there by default, in fact
+not portaled anywhere by default, since `@radix-ui/react-toast` (confirmed against its own type
+exports) has no `Portal` primitive at all, unlike Dialog/Popover/DropdownMenu/Select. A toast
+fired from `/app` rendered with the light `:root` defaults regardless of the page around it,
+same root cause as everything else in §17. Fixed with a plain `createPortal(viewport,
+container)` instead of a Radix `container` prop - same destination
+(`.app-font-scope`/`document.body`) as everything else, just wired by hand since the library
+doesn't offer the prop here. `ToastItem` applies `.dark-overlay` conditionally, the same
+`isAppScopeContainer()` check as `Select`/`Tooltip` - a toast can fire on a light marketing or
+auth page too. **Also changed alongside it:** the success tone's indicator is a filled
+`CheckCircleIcon` (`text-lamp-jade-text`) instead of a plain `Lamp` dot, per direct request -
+info/warning/error keep the dot. Not extended to the other three tones without being asked;
+a partial icon set was the actual request, not a hint toward a fuller redesign.
+
+**`/app/profile` never had `.dark-canvas` applied to its content at all.** Distinct root cause
+from the other three, and the most severe of this round's four: `/app/profile` is `AppShell`'s
+one "minimal chrome" route (`MINIMAL_CHROME_ROUTES`, a single-column layout with `MinimalTopBar`
+and no sidebar), which is a genuinely different return branch in `AppShell` - not a portal
+escaping a scope, but a wrapper `<div>` that plain forgot to carry the `.dark-canvas` class the
+normal-route branch's content column has always had. Every generic-token component on the page
+(`Panel`'s `panel-glass`, `Button`, `Input`) was already written correctly against
+`--surface-raised`/`--glass-surface`/`--accent`/etc. - none of them needed touching, because
+`.dark-canvas` re-scopes exactly those tokens. Adding the one class to the minimal-route
+wrapper (`MinimalTopBar` already carried its own `.dark-chrome`, unaffected by nesting inside
+`.dark-canvas` now) fixed the entire page's header, text, panels, and buttons in one line -
+proof that the token-inheritance mechanism §15 built works exactly as designed, once actually
+applied.
+
+## 19. Toast's fix from §18 didn't survive contact with `/accept-invite`, a pending badge, a welcome modal, and the viewer-role UI sweep
+
+**Toast's `createPortal` fix (§18) is superseded - it depended on an element that doesn't
+exist on every page it needs to run on.** The "Joined" toast fired from
+`/accept-invite/[token]` still rendered light. Root cause: that route is in the `(auth)`
+group, which never renders `.app-font-scope` at all - it's exclusively rendered by
+`(app)/app/layout.tsx`. §18's fix portaled `Viewport` to `.app-font-scope` or fell back to
+`document.body`, but the fallback still applied `.dark-overlay` only when
+`isAppScopeContainer()` said so - and on a page with no such element anywhere in the DOM,
+it never does, so the fallback path was always light. There was nothing to portal *into*.
+
+**Fix: make Toast self-contained instead of dependent on an ancestor.** New
+`.toast-dark-overlay` class in `globals.css`, applied unconditionally in `ToastItem`
+regardless of what page fired it. Unlike every other dark-mode class in this file, it does
+**not** reference `var(--dark-*)` - those tokens are deliberately declared only inside
+`.app-font-scope` (§15's own citation), so referencing them from a class that must also work
+where that scope doesn't exist would just resolve to nothing, the exact failure mode `#69`
+already hit once (`ISSUES.md`). `.toast-dark-overlay` hardcodes the literal values instead -
+the one deliberate exception in this codebase to "reference the token, never the hex,"
+called out as such in the CSS comment beside it. With Toast no longer needing to be
+positioned inside any particular scope for theming to work, the `createPortal` machinery
+`ToastProvider` gained in §18 became pure overhead and was removed - `Viewport` renders
+in place again, unchanged from before §18 for positioning purposes (`position: fixed` isn't
+affected by DOM nesting).
+
+**Pending badge for un-accepted invitations.** The Team member list showed a role tag and a
+Revoke button for a pending invite with nothing marking it as pending - indistinguishable at
+a glance from an active member. `PendingRow` now renders a plain, neutral `<Tag>Pending</Tag>`
+ahead of the role tag - not a lamp colour. Lamp colours are reserved for call-state and
+nothing else (CLAUDE.md §4 #10); "pending" is an invitation-lifecycle label, the same class
+`Tag` already exists for elsewhere (role tags, `Template`/`Custom` on campaign cards).
+Revoke was checked against the backend and already fully invalidates the invitation on click
+(`invitations_repo` deletes the row; a revoked token's accept page shows the standard
+invalid-invitation state) - no code change was needed there.
+
+**A one-time welcome modal for a freshly-accepted invite.** `accept-invite/[token]` now
+writes `{role, orgName}` to `localStorage` (`PENDING_WELCOME_KEY`) right after a successful
+accept, before redirecting to `/app`. New `WelcomeModal` (mounted once, as a sibling of
+`AppShell` in `(app)/app/layout.tsx`) reads that key via the existing `useStoredJson`
+(`useSyncExternalStore`, not an effect + `setState` - same pattern as every other
+`localStorage`-backed hook in this codebase) and shows a dismissible dialog naming the org
+and the role the person was invited as. Dismissing clears the key, so it never shows twice
+for the same invite. If storage is unavailable (private mode), the write is wrapped in a
+try/catch that fails silently - the welcome message just doesn't show, which is the correct
+degradation for a nice-to-have rather than a guarantee.
+
+**Viewer role had a correct backend and an unenforced frontend.** `app/auth/permissions.py`
+has always correctly denied every write permission to the viewer role, and every mutating
+route correctly 403s a viewer's request - but nothing in the UI reflected that. A viewer
+could open every editor, click every button, and reach every "Start"/"Save"/"Delete" control,
+only to have the request rejected server-side - `ISSUES.md` #71 covers why that's a bug in
+its own right (not just an inconvenience). Fixed by extending the same inline
+`profile.permissions.includes('permission:string')` convention already used correctly
+elsewhere (Contacts, Organisation's Team pane, the dashboard's Team preview) to every
+remaining page and action component: `settings/safety`, `campaign-editor.tsx` (extended the
+existing `readOnly`/`blocker` pair rather than adding a second disabled-state mechanism -
+`readOnly = isBuiltIn || !canWrite`), `campaigns/page.tsx` + `campaign-card.tsx`,
+`runs/page.tsx`, `runs/new/page.tsx` (the whole composer is blocked behind a
+`NotWiredNotice` for anyone without `runs:start`, not just the final Start button - CSV
+import/paste/edit read as actions a pure viewer shouldn't be invited to take even though
+none of them persist until Start is clicked), `contacts/page.tsx`'s two Import CSV
+shortcuts, the dashboard's four "Start a run" entry points (`PageTitle`, `NextMoveCard`, and
+both outcome/run empty-states), `escalation-card.tsx`'s three action buttons (gated on
+`escalations:resolve` - the dashboard's own condensed escalation preview uses a separate,
+already-non-interactive `NeedsPersonRow` and needed no change), and the Organisation page's
+logo `ImageUpload`, which had no `disabled` prop at all before this - `ImageUpload` gained
+one, wired to `!canUpdate` (`org:update`), matching the org-name field beside it that was
+already gated.

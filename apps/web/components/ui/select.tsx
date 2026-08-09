@@ -3,6 +3,10 @@
 import * as RadixSelect from '@radix-ui/react-select';
 import { CaretDownIcon, CheckIcon } from '@phosphor-icons/react/dist/ssr';
 import { cn } from '@/lib/cn';
+import {
+  isAppScopeContainer,
+  usePortalContainer,
+} from '@/lib/hooks/use-portal-container';
 import { useField } from './field';
 
 export interface SelectOption {
@@ -42,6 +46,10 @@ export function Select({
   mono?: boolean;
 }) {
   const field = useField();
+  // `Select` is also used from a light-themed marketing form, unlike
+  // DropdownMenu/Popover/Dialog - dark styling only applies inside `/app`.
+  const container = usePortalContainer();
+  const isDark = isAppScopeContainer(container);
 
   return (
     <RadixSelect.Root
@@ -76,11 +84,12 @@ export function Select({
         </RadixSelect.Icon>
       </RadixSelect.Trigger>
 
-      <RadixSelect.Portal>
+      <RadixSelect.Portal container={container}>
         <RadixSelect.Content
           position="popper"
           sideOffset={4}
           className={cn(
+            isDark && 'dark-overlay',
             'z-50 max-h-72 min-w-[var(--radix-select-trigger-width)] overflow-hidden rounded-md',
             'border border-rule-strong bg-surface-raised shadow-overlay',
           )}

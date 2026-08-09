@@ -150,14 +150,14 @@ export default function SignupPage() {
           By continuing you agree to the{' '}
           <Link
             href="/trust"
-            className="underline decoration-rule-strong underline-offset-2"
+            className="font-medium text-text underline decoration-rule-strong underline-offset-2 hover:decoration-current"
           >
             terms
           </Link>{' '}
           and{' '}
           <Link
             href="/trust"
-            className="underline decoration-rule-strong underline-offset-2"
+            className="font-medium text-text underline decoration-rule-strong underline-offset-2 hover:decoration-current"
           >
             privacy policy
           </Link>

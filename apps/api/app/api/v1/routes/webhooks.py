@@ -26,7 +26,7 @@ from app.api.v1.routes.campaigns import resolve_campaign
 from app.core.config import config
 from app.database import database
 from app.database.repositories import runs as runs_repo
-from app.services.campaign_runner import (
+from app.domain.outcome_extraction import (
     _resolve_outcome,
     base_outcome_from_webhook_payload,
 )

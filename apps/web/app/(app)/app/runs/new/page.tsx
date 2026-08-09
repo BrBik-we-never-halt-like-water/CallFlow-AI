@@ -6,6 +6,7 @@ import { cn } from '@/lib/cn';
 import { ConnectionBanner } from '@/components/app/connection-banner';
 import { ContactGrid } from '@/components/app/contact-grid';
 import { guardsFromSafety, SafetyBar } from '@/components/app/safety-bar';
+import { NotWiredNotice } from '@/components/app/settings-section';
 import { Button } from '@/components/ui/button';
 import { Field } from '@/components/ui/field';
 import { Panel } from '@/components/ui/panel';
@@ -16,6 +17,7 @@ import { api } from '@/lib/api';
 import { useAppStore } from '@/lib/app-store';
 import { renderGoalPreview } from '@/lib/campaign-fields';
 import { toContactInputs, type ParsedRow } from '@/lib/contacts';
+import { useSession } from '@/lib/hooks/use-session';
 
 /**
  * The run composer.
@@ -42,6 +44,7 @@ function RunComposer() {
   const router = useRouter();
   const toast = useToast();
   const searchParams = useSearchParams();
+  const session = useSession();
   const { campaigns, health, safetySettings, phase, refresh } = useAppStore();
 
   const [rows, setRows] = useState<ParsedRow[]>([]);
@@ -121,6 +124,29 @@ function RunComposer() {
     } finally {
       setStarting(false);
     }
+  }
+
+  // This whole composer had no permission check at all - a viewer could
+  // import contacts, edit rows, and reach a fully live "Start" button
+  // (ISSUES.md #71). Blocked entirely rather than just disabling Start,
+  // since a viewer can view data and scroll, not build a run that never
+  // gets submitted.
+  if (
+    session.status === 'signed-in' &&
+    !session.profile.permissions.includes('runs:start')
+  ) {
+    return (
+      <div className="flex flex-col gap-6">
+        <div className="flex flex-col gap-1">
+          <p className="text-small font-bold text-text-mute">New run</p>
+          <h1 className="font-display text-h2 text-text">Start a run</h1>
+        </div>
+        <NotWiredNotice>
+          Your role can view runs but not start one. Ask an owner, admin, or
+          operator in your organisation.
+        </NotWiredNotice>
+      </div>
+    );
   }
 
   return (

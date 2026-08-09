@@ -44,14 +44,24 @@ export function CampaignCard({
   lastRun,
   onDuplicate,
   onDelete,
+  canWrite,
+  canDelete,
+  canStart,
 }: {
   campaign: Campaign;
   lastRun?: Run;
   onDuplicate: (campaign: Campaign) => void;
   onDelete: (campaign: Campaign) => void;
+  /** `campaigns:write` - duplicate, edit. */
+  canWrite: boolean;
+  /** `campaigns:delete`. */
+  canDelete: boolean;
+  /** `runs:start`. */
+  canStart: boolean;
 }) {
   const fieldNames = Object.keys(campaign.outcome_fields);
   const status = lastRun ? lampForRunStatus(lastRun.status) : NOT_RUN;
+  const showMenu = canWrite || canDelete;
 
   return (
     <Panel interactive className="dark-panel-glass flex flex-col gap-4 p-4">
@@ -61,16 +71,20 @@ export function CampaignCard({
         </h3>
 
         {/* Built-in templates have no destructive actions, because they cannot be
-            edited or deleted - offering the menu anyway would be a dead end. */}
+            edited or deleted - offering the menu anyway would be a dead end.
+            A viewer (neither canWrite nor canDelete) gets no menu at all - a
+            viewer can view data and scroll, not act on it. */}
         {campaign.built_in ? (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => onDuplicate(campaign)}
-          >
-            Duplicate
-          </Button>
-        ) : (
+          canWrite ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => onDuplicate(campaign)}
+            >
+              Duplicate
+            </Button>
+          ) : null
+        ) : showMenu ? (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button
@@ -82,15 +96,22 @@ export function CampaignCard({
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent>
-              <DropdownMenuItem onSelect={() => onDuplicate(campaign)}>
-                Duplicate
-              </DropdownMenuItem>
-              <DropdownMenuItem destructive onSelect={() => onDelete(campaign)}>
-                Delete
-              </DropdownMenuItem>
+              {canWrite ? (
+                <DropdownMenuItem onSelect={() => onDuplicate(campaign)}>
+                  Duplicate
+                </DropdownMenuItem>
+              ) : null}
+              {canDelete ? (
+                <DropdownMenuItem
+                  destructive
+                  onSelect={() => onDelete(campaign)}
+                >
+                  Delete
+                </DropdownMenuItem>
+              ) : null}
             </DropdownMenuContent>
           </DropdownMenu>
-        )}
+        ) : null}
       </div>
 
       <p className="line-clamp-2 text-small text-text-dim">
@@ -138,18 +159,20 @@ export function CampaignCard({
         </div>
 
         <div className="flex items-center gap-1.5">
-          {campaign.built_in ? null : (
+          {!campaign.built_in && canWrite ? (
             <Button asChild variant="secondary" size="sm">
               <Link href={`/app/campaigns/${campaign.id}`}>Edit</Link>
             </Button>
-          )}
-          <Button asChild size="sm">
-            <Link
-              href={`/app/runs/new?campaign=${encodeURIComponent(campaign.id)}`}
-            >
-              Run
-            </Link>
-          </Button>
+          ) : null}
+          {canStart ? (
+            <Button asChild size="sm">
+              <Link
+                href={`/app/runs/new?campaign=${encodeURIComponent(campaign.id)}`}
+              >
+                Run
+              </Link>
+            </Button>
+          ) : null}
         </div>
       </div>
     </Panel>

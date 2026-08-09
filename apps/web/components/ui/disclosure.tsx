@@ -5,6 +5,7 @@ import * as RadixTabs from '@radix-ui/react-tabs';
 import * as RadixPopover from '@radix-ui/react-popover';
 import { CaretDownIcon } from '@phosphor-icons/react/dist/ssr';
 import { cn } from '@/lib/cn';
+import { usePortalContainer } from '@/lib/hooks/use-portal-container';
 
 /**
  * Tabs, Accordion, and Popover. Grouped because they share one job - showing one
@@ -161,17 +162,18 @@ export function Popover({
   align?: 'start' | 'center' | 'end';
   className?: string;
 }) {
+  const container = usePortalContainer();
   return (
     <RadixPopover.Root>
       <RadixPopover.Trigger asChild>{trigger}</RadixPopover.Trigger>
-      <RadixPopover.Portal>
+      <RadixPopover.Portal container={container}>
         <RadixPopover.Content
           side={side}
           align={align}
           sideOffset={6}
           collisionPadding={12}
           className={cn(
-            'z-50 w-72 rounded-md border border-rule-strong bg-surface-raised p-3 shadow-overlay',
+            'dark-overlay z-50 w-72 rounded-md border border-rule-strong bg-surface-raised p-3 shadow-overlay',
             'text-small text-text-dim',
             className,
           )}

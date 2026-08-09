@@ -239,7 +239,39 @@ async def list_runs(user: Annotated[CurrentUser, Depends(current_user)]) -> list
             "finished_at": r["finished_at"].isoformat() if r["finished_at"] else None,
             "error": r["error"],
             "completed": r["completed"],
+            "started_by": str(r["started_by"]) if r["started_by"] else None,
+            "started_by_name": r["started_by_name"],
+            "started_by_avatar_url": r["started_by_avatar_url"],
         }
+        for r in rows
+    ]
+
+
+class TeamMemberSummary(BaseModel):
+    user_id: str | None
+    name: str | None
+    avatar_url: str | None
+    total_runs: int
+    total_calls: int
+
+
+@router.get(
+    "/team-summary",
+    response_model=list[TeamMemberSummary],
+    dependencies=[Depends(RequirePermission(Permission.RUNS_READ_TEAM))],
+)
+async def team_summary(user: Annotated[CurrentUser, Depends(current_user)]) -> list[TeamMemberSummary]:
+    """Call volume per teammate, for the admin/owner/viewer dashboard chart."""
+    async with database.as_user(user.auth_user_id) as conn:
+        rows = await runs_repo.summarize_by_member(conn, user.org_id)
+    return [
+        TeamMemberSummary(
+            user_id=str(r["started_by"]) if r["started_by"] else None,
+            name=r["started_by_name"],
+            avatar_url=r["started_by_avatar_url"],
+            total_runs=r["total_runs"],
+            total_calls=r["total_calls"],
+        )
         for r in rows
     ]
 
@@ -283,6 +315,7 @@ async def get_run(
     resolved = [o for o in outcomes if o["disposition"] != "in_flight"]
     escalated = sum(1 for o in resolved if o["disposition"] == "escalated")
 
+    started_by = run["started_by"]
     return {
         "id": run["id"],
         "campaign_id": run["campaign_id"],
@@ -291,6 +324,9 @@ async def get_run(
         "started_at": run["started_at"].isoformat(),
         "finished_at": run["finished_at"].isoformat() if run["finished_at"] else None,
         "error": run["error"],
+        "started_by": str(started_by) if started_by else None,
+        "started_by_name": run["started_by_name"],
+        "started_by_avatar_url": run["started_by_avatar_url"],
         "outcomes": outcomes,
         "stats": {
             "completed": len(resolved),

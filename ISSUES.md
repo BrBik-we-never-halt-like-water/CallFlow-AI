@@ -91,6 +91,16 @@ exist in this repo**; `SYSTEM.md` §12 is the closest real gap map until it's wr
 | [#61](#61--no-webhook-receiver--every-call-outcome-only-ever-arrived-via-polling)                                                 | S3  | No webhook receiver - every call outcome only ever arrived via polling                                                | backend        | it-18 | **FIXED**        |
 | [#62](#62--call-es-own-task_completedcompletion_confidenceevidence-and-full-retry-history-were-discarded)                        | S3  | CALL-E's own `task_completed`/`completion_confidence`/`evidence` and full retry history were discarded                | backend        | it-19 | **FIXED**        |
 | [#63](#63--live-per-call-events-were-declared-and-plumbed-but-had-no-consumer)                                                    | S4  | Live per-call events were declared and plumbed but had no consumer                                                    | backend        | it-20 | **FIXED**        |
+| [#64](#64--campaigns_writes-for-all-policy-silently-re-granted-every-operator-full-org-wide-campaign-visibility)                  | S1  | `campaigns_write`'s `for all` policy silently re-granted every operator full org-wide campaign visibility             | backend        | it-21 | **FIXED**        |
+| [#65](#65--the-invite-accept-page-showed-this-invitation-isnt-valid-when-the-real-problem-was-being-signed-in-as-the-wrong-account) | S3  | Invite-accept page showed "invitation isn't valid" when the real problem was the wrong signed-in account              | web            | it-21 | **FIXED**        |
+| [#66](#66--create_or_refresh_invitation-trusted-a-caller-supplied-identity-instead-of-deriving-it)                                | S2  | `create_or_refresh_invitation()` trusted a caller-supplied identity instead of deriving it                            | backend        | it-21 | **FIXED**        |
+| [#67](#67--a-second-orphaned-migration-on-the-shared-database-same-failure-mode-as-before)                                        | S1  | A second orphaned migration on the shared database, same failure mode as before                                      | backend        | it-21 | **FIXED**        |
+| [#68](#68--no-one-could-ever-actually-accept-their-first-invitation)                                                              | S1  | No one could ever actually accept their first invitation - RLS blocked the lookup                                    | backend        | it-21 | **FIXED**        |
+| [#69](#69--dropdownmenu-popover-and-dialog-rendered-light---then-invisible---on-an-otherwise-all-dark-app-shell)                  | S2  | DropdownMenu/Popover/Dialog rendered light, then invisible after the first fix attempt                                | web            | it-21 | **FIXED**        |
+| [#70](#70--appprofile-never-had-dark-canvas-applied-and-toasts-viewport-was-never-portaled-anywhere)                              | S3  | `/app/profile` never had `.dark-canvas` applied; Toast's viewport was never portaled anywhere                         | web            | it-21 | **FIXED**        |
+| [#71](#71--viewer-role-had-a-correct-backend-and-a-completely-unenforced-frontend)                                                | S2  | Viewer role had a correct backend and a completely unenforced frontend                                               | web            | it-22 | **FIXED**        |
+| [#72](#72--pending-invitations-showed-no-pending-status-in-the-team-list)                                                          | S3  | Pending invitations showed no pending status in the Team list                                                        | web            | it-22 | **FIXED**        |
+| [#73](#73--toasts-18-fix-depended-on-an-element-that-doesnt-exist-on-every-page)                                                  | S3  | Toast's §18 fix depended on an element that doesn't exist on every page                                              | web            | it-22 | **FIXED**        |
 
 ---
 
@@ -2237,6 +2247,421 @@ tests, 230/230 passing overall.
 **This closes the CALL-E integration rebuild** (modules 1-7, iterations 14-20). Every item
 `CALLE_INTEGRATION_STATUS.md` tracked as open is now fixed; that doc's own status line has
 been updated to say so rather than left to go stale again.
+
+## Iteration 21 - 2026-08-09 · role-based UI roadmap, Phase 1: per-creator visibility silo
+
+### #64 - `campaigns_write`'s `for all` policy silently re-granted every operator full org-wide campaign visibility
+
+**S1 · FIXED · `alembic/versions/202608092100_split_campaigns_write_policy.py`**
+
+Phase 1 narrowed `campaigns_select`/`runs_select`/`call_outcomes_select` so an operator sees
+only what they created (migration `202608092000`) - but `campaigns_write` was declared
+`for all` (one policy covering select/insert/update/delete). Postgres combines multiple
+permissive policies for the same command with OR, so that policy's role-only check - true
+for any operator in the org - was also being consulted for SELECT, silently re-granting
+every operator full org-wide campaign visibility regardless of who created what. `runs` and
+`call_outcomes` never had this problem: their write policies were already split per command
+from their original migration (`202608070900`) - `campaigns_write` was the one table using
+`for all`.
+
+**Impact.** Every operator could see every teammate's campaign for as long as `d4bcc27a2b70`
+was live, defeating the entire point of the silo for that one table. `runs`/`call_outcomes`
+were never affected.
+
+**Caught by** the new cross-member RLS test added in the same iteration
+(`test_operator_cannot_see_a_teammates_campaign`, `tests/test_rls_isolation.py`) - it failed
+against the real database on first run, which is what surfaced this before it shipped.
+
+**Fix.** Split `campaigns_write` into `campaigns_insert`/`campaigns_update`/`campaigns_delete`,
+each scoped to its own command - same role check as before, so no behavioural change on
+paper. Confirmed against the live database (a throwaway, rolled-back probe) that for UPDATE
+and DELETE specifically, Postgres also intersects the command's own `USING` clause with any
+applicable SELECT policy's `USING` clause, so an operator's update/delete reach now
+automatically narrows to campaigns they created too - matching the actual product spec
+("no other teammate's campaign, nothing" for an operator), not just SELECT. INSERT is
+unaffected by that intersection (no existing row to combine against); forging `created_by`
+on insert is a pre-existing, unrelated gap this migration does not widen.
+
+### Per-creator visibility silo, shipped
+
+`campaigns.created_by` and `runs.started_by` existed since `202608070900` but were
+write-only - no policy read them, no query selected them, no API response returned them.
+`campaigns_select`/`runs_select`/`call_outcomes_select` (migration `202608092000`) now add
+an owner-or-admin-or-viewer branch alongside the org-member check, so an operator's plain
+org-scoped query returns only their own rows; owner/admin/viewer are unaffected. `GET
+/api/v1/campaigns`, `GET/PATCH .../campaigns/{id}`, `GET /api/v1/runs`, and `GET
+/api/v1/runs/{id}` now return `created_by`/`started_by` plus the creator's name/avatar
+(joined to `users`), so an admin/owner/viewer's org-wide view can attribute each row to
+whoever made it. New `GET /api/v1/runs/team-summary` (gated on the new
+`Permission.RUNS_READ_TEAM`, granted to owner/admin/viewer, not operator) returns call
+volume grouped by teammate, for the admin/owner dashboard's per-teammate breakdown chart
+(no frontend consumer yet - backend-only, by design, per this iteration's scope).
+
+**Tests.** 5 new cross-member RLS tests in `tests/test_rls_isolation.py` (two operators in
+one org: neither sees the other's campaign/run/call-outcome; admin and viewer see both;
+`summarize_by_member` reflects the caller's own RLS scope) plus 5 new permission-matrix
+tests in `tests/test_permissions.py`. 238/238 passing overall.
+
+**Depends on / Blocks:** signup → invite → role enforcement was verified (not rebuilt) as
+part of the same phase - already correct, covered by the existing RLS/permission suites
+this iteration extends.
+
+### #65 - The invite-accept page showed "this invitation isn't valid" when the real problem was being signed in as the wrong account
+
+**S3 · FIXED · web · `app/(auth)/accept-invite/[token]/page.tsx`**
+
+Opening a valid invite link while already signed in as a *different* account (e.g. the
+owner who sent the invite, opening their own link to check it) showed a "Join {org}"
+button unconditionally. Clicking it tried to accept the invitation as whoever was
+currently signed in, which the backend correctly rejects - but with a generic message
+("...may have expired, already been used, or been sent to a different email address")
+that reads as the invitation being broken, when the actual problem is which browser
+session is active.
+
+**Fix.** The page now compares the signed-in session's email to the invitation's target
+email. On a mismatch it says so directly ("You're signed in as X, but this invitation was
+sent to Y") with a **Sign out** button - `useSession()`'s existing auth-state-change
+listener re-renders the page into the real signup form once signed out, no manual
+redirect needed. Separately, the not-yet-signed-in signup form now shows the target email
+as a read-only field alongside Name and Password, so it's never ambiguous which address
+is being used.
+
+### #66 - `create_or_refresh_invitation()` trusted a caller-supplied identity instead of deriving it
+
+**S2 · FIXED · database · migration `202608092300_invitation_invited_by_from_caller_identity`**
+
+Found via a Supabase Postgres security-checklist pass, prompted by testing the new
+`npm run db:migrate` scripts turning up an unrelated orphaned migration (below) and
+prompting a fuller audit of the role/RLS flow. `public.create_or_refresh_invitation()`
+(migration `e15f3d9a2c78`) correctly anchors its *authorisation* checks
+(`has_org_role`/`can_grant_role`) to the caller's own identity via `current_user_id()` -
+but took `target_invited_by` as a plain argument and wrote it verbatim into
+`invitations.invited_by`, never checking it matched the caller.
+
+**Impact.** This function is `SECURITY DEFINER` in the exposed `public` schema with
+`EXECUTE` granted to `anon`/`authenticated` (confirmed live, `has_function_privilege`) -
+Supabase's Data API exposes every public function as an RPC endpoint by default. The
+one real call site (`org_repo.create_invitation()`) always passed the authenticated
+caller's own id, so the application itself was never affected - but nothing stopped a
+caller reaching the function directly (e.g. via Supabase's REST RPC surface, entirely
+outside this backend) from forging who an invitation credits.
+
+**Fix.** Dropped `target_invited_by` as a parameter; the function now derives it from
+`public.current_user_id()` itself, the same anchor already used for the authorisation
+checks - the exact pattern `create_organisation()` already used correctly. The one call
+site is unaffected since it always passed its own id.
+
+**Also found in the same audit, clean:** every UPDATE policy has a `WITH CHECK`, RLS is
+enabled *and* forced on every tenant table, no deprecated `auth.role()` usage anywhere,
+no unprotected views. Every other `SECURITY DEFINER` function either takes no caller
+identity as an argument at all or (like `create_organisation()`) already derives it
+itself - `create_or_refresh_invitation()` was the one exception.
+
+### #67 - A second orphaned migration on the shared database, same failure mode as before
+
+**S1 · FIXED · database · migration `202608092200_reconcile_orphaned_run_safety_columns`**
+
+While verifying the new `npm run db:migrate` script, `alembic_version` on the shared
+database had advanced to `a3f7c9e2b6d8` - a revision with no file anywhere in this
+repo's git history, checked across every local and remote branch. Same root cause as the
+first occurrence (`202608091800_reconcile_orphaned_run_columns`, iteration 19/20 window):
+almost certainly another uncommitted/discarded worktree or branch applying a migration
+directly against the shared Supabase instance.
+
+**Found:** five orphaned, all-`null`, unreferenced columns on `public.runs` mirroring
+`public.org_safety_settings`'s own columns (`max_calls_per_run`, `allowlist`,
+`calls_per_window`, `window_minutes`, `daily_budget`) - reads as an in-progress "snapshot
+the org's safety settings onto the run at start time" feature, schema-only, nothing wired
+to it yet. Confirmed none of Phase 1's RLS policies were touched by inspecting the live
+policy definitions directly rather than assuming.
+
+**Fix.** Same approach as the first occurrence: a new idempotent migration formally
+adopts the columns (`add column if not exists`) rather than silently re-stamping past
+them, so a fresh database can still reach the same schema. `alembic_version` was restamped
+back to the last known-good revision by the user directly against the database (the
+raw `UPDATE` on a system table was correctly blocked by this session's own permission
+classifier as a hard-to-reverse action), then `alembic upgrade head` replayed both this
+migration and `#66`'s fix. Recommend investigating what's producing these - twice in one
+session against a shared database is a pattern, not a fluke.
+
+**Verification.** `npm run db:migrate` (no-op, already at head) · `npm run db:generate`
+(produces an empty no-op migration - confirms no undeclared ORM drift, file discarded) ·
+`npm run db:reset` (confirmed it refuses without `--yes`, not actually run) ·
+`pytest -q` 238/238 · `ruff check app tests` clean · `alembic history` shows a clean
+linear chain from `b9d4f1a6c832` through `d7f3a8c2e951` (head).
+
+### #68 - No one could ever actually accept their first invitation
+
+**S1 · FIXED · database · migrations `202608092400`, `202608092500`**
+
+Found by the user's own manual testing (five real invite attempts across five real
+temp-mail addresses, all failing identically), after which every one of them turned out
+to still have zero membership in the org they'd been invited to, despite each one having
+signed up successfully. `invitations_repo.accept()`'s lookup was:
+
+```sql
+select ... from public.invitations i
+join public.organisations o on o.id = i.org_id
+where i.token = $1
+```
+
+run on the RLS-scoped `authenticated` connection. `invitations_select`'s policy correctly
+lets an invitee see their own pending invitation by email match - but `organisations_select`
+is plain `is_org_member(id)`, and a brand-new invitee is by definition not yet a member of
+the org they're being invited to. The `join` silently dropped the row the instant it
+reached `organisations`, so the whole query returned nothing, `accept()` returned `None`,
+and the route reported the generic "this invitation isn't valid" message - for every
+single real first-time acceptance, indistinguishable from an actually-invalid invitation.
+A chicken-and-egg RLS problem: you need to already be a member to see the org row, but
+seeing the org row was a precondition (via this join) for becoming one.
+
+**Impact.** This has almost certainly never worked, for anyone, since the tables were
+created - masked because no test exercised a genuine brand-new-user acceptance end to
+end; existing coverage only ever exercised invitation *creation* and the RLS *write*
+guards on `memberships_insert`, never a real first-time accept. The frontend fix from
+`#65` (showing a clear "sign out, wrong account" message) made the underlying bug more
+visible rather than less, since it eliminated the one other plausible explanation
+(being signed in as the wrong person) and left only this.
+
+**Fix.** Same pattern already established for `create_organisation()` and
+`create_or_refresh_invitation()` (`#66`) - a narrowly-scoped `SECURITY DEFINER` function,
+`public.lookup_invitation_for_accept()`, resolves token → invitation + org name/slug,
+bypassing only this one read. It exposes nothing the existing *anonymous*
+`lookup_invitation()` preview function doesn't already expose to anyone holding the
+token, unauthenticated - so this is strictly less exposure, not more. The actual
+state-mutating operations (the membership `INSERT`, the invitation `UPDATE`) are
+deliberately left as plain RLS-scoped queries, unchanged - `memberships_insert`'s
+`has_valid_invitation()` check still independently guards the one operation that
+actually grants access, preserving defense-in-depth. A same-session follow-up migration
+(`202608092500`) fixed a `citext`/`text` column-type mismatch in the first version,
+caught immediately by re-running the reproduction script before it reached a real user.
+
+**Also closed in the same fix:** `accept()` never checked `expires_at`, only
+`accepted_at` - an expired-but-never-accepted invitation could still be accepted. The
+new lookup function computes `expired` server-side to avoid any app/DB clock-skew
+comparison (the lesson from `#16`).
+
+**Tests.** Two new tests in `tests/test_rls_isolation.py`, the exact gap that let this
+ship: a genuine brand-new signup (real `auth.users` insert, firing the real trigger,
+giving them their own auto-created org exactly like a real signup) accepting a real
+invitation end to end, and an expired invitation correctly rejected. 240/240 passing
+overall. Reproduced and verified against the live database with a standalone script
+before and after each fix, not just via the test suite.
+
+### #69 - DropdownMenu, Popover, and Dialog rendered light - then invisible - on an otherwise all-dark `/app` shell
+
+**S2 · FIXED (two attempts) · web · `app/globals.css`, `dropdown-menu.tsx`, `disclosure.tsx`, `dialog.tsx`, `(app)/app/layout.tsx`, new `lib/hooks/use-portal-container.ts`**
+
+The sidebar org-switcher dropdown and the dashboard's Team popover both rendered with a
+white/light surface, reported by the user as visually broken against the dark `/app`
+shell around them. First diagnosis: `.dark-chrome`/`.dark-canvas`/`.dark-panel-glass`
+re-scope the generic surface/rule/text tokens to their dark equivalents only as CSS
+custom properties on those specific elements, and `DropdownMenuContent`,
+`PopoverContent`, and `Dialog`/`Sheet`'s content all render through a Radix `Portal`,
+which mounts straight to `<body>` by default - outside the DOM subtree those classes
+scope. First fix attempt: a `.dark-overlay` class re-scoping the same tokens
+`.dark-chrome` does, applied directly to the three portaled components.
+
+**That fix was itself broken** - caught by the user immediately after, from a screenshot
+showing the invite dialog with no visible background, border, or text at all (only the
+footer buttons, which carry their own styling, were visible). `.dark-overlay` referenced
+`var(--dark-text)`, `var(--dark-surface)`, etc. - but those raw palette values are
+themselves declared inside `.app-font-scope` (the `/app` layout's own wrapper `<div>`),
+**not** at `:root`. A Radix portal mounts as a sibling of that div, not a descendant of
+it, so it never inherited those tokens either - the exact same architectural gap
+`ISSUES.md` #49 already documented for the *font*, now biting the *color* fix for the
+same underlying reason. Setting `--text: var(--dark-text)` when `--dark-text` itself
+resolves to nothing collapses every property built on it to its own initial value -
+`transparent` for a background, effectively invisible for text.
+
+**Real fix.** New `usePortalContainer()` hook (`useSyncExternalStore`, not an effect +
+`setState` - `react-hooks/set-state-in-effect` is an error here exactly as it is for
+`localStorage`/`matchMedia`, see `lib/hooks/use-external-store.ts`) that resolves
+`document.getElementById('app-font-scope')`, falling back to `document.body` outside
+`/app`. Passed as the `container` prop to all three components' Radix `Portal`, so the
+portaled content becomes a genuine descendant of `.app-font-scope` and correctly
+inherits both the font class (partially closing `#49`, for these three components only)
+and the raw `--dark-*` tokens `.dark-overlay` depends on. `.dark-overlay` itself is
+unchanged and correct - it was never the broken half.
+
+Confirmed exclusively `/app`-only before applying any of this: `(auth)`/`(marketing)`
+never import `DropdownMenu`, `Popover`, or `Dialog` - grepped every import site to be
+sure, since forcing this on a component also used from a light-themed page (as
+`Tooltip` and `Select` both are - `pricing-table.tsx` and `demo-form.tsx` respectively -
+which is why those two were deliberately **not** touched) would have broken it there
+instead of fixing anything.
+
+**Follow-up (design, not a bug):** the user asked for these surfaces to carry the same
+purple radial-gradient background as the main content canvas, not a flat dark fill, and
+for `Select` (the role picker inside the invite dialog) to match too - `Select` had been
+correctly left alone in the first pass since it's also used on a light marketing page.
+`.dark-overlay` now applies `.dark-canvas`'s exact gradient formula, and `Select` applies
+`.dark-overlay` conditionally (only when its portal actually resolves to `/app`'s scope,
+via `isAppScopeContainer()`), leaving the marketing form untouched. Full narrative -
+including exactly why the first `.dark-overlay` attempt shipped broken - lives in
+`apps/web/DESIGN_NOTES.md` §17, not duplicated here.
+
+### Remove a teammate: reassigns their org data, deletes their account (product decision)
+
+Not a bug fix - a product decision, confirmed with the user while reviewing the Team
+management screen. Removing a teammate used to be a one-line membership delete
+(`org_repo.remove_member()`). Now, removing *someone else* (not leaving your own org,
+which is unchanged):
+
+1. Reassigns whatever they created in this organisation - `campaigns.created_by`,
+   `runs.started_by` - to whichever admin/owner performed the removal, so their work
+   survives them leaving instead of falling back to `null` the moment their account
+   goes away.
+2. Deletes their CallFlow account entirely, not just their membership in this one org -
+   a full account removal, not a per-org one (the user's explicit choice over the
+   narrower, initially-recommended "just this org" option). Any *other* organisation
+   they belong to is unaffected by step 1 - this admin has no relationship to that
+   org's data - and behaves exactly like a self-deleted account already does
+   (`ISSUES.md` #13/#14/#17's cascade/retirement triggers, unchanged).
+
+Implemented as `public.remove_member_and_reassign_data()` (migration `202608092600`), a
+`SECURITY DEFINER` function following the same shape as `create_organisation()`/
+`create_or_refresh_invitation()` - deleting `auth.users` needs privileges the
+`authenticated` role never holds, and CLAUDE.md §4b is explicit that `privileged.acquire()`
+must never appear in a request handler. Authorisation (`has_org_role`, `can_act_on_member`)
+is re-checked inside the function itself as defense-in-depth, same reasoning as those two
+functions - the route's own Python-side checks are still the primary gate.
+
+The "Remove" action in the Team tab now requires typing the person's name to confirm
+(mirroring the existing "delete this organisation" dialog's pattern) and states plainly
+what's about to happen, rather than the previous single-click destructive menu item -
+CLAUDE.md's own bar for a hard-to-reverse action.
+
+Separately, the sidebar org-switcher (the dropdown listing every org the signed-in user
+belongs to) is now admin/owner-only - an operator or viewer sees the current
+organisation's name as a plain, non-interactive label instead, since switching between
+orgs is a multi-org-management concern only admin/owner ever need.
+
+**Tests.** Two new tests in `test_rls_isolation.py`: an admin removing an operator
+reassigns their in-org campaign to the admin while leaving the operator's own
+(unrelated) organisation's data untouched, and deletes their account entirely; a
+same-rank operator cannot call the function directly, bypassing the API's own
+`Permission.TEAM_REMOVE` check. 242/242 passing overall.
+
+### #70 - `/app/profile` never had `.dark-canvas` applied, and Toast's viewport was never portaled anywhere
+
+**S3 · FIXED · web · `components/layout/app-shell.tsx`, `components/ui/toast.tsx`**
+
+Two more instances of the same family of bug as `#69`, found the same way - direct use, direct
+screenshot. `/app/profile` is `AppShell`'s one "minimal chrome" route (its own layout branch,
+single column, no sidebar) - a genuinely different code path from the normal route's content
+column, and that branch's wrapper `<div>` simply never carried the `.dark-canvas` class the
+normal branch has always applied. Every component on the page was already written correctly
+against generic tokens (`Panel`, `Button`, `Input`); the whole page rendering light was a single
+missing class, not a component-by-component gap.
+
+Separately, `ToastProvider` (mounted at the true root layout, shared by every route) rendered
+its `Viewport` in place - not portaled anywhere, since `@radix-ui/react-toast` has no `Portal`
+export at all (confirmed against its own type declarations), unlike every other Radix primitive
+touched in `#69`. A toast fired from `/app` picked up the light `:root` defaults regardless of
+the page around it, for the same underlying reason as `#69`'s components, just via a different
+mechanism (in-place rendering, not an escaping default portal) and needing a different fix
+(`createPortal` by hand, not a `container` prop).
+
+Full narrative for both, plus three related non-bug design changes shipped alongside them
+(`.dark-chrome`'s background, sidebar divider visibility, the toast success icon) - all product
+asks, not defects - lives in `apps/web/DESIGN_NOTES.md` §18, not duplicated here.
+
+## Iteration 22 - 2026-08-09 · viewer role UI enforcement + invite/toast follow-ups
+
+### #71 - Viewer role had a correct backend and a completely unenforced frontend
+
+**S2 · FIXED · web · `campaign-editor.tsx`, `campaigns/page.tsx`, `campaign-card.tsx`, `runs/page.tsx`, `runs/new/page.tsx`, `contacts/page.tsx`, `app/page.tsx`, `escalation-card.tsx`, `organisation/page.tsx`, `settings/safety/page.tsx`**
+
+`app/auth/permissions.py` has always correctly restricted the viewer role to read-only
+permissions (`_READ_ONLY | runs:read_team`), and every mutating route correctly rejects a
+viewer's request with a 403 - but no page in `/app` checked a permission before rendering
+its action controls. A viewer could open the campaign editor and type into every field,
+click "Start run," "Delete," "Save," "Invite," "Revoke," or "Mark resolved" anywhere in the
+product, and only discover the action was blocked when the request came back rejected.
+
+**Impact.** Actively misleading, not a security hole - the backend never let a write
+through. But CLAUDE.md §4 #9 ("never show a success state for something that did not
+happen") applies just as much to *showing an action as available* when it structurally
+cannot succeed. `settings/safety/page.tsx` had the least coverage of any page in the app:
+zero permission checks of any kind before this fix - anyone could see live Save buttons
+and every field editable regardless of role.
+
+**Fix.** The existing inline `profile.permissions.includes('permission:string')`
+convention (already used correctly on the Contacts page, Organisation's Team pane, and the
+dashboard's Team preview) was extended to every remaining page and action component rather
+than introducing the unused `hasPermission`/`usePermission` helpers in
+`lib/hooks/use-permission.ts`. `campaign-editor.tsx`'s pre-existing `readOnly`/`blocker`
+pair (previously only accounting for built-in templates) was extended rather than
+duplicated: `readOnly = isBuiltIn || !canWrite`, and `blocker` now names the actual reason
+("Your role can view campaigns but not edit them") ahead of the built-in check.
+`runs/new/page.tsx`'s composer is blocked entirely behind a `NotWiredNotice` for anyone
+without `runs:start`, rather than just disabling the final Start button - contact-grid
+interactions (CSV import, paste, add rows) don't persist server-side until Start is
+clicked, but still read as actions a pure viewer shouldn't be invited to take.
+`escalation-card.tsx`'s three actions ("Call back myself," "Reassign," "Mark resolved")
+are gated on `escalations:resolve`; the dashboard's own condensed escalation preview uses a
+separate, already non-interactive row component and needed no change.
+`components/ui/image-upload.tsx` had no `disabled` prop at all - added one, wired to
+`!canUpdate` (`org:update`) on the Organisation page's logo control, matching the org-name
+field beside it that was already correctly gated.
+
+**Verification.** `npm run type-check`, `npm run lint`, and `npm run build` all clean after
+the full sweep. No backend changes - the permission matrix was already correct.
+
+**Depends on / Blocks:** the role-based UI roadmap's Phase 0 (`.superpowers` plan
+`moonlit-orbiting-blum.md`) names this exact gap for campaigns/runs/settings; this closes
+Phase 0's nav-and-page-level piece for the viewer role specifically. Admin/operator-specific
+UI restrictions from that same roadmap (per-teammate data silo, org/Settings nav hiding for
+operator) remain separate, not-yet-started work.
+
+### #72 - Pending invitations showed no pending status in the Team list
+
+**S3 · FIXED · web · `app/(app)/app/organisation/page.tsx`**
+
+`PendingRow` rendered a role tag and a Revoke button for an invited-but-not-yet-accepted
+teammate with nothing marking the row as pending - visually indistinguishable at a glance
+from an active member, aside from the row's position in a separate list the user had to
+already know to look for.
+
+**Fix.** A plain, neutral `<Tag>Pending</Tag>` now renders ahead of the role tag on every
+pending row. Deliberately not a lamp colour - an earlier draft of this fix used
+`--lamp-brass`, caught and reverted before landing, since lamp colours are reserved for
+call state and nothing else (CLAUDE.md §4 #10) and "pending" is an invitation-lifecycle
+label, the same class of thing `Tag` already exists for elsewhere in this table (role tags)
+and on campaign cards (`Template`/`Custom`).
+
+Revoke was checked against the backend as part of the same pass and already fully
+invalidates the invitation - `invitations_repo`'s revoke path deletes the row outright, and
+a revoked token's accept page correctly shows the standard invalid-invitation state. No
+backend change was needed.
+
+### #73 - Toast's §18 fix depended on an element that doesn't exist on every page
+
+**S3 · FIXED · web · `app/globals.css`, `components/ui/toast.tsx` - supersedes half of `#70`/`apps/web/DESIGN_NOTES.md` §18**
+
+`#70`'s Toast fix portaled `Viewport` to `.app-font-scope` (falling back to `document.body`)
+and applied `.dark-overlay` only when `isAppScopeContainer()` confirmed the portal landed
+inside that scope. The "Joined" toast fired from `/accept-invite/[token]` still rendered
+light, because that route is in the `(auth)` group, which never renders `.app-font-scope`
+at all - it's exclusively rendered by `(app)/app/layout.tsx`. There was no element for the
+fallback to detect, so the dark-styling condition was never true on that page, regardless
+of the portal fix working correctly everywhere it actually applied.
+
+**Fix.** New `.toast-dark-overlay` class, applied unconditionally in `ToastItem` regardless
+of the page that fired it. Unlike `.dark-overlay`, it does not reference `var(--dark-*)` -
+those tokens are deliberately declared only inside `.app-font-scope` (see `#69`'s own note
+on why setting a property to an unresolved custom property collapses it to its initial
+value), so a class that must also work where that scope doesn't exist cannot depend on
+them. `.toast-dark-overlay` hardcodes the literal colour values instead - the one
+deliberate exception in this codebase to "reference the token, never the hex," commented
+as such at the declaration site. With theming no longer dependent on DOM position, the
+`createPortal` machinery `#70` added to `ToastProvider` was removed as unneeded complexity;
+`Viewport` renders in place again (unaffected for positioning purposes, since `position:
+fixed` doesn't care about DOM nesting).
+
+**Depends on:** `#70` (this issue corrects that fix's Toast half; the `/app/profile`
+`.dark-canvas` half of `#70` is unaffected and unchanged).
 
 ## Template for the next iteration
 

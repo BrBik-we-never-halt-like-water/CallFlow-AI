@@ -27,6 +27,7 @@ import type { RunSummary } from '@/lib/api';
 import { formatTimestamp } from '@/lib/format';
 import { lampForRunStatus, type RunStatus } from '@/lib/lamp';
 import { useAppStore } from '@/lib/app-store';
+import { useSession } from '@/lib/hooks/use-session';
 
 /**
  * `.dark-panel-glass`/`.dark-chrome` (globals.css) re-scope the generic text/
@@ -80,6 +81,10 @@ const STATUS_FILTERS = (['running', 'completed', 'failed'] as RunStatus[]).map(
 
 export default function RunsPage() {
   const router = useRouter();
+  const session = useSession();
+  const canStart =
+    session.status === 'signed-in' &&
+    session.profile.permissions.includes('runs:start');
   const { runs, campaigns, phase, loadingRuns } = useAppStore();
   const [sort, setSort] = useState<SortState>({
     id: 'started_at',
@@ -278,9 +283,11 @@ export default function RunsPage() {
             </DropdownMenuContent>
           </DropdownMenu>
 
-          <Button asChild>
-            <Link href="/app/runs/new">Start a run</Link>
-          </Button>
+          {canStart ? (
+            <Button asChild>
+              <Link href="/app/runs/new">Start a run</Link>
+            </Button>
+          ) : null}
         </div>
       </div>
 
@@ -335,9 +342,11 @@ export default function RunsPage() {
               title="No runs yet"
               body="Runs are how contacts get called."
               action={
-                <Button asChild>
-                  <Link href="/app/runs/new">Start a run</Link>
-                </Button>
+                canStart ? (
+                  <Button asChild>
+                    <Link href="/app/runs/new">Start a run</Link>
+                  </Button>
+                ) : undefined
               }
             />
           ) : (

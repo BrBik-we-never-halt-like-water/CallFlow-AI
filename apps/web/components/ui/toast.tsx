@@ -1,7 +1,7 @@
 'use client';
 
 import * as RadixToast from '@radix-ui/react-toast';
-import { XIcon } from '@phosphor-icons/react/dist/ssr';
+import { CheckCircleIcon, XIcon } from '@phosphor-icons/react/dist/ssr';
 import {
   createContext,
   useCallback,
@@ -128,12 +128,25 @@ function ToastItem({
       type={isError ? 'foreground' : 'background'}
       duration={isError ? 10000 : 5000}
       className={cn(
+        // Always dark, on every page - not conditional on `/app` scope like
+        // Select/Tooltip/etc (DESIGN_NOTES.md §18): a toast is CallFlow's own
+        // notification chrome, not something that should adapt to whatever
+        // page happens to be under it.
+        'toast-dark-overlay',
         'flex items-start gap-3 rounded-md border border-rule-strong bg-surface-raised p-3 shadow-overlay',
         'data-[state=open]:animate-in data-[swipe=end]:translate-x-full',
       )}
     >
       <span className="mt-1">
-        <Lamp state={TONE_LAMP[tone]} size="sm" />
+        {tone === 'success' ? (
+          <CheckCircleIcon
+            aria-hidden
+            weight="fill"
+            className="size-4 text-lamp-jade-text"
+          />
+        ) : (
+          <Lamp state={TONE_LAMP[tone]} size="sm" />
+        )}
       </span>
 
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">

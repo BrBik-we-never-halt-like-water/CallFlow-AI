@@ -25,6 +25,11 @@ class Permission(str, enum.Enum):
     RUNS_READ = "runs:read"
     # Every run dials for real, so starting one at all is the consequential action.
     RUNS_START = "runs:start"
+    # The per-teammate breakdown, not any one run - an operator's own runs are
+    # already covered by runs:read; this is what the org-wide RLS narrowing
+    # (migration 202608092000) would otherwise let an operator's query return
+    # nothing for anyway, but the permission check should say so up front.
+    RUNS_READ_TEAM = "runs:read_team"
 
     CONTACTS_READ = "contacts:read"
     CONTACTS_WRITE = "contacts:write"
@@ -92,6 +97,7 @@ _ADMIN = _OPERATOR | {
     Permission.INTEGRATIONS_WRITE,
     Permission.AUDIT_READ,
     Permission.BILLING_READ,
+    Permission.RUNS_READ_TEAM,
 }
 
 _OWNER = _ADMIN | {
@@ -102,7 +108,12 @@ _OWNER = _ADMIN | {
 
 ROLE_PERMISSIONS: MappingProxyType[OrgRole, frozenset[Permission]] = MappingProxyType(
     {
-        OrgRole.VIEWER: _READ_ONLY,
+        # Viewer sees the same breadth as admin/owner, just read-only - so it
+        # gets runs:read_team too, even though it otherwise only inherits
+        # _READ_ONLY (operator does not: an operator's own runs are already
+        # covered by runs:read, and RLS narrows a team query to nothing for
+        # them anyway).
+        OrgRole.VIEWER: _READ_ONLY | {Permission.RUNS_READ_TEAM},
         OrgRole.OPERATOR: frozenset(_OPERATOR),
         OrgRole.ADMIN: frozenset(_ADMIN),
         OrgRole.OWNER: frozenset(_OWNER),

@@ -2,6 +2,10 @@
 
 import * as RadixTooltip from '@radix-ui/react-tooltip';
 import { cn } from '@/lib/cn';
+import {
+  isAppScopeContainer,
+  usePortalContainer,
+} from '@/lib/hooks/use-portal-container';
 
 /**
  * Tooltip. 400ms open delay, keyboard-reachable via the trigger's focus.
@@ -34,6 +38,12 @@ export function Tooltip({
   wrapTrigger?: boolean;
   className?: string;
 }) {
+  // Shared with a light-themed marketing page (pricing-table.tsx's row
+  // hints), like Select - dark styling only applies when actually rendered
+  // inside /app (see components/ui/select.tsx for the identical pattern).
+  const container = usePortalContainer();
+  const isDark = isAppScopeContainer(container);
+
   return (
     <RadixTooltip.Root>
       <RadixTooltip.Trigger asChild>
@@ -45,12 +55,13 @@ export function Tooltip({
           children
         )}
       </RadixTooltip.Trigger>
-      <RadixTooltip.Portal>
+      <RadixTooltip.Portal container={container}>
         <RadixTooltip.Content
           side={side}
           sideOffset={6}
           collisionPadding={12}
           className={cn(
+            isDark && 'dark-overlay',
             'z-50 max-w-64 rounded-sm border border-rule-strong bg-surface-raised px-2.5 py-1.5',
             'text-small text-text shadow-overlay',
             'data-[state=delayed-open]:animate-in',
