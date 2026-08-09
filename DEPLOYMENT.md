@@ -67,6 +67,32 @@ it are per-environment and easy to copy across by accident:
 Do **not** run `alembic upgrade head` by hand. The `migrate` job runs it on every push,
 so the first deploy applies the whole history to the empty project.
 
+### Capping dev
+
+Supabase is not where dev can cost you money - the Free plan has no overage billing, so
+usage stops rather than charges. (If the org moves to Pro, keep **Organization → Billing
+→ Spend Cap** on.) The real exposure is outbound calls, which are billed per minute and
+reach real strangers.
+
+Four env values cap that, and the defaults are not the safe ones:
+
+| Value | Dev setting | What it does |
+| --- | --- | --- |
+| `CALLE_API_KEY` | **empty** | No key, no calls. Every run is refused with a clear error |
+| `CALLFLOW_ALLOWLIST` | **your own number** | The one that matters - see below |
+| `CALLFLOW_MAX_CALLS_PER_RUN` | `2` | Hard stop per run regardless of list length |
+| `CALLFLOW_DAILY_BUDGET` | `5` | Shared daily ceiling |
+
+**`CALLFLOW_ALLOWLIST` empty means no restriction, not total restriction.**
+`check_dial_allowed` reads `if effective_allowlist and phone not in effective_allowlist`,
+so an empty list skips the check entirely and any valid E.164 number is dialable. A
+non-empty list is what puts the deployment in development mode. Set it to your own number
+in E.164 (`+919876543210`) on dev and leave it that way.
+
+Note the free Supabase plan pauses a project after 7 days idle. A paused project means
+`DATABASE_URL` stops answering and dev returns errors until someone un-pauses it in the
+dashboard - expected on dev, and the reason production should not be on Free.
+
 ---
 
 ## 3. Configure the GitHub Environment
