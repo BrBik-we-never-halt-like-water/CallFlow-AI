@@ -1,6 +1,7 @@
 'use client';
 
 import {
+  DownloadSimpleIcon,
   PlusIcon,
   TrashIcon,
   UploadSimpleIcon,
@@ -11,13 +12,23 @@ import { Button } from '@/components/ui/button';
 import { Panel } from '@/components/ui/panel';
 import { Tag } from '@/components/ui/badge';
 import { useToast } from '@/components/ui/toast';
-import { normalisePhone } from '@/lib/format/phone';
+import { normalisePhone, sanitizePhoneInput } from '@/lib/format/phone';
 import {
   parseSheet,
   SAMPLE_CSV,
   validateRow,
   type ParsedRow,
 } from '@/lib/contacts';
+
+function downloadSampleCsv() {
+  const blob = new Blob([SAMPLE_CSV], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = 'callflow-sample-contacts.csv';
+  link.click();
+  URL.revokeObjectURL(url);
+}
 
 /**
  * Spreadsheet-style contact editor.
@@ -28,8 +39,8 @@ import {
  *    is a person who never got called and nobody ever finds out why.
  *  - The reason is specific. "Not a valid E.164 number - try +919876543210" tells you
  *    what to type; "invalid" does not.
- *  - Paste works. Almost every real list starts life in a spreadsheet, and making
- *    someone retype it is how a tool gets abandoned on day one.
+ *  - Nobody has to guess the file shape. "Download sample CSV" hands back exactly the
+ *    columns the importer reads, with one real row already filled in.
  */
 export function ContactGrid({
   rows,
@@ -86,6 +97,20 @@ export function ContactGrid({
     onChange(next);
   }
 
+  /**
+   * Snaps the phone cell to its normalised E.164 form once the person moves
+   * on from it - not on every keystroke, which would insert `+91` mid-type
+   * the instant a 10th digit lands and jump the cursor. Matches `ui/input.tsx`'s
+   * existing phone-variant "normalises on blur" convention elsewhere in the
+   * app. `toContactInputs` normalises again regardless, so this is about the
+   * grid's own displayed value staying honest, not a load-bearing guarantee.
+   */
+  function normaliseCellOnBlur(index: number) {
+    const row = rows[index];
+    if (!row) return;
+    updateCell(index, { phone: normalisePhone(row.phone) });
+  }
+
   async function onFiles(files: FileList | null) {
     const file = files?.[0];
     if (!file) return;
@@ -121,11 +146,10 @@ export function ContactGrid({
         )}
       >
         <div className="flex flex-col gap-1">
-          <p className="text-small text-text">
-            Drop a CSV here, or paste from a spreadsheet
-          </p>
+          <p className="text-small text-text">Drop a CSV here to import it</p>
           <p className="text-small text-text-mute">
-            Columns: name, phone, note. A header row is optional.
+            Columns: name, phone, note. A header row is optional - not sure of
+            the format? Download the sample.
           </p>
         </div>
 
@@ -145,36 +169,9 @@ export function ContactGrid({
             <UploadSimpleIcon aria-hidden className="size-4" />
             Import CSV
           </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={async () => {
-              try {
-                const text = await navigator.clipboard.readText();
-                if (text.trim()) ingest(text, { append: rows.length > 0 });
-                else
-                  toast({
-                    tone: 'warning',
-                    title: 'Your clipboard is empty',
-                    body: 'Copy the rows from your spreadsheet first.',
-                  });
-              } catch {
-                toast({
-                  tone: 'warning',
-                  title: 'Paste from your keyboard instead',
-                  body: "This browser won't let a page read the clipboard. Click a cell and press Ctrl+V.",
-                });
-              }
-            }}
-          >
-            Paste
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => ingest(SAMPLE_CSV, { append: false })}
-          >
-            Use sample
+          <Button variant="ghost" size="sm" onClick={downloadSampleCsv}>
+            <DownloadSimpleIcon aria-hidden className="size-4" />
+            Download sample CSV
           </Button>
         </div>
       </div>
@@ -183,7 +180,8 @@ export function ContactGrid({
       {rows.length === 0 ? (
         <Panel sunken className="p-6 text-center">
           <p className="text-small text-text-dim">
-            No contacts yet. Import a CSV, paste a list, or add a row by hand.
+            No contacts yet. Import a CSV, download the sample to see the
+            format, or add a row by hand.
           </p>
           <Button
             variant="secondary"
@@ -282,8 +280,11 @@ export function ContactGrid({
                       <GridInput
                         value={row.phone}
                         onChange={(value) =>
-                          updateCell(index, { phone: value })
+                          updateCell(index, {
+                            phone: sanitizePhoneInput(value),
+                          })
                         }
+                        onBlur={() => normaliseCellOnBlur(index)}
                         placeholder="+919876543210"
                         label={`Phone, row ${row.row}`}
                         mono
@@ -382,6 +383,7 @@ export function ContactGrid({
 function GridInput({
   value,
   onChange,
+  onBlur,
   placeholder,
   label,
   mono = false,
@@ -390,6 +392,7 @@ function GridInput({
 }: {
   value: string;
   onChange: (value: string) => void;
+  onBlur?: () => void;
   placeholder: string;
   label: string;
   mono?: boolean;
@@ -401,6 +404,7 @@ function GridInput({
       <input
         value={value}
         onChange={(e) => onChange(e.target.value)}
+        onBlur={onBlur}
         placeholder={placeholder}
         aria-label={label}
         aria-invalid={invalid || undefined}

@@ -12,6 +12,7 @@ import logging
 import time
 import uuid
 from collections.abc import Awaitable, Callable, Iterable
+from datetime import datetime
 from typing import Any
 
 from app.core.config import config
@@ -217,6 +218,47 @@ def _extract_transcript(call: JsonObject) -> str | None:
     return "\n".join(parts) if parts else None
 
 
+def _extract_duration(call: JsonObject) -> float | None:
+    """Computes how long the call lasted from the final attempt's own
+    timestamps.
+
+    There is no `duration_seconds` field anywhere in CALL-E's real response -
+    confirmed against the installed SDK's generated `CallTaskAttempt` model,
+    which declares only `started_at`/`completed_at`, no duration of any kind.
+    Reading `call.get("duration_seconds")` (the previous implementation)
+    therefore always returned `None` for every real call - the same class of
+    bug as the top-level-key-that-doesn't-exist transcript bug (ISSUES.md
+    #52), just never cross-checked for this field at the time. Uses the same
+    `_final_attempt()` selection as `_extract_transcript` so the reported
+    duration always corresponds to the same attempt whose transcript is
+    shown, not a different one.
+    """
+    recipients = call.get("recipients")
+    if not isinstance(recipients, list) or not recipients:
+        return None
+    first = recipients[0]
+    if not isinstance(first, dict):
+        return None
+
+    attempts = first.get("attempts")
+    if not isinstance(attempts, list):
+        return None
+    attempt = _final_attempt(attempts)
+    if attempt is None:
+        return None
+
+    started = attempt.get("started_at")
+    completed = attempt.get("completed_at")
+    if not started or not completed:
+        return None
+    try:
+        start_dt = datetime.fromisoformat(started)
+        end_dt = datetime.fromisoformat(completed)
+    except (TypeError, ValueError):
+        return None
+    return max(0.0, (end_dt - start_dt).total_seconds())
+
+
 class CampaignRunner:
     def __init__(
         self,
@@ -347,7 +389,7 @@ class CampaignRunner:
             status = str(call.get("status", "")).lower()
 
             if status in TERMINAL:
-                return call
+                return await self._await_settled_duration(call_id, call)
 
             if status and status != last_status and on_status is not None:
                 last_status = status
@@ -365,6 +407,32 @@ class CampaignRunner:
             await asyncio.sleep(2.0)
 
         raise TimeoutError(f"Call {call_id} did not finish within the timeout.")
+
+    async def _await_settled_duration(self, call_id: str, call: JsonObject) -> JsonObject:
+        """Close the gap between the top-level `status` going terminal and the
+        same response's nested attempt timestamps catching up.
+
+        Confirmed against a real call (ISSUES.md #61's follow-up): a live
+        re-fetch of a call that had already been sitting at `duration_seconds =
+        None` in the database returned a fully-settled `completed`/`failed`
+        attempt with both `started_at` and `completed_at` populated, and
+        `_extract_duration` computed the correct value from it without any
+        change to that function. The only place the two could have disagreed
+        is the moment the *original* poll accepted its terminal response - so
+        the engine's own top-level `status` field and its nested
+        `recipients[0].attempts[].completed_at` are not written atomically,
+        the same class of eventual-consistency gap as the flaky-poll bug
+        already fixed for status itself (#53). A few short re-fetches close
+        it; if it never settles, this returns the last response anyway rather
+        than blocking the whole run - a stuck `duration_seconds` is a data gap,
+        not a reason to fail the call.
+        """
+        for _ in range(3):
+            if _extract_duration(call) is not None:
+                return call
+            await asyncio.sleep(1.5)
+            call = await asyncio.to_thread(self.gateway.get_call, call_id)
+        return call
 
     async def run_one(
         self,
@@ -515,7 +583,7 @@ class CampaignRunner:
                 "transcript": _extract_transcript(final),
                 "summary": extracted.get("summary") or final.get("summary"),
                 "extracted": extracted,
-                "duration_seconds": final.get("duration_seconds"),
+                "duration_seconds": _extract_duration(final),
             }
         )
         return triage(resolved, escalate_on_negative=campaign.escalate_on_negative)

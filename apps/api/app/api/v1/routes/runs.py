@@ -30,7 +30,12 @@ from app.database.repositories import runs as runs_repo
 from app.database.repositories import safety_settings as safety_settings_repo
 from app.database.repositories import suppressions as suppressions_repo
 from app.domain.entities import CallOutcome, Contact
-from app.domain.safety import phone_hash, resolve_safety_settings
+from app.domain.safety import (
+    apply_run_override,
+    is_e164,
+    phone_hash,
+    resolve_safety_settings,
+)
 from app.services.campaign_runner import CampaignRunner
 
 log = logging.getLogger("app.api.v1.runs")
@@ -49,6 +54,12 @@ class ContactIn(BaseModel):
 class RunRequest(BaseModel):
     campaign_id: str
     contacts: list[ContactIn]
+    # Per-run overrides of this organisation's own safety settings - tighten
+    # only, never looser (see `apply_run_override`'s own docstring for why).
+    # Both optional; omitting either leaves that guard at the organisation's
+    # configured value.
+    max_calls_per_run: int | None = Field(default=None, gt=0)
+    allowlist: list[str] | None = None
 
 
 def _is_owner(request: Request) -> bool:
@@ -148,6 +159,21 @@ async def start_run(
         daily_budget=safety_row["daily_budget"] if safety_row else None,
     )
 
+    if req.allowlist:
+        bad = [n for n in req.allowlist if not is_e164(n)]
+        if bad:
+            raise HTTPException(
+                status_code=400, detail=f"Not valid E.164 numbers: {', '.join(bad)}"
+            )
+
+    # Per-run override, tighten-only - see apply_run_override's own docstring.
+    # calls_per_window/window_minutes/daily_budget pass through unchanged, so
+    # this is safe to apply before the rate-limit check below even though
+    # that check only cares about those three fields.
+    effective = apply_run_override(
+        effective, max_calls_per_run=req.max_calls_per_run, allowlist=req.allowlist
+    )
+
     # Resolved before the rate-limit check (not after) so a suppressed
     # contact - who check_dial_allowed will skip regardless - never reserves
     # a slot from the daily budget or rate window for a call that will never
@@ -189,6 +215,16 @@ async def start_run(
             total=len(contacts),
             started_by=user.id,
             idempotency_key=idempotency_key,
+            # A permanent snapshot of the exact guards this run is governed
+            # by - the same `effective` object used for the dial gate and
+            # the rate-limit check above, not a fresh read of
+            # org_safety_settings, which can change after the fact and
+            # would otherwise silently rewrite this run's own history.
+            max_calls_per_run=effective.max_calls_per_run,
+            allowlist=effective.allowlist,
+            calls_per_window=effective.calls_per_window,
+            window_minutes=effective.window_minutes,
+            daily_budget=effective.daily_budget,
         )
 
     if not created:
@@ -329,4 +365,17 @@ async def get_run(
         "error": run["error"],
         "outcomes": outcomes,
         "stats": _compute_stats(outcomes, run["total"]),
+        # Permanent snapshot of this run's actual guards (ISSUES.md it-16) -
+        # null on any run created before this field existed, never
+        # backfilled from today's org_safety_settings, which would fabricate
+        # a history this run never actually had.
+        "safety_snapshot": {
+            "max_calls_per_run": run["max_calls_per_run"],
+            "allowlist": run["allowlist"] or [],
+            "calls_per_window": run["calls_per_window"],
+            "window_minutes": run["window_minutes"],
+            "daily_budget": run["daily_budget"],
+        }
+        if run["max_calls_per_run"] is not None
+        else None,
     }

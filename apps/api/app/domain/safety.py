@@ -109,6 +109,52 @@ def resolve_safety_settings(
     )
 
 
+def apply_run_override(
+    effective: EffectiveSafety,
+    *,
+    max_calls_per_run: int | None = None,
+    allowlist: Iterable[str] | None = None,
+) -> EffectiveSafety:
+    """Layers a one-off, per-run request on top of an organisation's own
+    effective safety settings - tighten-only, never looser.
+
+    A run may ask for a lower ceiling or a narrower allowlist than the
+    organisation's own configuration, never a higher or wider one: raising a
+    guard is an owner/admin decision made in Settings -> Safety
+    (`Permission.SAFETY_WRITE`), not something merely starting a run
+    (`Permission.RUNS_START`, held by operator and above) should be able to
+    do on the side - the whole point of a per-org ceiling is that it can't be
+    bypassed by whoever happens to be starting the next run. A request for a
+    wider ceiling is silently capped at the organisation's own limit rather
+    than rejected, so an operator who over-asks still gets a real run instead
+    of an error. `calls_per_window`/`window_minutes`/`daily_budget` are
+    deliberately not overridable here - those are whole-organisation
+    resources shared across every run today, not a single run's own limit,
+    unlike `max_calls_per_run` (already named as exactly that).
+    """
+    max_calls = effective.max_calls_per_run
+    if max_calls_per_run is not None:
+        max_calls = min(max_calls_per_run, effective.max_calls_per_run)
+
+    allowed = effective.allowlist
+    if allowlist is not None:
+        requested = frozenset(allowlist)
+        # An empty organisation allowlist means "no restriction" - a run-level
+        # list then applies on its own as the (narrower) restriction. A
+        # non-empty organisation allowlist means only its numbers are ever
+        # dialable - a run-level list can only narrow that further, via
+        # intersection, never add a number the organisation itself excludes.
+        allowed = (effective.allowlist & requested) if effective.allowlist else requested
+
+    return EffectiveSafety(
+        allowlist=allowed,
+        max_calls_per_run=max_calls,
+        calls_per_window=effective.calls_per_window,
+        window_minutes=effective.window_minutes,
+        daily_budget=effective.daily_budget,
+    )
+
+
 def check_dial_allowed(
     phone: str,
     calls_made_so_far: int,

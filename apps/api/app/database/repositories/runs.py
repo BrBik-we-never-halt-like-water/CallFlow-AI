@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from typing import Any
 from uuid import UUID
 
@@ -16,6 +17,11 @@ async def create_run(
     campaign_id: str,
     total: int,
     started_by: UUID,
+    max_calls_per_run: int,
+    allowlist: Iterable[str],
+    calls_per_window: int,
+    window_minutes: int,
+    daily_budget: int,
     idempotency_key: str | None = None,
 ) -> bool:
     """Insert a new run row. Returns False, without inserting, if a run with
@@ -24,11 +30,21 @@ async def create_run(
 
     The partial unique index only covers non-null keys, so a caller that
     never sends one (nothing requires it) always inserts normally.
+
+    The five safety fields are a permanent snapshot of the *effective*
+    guards this run was actually governed by - not a live reference to
+    `org_safety_settings`, which can change after the fact and would then
+    silently rewrite this run's own history. The caller passes the exact
+    `EffectiveSafety` values used for this run's own dial gate and
+    rate-limit check, so what's recorded here can never drift from what was
+    actually enforced (`ISSUES.md` it-16).
     """
     row = await conn.fetchrow(
         """
-        insert into public.runs (id, org_id, campaign_id, total, started_by, idempotency_key)
-        values ($1, $2, $3, $4, $5, $6)
+        insert into public.runs
+            (id, org_id, campaign_id, total, started_by, idempotency_key,
+             max_calls_per_run, allowlist, calls_per_window, window_minutes, daily_budget)
+        values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
         on conflict (org_id, idempotency_key) where idempotency_key is not null do nothing
         returning id
         """,
@@ -38,6 +54,11 @@ async def create_run(
         total,
         started_by,
         idempotency_key,
+        max_calls_per_run,
+        list(allowlist),
+        calls_per_window,
+        window_minutes,
+        daily_budget,
     )
     return row is not None
 
@@ -183,7 +204,8 @@ async def reap_orphaned_runs(conn: asyncpg.Connection) -> int:
 async def get_run(conn: asyncpg.Connection, org_id: UUID, run_id: str) -> asyncpg.Record | None:
     return await conn.fetchrow(
         """
-        select id, org_id, campaign_id, total, status, started_at, finished_at, error
+        select id, org_id, campaign_id, total, status, started_at, finished_at, error,
+               max_calls_per_run, allowlist, calls_per_window, window_minutes, daily_budget
         from public.runs
         where org_id = $1 and id = $2
         """,

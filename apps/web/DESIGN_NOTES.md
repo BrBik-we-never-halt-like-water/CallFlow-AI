@@ -527,3 +527,71 @@ correctly there but does not reliably paint the `…` ellipsis for text that's a
 flex container. Moving `max-w-32 truncate` onto a `block`-level `<span>` *inside* the pill (the
 standard "truncate needs a block box of its own inside a flex row" fix) resolved it; worth
 remembering for `Tag` composed inside any other flex row in D3/D4.
+
+## 17. Run composer rebuild: dropping the numbered-step framing, per-run guard overrides
+
+Requested directly: the three-`Step` (01/02/03) vertical stack read as a wizard despite the
+component's own comment insisting it wasn't one, the contact grid's "Paste" and "Use sample"
+buttons were replaced with a "Download sample CSV" button, and phone entry needed real input
+constraints rather than only post-hoc validation.
+
+**Two `Panel`s plus a sticky rail, not three numbered steps.** `runs/new/page.tsx` is now a
+`grid-cols-[1fr_360px]` layout: Campaign and Contacts as two plain-titled panels in the main
+column (no "01"/"02" numerals - the numbering was the thing making a single continuous page read
+as sequential steps), and a `lg:sticky` right-hand rail holding the guard bar, this run's own
+overrides, the contact-count readout, and the Start/Cancel buttons. The rail is genuinely sticky
+only at `lg:` and up; below that it falls back to normal document flow beneath the two panels,
+same as the guard bar always has.
+
+**"Download sample CSV" replaces "Paste" and "Use sample".** The clipboard-read "Paste" button
+(`navigator.clipboard.readText()`) and the instant-populate "Use sample" button are gone;
+`SAMPLE_CSV` (`lib/contacts.ts`) is trimmed from three rows to one and now exists solely as a
+`Blob`-downloaded file (`callflow-sample-contacts.csv`) via the existing native download-link
+pattern - no new dependency for something `<a download>` already does. A cell inside the grid
+still accepts a normal browser paste (it's a plain `<input>`), so nothing about single-cell paste
+regressed; what's gone is the bulk clipboard-read shortcut and the fabricated three-row demo list.
+
+**Phone input: keystroke filtering plus a stricter, deliberately scoped validation rule.**
+`sanitizePhoneInput`/`hasValidNationalLength` (both `lib/format/phone.ts`) are new and separate
+from `isE164`: `isE164` stays the general E.164 check used for allowlist/suppression entries
+elsewhere, where forcing a 10-digit national number isn't a safe universal assumption.
+`hasValidNationalLength` (country-code prefix of 1-3 digits plus an exactly-10-digit national
+number) is layered on top only inside `lib/contacts.ts`'s `validateRow` - the run composer's own
+contact list, matching both of this product's default regions (+91 India, +1 US/Canada) without
+pulling in a full number-metadata library for one screen. `sanitizePhoneInput` strips anything
+that isn't a leading `+` or a digit as it's typed, rather than accepting free text and reporting
+the problem after the fact.
+
+**A real bug found while tracing this, not just a validation add-on:** the contact grid's
+`updateCell` computed a normalised phone for the *validity check* but never stored it back onto
+the row - a hand-typed bare 10-digit number would show green/valid in the grid while
+`toContactInputs` still sent the raw, un-normalised string to the API, which fails E.164
+validation there for a request the screen had just called ready. Fixed at both ends: the grid
+normalises on blur now (matching `ui/input.tsx`'s existing phone-variant convention, so typing
+doesn't jump mid-entry), and `toContactInputs` normalises again regardless as a defensive
+boundary fix - the actual payload is correct even if the grid's own state ever isn't.
+
+**Per-run guard overrides, tighten-only.** Two optional fields - "Ceiling for this run" and
+"Extra allowlist for this run" - narrow this organisation's own Settings → Safety configuration
+for one run, never widen it (`apply_run_override`, `app/domain/safety.py`, backend). A request for
+a higher ceiling than the organisation allows is silently capped rather than rejected; a run-level
+allowlist intersects with a non-empty organisation allowlist and stands alone only when the
+organisation has none. This was a deliberate reading of an ambiguous request ("per-run settings")
+against `CLAUDE.md`'s fail-closed non-negotiable: `Permission.RUNS_START` (operator and above)
+must not be able to use a per-run override to reach guard values `Permission.SAFETY_WRITE`
+(admin/owner) hasn't already allowed. The guard bar reflects the tightened values live, so what an
+operator sees before clicking Start is what will actually be enforced for that run, not just the
+organisation's default.
+
+**Follow-up, same iteration: Campaign and Run settings moved off the page and into dialogs, on
+request.** The inline Campaign panel (a `Select` plus the goal preview, permanently visible in the
+main column) and the sticky rail's two override fields both moved to header-triggered dialogs -
+`CampaignDialog` and `RunSettingsDialog`, both local to `runs/new/page.tsx` since neither is used
+anywhere else yet. The header's right side now carries two buttons: one reading "Add campaign"
+until a campaign is chosen, then the campaign's own name with a caret once it is (picking inside
+the dialog auto-closes it - no separate "Done" click needed for a single selection); and "Run
+settings" (`SlidersHorizontalIcon`, matching `DataTable`'s existing column-settings trigger), with
+a small filled dot - the same active-filter-indicator pattern `/app/runs`'s own status filter
+already uses - when either override is actually set. The main column is now just Contacts; the
+sticky rail keeps a one-line "Campaign: *name*" reminder (clicking it reopens the same dialog) so
+the choice is still visible without reopening anything, plus the guard bar and Start/Cancel.

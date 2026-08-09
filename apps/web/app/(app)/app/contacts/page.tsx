@@ -4,6 +4,7 @@ import { AddressBookIcon, ProhibitIcon } from "@phosphor-icons/react/dist/ssr";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { ConnectionBanner } from "@/components/app/connection-banner";
+import { DataTable, type Column, type SortState } from "@/components/app/data-table";
 import { MaskedPhone } from "@/components/app/masked-phone";
 import { LampBadge, Tag } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -16,7 +17,7 @@ import { Panel } from "@/components/ui/panel";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
 import { api, type Outcome, type Suppression } from "@/lib/api";
-import { formatAge, formatTimestamp } from "@/lib/format";
+import { formatAge, formatDuration, formatTimestamp } from "@/lib/format";
 import { isE164, normalisePhone } from "@/lib/format/phone";
 import { lampForOutcome } from "@/lib/lamp";
 import { useAppStore } from "@/lib/app-store";
@@ -38,6 +39,9 @@ export default function ContactsPage() {
   const [query, setQuery] = useState("");
   const [addOpen, setAddOpen] = useState(false);
   const [suppressed, setSuppressed] = useState<Suppression[] | null>(null);
+  const [sort, setSort] = useState<SortState>({ id: "lastCalled", dir: "desc" });
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
 
   const profile = session.status === "signed-in" ? session.profile : null;
   const canAdd = profile?.permissions.includes("suppressions:add") ?? false;
@@ -75,7 +79,17 @@ export default function ContactsPage() {
         });
       }
     }
-    return [...map.values()].sort((a, b) => b.lastCalled.localeCompare(a.lastCalled));
+    // Newest call first within each contact - `calls[0]` is what the status,
+    // duration, and call-time columns below all read as "the latest call",
+    // so it has to actually be sorted rather than just appended in arrival order.
+    return [...map.values()]
+      .map((contact) => ({
+        ...contact,
+        calls: [...contact.calls].sort((a, b) =>
+          b.created_at.localeCompare(a.created_at),
+        ),
+      }))
+      .sort((a, b) => b.lastCalled.localeCompare(a.lastCalled));
   }, [outcomes]);
 
   const filtered = useMemo(() => {
@@ -87,6 +101,105 @@ export default function ContactsPage() {
         contact.phoneMasked.toLowerCase().includes(needle),
     );
   }, [contacts, query]);
+
+  /**
+   * Sorting and pagination are done here rather than server-side because contacts
+   * are derived client-side from the whole outcomes list already in memory - same
+   * reasoning as `/app/runs`, whose DataTable this mirrors.
+   */
+  const sorted = useMemo(() => {
+    const list = [...filtered];
+    list.sort((a, b) => {
+      const dir = sort.dir === "asc" ? 1 : -1;
+      switch (sort.id) {
+        case "name":
+          return a.name.localeCompare(b.name) * dir;
+        case "calls":
+          return (a.calls.length - b.calls.length) * dir;
+        case "duration": {
+          const da = a.calls[0]?.duration_seconds ?? -1;
+          const db = b.calls[0]?.duration_seconds ?? -1;
+          return (da - db) * dir;
+        }
+        default:
+          return a.lastCalled.localeCompare(b.lastCalled) * dir;
+      }
+    });
+    return list;
+  }, [filtered, sort]);
+
+  const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize));
+  const safePage = Math.min(page, totalPages);
+  const paged = useMemo(
+    () => sorted.slice((safePage - 1) * pageSize, safePage * pageSize),
+    [sorted, safePage, pageSize],
+  );
+
+  const columns: Column<ContactRecord>[] = [
+    {
+      id: "name",
+      header: "Name",
+      sortable: true,
+      cell: (contact) => (
+        <span className="block truncate text-text">{contact.name}</span>
+      ),
+      value: (contact) => contact.name,
+    },
+    {
+      id: "phone",
+      header: "Number",
+      cell: (contact) => <MaskedPhone phone={contact.phoneMasked} />,
+      value: (contact) => contact.phoneMasked,
+    },
+    {
+      id: "status",
+      header: "Status",
+      cell: (contact) => {
+        const lamp = lampForOutcome(contact.calls[0]);
+        return (
+          <LampBadge state={lamp.state} pulse={lamp.pulse}>
+            {lamp.label}
+          </LampBadge>
+        );
+      },
+      value: (contact) => lampForOutcome(contact.calls[0]).label,
+    },
+    {
+      id: "calls",
+      header: "Calls",
+      align: "right",
+      mono: true,
+      sortable: true,
+      cell: (contact) => contact.calls.length,
+      value: (contact) => contact.calls.length,
+    },
+    {
+      id: "duration",
+      header: "Duration",
+      align: "right",
+      mono: true,
+      sortable: true,
+      cell: (contact) => formatDuration(contact.calls[0]?.duration_seconds),
+      value: (contact) => contact.calls[0]?.duration_seconds ?? null,
+    },
+    {
+      id: "callTime",
+      header: "Call time",
+      align: "right",
+      mono: true,
+      cell: (contact) => formatTimestamp(contact.lastCalled),
+      value: (contact) => contact.lastCalled,
+    },
+    {
+      id: "lastCalled",
+      header: "Last called",
+      align: "right",
+      mono: true,
+      sortable: true,
+      cell: (contact) => formatAge(contact.lastCalled),
+      value: (contact) => contact.lastCalled,
+    },
+  ];
 
   return (
     <div className="flex flex-col gap-6">
@@ -123,72 +236,92 @@ export default function ContactsPage() {
       >
         {/* ---- All contacts --------------------------------------------- */}
         <TabPanel value="all" className="flex flex-col gap-4 pt-6">
-          {contacts.length > 0 ? (
-            <div className="max-w-sm">
-              <SearchInput
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                onClear={() => setQuery("")}
-                placeholder="Search by name or number"
-                aria-label="Search contacts"
-              />
-            </div>
-          ) : null}
-
-          {loadingRuns && contacts.length === 0 ? null : filtered.length === 0 ? (
-            <Panel>
-              <EmptyState
-                icon={AddressBookIcon}
-                title={query ? `No matches for “${query}”` : "No contacts yet"}
-                body={
-                  query
-                    ? "Try a name, a phone number, or a campaign."
-                    : "Paste a list or drop a CSV. Numbers are validated before anything is dialled."
-                }
-                action={
-                  query ? (
-                    <Button variant="secondary" onClick={() => setQuery("")}>
-                      Clear search
-                    </Button>
-                  ) : (
+          <DataTable
+            caption="Contacts, derived from call history, with call count, duration, and timing."
+            columns={columns}
+            rows={paged}
+            rowKey={(contact) => `${contact.name}-${contact.phoneMasked}`}
+            loading={loadingRuns && contacts.length === 0}
+            sort={sort}
+            onSortChange={setSort}
+            page={safePage}
+            pageSize={pageSize}
+            totalRows={sorted.length}
+            onPageChange={setPage}
+            onPageSizeChange={(size) => {
+              setPageSize(size);
+              setPage(1);
+            }}
+            exportFileName="callflow-contacts"
+            toolbar={
+              contacts.length > 0 ? (
+                <div className="max-w-sm">
+                  <SearchInput
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    onClear={() => setQuery("")}
+                    placeholder="Search by name or number"
+                    aria-label="Search contacts"
+                  />
+                </div>
+              ) : null
+            }
+            mobileCard={(contact) => {
+              const lamp = lampForOutcome(contact.calls[0]);
+              return (
+                <div className="flex flex-col gap-1.5">
+                  <span className="min-w-0 flex-1 truncate text-small font-medium text-text">
+                    {contact.name}
+                  </span>
+                  <MaskedPhone phone={contact.phoneMasked} />
+                  <div className="flex flex-wrap items-center gap-3">
+                    <LampBadge state={lamp.state} pulse={lamp.pulse}>
+                      {lamp.label}
+                    </LampBadge>
+                    <span className="font-mono text-data tabular-nums text-text-mute">
+                      {contact.calls.length}{" "}
+                      {contact.calls.length === 1 ? "call" : "calls"}
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <span className="font-mono text-data tabular-nums text-text-mute">
+                      {formatDuration(contact.calls[0]?.duration_seconds)}
+                    </span>
+                    <span className="font-mono text-data text-text-mute">
+                      {formatTimestamp(contact.lastCalled)}
+                    </span>
+                  </div>
+                </div>
+              );
+            }}
+            empty={
+              contacts.length === 0 ? (
+                <EmptyState
+                  icon={AddressBookIcon}
+                  title="No contacts yet"
+                  body="Paste a list or drop a CSV. Numbers are validated before anything is dialled."
+                  action={
                     <Button asChild>
                       <Link href="/app/runs/new">Import CSV</Link>
                     </Button>
-                  )
-                }
-              />
-            </Panel>
-          ) : (
-            <ul className="flex flex-col gap-2">
-              {filtered.map((contact) => {
-                const latest = contact.calls[0];
-                const lamp = lampForOutcome(latest);
-                return (
-                  <li key={`${contact.name}-${contact.phoneMasked}`}>
-                    <Panel className="flex flex-wrap items-center gap-3 p-3">
-                      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                        <span className="truncate text-small font-medium text-text">
-                          {contact.name}
-                        </span>
-                        <MaskedPhone phone={contact.phoneMasked} />
-                      </div>
-
-                      <LampBadge state={lamp.state} pulse={lamp.pulse}>
-                        {lamp.label}
-                      </LampBadge>
-
-                      <span className="font-mono text-data tabular-nums text-text-mute">
-                        {contact.calls.length} {contact.calls.length === 1 ? "call" : "calls"}
-                      </span>
-                      <span className="font-mono text-data text-text-mute">
-                        {formatAge(contact.lastCalled)}
-                      </span>
-                    </Panel>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
+                  }
+                />
+              ) : (
+                <EmptyState
+                  icon={AddressBookIcon}
+                  title={query ? `No matches for "${query}"` : "No contacts match this filter"}
+                  body="Try a name, a phone number, or a campaign."
+                  action={
+                    query ? (
+                      <Button variant="secondary" onClick={() => setQuery("")}>
+                        Clear search
+                      </Button>
+                    ) : undefined
+                  }
+                />
+              )
+            }
+          />
         </TabPanel>
 
         {/* ---- Suppression list ----------------------------------------- */}
