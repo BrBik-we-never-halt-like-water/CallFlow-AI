@@ -42,6 +42,7 @@ import {
   type LocalCampaignSettings,
 } from '@/lib/campaign-draft';
 import { useStoredJson } from '@/lib/hooks/use-external-store';
+import { useSession } from '@/lib/hooks/use-session';
 
 /**
  * The campaign editor. Two panes: compose on the left, live preview on the right.
@@ -77,7 +78,17 @@ export function CampaignEditor({ existing }: { existing?: Campaign }) {
     DEFAULT_SETTINGS,
   );
 
-  const readOnly = existing?.built_in ?? false;
+  // This page had no permission check at all - a viewer opening any
+  // non-built-in campaign got a fully live, saveable form (ISSUES.md #71).
+  // Folded into the existing built-in-template `readOnly` flag rather than
+  // a second, parallel disabled state, since every field already respects
+  // this one.
+  const session = useSession();
+  const canWrite =
+    session.status === 'signed-in' &&
+    session.profile.permissions.includes('campaigns:write');
+  const isBuiltIn = existing?.built_in ?? false;
+  const readOnly = isBuiltIn || !canWrite;
 
   /**
    * Pick up a duplicate handed over in sessionStorage.
@@ -169,7 +180,8 @@ export function CampaignEditor({ existing }: { existing?: Campaign }) {
    * one. This string becomes the disabled button's tooltip.
    */
   const blocker = useMemo<string | null>(() => {
-    if (readOnly)
+    if (!canWrite) return "Your role can view campaigns but not edit them.";
+    if (isBuiltIn)
       return 'This is a starter template. Duplicate it to make changes.';
     if (name.trim().length < 2)
       return 'Give the campaign a name of at least 2 characters.';
@@ -185,7 +197,7 @@ export function CampaignEditor({ existing }: { existing?: Campaign }) {
       return `The choice field “${emptyEnum.key || 'unnamed'}” needs at least one option.`;
     }
     return null;
-  }, [readOnly, name, goal, fields]);
+  }, [canWrite, isBuiltIn, name, goal, fields]);
 
   function updateField(id: string, patch: Partial<EditorField>) {
     setFields((current) =>
@@ -239,8 +251,9 @@ export function CampaignEditor({ existing }: { existing?: Campaign }) {
           <Panel sunken className="flex flex-col gap-2 p-4">
             <p className="text-small font-bold text-text-mute">Read only</p>
             <p className="text-small text-text-dim">
-              This is a starter template. Duplicate it from the campaigns list
-              to make a version you can change.
+              {!canWrite
+                ? "Your role can view campaigns but not edit them."
+                : 'This is a starter template. Duplicate it from the campaigns list to make a version you can change.'}
             </p>
           </Panel>
         ) : null}

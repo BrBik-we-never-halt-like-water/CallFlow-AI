@@ -15,8 +15,9 @@ import {
   PasswordStrength,
 } from '@/components/ui/password-strength';
 import { useToast } from '@/components/ui/toast';
+import { PENDING_WELCOME_KEY } from '@/components/app/welcome-modal';
 import { api, type InvitationPreview } from '@/lib/api';
-import { signUpWithPassword } from '@/lib/auth/actions';
+import { signOut, signUpWithPassword } from '@/lib/auth/actions';
 import { useActiveOrg } from '@/lib/hooks/use-active-org';
 import { useSession } from '@/lib/hooks/use-session';
 
@@ -46,6 +47,7 @@ export default function AcceptInvitePage() {
   );
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [signingOut, setSigningOut] = useState(false);
 
   useEffect(() => {
     if (!token) return;
@@ -79,6 +81,18 @@ export default function AcceptInvitePage() {
       const result = await api.acceptInvitation(token);
       setActiveOrgId(result.org_id);
       toast({ tone: 'success', title: 'Joined', body: result.org_name });
+      // Read by `WelcomeModal` the moment `/app` mounts, then cleared - a
+      // plain write is enough here (no need for useStoredJson's notify
+      // machinery) since `/app` mounts fresh after this redirect and reads
+      // localStorage directly on its first render regardless.
+      try {
+        localStorage.setItem(
+          PENDING_WELCOME_KEY,
+          JSON.stringify({ role: result.role, orgName: result.org_name }),
+        );
+      } catch {
+        /* private mode or blocked storage - the welcome message just won't show */
+      }
       router.replace('/app');
       router.refresh();
     } catch (error) {
@@ -87,6 +101,14 @@ export default function AcceptInvitePage() {
       );
       setSubmitting(false);
     }
+  }
+
+  async function handleSignOut() {
+    setSigningOut(true);
+    await signOut();
+    // useSession's onAuthStateChange listener flips status to 'signed-out' on
+    // its own, which re-renders this page into the real signup form below -
+    // no manual redirect needed.
   }
 
   async function submitNewAccount(event: React.FormEvent) {
@@ -141,6 +163,12 @@ export default function AcceptInvitePage() {
   }
 
   const alreadySignedIn = session.status === 'signed-in';
+  const signedInEmail =
+    session.status === 'signed-in' ? session.profile.email : null;
+  const emailMismatch =
+    alreadySignedIn &&
+    !!preview.email &&
+    signedInEmail?.trim().toLowerCase() !== preview.email.trim().toLowerCase();
 
   return (
     <AuthCard
@@ -178,25 +206,53 @@ export default function AcceptInvitePage() {
         </Panel>
 
         {alreadySignedIn ? (
-          <>
-            {formError ? (
-              <p className="text-small text-lamp-flare-text">{formError}</p>
-            ) : null}
-            <Button
-              size="lg"
-              className="w-full"
-              loading={submitting}
-              onClick={acceptAndEnter}
-            >
-              Join {preview.org_name}
-            </Button>
-          </>
+          emailMismatch ? (
+            <>
+              <p className="text-small text-text-dim">
+                You&apos;re signed in as{' '}
+                <span className="font-medium text-text">{signedInEmail}</span>
+                , but this invitation was sent to{' '}
+                <span className="font-medium text-text">{preview.email}</span>
+                . Sign out to accept it as that address.
+              </p>
+              <Button
+                variant="secondary"
+                size="lg"
+                className="w-full"
+                loading={signingOut}
+                onClick={handleSignOut}
+              >
+                Sign out
+              </Button>
+            </>
+          ) : (
+            <>
+              {formError ? (
+                <p className="text-small text-lamp-flare-text">{formError}</p>
+              ) : null}
+              <Button
+                size="lg"
+                className="w-full"
+                loading={submitting}
+                onClick={acceptAndEnter}
+              >
+                Join {preview.org_name}
+              </Button>
+            </>
+          )
         ) : (
           <form
             onSubmit={submitNewAccount}
             noValidate
             className="flex flex-col gap-4"
           >
+            <Field
+              label="Email"
+              help="This invitation was sent to this address - it can't be changed here."
+            >
+              <Input value={preview.email ?? ''} readOnly />
+            </Field>
+
             <Field label="Your name" error={errors.name} required>
               <Input
                 value={name}

@@ -1189,22 +1189,127 @@ button[data-menu][data-state='open']:focus-visible {
    custom properties cascade through the DOM regardless of which component
    drew which node, exactly like `--font-sans` already flips for all of
    `/app/*` inside `.app-font-scope`, just scoped to one chrome element
-   instead of the whole dashboard. `DropdownMenu`/`Tooltip` popovers are
-   unaffected either way: Radix portals their content to `document.body`,
-   outside this element's DOM subtree, so they correctly keep reading
-   light (DESIGN_NOTES §14's existing "leave popover chrome alone" call,
-   undisturbed).
+   instead of the whole dashboard. `DropdownMenu`/`Popover`/`Dialog` are
+   unaffected by *this specific* class either way, since Radix portals
+   their content to `document.body`, outside this element's DOM subtree -
+   but they are no longer left light as a result. DESIGN_NOTES §14's "leave
+   popover chrome alone" call is superseded (§17): they now portal inside
+   `.app-font-scope` instead and pick up `.dark-overlay`, below.
+   `Tooltip`/`Select` are the one genuine exception - shared with a
+   light-themed marketing page, so they stay conditional or untouched
+   rather than always dark (see `.dark-overlay`'s own comment).
 
    Contrast numbers, method, and the worst-case composite this is checked
    against all live on `.app-font-scope`'s own citation now (top of this
    file) - `.dark-chrome` and `.dark-panel-glass` share the identical
    background token, so a second, separate citation here would just be a
    second place for the two to drift out of sync. */
+/* `.dark-overlay` - DropdownMenu/Popover/Dialog content, portaled by Radix.
+   Reverses this file's former §14/§15 "leave popover chrome alone" call
+   (DESIGN_NOTES.md §17) - the user asked explicitly, twice, for these
+   surfaces to read as part of the same dark, purple-tinted product as
+   everything else, not a shared, unthemed exception. Requires the portal to
+   actually mount inside `.app-font-scope` first (`usePortalContainer()`,
+   `lib/hooks/use-portal-container.ts`) - CSS custom properties only
+   inherit through the real DOM tree, and Radix portals to `document.body`
+   by default, a *sibling* of `.app-font-scope`, not a descendant of it.
+   Every one of these components is exclusively used inside `/app`
+   (confirmed - `(auth)`/`(marketing)` never import DropdownMenu, Popover,
+   or Dialog outright; `Select` is the one exception, shared with a
+   marketing form, so it applies this class conditionally rather than
+   unconditionally - see its own component for the check).
+
+   The `background` is `.dark-canvas`'s own radial-gradient formula, not a
+   flat fill or `.dark-chrome`'s glass - the ask was specifically "the same
+   purple gradient as the main content", and a popover is exactly the kind
+   of small, opaque-appropriate surface that gradient already suits (unlike
+   `.dark-chrome`, which is deliberately neutral so nothing behind its own
+   translucency reads as coloured chrome). Percentages are relative to each
+   element's own box, so a small popover gets a tighter, more concentrated
+   version of the same glow rather than a literal crop of the page-wide one -
+   same recipe, correctly proportioned for a smaller surface. */
+.dark-overlay {
+  background: radial-gradient(
+    170% 150% at 50% -10%,
+    color-mix(in oklab, var(--dark-bg-glow) 26%, var(--dark-bg)),
+    var(--dark-bg) 90%
+  );
+  --text: var(--dark-text);
+  --text-dim: var(--dark-text-dim);
+  --text-mute: var(--dark-text-mute);
+  --rule: var(--dark-rule);
+  --rule-strong: var(--dark-rule-strong);
+  --surface-raised: var(--dark-surface);
+  --surface-hover: var(--dark-surface-hover);
+  --surface-sunken: var(--dark-surface-sunken);
+  --lamp-off: var(--dark-lamp-off);
+  --lamp-ice: var(--dark-lamp-ice);
+  --lamp-brass: var(--dark-lamp-brass);
+  --lamp-jade: var(--dark-lamp-jade);
+  --lamp-flare: var(--dark-lamp-flare);
+  --lamp-off-text: var(--dark-lamp-off-text);
+  --lamp-ice-text: var(--dark-lamp-ice-text);
+  --lamp-brass-text: var(--dark-lamp-brass-text);
+  --lamp-jade-text: var(--dark-lamp-jade-text);
+  --lamp-flare-text: var(--dark-lamp-flare-text);
+}
+
+/* `.toast-dark-overlay` - Toast, unconditionally, on every page (§18 follow-up).
+   Every other portaled surface (`.dark-overlay`, above) only goes dark when its
+   portal actually lands inside `.app-font-scope`, since `--dark-*` is
+   deliberately declared only there (see that class's own citation: "unset, not
+   wrong, for marketing and auth, which never render inside it" - a considered
+   boundary, not an oversight). Toast breaks that pattern on purpose: the user
+   asked for it to read as CallFlow's own notification chrome on *every* page,
+   including the light accept-invite screen, which never renders
+   `.app-font-scope` at all - there is nothing to inherit `--dark-*` from there,
+   conditionally or otherwise. So this hardcodes the same literal values
+   `.app-font-scope` defines, rather than referencing them - the one deliberate
+   exception to "reference the token, never the hex" in this file, and it's
+   here specifically because the whole point is to *not* depend on where the
+   toast is mounted. If the dark palette changes, update both places. */
+.toast-dark-overlay {
+  background: radial-gradient(
+    170% 150% at 50% -10%,
+    color-mix(in oklab, #9333ea 26%, #050505),
+    #050505 90%
+  );
+  border-color: color-mix(in oklab, #ffffff 18%, transparent);
+  --text: #f1f5f9;
+  --text-dim: #cbd5e1;
+  --text-mute: #94a3b8;
+  --rule: color-mix(in oklab, #ffffff 10%, transparent);
+  --rule-strong: color-mix(in oklab, #ffffff 18%, transparent);
+  --surface-hover: color-mix(in oklab, #ffffff 8%, transparent);
+  --lamp-ice: #5883b7;
+  --lamp-brass: #a47f47;
+  --lamp-jade: #4b9073;
+  --lamp-flare: #c15f4d;
+  --lamp-ice-text: #8db4e5;
+  --lamp-brass-text: #ccab7c;
+  --lamp-jade-text: #88bfa6;
+  --lamp-flare-text: #e49282;
+}
+
+/* §18 (DESIGN_NOTES.md): opaque purple gradient, not translucent glass - a
+   second reversal of this class's own background, and worth being explicit
+   about which "opaque vs translucent" era this is. `.dark-canvas`'s exact
+   gradient formula (`color-mix(in oklab, var(--dark-bg-glow) 26%, ...)`),
+   same reasoning as `.dark-overlay` (§17): the user asked directly for the
+   sidebar/tab-bar/topbar - "the taskbar" - to read as the same purple,
+   gradient-lit product as the content column and the popovers, not a
+   neutral black next to it. `backdrop-filter` and its two fallback blocks
+   (`@supports not (backdrop-filter)`, `prefers-reduced-transparency`) are
+   gone with the translucency they existed to manage - an opaque background
+   has nothing left to blur, and a feature-detection fallback for a feature
+   no longer in use is dead code, not defensive code. */
 .dark-chrome {
-  background: var(--dark-glass-surface);
+  background: radial-gradient(
+    170% 150% at 50% -10%,
+    color-mix(in oklab, var(--dark-bg-glow) 26%, var(--dark-bg)),
+    var(--dark-bg) 90%
+  );
   border-color: var(--dark-glass-border);
-  backdrop-filter: var(--dark-glass-blur);
-  -webkit-backdrop-filter: var(--dark-glass-blur);
 
   --text: var(--dark-text);
   --text-dim: var(--dark-text-dim);

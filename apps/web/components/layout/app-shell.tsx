@@ -30,6 +30,7 @@ import { Tooltip } from '@/components/ui/tooltip';
 import { VRule } from '@/components/ui/rule';
 import { useActiveOrg } from '@/lib/hooks/use-active-org';
 import { useOrganisations } from '@/lib/hooks/use-organisations';
+import { hasRole } from '@/lib/hooks/use-permission';
 import { useSidebarCollapsed } from '@/lib/hooks/use-sidebar-collapsed';
 import { usePrefersReducedMotion } from '@/lib/hooks/use-external-store';
 import { useAppStore } from '@/lib/app-store';
@@ -95,7 +96,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   if (minimalRoute) {
     return (
-      <div className="flex min-h-dvh flex-col">
+      // `dark-canvas` was missing here entirely - this branch has no sidebar
+      // to keep visually separate from the content column (unlike the normal
+      // layout below), so the whole wrapper gets it, not just a nested
+      // column. `MinimalTopBar` already carries its own `dark-chrome`, so
+      // nesting it inside this doesn't change its look, only `<main>`'s.
+      <div className="dark-canvas flex min-h-dvh flex-col">
         <a href="#app-main" className="skip-link">
           Skip to content
         </a>
@@ -231,6 +237,12 @@ function AppSidebar({
   const pathname = usePathname() ?? '';
   const [collapsed, setCollapsed] = useSidebarCollapsed();
   const reducedMotion = usePrefersReducedMotion();
+  // Organisation/Settings are owner+admin destinations - operators and
+  // viewers get neither the sidebar link nor the account-menu one
+  // (`UserMenu`), not just a read-only version of the page behind it.
+  const footerItems = hasRole(profile, 'owner', 'admin')
+    ? SIDEBAR_FOOTER_ITEMS
+    : [];
 
   return (
     <aside
@@ -244,8 +256,8 @@ function AppSidebar({
       <Link
         href="/app"
         className={cn(
-          'flex h-(--h-app-topbar) shrink-0 items-center border-b border-rule text-text',
-          collapsed ? 'justify-center px-0' : 'gap-2 px-4',
+          'flex h-(--h-app-topbar) shrink-0 items-center border-b text-text',
+          collapsed ? 'justify-center border-transparent px-0' : 'gap-2 border-rule px-4',
         )}
       >
         {collapsed ? <Mark title={null} /> : <BrandLockup />}
@@ -253,7 +265,10 @@ function AppSidebar({
       </Link>
 
       <div
-        className={cn('border-b border-rule p-3', collapsed && 'flex justify-center')}
+        className={cn(
+          'border-b p-3',
+          collapsed ? 'flex justify-center border-transparent' : 'border-rule',
+        )}
       >
         <SidebarOrgSwitcher
           profile={profile}
@@ -332,8 +347,8 @@ function AppSidebar({
           UserMenu. */}
       <div
         className={cn(
-          'flex flex-col gap-1 border-t border-rule p-3',
-          collapsed && 'items-center',
+          'flex flex-col gap-1 border-t p-3',
+          collapsed ? 'items-center border-transparent' : 'border-rule',
         )}
       >
         <ProfileFooterLink
@@ -342,7 +357,7 @@ function AppSidebar({
           active={isActive(pathname, '/app/profile')}
         />
 
-        {SIDEBAR_FOOTER_ITEMS.map((item) => {
+        {footerItems.map((item) => {
           const active = isActive(pathname, item.href);
 
           const link = (
@@ -381,7 +396,10 @@ function AppSidebar({
       </div>
 
       <div
-        className={cn('border-t border-rule p-3', collapsed && 'flex justify-center')}
+        className={cn(
+          'border-t p-3',
+          collapsed ? 'flex justify-center border-transparent' : 'border-rule',
+        )}
       >
         <Tooltip
           content={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
@@ -504,6 +522,28 @@ function SidebarOrgSwitcher({
           collapsed ? 'w-9' : 'w-full',
         )}
       />
+    );
+  }
+
+  // Switching between organisations - and everything that implies about
+  // managing more than one - is an admin/owner concern. An operator or
+  // viewer only ever needs to know which org they're in, not a control for
+  // moving between orgs they don't manage.
+  if (!hasRole(profile, 'owner', 'admin')) {
+    return (
+      <div
+        className={cn(
+          'flex items-center gap-2 rounded-md text-small',
+          collapsed ? 'size-9 justify-center' : 'w-full px-2 py-2',
+        )}
+      >
+        <OrgMark name={label} logoUrl={profile.active.org_logo_url} size="sm" />
+        {!collapsed && (
+          <span className="min-w-0 flex-1 truncate font-medium text-text">
+            {label}
+          </span>
+        )}
+      </div>
     );
   }
 

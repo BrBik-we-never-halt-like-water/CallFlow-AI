@@ -67,7 +67,6 @@ export function InviteDialog({
     <DialogRoot open={open} onOpenChange={onOpenChange}>
       <Dialog
         title="Invite a teammate"
-        description="They'll get an email with a link. Nothing happens on their account until they accept it."
         size="sm"
         footer={
           <>

@@ -18,6 +18,14 @@ possible: the public OpenAPI spec (re-fetched this pass), the SDK source, and
 `calle/generated/models/*.py`). Nothing in it needed correcting. A handful of details
 neither the public docs nor `CALLE.md` surfaced are folded into §1 below.
 
+**Update, 2026-08-09 (iterations 14-20): every gap and defect this doc originally tracked
+as open is now fixed** - see `ISSUES.md` #55-#63 for the seven-module rebuild that closed
+them, and each item's own entry below for exactly what changed. The one deliberate
+exception is §2 item 1 (Goals API adoption), flagged from the start as its own
+architectural decision rather than integration polish, and intentionally not revisited
+here. Kept as a historical record rather than rewritten, per this repo's "nothing is
+deleted, only re-statused" convention.
+
 ---
 
 ## 1. What CALL-E offers (the vendor's actual service surface)
@@ -104,33 +112,42 @@ voices, no SIP/BYO-number - all still genuinely absent from every source checked
    not re-litigated here.
 
 2. **`task_completed` / `completion_confidence` / `evidence[]` - computed by CALL-E,
-   discarded by CallFlow.** `app/domain/entities.py`'s `CallOutcome` has no field for any
-   of the three, and `campaign_runner._extract_result()` only pulls `structured_result`.
-   This is CALL-E's own judgment of whether the agent actually got the job done,
-   independent of whatever custom `result_schema` a campaign defines - a low-confidence
-   `completion_confidence` or `task_completed: false` on an otherwise "completed" call
-   looks like exactly the kind of signal `triage.py` cares about (it currently infers
-   everything from campaign-defined `extracted` fields like `sentiment`/
-   `wants_human_callback`, with no fallback if a campaign's schema doesn't ask for them).
-   Moderate work: thread three more fields through `_extract_result`/`CallOutcome`, then
-   decide whether `triage()` should weight them - no structural change.
+   discarded by CallFlow.**
+
+   **FIXED - iteration 19, `ISSUES.md` #62 (module 6 of the CALL-E integration
+   rebuild).** Re-confirmed against the *live* OpenAPI spec before building against it
+   (task-level only, never per-recipient - this doc's original wording was accurate).
+   All three now live on `CallOutcome`; `triage()` escalates on an explicit
+   `task_completed: False`, ranked below the explicit human-said-so signals
+   (do_not_call/wants_human/frustration) and above the plain status-based buckets.
+   `completion_confidence`/`evidence` are threaded through and persisted but
+   deliberately not weighted in `triage()` - a softer, fuzzier signal than a boolean
+   judgment, left as data rather than another precedence branch.
 
 3. **Multi-recipient / multi-number-per-recipient batching.** CALL-E's `recipients[]`
    accepts many recipients per call, and each recipient's `phones[]` can list several
    numbers to try. `CampaignRunner` dials exactly one contact, one number, per call - a
    deliberate and reasonable fit for CallFlow's per-contact-row product model, not
-   obviously worth changing. Flagging only because it's the reason CALL-E's richer
-   task→recipient→attempt shape gets flattened to one `CallOutcome` per contact, and any
-   retry history CALL-E already tracked in `attempts[]` is discarded (already noted in
-   `CALLE.md`).
+   obviously worth changing - **this part stays as-is.**
 
-4. **Live per-call events (`GET /v1/calls/{id}/events`).** `EngineGateway.list_events()`
-   exists and `VoiceCapability.LIVE_EVENTS` is declared `supported=True`
-   (`engine.py:69-71`), but nothing in `campaign_runner.py` or any route calls it -
-   dashboard progress comes entirely from polling `get_call()`'s coarse `status` field.
-   A capability is declared and plumbed but has no consumer. Small addition if pursued
-   (a route + frontend hook to stream turn-by-turn progress instead of status-only), but
-   see §3.6 for a real defect in the method as it stands today.
+   The retry-history half is **FIXED - iteration 19, `ISSUES.md` #62**: CALL-E's full
+   `attempts[]` history is now preserved on `CallOutcome.attempts` instead of discarding
+   every attempt but the one `_final_attempt()` picks for the transcript.
+
+4. **Live per-call events (`GET /v1/calls/{id}/events`).**
+
+   **FIXED (backend) - iteration 20, `ISSUES.md` #63 (module 7 of the CALL-E integration
+   rebuild).** `GET /api/v1/runs/{run_id}/calls/{provider_call_id}/events` now proxies
+   `EngineGateway.list_events()` on demand. One correction to this section's original
+   framing: the endpoint's actual shape turned out to be a **developer/ops event log**
+   (`debug`/`info`/`warning`/`error` levels, a human-readable `message`, the `status` at
+   that moment) - not a turn-by-turn *conversation* stream the way "live progress" implied
+   when this doc was first written. Still a real improvement over status-only polling: every
+   transition gets its own timestamp (a fast run of states between two 2-second polls is
+   otherwise invisible), plus warning/error diagnostics polling has no way to surface at all.
+   **Frontend consumption (an actual dashboard control to view this) is intentionally not
+   part of this fix** - flagged to the user as a separate, explicit follow-up rather than
+   scope creep into UI work this backend-only rebuild didn't set out to do.
 
 5. **Idempotency-Key as duplicate-request protection.** The header is sent
    (`campaign_runner.py:249`), but see §3.5 - the way the key is generated means it
@@ -142,12 +159,18 @@ voices, no SIP/BYO-number - all still genuinely absent from every source checked
 
 Ranked by how much it should worry someone, using this repo's `ISSUES.md` severity scale
 (S1 breaks a guarantee/loses data, S2 a feature is broken or misleading in normal use, S3
-wrong in an edge case, S4 cosmetic). None of these duplicate an existing `ISSUES.md`
-entry - #37 (voice-engine error normalization) is the only prior CALL-E-related entry,
-and items 3–4 below are gaps _in_ that fix's coverage, not restatements of it. Not fixed,
-per the brief - flagged for someone to act on.
+wrong in an edge case, S4 cosmetic).
+
+**Status as of iteration 16 (2026-08-09):** items 1–3 were fixed in iteration 13
+(`ISSUES.md` #52/#53) shortly after this doc was first written; items 4/6/7 were fixed in
+iteration 14 (`ISSUES.md` #55/#56/#57, module 1 of the CALL-E integration rebuild); item 5
+was fixed in iteration 16 (`ISSUES.md` #59, module 3). All seven items in this section are
+now fixed - the original write-up for each is kept below anyway, per this repo's
+"nothing is deleted, only re-statused" convention (`ISSUES.md`'s own header).
 
 ### 1. Transcripts are very likely never actually captured - S2, highest priority
+
+**FIXED - iteration 13, `ISSUES.md` #52.**
 
 `campaign_runner._extract_transcript()` (lines 97–110) looks for a **top-level**
 `transcript` / `transcript_text` / `asr_transcript` key on the call payload. No source
@@ -175,6 +198,8 @@ the code checks.
 
 ### 2. One flaky status poll can orphan an otherwise-successful call - S2
 
+**FIXED - iteration 13, `ISSUES.md` #53.**
+
 `CampaignRunner._poll_until_done()` (lines 158–198) has no `try`/`except` around the
 per-iteration `await asyncio.to_thread(self.gateway.get_call, call_id)` inside its `while`
 loop. `poll_timeout_seconds` defaults to 900s at a 2s interval - up to ~450 HTTP requests
@@ -193,6 +218,8 @@ unreachable/failed.
 
 ### 3. `CalleConnectionError` is a distinct exception the classifier never sees - S3
 
+**FIXED - iteration 13, folded into the `ISSUES.md` #53 fix.**
+
 The SDK raises three different things on request failure: `CalleAPIError` (has `.code`,
 what `classify_error()` maps), `CalleTimeoutError` (also handled), and
 **`CalleConnectionError`** - raised in both `calle/calls.py` and `calle/goals.py` when
@@ -207,6 +234,13 @@ from permanent failures. A network blip reaching CALL-E's API is about as transi
 opposite way.
 
 ### 4. Some real, reachable error codes still fall through to an unhelpful message - S3
+
+**FIXED - iteration 14, `ISSUES.md` #55.** (The schema-related codes are mapped to
+`INTERNAL` explicitly now, same runtime behaviour as before - the up-front,
+before-any-dial `result_schema` validation this write-up suggests turned out to have no
+current caller: `build_result_schema()` only ever composes a flat `type: object` schema
+from campaign fields, which can't produce a `$ref`/`oneOf`/recursive shape today, so that
+part of the idea was left undone rather than built speculatively.)
 
 `engine.py`'s `_ERROR_CODE_MAP` (lines 44–57) maps 12 of the 23 documented codes. The
 unmapped ones that are actually reachable from `/v1/calls` (as opposed to the
@@ -224,6 +258,13 @@ message.
 
 ### 5. The idempotency key is regenerated per attempt, defeating its own purpose - S3
 
+**FIXED - iteration 16, `ISSUES.md` #59.** The key is now `f"{run_id}:{phone_hash(phone)}"`
+- stable per (run, contact), distinct across runs. Closes the idempotency half of `#54`;
+the `_calls_made`-increment-timing half was closed in iteration 17, module 4 (`ISSUES.md`
+#60), which also replaced the strictly-sequential dialing loop with bounded concurrency -
+see that entry, not duplicated here since it's an orchestration-level change rather than a
+CALL-E protocol-usage gap (this doc's own scope).
+
 `campaign_runner.py:249` builds the key as
 `f"{campaign.id}-{contact.phone}-{uuid.uuid4().hex[:8]}"` - a fresh random suffix on
 every single `start_call` invocation. `Idempotency-Key` exists to protect exactly one
@@ -238,6 +279,8 @@ worth deciding deliberately rather than leaving as an accident of the current ke
 
 ### 6. Minor: a vendor-named key leaks above the integration boundary - S4
 
+**FIXED - iteration 14, `ISSUES.md` #56.** Removed rather than moved - nothing required it.
+
 `campaign_runner.py:233` (in `services/`, above `integrations/voice/`) builds
 `metadata = {"call-e/customerMetadata": {...}}` - embedding a literal `"call-e/"`-prefixed
 key outside `engine.py`. `metadata` is fully free-form on CALL-E's side (confirmed - the
@@ -246,6 +289,8 @@ namespacing), so this isn't wrong, just a small, easy-to-fix breach of CLAUDE.md
 dependency-inversion rule that no file above `engine.py` should speak the vendor's name.
 
 ### 7. Minor: `list_events()` drops cursor pagination - S4
+
+**FIXED - iteration 14, `ISSUES.md` #57.**
 
 `EngineGateway.list_events()` (`engine.py:154-156`) only forwards `limit` to the SDK,
 never `cursor`, even though `CalleCalls.list_events()` accepts one and the endpoint is

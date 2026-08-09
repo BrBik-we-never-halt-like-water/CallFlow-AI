@@ -211,7 +211,9 @@ async def test_admin_can_still_set_a_members_role_to_operator_or_viewer(
 
 async def test_admin_can_still_remove_an_operator_or_viewer(monkeypatch: pytest.MonkeyPatch) -> None:
     remove = _stub_db(monkeypatch, current_role="operator")
-    monkeypatch.setattr(organisations.org_repo, "remove_member", remove)
+    # Removing someone else (not self) goes through remove_teammate_and_reassign_data,
+    # not the lightweight remove_member leaving-your-own-org uses.
+    monkeypatch.setattr(organisations.org_repo, "remove_teammate_and_reassign_data", remove)
     admin = _current_user(OrgRole.ADMIN)
 
     await organisations.remove_member(member_user_id=uuid.uuid4(), user=admin)
@@ -297,7 +299,7 @@ async def test_owner_can_grant_owner_or_admin(monkeypatch: pytest.MonkeyPatch) -
 
 async def test_owner_can_still_remove_another_owner(monkeypatch: pytest.MonkeyPatch) -> None:
     remove = _stub_db(monkeypatch, current_role="owner")
-    monkeypatch.setattr(organisations.org_repo, "remove_member", remove)
+    monkeypatch.setattr(organisations.org_repo, "remove_teammate_and_reassign_data", remove)
     owner = _current_user(OrgRole.OWNER)
 
     await organisations.remove_member(member_user_id=uuid.uuid4(), user=owner)

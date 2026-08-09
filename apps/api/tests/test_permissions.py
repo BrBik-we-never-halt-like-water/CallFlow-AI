@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.auth.permissions import can_grant_role
+from app.auth.permissions import Permission, can_grant_role, role_has
 from app.database.models import OrgRole
 
 ALL_ROLES = (OrgRole.OWNER, OrgRole.ADMIN, OrgRole.OPERATOR, OrgRole.VIEWER)
@@ -46,3 +46,15 @@ def test_operator_cannot_grant_any_role(target: OrgRole) -> None:
 @pytest.mark.parametrize("target", ALL_ROLES)
 def test_viewer_cannot_grant_any_role(target: OrgRole) -> None:
     assert can_grant_role(OrgRole.VIEWER, target) is False
+
+
+@pytest.mark.parametrize("role", [OrgRole.OWNER, OrgRole.ADMIN, OrgRole.VIEWER])
+def test_owner_admin_and_viewer_can_read_the_team_breakdown(role: OrgRole) -> None:
+    assert role_has(role, Permission.RUNS_READ_TEAM) is True
+
+
+def test_operator_cannot_read_the_team_breakdown() -> None:
+    """Their own runs are already covered by runs:read - `runs:read_team` is
+    the org-wide chart RLS (`runs_select`, migration 202608092000) would
+    otherwise silently return nothing for anyway."""
+    assert role_has(OrgRole.OPERATOR, Permission.RUNS_READ_TEAM) is False

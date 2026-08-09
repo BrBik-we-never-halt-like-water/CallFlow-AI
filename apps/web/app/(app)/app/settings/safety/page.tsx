@@ -5,6 +5,7 @@ import {
   NotWiredNotice,
   SettingsSection,
 } from '@/components/app/settings-section';
+import { SessionGate } from '@/components/app/session-gate';
 import { guardsFromSafety, SafetyBar } from '@/components/app/safety-bar';
 import { Button } from '@/components/ui/button';
 import { Field } from '@/components/ui/field';
@@ -17,6 +18,7 @@ import { formatNumber } from '@/lib/format';
 import { isE164, normalisePhone } from '@/lib/format/phone';
 import { api, type SafetySettings } from '@/lib/api';
 import { useAppStore } from '@/lib/app-store';
+import { useSession, type SessionProfile } from '@/lib/hooks/use-session';
 
 /**
  * Safety settings.
@@ -27,7 +29,22 @@ import { useAppStore } from '@/lib/app-store';
  * not enforced (`ISSUES.md` #20) until that guard is real.
  */
 export default function SafetySettingsPage() {
+  const session = useSession();
+  return (
+    <SessionGate session={session}>
+      {(profile) => <SafetySettingsContent profile={profile} />}
+    </SessionGate>
+  );
+}
+
+function SafetySettingsContent({ profile }: { profile: SessionProfile }) {
   const toast = useToast();
+  // `safety:read` is granted to every role, including viewer - everyone sees
+  // the current guards. `safety:write` is admin/owner only: this page was
+  // the one settings screen with no permission check of any kind at all
+  // (ISSUES.md #71) - a viewer could edit and save every field here, only
+  // finding out from a failed-request toast after the fact.
+  const canWrite = profile.permissions.includes('safety:write');
   const { safetySettings, refreshSafety } = useAppStore();
 
   const [allowlist, setAllowlist] = useState('');
@@ -138,9 +155,11 @@ export default function SafetySettingsPage() {
             : "The allowlist is empty, so any valid number in a run can be dialled. While you're still setting up, put your own number here."
         }
         footer={
-          <Button size="sm" onClick={saveAllowlist} loading={saving}>
-            Save allowlist
-          </Button>
+          canWrite ? (
+            <Button size="sm" onClick={saveAllowlist} loading={saving}>
+              Save allowlist
+            </Button>
+          ) : undefined
         }
       >
         <Field
@@ -153,6 +172,7 @@ export default function SafetySettingsPage() {
             onChange={(e) => setAllowlist(e.target.value)}
             placeholder="+919876543210, +15555550100"
             className="font-mono text-data"
+            disabled={!canWrite}
           />
         </Field>
       </SettingsSection>
@@ -162,9 +182,11 @@ export default function SafetySettingsPage() {
         description="How many calls a run may place, and how fast they go out."
         effect={`A run stops after ${ceiling} real ${Number(ceiling) === 1 ? 'call' : 'calls'} even if the list is longer. Calls go out at ${ratePerHour} per hour, up to a daily budget of ${formatNumber(Number(dailyBudget))} calls - ${safetySettings.used_today} used so far today.`}
         footer={
-          <Button size="sm" onClick={saveCeilings} loading={saving}>
-            Save ceilings
-          </Button>
+          canWrite ? (
+            <Button size="sm" onClick={saveCeilings} loading={saving}>
+              Save ceilings
+            </Button>
+          ) : undefined
         }
       >
         <div className="grid gap-4 sm:grid-cols-3">
@@ -175,6 +197,7 @@ export default function SafetySettingsPage() {
               value={ceiling}
               onChange={(e) => setCeiling(e.target.value)}
               className="font-mono tabular-nums"
+              disabled={!canWrite}
             />
           </Field>
           <Field label="Calls per hour">
@@ -184,6 +207,7 @@ export default function SafetySettingsPage() {
               value={ratePerHour}
               onChange={(e) => setRatePerHour(e.target.value)}
               className="font-mono tabular-nums"
+              disabled={!canWrite}
             />
           </Field>
           <Field label="Daily budget">
@@ -193,6 +217,7 @@ export default function SafetySettingsPage() {
               value={dailyBudget}
               onChange={(e) => setDailyBudget(e.target.value)}
               className="font-mono tabular-nums"
+              disabled={!canWrite}
             />
           </Field>
         </div>
@@ -209,6 +234,7 @@ export default function SafetySettingsPage() {
               value={windowStart}
               onChange={(e) => setWindowStart(e.target.value)}
               className="font-mono tabular-nums"
+              disabled={!canWrite}
             />
           </Field>
           <Field label="Until">
@@ -217,6 +243,7 @@ export default function SafetySettingsPage() {
               value={windowEnd}
               onChange={(e) => setWindowEnd(e.target.value)}
               className="font-mono tabular-nums"
+              disabled={!canWrite}
             />
           </Field>
           <Field label="Timezone">
@@ -224,6 +251,7 @@ export default function SafetySettingsPage() {
               value={timezone}
               onValueChange={setTimezone}
               options={TIMEZONES}
+              disabled={!canWrite}
             />
           </Field>
         </div>

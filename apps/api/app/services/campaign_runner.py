@@ -3,6 +3,14 @@
 Flow per contact:
     safety gate -> render goal -> engine create
                 -> poll to terminal -> extract typed result -> triage
+
+Only the orchestration itself lives here - I/O, concurrency, the safety
+gate, polling. The pure extraction/triage logic each contact's terminal
+payload goes through is `app/domain/outcome_extraction.py` (shared with the
+webhook receiver, `api/v1/routes/webhooks.py`); goal-template rendering is
+`app/domain/goal_rendering.py`. Split out of one file per CLAUDE.md's
+Single-Responsibility guidance - none of that logic does any I/O, so it
+belongs in `domain/`, not here.
 """
 
 from __future__ import annotations
@@ -12,13 +20,14 @@ import logging
 import time
 import uuid
 from collections.abc import Awaitable, Callable, Iterable
-from datetime import datetime
 from typing import Any
 
 from app.core.config import config
+from app.core.logging import CallContext
 from app.domain.entities import CallOutcome, Campaign, Contact, DialFailure, Disposition
+from app.domain.goal_rendering import render_goal
+from app.domain.outcome_extraction import _extract_duration, _resolve_outcome
 from app.domain.safety import check_dial_allowed, mask, phone_hash
-from app.domain.triage import triage
 from app.integrations.voice.engine import (
     TERMINAL,
     EngineAPIError,
@@ -72,226 +81,44 @@ def _live_label(status: str) -> str:
     }.get(status, f"{status.replace('_', ' ').capitalize()}…")
 
 
-def render_goal(campaign: Campaign, contact: Contact) -> str:
-    """Fill the campaign template with contact data.
-
-    Uses format_map with a defaulting dict so a missing context key degrades to
-    an empty string instead of crashing a whole campaign run.
-    """
-
-    class _Safe(dict):
-        def __missing__(self, key: str) -> str:
-            return ""
-
-    fields = _Safe(name=contact.name, phone=contact.phone, **contact.context)
-    return campaign.goal_template.format_map(fields)
-
-
-def _extract_result(call: JsonObject) -> JsonObject:
-    """Pull the engine's structured extraction out of the call payload.
-
-    Confirmed against the SDK's generated `CallTaskStructuredResultType0` model
-    (its own docstring: "Schema-valid structured result object extracted for
-    the whole call task using `result_schema`") - CampaignRunner always passes
-    a task-level `result_schema` to `start_call`, never `recipient_result_schema`,
-    so the real API always populates the top-level `structured_result` key,
-    which the first loop below checks. The other top-level keys, the one-level
-    nesting check, and the `recipients[0]` fallback are defensive rather than
-    confirmed-necessary: harmless if never hit, and `recipients[0].structured_result`
-    is a real, documented field (`CallTaskRecipient.structured_result`) that
-    would start mattering if `recipient_result_schema` is ever adopted instead.
-    """
-    for key in ("result", "structured_result", "results", "output", "data"):
-        value = call.get(key)
-        if isinstance(value, dict) and value:
-            # Some shapes nest the payload one level deeper.
-            for inner in ("result", "structured_result", "data"):
-                nested = value.get(inner)
-                if isinstance(nested, dict) and nested:
-                    return nested
-            return value
-
-    # Batch shape: recipients[0].result
-    recipients = call.get("recipients")
-    if isinstance(recipients, list) and recipients:
-        first = recipients[0]
-        if isinstance(first, dict):
-            for key in ("result", "structured_result", "data"):
-                value = first.get(key)
-                if isinstance(value, dict) and value:
-                    return value
-    return {}
-
-
-def _has_transcript(attempt: JsonObject) -> bool:
-    turns = attempt.get("transcript_turns")
-    return isinstance(turns, list) and len(turns) > 0
-
-
-def _final_attempt(attempts: list[Any]) -> JsonObject | None:
-    """Pick the attempt whose transcript best represents what actually happened.
-
-    A recipient can be redialled, so `attempts` may hold more than one dial.
-    Picking by status alone isn't enough: the model documents `transcript_turns`
-    as "empty when no transcript is available" on *any* status, so a `completed`
-    final attempt can still have nothing to show while an earlier `failed` one
-    holds a real partial conversation - that's the exact case that would have
-    reproduced this fix's own symptom (a real conversation existing, but
-    nothing surfaced) if status were the only signal. So the actual transcript
-    content is what decides: prefer the most recent `completed` attempt that
-    has turns; if none, the most recent attempt of *any* status that has turns;
-    only if nothing has ever captured a turn does this fall back to the literal
-    most recent attempt (which will end up rendering as "no transcript").
-
-    "Most recent" is `started_at` order, not array position - the model
-    doesn't document `attempts` as chronologically ordered, and `started_at` is
-    already on every attempt (an ISO 8601 string, so it sorts correctly as
-    text with no parsing needed). Attempts with no `started_at` yet sort first.
-    """
-    dict_attempts = [a for a in attempts if isinstance(a, dict)]
-    if not dict_attempts:
-        return None
-
-    ordered = sorted(dict_attempts, key=lambda a: a.get("started_at") or "")
-
-    completed_with_transcript = [
-        a for a in ordered if _has_transcript(a) and str(a.get("status", "")).lower() == "completed"
-    ]
-    if completed_with_transcript:
-        return completed_with_transcript[-1]
-
-    any_with_transcript = [a for a in ordered if _has_transcript(a)]
-    if any_with_transcript:
-        return any_with_transcript[-1]
-
-    return ordered[-1]
-
-
-def _extract_transcript(call: JsonObject) -> str | None:
-    """Pull the transcript out of the call payload.
-
-    CALL-E's response has no top-level transcript field at all - confirmed
-    against the installed SDK's generated models (`CallTaskAttempt.transcript_turns`,
-    `CallTranscriptTurn`) and the public OpenAPI spec (CALLE.md). The real
-    location is nested two levels down: recipients[N].attempts[M].transcript_turns[],
-    where each turn is `{offset_seconds, speaker: "bot"|"user"|"unknown", text}`.
-
-    `_extract_result` above uses `recipients[0]` for its batch fallback, so the
-    same convention is followed here: this codebase only ever dials one contact
-    per call, so a real batch (recipients > 1) shouldn't occur in practice, but
-    if the engine ever returns more than one, the first is the one this call
-    was actually placed for.
-    """
-    recipients = call.get("recipients")
-    if not isinstance(recipients, list) or not recipients:
-        return None
-    first = recipients[0]
-    if not isinstance(first, dict):
-        return None
-
-    attempts = first.get("attempts")
-    if not isinstance(attempts, list):
-        return None
-    attempt = _final_attempt(attempts)
-    if attempt is None:
-        return None
-
-    turns = attempt.get("transcript_turns")
-    if not isinstance(turns, list) or not turns:
-        return None
-
-    parts: list[str] = []
-    for turn in turns:
-        if not isinstance(turn, dict):
-            continue
-        # `.get(key, default)` only falls back when the key is absent - a turn
-        # with `"text": null` (a real, permitted value on the model) still
-        # returns None here, which would otherwise render the literal string
-        # "None" to whoever reads the transcript. `or ""` catches that case
-        # too, and a turn with nothing real to say is skipped outright rather
-        # than rendered as an empty line.
-        text = (turn.get("text") or "").strip()
-        if not text:
-            continue
-        speaker = turn.get("speaker") or "?"
-        parts.append(f"{speaker}: {text}")
-    return "\n".join(parts) if parts else None
-
-
-def _extract_duration(call: JsonObject) -> float | None:
-    """Computes how long the call lasted from the final attempt's own
-    timestamps.
-
-    There is no `duration_seconds` field anywhere in CALL-E's real response -
-    confirmed against the installed SDK's generated `CallTaskAttempt` model,
-    which declares only `started_at`/`completed_at`, no duration of any kind.
-    Reading `call.get("duration_seconds")` (the previous implementation)
-    therefore always returned `None` for every real call - the same class of
-    bug as the top-level-key-that-doesn't-exist transcript bug (ISSUES.md
-    #52), just never cross-checked for this field at the time. Uses the same
-    `_final_attempt()` selection as `_extract_transcript` so the reported
-    duration always corresponds to the same attempt whose transcript is
-    shown, not a different one.
-    """
-    recipients = call.get("recipients")
-    if not isinstance(recipients, list) or not recipients:
-        return None
-    first = recipients[0]
-    if not isinstance(first, dict):
-        return None
-
-    attempts = first.get("attempts")
-    if not isinstance(attempts, list):
-        return None
-    attempt = _final_attempt(attempts)
-    if attempt is None:
-        return None
-
-    started = attempt.get("started_at")
-    completed = attempt.get("completed_at")
-    if not started or not completed:
-        return None
-    try:
-        start_dt = datetime.fromisoformat(started)
-        end_dt = datetime.fromisoformat(completed)
-    except (TypeError, ValueError):
-        return None
-    return max(0.0, (end_dt - start_dt).total_seconds())
-
-
 class CampaignRunner:
     def __init__(
         self,
         gateway: EngineGateway | None = None,
         *,
-        run_id: str | None = None,
         result_schema: JsonObject | None = None,
         webhook_url: str | None = None,
         suppressed_hashes: frozenset[str] = frozenset(),
         max_calls_per_run: int | None = None,
         allowlist: frozenset[str] | None = None,
+        run_id: str | None = None,
+        max_concurrent_calls: int | None = None,
     ) -> None:
         self.result_schema = result_schema
         self.webhook_url = webhook_url
         self._gateway = gateway
         self._calls_made = 0
+        # Guards the check-and-reserve in `run_one()` (see its own comment) -
+        # dialling itself still runs concurrently; only that brief moment is
+        # serialised.
+        self._calls_made_lock = asyncio.Lock()
         self._canceled = False
-        # Stable for the lifetime of this runner even when the caller doesn't
-        # pass one (every unit test constructs a CampaignRunner directly) -
-        # what matters is that it never changes between the safety gate and
-        # the dial for the *same* contact, unlike the freshly-random suffix it
-        # replaces (`uuid.uuid4().hex[:8]` generated fresh on every call,
-        # which defeated the whole point of an idempotency key - ISSUES.md
-        # #54: a connection dropped after the vendor placed the call but
-        # before the response arrived meant a retry looked like a brand new
-        # request to CALL-E).
-        self._run_id = run_id or uuid.uuid4().hex[:12]
         # Resolved once per run (a single query) rather than once per contact.
         self._suppressed_hashes = suppressed_hashes
         # An organisation's own Settings -> Safety override, or None to fall back
         # to the deployment's env-var defaults inside check_dial_allowed itself.
         self._max_calls_per_run = max_calls_per_run
         self._allowlist = allowlist
+        # The persisted run this instance belongs to, if any - gives each
+        # contact's idempotency key a stable scope (see `_idempotency_key()`)
+        # and lets the webhook receiver correlate a terminal event back to a
+        # real row. `None` for a caller with no real run (ad hoc use, tests) -
+        # deliberately never fabricated, since a made-up id here would be one
+        # the webhook receiver could never actually look up.
+        self._run_id = run_id
+        self._max_concurrent_calls = (
+            max_concurrent_calls if max_concurrent_calls is not None else config.max_concurrent_calls
+        )
 
     @property
     def gateway(self) -> EngineGateway:
@@ -301,9 +128,10 @@ class CampaignRunner:
 
     @property
     def canceled(self) -> bool:
-        """True once `run()` has stopped early because `should_cancel()`
-        returned True. Distinct from simply "not all contacts were dialled" -
-        a run that raised partway through is not `canceled`, it's failed."""
+        """True once `run()` skipped at least one contact because
+        `should_cancel()` returned True. Distinct from simply "not all
+        contacts were dialled" - a run that raised partway through is not
+        `canceled`, it's failed."""
         return self._canceled
 
     async def run(
@@ -314,28 +142,76 @@ class CampaignRunner:
         on_progress: ProgressHook | None = None,
         should_cancel: Callable[[], Awaitable[bool]] | None = None,
     ) -> list[CallOutcome]:
-        """Dial each contact in turn, stopping early if `should_cancel` ever
-        returns True.
+        """Dial every contact, up to `_max_concurrent_calls` at once, stopping
+        early if `should_cancel` ever returns True.
 
-        Checked *between* contacts only, never mid-call - there is no way to
-        interrupt a call already in conversation (the voice engine has no
-        cancel operation), so the honest guarantee is "no further contacts
-        are dialled," not "the run stops instantly." Contacts never reached
-        get no outcome row at all rather than a fabricated "canceled" one -
-        the run's own `status` already says a canceled run didn't finish, and
-        `total` vs however many outcomes exist already shows how far it got.
+        Was a strict one-at-a-time loop - for a run of N contacts at a
+        minute or two per call, that's N minutes of wall-clock time when it
+        could be a couple. `asyncio.gather` preserves the input order in its
+        results regardless of which contact's call actually finishes first,
+        so callers see the same per-contact ordering a sequential loop gave
+        them. `return_exceptions=True` matters here specifically because of
+        the concurrency: a bug in this module itself (not an engine/network
+        failure - `run_one()` already turns those into a FAILED outcome
+        without raising) must not cancel every *other* contact's real,
+        already-in-flight phone call the way an unhandled `gather()`
+        exception otherwise would.
+
+        `should_cancel` is checked right before each contact's own dial, not
+        once up front - every contact's coroutine is already created and
+        queued on the concurrency semaphore the moment `gather()` is called,
+        so "stop between contacts" has to mean "skip the ones that haven't
+        started dialling yet," checked at the one point each is guaranteed
+        to still be waiting: the moment it acquires its semaphore slot.
+        There is still no way to interrupt a call already in conversation
+        (the voice engine has no cancel operation), so the honest guarantee
+        remains "no further contacts are dialled," not "the run stops
+        instantly." A skipped contact gets no outcome row at all rather than
+        a fabricated "canceled" one - the run's own `status` already says a
+        canceled run didn't finish, and `total` vs however many outcomes
+        exist already shows how far it got.
         """
-        outcomes: list[CallOutcome] = []
-        for contact in contacts:
-            if should_cancel is not None and await should_cancel():
-                self._canceled = True
-                break
+        contact_list = list(contacts)
+        semaphore = asyncio.Semaphore(self._max_concurrent_calls)
+
+        async def _dial(contact: Contact) -> CallOutcome | None:
             # `on_progress` doubles as the live-status sink so an in-flight
-            # call is visible while it happens, not only once it ends.
-            outcome = await self.run_one(campaign, contact, on_status=on_progress)
-            outcomes.append(outcome)
+            # call is visible while it happens, not only once it ends. Held
+            # only around the dial/poll itself, not the final progress
+            # write below - that's our own DB, not CALL-E, and doesn't need
+            # to compete for the same concurrency budget.
+            async with semaphore:
+                if should_cancel is not None and await should_cancel():
+                    self._canceled = True
+                    return None
+                outcome = await self.run_one(campaign, contact, on_status=on_progress)
             if on_progress:
                 await on_progress(outcome)
+            return outcome
+
+        results = await asyncio.gather(
+            *(_dial(contact) for contact in contact_list), return_exceptions=True
+        )
+
+        outcomes: list[CallOutcome] = []
+        for contact, result in zip(contact_list, results, strict=True):
+            if result is None:
+                continue
+            if isinstance(result, BaseException):
+                log.exception("contact processing crashed for %s", mask(contact.phone))
+                outcomes.append(
+                    CallOutcome(
+                        contact_name=contact.name,
+                        phone_masked=mask(contact.phone),
+                        campaign_id=campaign.id,
+                        status="FAILED",
+                        error=DialFailure.INTERNAL.value,
+                        disposition=Disposition.UNREACHABLE,
+                        disposition_reason="Call could not be completed due to an internal error.",
+                    )
+                )
+            else:
+                outcomes.append(result)
         return outcomes
 
     async def _poll_until_done(
@@ -434,6 +310,29 @@ class CampaignRunner:
             call = await asyncio.to_thread(self.gateway.get_call, call_id)
         return call
 
+    def _idempotency_key(self, campaign: Campaign, contact: Contact) -> str:
+        """A retry of the *same* logical attempt must reuse the same key -
+        that's the entire point of `Idempotency-Key`: if the create-call
+        request reaches CALL-E and a call gets placed, but the response is
+        lost before CallFlow sees it (timeout, dropped connection), a retry
+        with the same key lets CALL-E recognise the duplicate and hand back
+        the existing call instead of dialing the same person twice
+        (`ISSUES.md` #54). Scoped to `self._run_id` (unique per persisted
+        run) + a hash of the phone (never the raw number, in case this value
+        ever surfaces in a trace/log outside CallFlow's own control) - stable
+        across any retry of this exact (run, contact) pair, and distinct
+        across two different runs dialling the same contact, so an old run's
+        key can never be replayed against a new one.
+
+        Without a real run (`self._run_id` is `None` - ad hoc use, tests),
+        there's no stable job identity to key off, so this falls back to a
+        fresh key every call, same as before this fix - not idempotent, but
+        no worse than the prior default either.
+        """
+        if self._run_id is None:
+            return f"{campaign.id}-{contact.phone}-{uuid.uuid4().hex[:8]}"
+        return f"{self._run_id}:{phone_hash(contact.phone)}"
+
     async def run_one(
         self,
         campaign: Campaign,
@@ -450,13 +349,26 @@ class CampaignRunner:
         goal = render_goal(campaign, contact)
 
         # --- Safety gate: fails closed, runs before anything can dial. ------
-        gate = check_dial_allowed(
-            contact.phone,
-            self._calls_made,
-            is_suppressed=phone_hash(contact.phone) in self._suppressed_hashes,
-            max_calls_per_run=self._max_calls_per_run,
-            allowlist=self._allowlist,
-        )
+        # Checking `self._calls_made` and reserving a slot by incrementing it
+        # must happen as one atomic step under concurrency - otherwise two
+        # contacts dialled at the same time could both read the same
+        # under-the-ceiling count before either increments, letting more
+        # calls through than `max_calls_per_run` allows. The reservation
+        # happens *before* the dial is attempted, not after it succeeds - a
+        # failed or lost-response attempt still spent a real slot at CALL-E
+        # and must still count, per CLAUDE.md's fail-closed rule
+        # (`ISSUES.md` #54).
+        async with self._calls_made_lock:
+            gate = check_dial_allowed(
+                contact.phone,
+                self._calls_made,
+                is_suppressed=phone_hash(contact.phone) in self._suppressed_hashes,
+                max_calls_per_run=self._max_calls_per_run,
+                allowlist=self._allowlist,
+            )
+            if gate.allowed:
+                self._calls_made += 1
+
         if not gate.allowed:
             return base.model_copy(
                 update={
@@ -466,22 +378,21 @@ class CampaignRunner:
                 }
             )
 
-        metadata = {
-            "call-e/customerMetadata": {
-                "campaign_id": campaign.id,
-                "campaign_name": campaign.name,
-                "contact_name": contact.name,
-                **contact.context,
-            }
+        # Plain, vendor-neutral shape - the engine's `metadata` field is a fully
+        # free-form bag with no required namespacing (confirmed against the
+        # generated SDK model), so nothing above `engine.py` needs a
+        # vendor-flavoured key to satisfy it. `run_id` is included so the
+        # webhook receiver (`api/v1/routes/webhooks.py`) can tell which run a
+        # terminal event belongs to once CALL-E echoes this back - omitted
+        # when there's no real run to attribute it to (ad hoc use, tests).
+        metadata: JsonObject = {
+            "campaign_id": campaign.id,
+            "campaign_name": campaign.name,
+            "contact_name": contact.name,
+            **contact.context,
         }
-
-        # Reserved before the request is sent, not after a successful return.
-        # A request whose response never arrives (EngineConnectionError) may
-        # still have reached the vendor and placed a real call - undercounting
-        # the per-run ceiling is safe, only counting *confirmed* successes is
-        # not, since it let a connection-drop retry dial past the ceiling
-        # without ever being counted against it (ISSUES.md #54).
-        self._calls_made += 1
+        if self._run_id is not None:
+            metadata["run_id"] = self._run_id
 
         try:
             created = await asyncio.to_thread(
@@ -491,11 +402,7 @@ class CampaignRunner:
                 result_schema=self.result_schema,
                 metadata=metadata,
                 webhook_url=self.webhook_url,
-                # Stable per (run, contact) - not a fresh random suffix per
-                # attempt - so CALL-E can actually recognise a retry as a
-                # duplicate of a request that already reached it (see
-                # `self._run_id`'s docstring in __init__).
-                idempotency_key=f"{self._run_id}-{contact.phone}",
+                idempotency_key=self._idempotency_key(campaign, contact),
                 region=contact.region or campaign.region,
                 language=contact.language or campaign.language,
             )
@@ -517,7 +424,8 @@ class CampaignRunner:
                     )
                 )
 
-            final = await self._poll_until_done(call_id, on_status=on_status, base=base)
+            with CallContext(call_id=call_id):
+                final = await self._poll_until_done(call_id, on_status=on_status, base=base)
 
         except (EngineAPIError, EngineTimeoutError, EngineConnectionError) as exc:
             # Classified against the engine's own documented error taxonomy
@@ -575,15 +483,4 @@ class CampaignRunner:
                 }
             )
 
-        extracted = _extract_result(final)
-        resolved = base.model_copy(
-            update={
-                "status": str(final.get("status", "unknown")).upper(),
-                "run_id": call_id,
-                "transcript": _extract_transcript(final),
-                "summary": extracted.get("summary") or final.get("summary"),
-                "extracted": extracted,
-                "duration_seconds": _extract_duration(final),
-            }
-        )
-        return triage(resolved, escalate_on_negative=campaign.escalate_on_negative)
+        return _resolve_outcome(base, final, escalate_on_negative=campaign.escalate_on_negative)

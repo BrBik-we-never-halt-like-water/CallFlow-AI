@@ -4,12 +4,15 @@ from app.domain.entities import CallOutcome, Disposition, Sentiment
 from app.domain.triage import needs_human, triage
 
 
-def outcome(status: str = "completed", **extracted: object) -> CallOutcome:
+def outcome(
+    status: str = "completed", task_completed: bool | None = None, **extracted: object
+) -> CallOutcome:
     return CallOutcome(
         contact_name="Test",
         phone_masked="+91*******210",
         campaign_id="c",
         status=status,
+        task_completed=task_completed,
         extracted={"summary": "s", **extracted},
     )
 
@@ -52,6 +55,38 @@ def test_frustration_beats_negative_sentiment() -> None:
 
 def test_negative_sentiment_can_be_ignored() -> None:
     r = triage(outcome(sentiment="negative"), escalate_on_negative=False)
+    assert r.disposition is Disposition.AUTO_CLOSED
+
+
+def test_task_not_completed_escalates() -> None:
+    # CALL-E's own judgment that the conversation never reached a clear
+    # resolution - worth a look even with otherwise clean extracted fields.
+    r = triage(outcome(task_completed=False, sentiment="positive", frustration_signals=False))
+    assert r.disposition is Disposition.ESCALATED
+    assert "did not reach a clear resolution" in r.disposition_reason
+
+
+def test_task_not_completed_beats_negative_sentiment_retry() -> None:
+    r = triage(outcome(task_completed=False, sentiment="negative", frustration_signals=False))
+    assert r.disposition is Disposition.ESCALATED
+
+
+def test_do_not_call_beats_task_not_completed() -> None:
+    # An explicit, specific human signal outranks CALL-E's summary-level judgment.
+    r = triage(outcome(task_completed=False, do_not_call=True))
+    assert r.disposition is Disposition.ESCALATED
+    assert "do-not-call" in r.disposition_reason
+
+
+def test_task_completed_true_does_not_force_escalation() -> None:
+    r = triage(outcome(task_completed=True, sentiment="positive", frustration_signals=False))
+    assert r.disposition is Disposition.AUTO_CLOSED
+
+
+def test_task_completed_unknown_is_not_treated_as_false() -> None:
+    # task_completed=None (CALL-E hasn't judged, or the field never arrived)
+    # must not be conflated with an explicit False.
+    r = triage(outcome(task_completed=None, sentiment="positive", frustration_signals=False))
     assert r.disposition is Disposition.AUTO_CLOSED
 
 

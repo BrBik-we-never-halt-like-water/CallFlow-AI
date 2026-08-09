@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { Ubuntu } from 'next/font/google';
 import { AppShell } from '@/components/layout/app-shell';
 import { OnboardingGate } from '@/components/app/onboarding-gate';
+import { WelcomeModal } from '@/components/app/welcome-modal';
 import { AppStoreProvider } from '@/lib/app-store';
 
 /**
@@ -34,10 +35,11 @@ export default function AppLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <div className={`${ubuntu.variable} app-font-scope`}>
+    <div id="app-font-scope" className={`${ubuntu.variable} app-font-scope`}>
       <AppStoreProvider>
         <OnboardingGate>
           <AppShell>{children}</AppShell>
+          <WelcomeModal />
         </OnboardingGate>
       </AppStoreProvider>
     </div>

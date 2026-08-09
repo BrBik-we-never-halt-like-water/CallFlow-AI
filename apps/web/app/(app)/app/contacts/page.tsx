@@ -46,6 +46,7 @@ export default function ContactsPage() {
   const profile = session.status === "signed-in" ? session.profile : null;
   const canAdd = profile?.permissions.includes("suppressions:add") ?? false;
   const canRemove = profile?.permissions.includes("suppressions:remove") ?? false;
+  const canStart = profile?.permissions.includes("runs:start") ?? false;
 
   function loadSuppressions() {
     api
@@ -218,9 +219,11 @@ export default function ContactsPage() {
               Suppress a number
             </Button>
           ) : null}
-          <Button asChild>
-            <Link href="/app/runs/new">Import CSV</Link>
-          </Button>
+          {canStart ? (
+            <Button asChild>
+              <Link href="/app/runs/new">Import CSV</Link>
+            </Button>
+          ) : null}
         </div>
       </div>
 
@@ -301,9 +304,11 @@ export default function ContactsPage() {
                   title="No contacts yet"
                   body="Paste a list or drop a CSV. Numbers are validated before anything is dialled."
                   action={
-                    <Button asChild>
-                      <Link href="/app/runs/new">Import CSV</Link>
-                    </Button>
+                    canStart ? (
+                      <Button asChild>
+                        <Link href="/app/runs/new">Import CSV</Link>
+                      </Button>
+                    ) : undefined
                   }
                 />
               ) : (

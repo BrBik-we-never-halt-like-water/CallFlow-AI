@@ -82,15 +82,34 @@ exist in this repo**; `SYSTEM.md` §12 is the closest real gap map until it's wr
 | [#52](#52--transcript-extraction-read-a-top-level-key-that-doesnt-exist-anywhere-in-call-es-real-response)                        | S2  | Transcript extraction read a top-level key that doesn't exist anywhere in CALL-E's real response                      | backend        | it-13 | **FIXED**        |
 | [#53](#53--one-flaky-status-poll-could-mark-an-entire-successfully-completed-call-as-failed)                                      | S2  | One flaky status poll could mark an entire, successfully-completed call as failed                                     | backend        | it-13 | **FIXED**        |
 | [#54](#54--a-retried-call-after-a-connection-error-classification-could-double-dial-without-counting-against-the-per-run-ceiling) | S3  | A retried call after a connection-error classification could double-dial without counting against the per-run ceiling | backend        | it-13 | **FIXED**        |
-| [#55](#55--postruns-had-no-idempotency-key-a-retried-request-could-start-a-second-real-run)                                       | S2  | `POST /runs` had no idempotency key - a retried request could start a second real run                                 | backend + web  | it-14 | **FIXED**        |
-| [#56](#56--a-run-in-progress-when-the-api-restarted-stayed-running-forever)                                                       | S2  | A run in progress when the API restarted stayed "running" forever                                                     | backend        | it-14 | **FIXED**        |
-| [#57](#57--there-was-no-way-to-actually-stop-a-run-once-started)                                                                  | S2  | There was no way to actually stop a run once started                                                                  | backend + web  | it-14 | **FIXED**        |
-| [#58](#58--a-suppressed-contact-still-reserved-rate-limit-and-daily-budget-it-would-never-use)                                    | S3  | A suppressed contact still reserved rate-limit and daily-budget it would never use                                    | backend        | it-14 | **FIXED**        |
-| [#59](#59--a-hand-typed-phone-number-could-show-valid-in-the-grid-while-failing-e164-at-submission)                               | S2  | A hand-typed phone number could show valid in the grid while failing E.164 at submission                              | web            | it-15 | **FIXED**        |
-| [#60](#60--a-runs-actual-guards-were-never-recorded-so-past-runs-became-unauditable-once-settings-changed)                        | S2  | A run's actual guards were never recorded, so past runs became unauditable once settings changed                      | backend + web  | it-16 | **FIXED**        |
-| [#61](#61--call-duration-was-never-visible-anywhere-because-the-field-it-was-read-from-doesnt-exist-in-call-es-response)          | S2  | Call duration was never visible anywhere, because the field it was read from doesn't exist in CALL-E's response       | backend        | it-17 | **FIXED**        |
-| [#62](#62--a-long-filter-value-overflowed-the-select-trigger-and-broke-the-escalations-filter-row-layout)                         | S2  | A long filter value overflowed the Select trigger and broke the escalations filter-row layout                        | web            | it-17 | **FIXED** (it-18) |
-| [#63](#63--a-calls-own-top-level-status-can-go-terminal-before-its-nested-attempts-completed_at-does-permanently-freezing-duration_seconds-at-none)  | S2  | A call's own top-level `status` can go terminal before its nested attempt's `completed_at` does, freezing duration at `None` | backend        | it-18 | **FIXED**        |
+| [#55](#55--7-of-call-es-reachable-error-codes-fell-through-to-a-generic-internal-error)                                          | S3  | 7 of CALL-E's reachable error codes fell through to a generic internal error                                          | backend        | it-14 | **FIXED**        |
+| [#56](#56--a-vendor-specific-key-leaked-above-the-integration-boundary)                                                          | S4  | A vendor-specific key leaked above the integration boundary                                                           | backend        | it-14 | **FIXED**        |
+| [#57](#57--list_events-dropped-cursor-pagination)                                                                                | S4  | `list_events()` dropped cursor pagination                                                                             | backend        | it-14 | **FIXED**        |
+| [#58](#58--claude-mds-no-pii-in-logs-guarantee-had-no-actual-filter-behind-it)                                                    | S2  | CLAUDE.md's "No PII in logs" guarantee had no actual filter behind it                                                 | backend        | it-14 | **FIXED**        |
+| [#59](#59--idempotency-key-is-now-stable-per-run-and-contact-half-of-54)                                                          | S3  | Idempotency key is now stable per run and contact (half of #54)                                                       | backend        | it-16 | **FIXED**        |
+| [#60](#60--campaigns-dialled-contacts-strictly-one-at-a-time)                                                                     | S2  | Campaigns dialled contacts strictly one at a time                                                                     | backend        | it-17 | **FIXED**        |
+| [#61](#61--no-webhook-receiver--every-call-outcome-only-ever-arrived-via-polling)                                                 | S3  | No webhook receiver - every call outcome only ever arrived via polling                                                | backend        | it-18 | **FIXED**        |
+| [#62](#62--call-es-own-task_completedcompletion_confidenceevidence-and-full-retry-history-were-discarded)                        | S3  | CALL-E's own `task_completed`/`completion_confidence`/`evidence` and full retry history were discarded                | backend        | it-19 | **FIXED**        |
+| [#63](#63--live-per-call-events-were-declared-and-plumbed-but-had-no-consumer)                                                    | S4  | Live per-call events were declared and plumbed but had no consumer                                                    | backend        | it-20 | **FIXED**        |
+| [#64](#64--campaigns_writes-for-all-policy-silently-re-granted-every-operator-full-org-wide-campaign-visibility)                  | S1  | `campaigns_write`'s `for all` policy silently re-granted every operator full org-wide campaign visibility             | backend        | it-21 | **FIXED**        |
+| [#65](#65--the-invite-accept-page-showed-this-invitation-isnt-valid-when-the-real-problem-was-being-signed-in-as-the-wrong-account) | S3  | Invite-accept page showed "invitation isn't valid" when the real problem was the wrong signed-in account              | web            | it-21 | **FIXED**        |
+| [#66](#66--create_or_refresh_invitation-trusted-a-caller-supplied-identity-instead-of-deriving-it)                                | S2  | `create_or_refresh_invitation()` trusted a caller-supplied identity instead of deriving it                            | backend        | it-21 | **FIXED**        |
+| [#67](#67--a-second-orphaned-migration-on-the-shared-database-same-failure-mode-as-before)                                        | S1  | A second orphaned migration on the shared database, same failure mode as before                                      | backend        | it-21 | **FIXED**        |
+| [#68](#68--no-one-could-ever-actually-accept-their-first-invitation)                                                              | S1  | No one could ever actually accept their first invitation - RLS blocked the lookup                                    | backend        | it-21 | **FIXED**        |
+| [#69](#69--dropdownmenu-popover-and-dialog-rendered-light---then-invisible---on-an-otherwise-all-dark-app-shell)                  | S2  | DropdownMenu/Popover/Dialog rendered light, then invisible after the first fix attempt                                | web            | it-21 | **FIXED**        |
+| [#70](#70--appprofile-never-had-dark-canvas-applied-and-toasts-viewport-was-never-portaled-anywhere)                              | S3  | `/app/profile` never had `.dark-canvas` applied; Toast's viewport was never portaled anywhere                         | web            | it-21 | **FIXED**        |
+| [#71](#71--viewer-role-had-a-correct-backend-and-a-completely-unenforced-frontend)                                                | S2  | Viewer role had a correct backend and a completely unenforced frontend                                               | web            | it-22 | **FIXED**        |
+| [#72](#72--pending-invitations-showed-no-pending-status-in-the-team-list)                                                          | S3  | Pending invitations showed no pending status in the Team list                                                        | web            | it-22 | **FIXED**        |
+| [#73](#73--toasts-18-fix-depended-on-an-element-that-doesnt-exist-on-every-page)                                                  | S3  | Toast's §18 fix depended on an element that doesn't exist on every page                                              | web            | it-22 | **FIXED**        |
+| [#74](#74--postruns-had-no-idempotency-key-a-retried-request-could-start-a-second-real-run)                                       | S2  | `POST /runs` had no idempotency key - a retried request could start a second real run                                 | backend + web  | it-23 | **FIXED**        |
+| [#75](#75--a-run-in-progress-when-the-api-restarted-stayed-running-forever)                                                       | S2  | A run in progress when the API restarted stayed "running" forever                                                     | backend        | it-23 | **FIXED**        |
+| [#76](#76--there-was-no-way-to-actually-stop-a-run-once-started)                                                                  | S2  | There was no way to actually stop a run once started                                                                  | backend + web  | it-23 | **FIXED**        |
+| [#77](#77--a-suppressed-contact-still-reserved-rate-limit-and-daily-budget-it-would-never-use)                                    | S3  | A suppressed contact still reserved rate-limit and daily-budget it would never use                                    | backend        | it-23 | **FIXED**        |
+| [#78](#78--a-hand-typed-phone-number-could-show-valid-in-the-grid-while-failing-e164-at-submission)                               | S2  | A hand-typed phone number could show valid in the grid while failing E.164 at submission                              | web            | it-24 | **FIXED**        |
+| [#79](#79--a-runs-actual-guards-were-never-recorded-so-past-runs-became-unauditable-once-settings-changed)                        | S2  | A run's actual guards were never recorded, so past runs became unauditable once settings changed                      | backend + web  | it-25 | **FIXED**        |
+| [#80](#80--call-duration-was-never-visible-anywhere-because-the-field-it-was-read-from-doesnt-exist-in-call-es-response)          | S2  | Call duration was never visible anywhere, because the field it was read from doesn't exist in CALL-E's response       | backend        | it-26 | **FIXED**        |
+| [#81](#81--a-long-filter-value-overflowed-the-select-trigger-and-broke-the-escalations-filter-row-layout)                         | S2  | A long filter value overflowed the Select trigger and broke the escalations filter-row layout                        | web            | it-26 | **FIXED** (it-27) |
+| [#82](#82--a-calls-own-top-level-status-can-go-terminal-before-its-nested-attempts-completed_at-does-permanently-freezing-duration_seconds-at-none)  | S2  | A call's own top-level `status` can go terminal before its nested attempt's `completed_at` does, freezing duration at `None` | backend        | it-27 | **FIXED**        |
 
 ---
 
@@ -1918,27 +1937,768 @@ phone call to the same contact, uncounted by the per-run ceiling.
 request whose response CallFlow never saw, combined with something acting on the advisory
 `RETRY` disposition. Not reachable today since nothing auto-retries.
 
-**Fix.** Not fixed here. Would need either a stable (non-regenerated) idempotency key per
-contact-attempt, or `_calls_made` incremented before the request is sent rather than after
-it returns successfully, to close - either changes retry semantics enough to deserve its
-own deliberate pass rather than a drive-by fix.
+**Fix.** **Fixed in two parts.** Iteration 16 (module 3): the idempotency key is now
+stable per `(run_id, contact)` (`CampaignRunner._idempotency_key()`) instead of a fresh
+random suffix every attempt, so a retry is recognisable to CALL-E as a duplicate. Iteration
+17 (module 4, concurrent dialling): `_calls_made` is now incremented as part of the same
+locked check-and-reserve that admits a contact past the ceiling, *before* the dial is
+attempted rather than after it returns successfully - a failed or lost-response attempt
+still spent a real slot at CALL-E and now still counts, closing the other half of this
+issue as a direct side effect of making the ceiling check race-safe under concurrency
+(see `#60`).
 
 **Depends on / Blocks:** related to `CALLE_INTEGRATION_STATUS.md` §3.5 (idempotency key
 regenerated per attempt) and `#53` (introduced the reclassification that makes this
 reachable).
 
-**Fixed in it-14** - both suggested fixes landed together: the idempotency key is now
-`f"{run_id}-{contact.phone}"`, stable for the life of a `CampaignRunner` instead of a
-fresh `uuid.uuid4()` suffix every call, and `_calls_made` now increments right after the
-safety gate passes, before `start_call()` is sent, not after it returns. See #55-#58.
+**Also landed independently on a parallel branch (it-26)**, before the two merged: same
+idempotency-key formula, `f"{run_id}-{contact.phone}"`, and `_calls_made` incremented right
+after the safety gate passes rather than after `start_call()` returns. See the merge note
+at the top of it-26 for which implementation the merged codebase actually runs.
 
-## Iteration 14 - 2026-08-09 · runs-feature audit follow-through: idempotency, cancel, crash recovery
+---
+
+## Iteration 14 - 2026-08-09 · CALL-E integration rebuild, module 1: error taxonomy completeness
+
+First of a planned seven-module pass rebuilding the CALL-E integration for real - not
+speculative feature work, each module targets a specific gap already documented in
+`CALLE.md`/`CALLE_INTEGRATION_STATUS.md`/this file's own #37/#52/#53/#54. Module 1 closes
+the three smallest, most mechanical gaps before the riskier concurrency/idempotency work
+(modules 2-4) builds on top of a complete, correctly-classified failure taxonomy.
+
+### #55 - 7 of CALL-E's reachable error codes fell through to a generic internal error
+
+**S3 · FIXED · backend · `apps/api/app/integrations/voice/engine.py`**
+
+`_ERROR_CODE_MAP` mapped 12 of the 19 error codes actually reachable from `/v1/calls`
+(the other 5 of CALL-E's 24 documented codes are Goals-only, correctly excluded since
+Goals aren't integrated). The other 7 - `call_not_ready`, `not_found`, `invalid_request`,
+`idempotency_conflict`, `result_schema_invalid`, `recipient_result_schema_invalid`,
+`internal_error` - fell through to the unmapped-code default. Fail-closed to `INTERNAL`
+either way, so no behaviour actually changed for most of them, but a future reader
+couldn't tell "considered and mapped to INTERNAL" apart from "never looked at."
+
+**Fix.** All 7 now map explicitly: `call_not_ready`/`not_found` (poll-only, transient read-
+after-write races) join `provider_unavailable` in the retryable bucket; the rest map to
+`INTERNAL` as configuration/request-shape problems, explicitly rather than by omission.
+
+### #56 - A vendor-specific key leaked above the integration boundary
+
+**S4 · FIXED · backend · `apps/api/app/services/campaign_runner.py`**
+
+`campaign_runner.py` (in `services/`, above `integrations/voice/`) built
+`metadata = {"call-e/customerMetadata": {...}}` - a vendor-flavoured key living outside the
+one file CLAUDE.md's dependency-inversion rule says should ever speak CALL-E's name. Not a
+functional bug (`metadata` is a fully free-form bag on CALL-E's side, confirmed against the
+generated SDK model - no required shape or namespacing), just a boundary breach.
+
+**Fix.** Metadata is now built as a plain, vendor-neutral dict; the vendor-named wrapper is
+gone entirely rather than moved, since nothing ever required it.
+
+### #57 - `list_events()` dropped cursor pagination
+
+**S4 · FIXED · backend · `apps/api/app/integrations/voice/engine.py`, `protocol.py`**
+
+`EngineGateway.list_events()` forwarded `limit` to the SDK but never `cursor`, even though
+the endpoint is documented as cursor-paginated and the SDK's own `list_events()` accepts
+one. Moot today - nothing calls this method yet (module 7 of this same rebuild plans to) -
+but would have silently truncated every long call's events to page one the moment
+something did.
+
+**Fix.** `cursor` now threads through `EngineGateway.list_events()` and the `VoiceProvider`
+protocol signature it conforms to.
+
+## Iteration 15 - 2026-08-09 · CALL-E integration rebuild, module 2: structured logging + a real redaction filter
+
+### #58 - CLAUDE.md's "No PII in logs" guarantee had no actual filter behind it
+
+**S2 · FIXED · backend · `apps/api/app/core/logging.py` (new), `main.py`, `campaign_runner.py`, `api/v1/routes/runs.py`**
+
+CLAUDE.md's non-negotiable #5 stated, as fact, that "Numbers, tokens, keys, and transcript
+bodies are redacted by a global filter - and the redaction is tested." No such filter
+existed anywhere in the codebase - `logging.basicConfig(level=logging.INFO)` was the entire
+logging setup (`main.py`). Redaction was real but 100% dependent on every call site
+remembering to call `mask()` (`domain/safety.py`) before logging a phone number; a stated
+safety guarantee resting entirely on discipline, with no backstop, is exactly the kind of
+gap that stays invisible until the one call site that forgot.
+
+Separately: no log line carried enough context to trace one call's whole lifecycle (dial →
+poll → resolve) as a single unit - each line stood alone, correlated only by eye.
+
+**Fix.** `app/core/logging.py`: `RedactingFilter`, attached to every handler by the new
+`configure_logging()`, redacts E.164-shaped numbers and bearer/key-style tokens found in a
+rendered message, and fully redacts known-sensitive `extra=` field values by name
+(`transcript`, `phone`, `api_key`, `token`, `authorization`, `password`, `secret`) -
+regardless of content, since a transcript is free text and not pattern-matchable the way a
+phone number is. `mask()` stays the primary defence; this is the safety net for whatever a
+call site misses. Also added `CallContext` (contextvars-based, composes across nesting):
+`api/v1/routes/runs.py`'s background run task binds `run_id`/`org_id` for the run's whole
+lifetime; `campaign_runner.py` binds `call_id` once a dial is placed, so every log line
+touching one call - in this module and in `engine.py` - can be grepped together. Output is
+text (human-readable, unchanged default) or one-JSON-object-per-line via
+`CALLFLOW_LOG_FORMAT=json`, for a deployment that ships to a log aggregator.
+
+**Tests.** `tests/test_logging.py` - redaction of raw numbers, format-arg numbers, and
+several token shapes; sensitive-field-by-name redaction; context binding, nesting, and
+leak-after-exit; both formatters. 16 new tests, 198/198 passing overall.
+
+## Iteration 16 - 2026-08-09 · CALL-E integration rebuild, module 3: idempotency key correctness
+
+### #59 - Idempotency key is now stable per run and contact (half of #54)
+
+**S3 · FIXED · backend · `apps/api/app/services/campaign_runner.py`, `api/v1/routes/runs.py`**
+
+Closes the idempotency-key half of `#54` and the previously-open item 5 in
+`CALLE_INTEGRATION_STATUS.md` §3. `campaign_runner.py` built `Idempotency-Key` as
+`f"{campaign.id}-{contact.phone}-{uuid.uuid4().hex[:8]}"` - a fresh random suffix on every
+single dial, including a retry of the exact same logical attempt. `Idempotency-Key` exists
+to protect exactly one scenario - a create-call request reaches CALL-E and a call gets
+placed, but the response is lost before CallFlow sees it - and a random suffix defeats that
+protection entirely: a retry with a new key cannot be recognised as a duplicate of anything.
+
+**Fix.** `CampaignRunner` now takes an optional `run_id` (threaded from
+`api/v1/routes/runs.py`, the persisted run's own id). `_idempotency_key()` builds
+`f"{run_id}:{phone_hash(contact.phone)}"` when a run_id is present - stable across any
+retry of this exact (run, contact) pair, since the rendered goal text for a given
+(campaign, contact) is deterministic within one run, and distinct across two different runs
+dialling the same contact, so an old run's key can never be replayed against a new one. Uses
+`phone_hash()` rather than the raw number, in case the header value ever surfaces in a trace
+or log outside CallFlow's own control. Without a `run_id` (ad hoc use, tests, no stable job
+identity to key off of) it falls back to a fresh key every call, same as before this fix -
+not idempotent, but no worse than the prior default either.
+
+Does **not** close `#54` fully: `_calls_made` is still only incremented after `start_call`
+returns successfully, so a retry after a connection-error classification still wouldn't
+count against `max_calls_per_run`. Left for module 4, which has to redesign how
+`_calls_made` is guarded anyway to be race-safe under concurrent dialling.
+
+**Tests.** `tests/test_orchestrator.py` - same key across two calls for the same
+(run_id, contact); different keys across two different run_ids for the same contact; raw
+phone never appears in the key; falls back to a fresh key with no run_id. 4 new tests,
+202/202 passing overall.
+
+## Iteration 17 - 2026-08-09 · CALL-E integration rebuild, module 4: concurrent dialling
+
+### #60 - Campaigns dialled contacts strictly one at a time
+
+**S2 · FIXED · backend · `apps/api/app/services/campaign_runner.py`, `core/config.py`**
+
+`CampaignRunner.run()` was `for contact in contacts: await self.run_one(...)` - every
+contact dialled, polled to a terminal status (up to 900s), and resolved before the next
+contact was even attempted. For a run of N contacts at roughly a minute or two per real
+call, that's N times the wall-clock time the run actually needed. This is very likely the
+real cause behind a user report that "calls placed take a little bit of time" - not
+per-call dial latency (CALL-E's own infrastructure, outside this codebase's control - and,
+per a live research pass, not a figure CALL-E publishes anywhere), but the *whole run*
+taking N times longer than necessary because contacts were never allowed to overlap.
+
+**Fix.** `run()` now dials up to `CALLFLOW_MAX_CONCURRENT_CALLS` (default 5 - CALL-E
+publishes no rate-limit numbers, so this starts conservative) contacts at once via an
+`asyncio.Semaphore`, using `asyncio.gather(..., return_exceptions=True)` so one contact's
+own bug can't cancel every other contact's real, already-in-flight phone call - a failure
+mode with no sequential analog, since a one-at-a-time loop never has more than one contact
+in flight to abandon. `run()`'s returned list still matches the input contact order
+regardless of which contact's call actually finishes first (`gather`'s own ordering
+guarantee) - confirmed by test, not assumed.
+
+Concurrency exposed a real, load-bearing race that a sequential loop could never trigger:
+`run_one()` read `self._calls_made` (the per-run ceiling counter) and incremented it only
+*after* a successful dial, so two contacts dialled at the same moment could both read the
+same under-the-ceiling count before either incremented, admitting more calls than
+`max_calls_per_run` allows. Fixed by making the check-and-reserve one atomic step under a
+new `asyncio.Lock`, held only for that brief moment (never around the dial/poll itself, so
+concurrency is preserved) - and the reservation now happens *before* the dial is attempted,
+not after it succeeds, which is also the second half of `#54`'s fix (a failed or
+lost-response attempt still spent a real slot at CALL-E and must still count, per
+CLAUDE.md's fail-closed rule).
+
+**Tests.** `tests/test_orchestrator.py` - `ConcurrencyTrackingGateway` proves contacts
+genuinely overlap in wall-clock time (a real `time.sleep()` inside the worker thread, not
+the mocked event-loop sleep) and never exceed the configured limit; the ceiling holds
+under real concurrent dialling (5 contacts, ceiling 2 → exactly 2 admitted); output order
+survives concurrency. `test_progress_hook_fires_per_contact` updated - concurrent dialling
+means two contacts' progress events can now interleave with each other, so it checks each
+contact's own event order (dialing, then resolved) rather than a fixed global sequence.
+6 new/changed tests, 206/206 passing overall.
+
+## Iteration 18 - 2026-08-09 · CALL-E integration rebuild, module 5: webhook receiver
+
+### #61 - No webhook receiver - every call outcome only ever arrived via polling
+
+**S3 · FIXED · backend · `api/v1/routes/webhooks.py` (new), `services/campaign_runner.py`, `database/repositories/runs.py`, migration `202608091200`**
+
+CALL-E supports a per-request `webhook_url` on `POST /v1/calls`, delivering terminal events
+(`call.completed`, `call.failed`, `call.result_validation_failed`) with a full `CallTask`
+snapshot - and even ships an SDK module for it - but this codebase never populated
+`webhook_url`, and no receiver endpoint existed. Every outcome, always, arrived via
+`_poll_until_done`'s 2-second polling loop - a self-imposed floor on how fast a completed
+call is *noticed*, on top of module 4's fix for how fast contacts are *dialled*.
+
+The real complication, not just missing plumbing: a webhook has no signed-in user behind
+it, and CLAUDE.md is explicit that `privileged.acquire()` must never appear in a request
+handler. Raised to the user as a genuine architectural fork rather than worked around
+silently; the chosen approach (below) follows the exact precedent
+`GET /api/v1/invitations/{token}` already set for the same shape of problem.
+
+**Fix.**
+- New migration `202608091200_calle_webhook_run_lookup.py`: one narrow SECURITY DEFINER
+  function, `lookup_run_owner_for_webhook(run_id)`, resolving a run's `org_id`,
+  `campaign_id`, and starter's `auth_user_id` - a lookup only, no write, matching
+  `lookup_invitation`'s own shape and requiring no new grant (function EXECUTE defaults to
+  PUBLIC in Postgres, confirmed by that same precedent having none either).
+- New route `POST /api/v1/webhooks/calle/{secret}`: `database.anonymous()` calls the lookup
+  function to resolve identity, then the actual write goes through the *ordinary*,
+  already-RLS-correct `database.as_user()` path - as the run's own starter, who already
+  held sufficient permission to start it in the first place. No new RLS-bypassing write
+  path was needed at all. Unsigned by CALL-E (confirmed: its SDK's HMAC helpers are
+  deprecated, "must not be used to parse current deliveries"), so `secret` - compared in
+  constant time - is the entire trust boundary; a wrong secret gets 404, not 401/403.
+- `CampaignRunner`'s metadata now includes `run_id` (omitted when there isn't one) so the
+  receiver can attribute an event back to a run once CALL-E echoes it. The outcome-
+  resolution logic (`_extract_result`/`_extract_transcript`/`triage`) that used to live
+  only in `run_one()`'s tail is now `_resolve_outcome()`, a shared function both the
+  polling path and the webhook call identically - one triage implementation, not two.
+- `CALLFLOW_PUBLIC_API_URL` + `CALLFLOW_WEBHOOK_SECRET` (both empty by default) gate
+  whether `webhook_url` is ever sent at all - unset either and this deployment falls back
+  to polling only, unchanged from before this fix.
+- Polling is **not** removed - it stays the backstop for a dropped delivery or a
+  deployment with no webhook configured. Whichever path notices a call's terminal state
+  first writes it; the other's eventual write is a harmless no-op update of the same data.
+
+**Tests.** `tests/test_webhooks.py` - against the real database (skipped without
+`DATABASE_URL`), following `test_rls_isolation.py`'s own precedent for exactly this reason:
+a SECURITY DEFINER function or an RLS policy that looks right on paper is the expensive bug
+to ship. Wrong/unconfigured secret → 404; unknown run → acked without error; missing
+`run_id` in metadata → acked without error; a real tenant + real run → the persisted
+outcome matches what polling would have produced (contact name, masked phone, disposition,
+extracted fields, transcript); a second real tenant cannot see the first tenant's outcome
+through this path. 6 new tests, 212/212 passing overall.
+
+## Iteration 19 - 2026-08-09 · CALL-E integration rebuild, module 6: richer outcome data
+
+### #62 - CALL-E's own `task_completed`/`completion_confidence`/`evidence` and full retry history were discarded
+
+**S3 · FIXED · backend · `domain/entities.py`, `domain/triage.py`, `services/campaign_runner.py`, `database/repositories/runs.py`, `api/v1/routes/runs.py`, migration `202608091600`**
+
+CALL-E computes a holistic judgment of whether each call actually accomplished its task -
+`task_completed` (bool), `completion_confidence` (`{score, label}`), `evidence[]` (short
+supporting strings) - on every terminal call, independent of whatever a campaign's own
+`result_schema` extracts. None of the three had a field on `CallOutcome`; all three were
+silently dropped on arrival. Separately, CALL-E tracks every dial attempt at a recipient in
+`recipients[0].attempts[]`, but `campaign_runner.py` kept only whichever one
+`_final_attempt()` picked for its transcript - a redialled contact's earlier attempts (a
+`no_answer` before the one that connected, say) left no trace at all.
+
+Re-confirmed against the *live* OpenAPI spec before writing any code against it (not just
+this doc's Aug-8 research pass) - the installed SDK doesn't type these fields at all
+(`get_call()`'s success response is untyped `dict[str, Any]`, confirmed by reading
+`calle/generated/api/calls/get_call.py` directly), so the SDK alone could neither confirm
+nor deny they exist. The live spec confirms both: task-level only, never per-recipient.
+
+**Fix.**
+- New migration `202608091600_call_outcome_completion_signals.py`: five new columns on
+  `call_outcomes` (`task_completed`, `completion_confidence_score`,
+  `completion_confidence_label`, `evidence` jsonb, `attempts` jsonb). Kept separate from
+  the existing `extracted` jsonb column deliberately - `extracted` is what a *campaign's*
+  schema asked for; these are CALL-E's own meta-judgment, a different concern that could
+  collide in field name with a campaign-defined one if merged together.
+- `CallOutcome` gains the four scalar/list fields plus `attempts: list[AttemptSummary]`
+  (a new small model: `status`/`started_at`/`completed_at`/`had_transcript` per attempt).
+- `campaign_runner._resolve_outcome()` (shared by both the polling path and the module-5
+  webhook receiver, so both extract and persist identically) now pulls all of these from
+  the terminal payload; a new `_extract_attempts()` walks the full `attempts[]` list
+  instead of `_final_attempt()`'s single pick.
+- `triage()`: a new precedence rule - `task_completed is False` escalates, ranked below
+  the explicit human-said-so signals (do_not_call/wants_human/frustration, which are more
+  specific and more actionable) and above the plain status-based buckets (which have no
+  signal at all to work with otherwise). `completion_confidence`/`evidence` are persisted
+  and exposed but deliberately *not* weighted in `triage()` - a softer, fuzzier signal
+  than a boolean judgment; left as data for now rather than another precedence branch.
+- `GET /api/v1/runs/{id}` now serves all five new fields per outcome.
+
+**Tests.** `test_triage.py` - `task_completed is False` escalates, beats negative-sentiment
+retry, loses to `do_not_call`, and `None`/`True` are correctly *not* treated as `False`.
+`test_orchestrator.py` - `_extract_attempts()` preserves every attempt (not just the
+final one) and each attempt's `had_transcript` flag, empty-list fallbacks for malformed
+input; `_resolve_outcome()` extraction of the three task-level fields, and correct
+defaults when absent. `test_webhooks.py`'s real-database happy path extended to assert
+all five new fields round-trip correctly end to end, including a two-attempt retry
+history. 12 new tests, 224/224 passing overall.
+
+## Iteration 20 - 2026-08-09 · CALL-E integration rebuild, module 7 (final): live per-call events
+
+### #63 - Live per-call events were declared and plumbed but had no consumer
+
+**S4 · FIXED (backend) · `api/v1/routes/runs.py`, `integrations/voice/engine.py` (cursor fix already in `#57`)**
+
+`EngineGateway.list_events()` existed and `VoiceCapability.LIVE_EVENTS` was declared
+`supported=True`, but nothing in `campaign_runner.py` or any route ever called it -
+dashboard progress came entirely from polling `get_call()`'s coarse `status` field, unable
+to see any transition faster than the 2-second poll interval, or any warning/error-level
+diagnostic CALL-E logged mid-call.
+
+Checked the actual response shape before building against it, since the SDK doesn't type
+this endpoint's success response either (same `dict[str, Any]` pattern as `#62`'s
+finding): it's a **developer/ops event log** (`debug`/`info`/`warning`/`error` levels, a
+human-readable `message`, the `status` at that moment), not a turn-by-turn *conversation*
+stream - a correction to this doc's and `CALLE_INTEGRATION_STATUS.md`'s original framing
+of what this capability actually is.
+
+**Fix.** New `GET /api/v1/runs/{run_id}/calls/{provider_call_id}/events`, on demand rather
+than fetched automatically for every call - most calls never need this level of detail, and
+fetching it unconditionally would double the request volume against CALL-E for data most
+calls don't need inspected. Confirms the requested `provider_call_id` actually belongs to a
+contact in the caller's own run (itself org-scoped via RLS) before proxying, so a caller
+cannot probe an arbitrary CALL-E call id through their session. A real engine error (rate
+limited, provider down) becomes a `502` with the classified `DialFailure`, not an unhandled
+exception.
+
+**Explicitly out of scope.** No frontend consumption of this endpoint was built - this
+whole rebuild (modules 1-7) was scoped to the backend integration itself; an actual
+dashboard control to view a call's event log is a real, separate decision, flagged back to
+the user rather than built silently as scope creep.
+
+**Tests.** `test_run_events.py` - against the real database, following this suite's own
+precedent for anything RLS-adjacent: unknown run and call-id-not-in-this-run both 404;
+missing API key 400; a classified engine error 502, not an unhandled exception; the happy
+path returns events in order with `details` intact; `cursor` forwards to the engine. 6 new
+tests, 230/230 passing overall.
+
+---
+
+**This closes the CALL-E integration rebuild** (modules 1-7, iterations 14-20). Every item
+`CALLE_INTEGRATION_STATUS.md` tracked as open is now fixed; that doc's own status line has
+been updated to say so rather than left to go stale again.
+
+## Iteration 21 - 2026-08-09 · role-based UI roadmap, Phase 1: per-creator visibility silo
+
+### #64 - `campaigns_write`'s `for all` policy silently re-granted every operator full org-wide campaign visibility
+
+**S1 · FIXED · `alembic/versions/202608092100_split_campaigns_write_policy.py`**
+
+Phase 1 narrowed `campaigns_select`/`runs_select`/`call_outcomes_select` so an operator sees
+only what they created (migration `202608092000`) - but `campaigns_write` was declared
+`for all` (one policy covering select/insert/update/delete). Postgres combines multiple
+permissive policies for the same command with OR, so that policy's role-only check - true
+for any operator in the org - was also being consulted for SELECT, silently re-granting
+every operator full org-wide campaign visibility regardless of who created what. `runs` and
+`call_outcomes` never had this problem: their write policies were already split per command
+from their original migration (`202608070900`) - `campaigns_write` was the one table using
+`for all`.
+
+**Impact.** Every operator could see every teammate's campaign for as long as `d4bcc27a2b70`
+was live, defeating the entire point of the silo for that one table. `runs`/`call_outcomes`
+were never affected.
+
+**Caught by** the new cross-member RLS test added in the same iteration
+(`test_operator_cannot_see_a_teammates_campaign`, `tests/test_rls_isolation.py`) - it failed
+against the real database on first run, which is what surfaced this before it shipped.
+
+**Fix.** Split `campaigns_write` into `campaigns_insert`/`campaigns_update`/`campaigns_delete`,
+each scoped to its own command - same role check as before, so no behavioural change on
+paper. Confirmed against the live database (a throwaway, rolled-back probe) that for UPDATE
+and DELETE specifically, Postgres also intersects the command's own `USING` clause with any
+applicable SELECT policy's `USING` clause, so an operator's update/delete reach now
+automatically narrows to campaigns they created too - matching the actual product spec
+("no other teammate's campaign, nothing" for an operator), not just SELECT. INSERT is
+unaffected by that intersection (no existing row to combine against); forging `created_by`
+on insert is a pre-existing, unrelated gap this migration does not widen.
+
+### Per-creator visibility silo, shipped
+
+`campaigns.created_by` and `runs.started_by` existed since `202608070900` but were
+write-only - no policy read them, no query selected them, no API response returned them.
+`campaigns_select`/`runs_select`/`call_outcomes_select` (migration `202608092000`) now add
+an owner-or-admin-or-viewer branch alongside the org-member check, so an operator's plain
+org-scoped query returns only their own rows; owner/admin/viewer are unaffected. `GET
+/api/v1/campaigns`, `GET/PATCH .../campaigns/{id}`, `GET /api/v1/runs`, and `GET
+/api/v1/runs/{id}` now return `created_by`/`started_by` plus the creator's name/avatar
+(joined to `users`), so an admin/owner/viewer's org-wide view can attribute each row to
+whoever made it. New `GET /api/v1/runs/team-summary` (gated on the new
+`Permission.RUNS_READ_TEAM`, granted to owner/admin/viewer, not operator) returns call
+volume grouped by teammate, for the admin/owner dashboard's per-teammate breakdown chart
+(no frontend consumer yet - backend-only, by design, per this iteration's scope).
+
+**Tests.** 5 new cross-member RLS tests in `tests/test_rls_isolation.py` (two operators in
+one org: neither sees the other's campaign/run/call-outcome; admin and viewer see both;
+`summarize_by_member` reflects the caller's own RLS scope) plus 5 new permission-matrix
+tests in `tests/test_permissions.py`. 238/238 passing overall.
+
+**Depends on / Blocks:** signup → invite → role enforcement was verified (not rebuilt) as
+part of the same phase - already correct, covered by the existing RLS/permission suites
+this iteration extends.
+
+### #65 - The invite-accept page showed "this invitation isn't valid" when the real problem was being signed in as the wrong account
+
+**S3 · FIXED · web · `app/(auth)/accept-invite/[token]/page.tsx`**
+
+Opening a valid invite link while already signed in as a *different* account (e.g. the
+owner who sent the invite, opening their own link to check it) showed a "Join {org}"
+button unconditionally. Clicking it tried to accept the invitation as whoever was
+currently signed in, which the backend correctly rejects - but with a generic message
+("...may have expired, already been used, or been sent to a different email address")
+that reads as the invitation being broken, when the actual problem is which browser
+session is active.
+
+**Fix.** The page now compares the signed-in session's email to the invitation's target
+email. On a mismatch it says so directly ("You're signed in as X, but this invitation was
+sent to Y") with a **Sign out** button - `useSession()`'s existing auth-state-change
+listener re-renders the page into the real signup form once signed out, no manual
+redirect needed. Separately, the not-yet-signed-in signup form now shows the target email
+as a read-only field alongside Name and Password, so it's never ambiguous which address
+is being used.
+
+### #66 - `create_or_refresh_invitation()` trusted a caller-supplied identity instead of deriving it
+
+**S2 · FIXED · database · migration `202608092300_invitation_invited_by_from_caller_identity`**
+
+Found via a Supabase Postgres security-checklist pass, prompted by testing the new
+`npm run db:migrate` scripts turning up an unrelated orphaned migration (below) and
+prompting a fuller audit of the role/RLS flow. `public.create_or_refresh_invitation()`
+(migration `e15f3d9a2c78`) correctly anchors its *authorisation* checks
+(`has_org_role`/`can_grant_role`) to the caller's own identity via `current_user_id()` -
+but took `target_invited_by` as a plain argument and wrote it verbatim into
+`invitations.invited_by`, never checking it matched the caller.
+
+**Impact.** This function is `SECURITY DEFINER` in the exposed `public` schema with
+`EXECUTE` granted to `anon`/`authenticated` (confirmed live, `has_function_privilege`) -
+Supabase's Data API exposes every public function as an RPC endpoint by default. The
+one real call site (`org_repo.create_invitation()`) always passed the authenticated
+caller's own id, so the application itself was never affected - but nothing stopped a
+caller reaching the function directly (e.g. via Supabase's REST RPC surface, entirely
+outside this backend) from forging who an invitation credits.
+
+**Fix.** Dropped `target_invited_by` as a parameter; the function now derives it from
+`public.current_user_id()` itself, the same anchor already used for the authorisation
+checks - the exact pattern `create_organisation()` already used correctly. The one call
+site is unaffected since it always passed its own id.
+
+**Also found in the same audit, clean:** every UPDATE policy has a `WITH CHECK`, RLS is
+enabled *and* forced on every tenant table, no deprecated `auth.role()` usage anywhere,
+no unprotected views. Every other `SECURITY DEFINER` function either takes no caller
+identity as an argument at all or (like `create_organisation()`) already derives it
+itself - `create_or_refresh_invitation()` was the one exception.
+
+### #67 - A second orphaned migration on the shared database, same failure mode as before
+
+**S1 · FIXED · database · migration `202608092200_reconcile_orphaned_run_safety_columns`**
+
+While verifying the new `npm run db:migrate` script, `alembic_version` on the shared
+database had advanced to `a3f7c9e2b6d8` - a revision with no file anywhere in this
+repo's git history, checked across every local and remote branch. Same root cause as the
+first occurrence (`202608091800_reconcile_orphaned_run_columns`, iteration 19/20 window):
+almost certainly another uncommitted/discarded worktree or branch applying a migration
+directly against the shared Supabase instance.
+
+**Found:** five orphaned, all-`null`, unreferenced columns on `public.runs` mirroring
+`public.org_safety_settings`'s own columns (`max_calls_per_run`, `allowlist`,
+`calls_per_window`, `window_minutes`, `daily_budget`) - reads as an in-progress "snapshot
+the org's safety settings onto the run at start time" feature, schema-only, nothing wired
+to it yet. Confirmed none of Phase 1's RLS policies were touched by inspecting the live
+policy definitions directly rather than assuming.
+
+**Fix.** Same approach as the first occurrence: a new idempotent migration formally
+adopts the columns (`add column if not exists`) rather than silently re-stamping past
+them, so a fresh database can still reach the same schema. `alembic_version` was restamped
+back to the last known-good revision by the user directly against the database (the
+raw `UPDATE` on a system table was correctly blocked by this session's own permission
+classifier as a hard-to-reverse action), then `alembic upgrade head` replayed both this
+migration and `#66`'s fix. Recommend investigating what's producing these - twice in one
+session against a shared database is a pattern, not a fluke.
+
+**Verification.** `npm run db:migrate` (no-op, already at head) · `npm run db:generate`
+(produces an empty no-op migration - confirms no undeclared ORM drift, file discarded) ·
+`npm run db:reset` (confirmed it refuses without `--yes`, not actually run) ·
+`pytest -q` 238/238 · `ruff check app tests` clean · `alembic history` shows a clean
+linear chain from `b9d4f1a6c832` through `d7f3a8c2e951` (head).
+
+### #68 - No one could ever actually accept their first invitation
+
+**S1 · FIXED · database · migrations `202608092400`, `202608092500`**
+
+Found by the user's own manual testing (five real invite attempts across five real
+temp-mail addresses, all failing identically), after which every one of them turned out
+to still have zero membership in the org they'd been invited to, despite each one having
+signed up successfully. `invitations_repo.accept()`'s lookup was:
+
+```sql
+select ... from public.invitations i
+join public.organisations o on o.id = i.org_id
+where i.token = $1
+```
+
+run on the RLS-scoped `authenticated` connection. `invitations_select`'s policy correctly
+lets an invitee see their own pending invitation by email match - but `organisations_select`
+is plain `is_org_member(id)`, and a brand-new invitee is by definition not yet a member of
+the org they're being invited to. The `join` silently dropped the row the instant it
+reached `organisations`, so the whole query returned nothing, `accept()` returned `None`,
+and the route reported the generic "this invitation isn't valid" message - for every
+single real first-time acceptance, indistinguishable from an actually-invalid invitation.
+A chicken-and-egg RLS problem: you need to already be a member to see the org row, but
+seeing the org row was a precondition (via this join) for becoming one.
+
+**Impact.** This has almost certainly never worked, for anyone, since the tables were
+created - masked because no test exercised a genuine brand-new-user acceptance end to
+end; existing coverage only ever exercised invitation *creation* and the RLS *write*
+guards on `memberships_insert`, never a real first-time accept. The frontend fix from
+`#65` (showing a clear "sign out, wrong account" message) made the underlying bug more
+visible rather than less, since it eliminated the one other plausible explanation
+(being signed in as the wrong person) and left only this.
+
+**Fix.** Same pattern already established for `create_organisation()` and
+`create_or_refresh_invitation()` (`#66`) - a narrowly-scoped `SECURITY DEFINER` function,
+`public.lookup_invitation_for_accept()`, resolves token → invitation + org name/slug,
+bypassing only this one read. It exposes nothing the existing *anonymous*
+`lookup_invitation()` preview function doesn't already expose to anyone holding the
+token, unauthenticated - so this is strictly less exposure, not more. The actual
+state-mutating operations (the membership `INSERT`, the invitation `UPDATE`) are
+deliberately left as plain RLS-scoped queries, unchanged - `memberships_insert`'s
+`has_valid_invitation()` check still independently guards the one operation that
+actually grants access, preserving defense-in-depth. A same-session follow-up migration
+(`202608092500`) fixed a `citext`/`text` column-type mismatch in the first version,
+caught immediately by re-running the reproduction script before it reached a real user.
+
+**Also closed in the same fix:** `accept()` never checked `expires_at`, only
+`accepted_at` - an expired-but-never-accepted invitation could still be accepted. The
+new lookup function computes `expired` server-side to avoid any app/DB clock-skew
+comparison (the lesson from `#16`).
+
+**Tests.** Two new tests in `tests/test_rls_isolation.py`, the exact gap that let this
+ship: a genuine brand-new signup (real `auth.users` insert, firing the real trigger,
+giving them their own auto-created org exactly like a real signup) accepting a real
+invitation end to end, and an expired invitation correctly rejected. 240/240 passing
+overall. Reproduced and verified against the live database with a standalone script
+before and after each fix, not just via the test suite.
+
+### #69 - DropdownMenu, Popover, and Dialog rendered light - then invisible - on an otherwise all-dark `/app` shell
+
+**S2 · FIXED (two attempts) · web · `app/globals.css`, `dropdown-menu.tsx`, `disclosure.tsx`, `dialog.tsx`, `(app)/app/layout.tsx`, new `lib/hooks/use-portal-container.ts`**
+
+The sidebar org-switcher dropdown and the dashboard's Team popover both rendered with a
+white/light surface, reported by the user as visually broken against the dark `/app`
+shell around them. First diagnosis: `.dark-chrome`/`.dark-canvas`/`.dark-panel-glass`
+re-scope the generic surface/rule/text tokens to their dark equivalents only as CSS
+custom properties on those specific elements, and `DropdownMenuContent`,
+`PopoverContent`, and `Dialog`/`Sheet`'s content all render through a Radix `Portal`,
+which mounts straight to `<body>` by default - outside the DOM subtree those classes
+scope. First fix attempt: a `.dark-overlay` class re-scoping the same tokens
+`.dark-chrome` does, applied directly to the three portaled components.
+
+**That fix was itself broken** - caught by the user immediately after, from a screenshot
+showing the invite dialog with no visible background, border, or text at all (only the
+footer buttons, which carry their own styling, were visible). `.dark-overlay` referenced
+`var(--dark-text)`, `var(--dark-surface)`, etc. - but those raw palette values are
+themselves declared inside `.app-font-scope` (the `/app` layout's own wrapper `<div>`),
+**not** at `:root`. A Radix portal mounts as a sibling of that div, not a descendant of
+it, so it never inherited those tokens either - the exact same architectural gap
+`ISSUES.md` #49 already documented for the *font*, now biting the *color* fix for the
+same underlying reason. Setting `--text: var(--dark-text)` when `--dark-text` itself
+resolves to nothing collapses every property built on it to its own initial value -
+`transparent` for a background, effectively invisible for text.
+
+**Real fix.** New `usePortalContainer()` hook (`useSyncExternalStore`, not an effect +
+`setState` - `react-hooks/set-state-in-effect` is an error here exactly as it is for
+`localStorage`/`matchMedia`, see `lib/hooks/use-external-store.ts`) that resolves
+`document.getElementById('app-font-scope')`, falling back to `document.body` outside
+`/app`. Passed as the `container` prop to all three components' Radix `Portal`, so the
+portaled content becomes a genuine descendant of `.app-font-scope` and correctly
+inherits both the font class (partially closing `#49`, for these three components only)
+and the raw `--dark-*` tokens `.dark-overlay` depends on. `.dark-overlay` itself is
+unchanged and correct - it was never the broken half.
+
+Confirmed exclusively `/app`-only before applying any of this: `(auth)`/`(marketing)`
+never import `DropdownMenu`, `Popover`, or `Dialog` - grepped every import site to be
+sure, since forcing this on a component also used from a light-themed page (as
+`Tooltip` and `Select` both are - `pricing-table.tsx` and `demo-form.tsx` respectively -
+which is why those two were deliberately **not** touched) would have broken it there
+instead of fixing anything.
+
+**Follow-up (design, not a bug):** the user asked for these surfaces to carry the same
+purple radial-gradient background as the main content canvas, not a flat dark fill, and
+for `Select` (the role picker inside the invite dialog) to match too - `Select` had been
+correctly left alone in the first pass since it's also used on a light marketing page.
+`.dark-overlay` now applies `.dark-canvas`'s exact gradient formula, and `Select` applies
+`.dark-overlay` conditionally (only when its portal actually resolves to `/app`'s scope,
+via `isAppScopeContainer()`), leaving the marketing form untouched. Full narrative -
+including exactly why the first `.dark-overlay` attempt shipped broken - lives in
+`apps/web/DESIGN_NOTES.md` §17, not duplicated here.
+
+### Remove a teammate: reassigns their org data, deletes their account (product decision)
+
+Not a bug fix - a product decision, confirmed with the user while reviewing the Team
+management screen. Removing a teammate used to be a one-line membership delete
+(`org_repo.remove_member()`). Now, removing *someone else* (not leaving your own org,
+which is unchanged):
+
+1. Reassigns whatever they created in this organisation - `campaigns.created_by`,
+   `runs.started_by` - to whichever admin/owner performed the removal, so their work
+   survives them leaving instead of falling back to `null` the moment their account
+   goes away.
+2. Deletes their CallFlow account entirely, not just their membership in this one org -
+   a full account removal, not a per-org one (the user's explicit choice over the
+   narrower, initially-recommended "just this org" option). Any *other* organisation
+   they belong to is unaffected by step 1 - this admin has no relationship to that
+   org's data - and behaves exactly like a self-deleted account already does
+   (`ISSUES.md` #13/#14/#17's cascade/retirement triggers, unchanged).
+
+Implemented as `public.remove_member_and_reassign_data()` (migration `202608092600`), a
+`SECURITY DEFINER` function following the same shape as `create_organisation()`/
+`create_or_refresh_invitation()` - deleting `auth.users` needs privileges the
+`authenticated` role never holds, and CLAUDE.md §4b is explicit that `privileged.acquire()`
+must never appear in a request handler. Authorisation (`has_org_role`, `can_act_on_member`)
+is re-checked inside the function itself as defense-in-depth, same reasoning as those two
+functions - the route's own Python-side checks are still the primary gate.
+
+The "Remove" action in the Team tab now requires typing the person's name to confirm
+(mirroring the existing "delete this organisation" dialog's pattern) and states plainly
+what's about to happen, rather than the previous single-click destructive menu item -
+CLAUDE.md's own bar for a hard-to-reverse action.
+
+Separately, the sidebar org-switcher (the dropdown listing every org the signed-in user
+belongs to) is now admin/owner-only - an operator or viewer sees the current
+organisation's name as a plain, non-interactive label instead, since switching between
+orgs is a multi-org-management concern only admin/owner ever need.
+
+**Tests.** Two new tests in `test_rls_isolation.py`: an admin removing an operator
+reassigns their in-org campaign to the admin while leaving the operator's own
+(unrelated) organisation's data untouched, and deletes their account entirely; a
+same-rank operator cannot call the function directly, bypassing the API's own
+`Permission.TEAM_REMOVE` check. 242/242 passing overall.
+
+### #70 - `/app/profile` never had `.dark-canvas` applied, and Toast's viewport was never portaled anywhere
+
+**S3 · FIXED · web · `components/layout/app-shell.tsx`, `components/ui/toast.tsx`**
+
+Two more instances of the same family of bug as `#69`, found the same way - direct use, direct
+screenshot. `/app/profile` is `AppShell`'s one "minimal chrome" route (its own layout branch,
+single column, no sidebar) - a genuinely different code path from the normal route's content
+column, and that branch's wrapper `<div>` simply never carried the `.dark-canvas` class the
+normal branch has always applied. Every component on the page was already written correctly
+against generic tokens (`Panel`, `Button`, `Input`); the whole page rendering light was a single
+missing class, not a component-by-component gap.
+
+Separately, `ToastProvider` (mounted at the true root layout, shared by every route) rendered
+its `Viewport` in place - not portaled anywhere, since `@radix-ui/react-toast` has no `Portal`
+export at all (confirmed against its own type declarations), unlike every other Radix primitive
+touched in `#69`. A toast fired from `/app` picked up the light `:root` defaults regardless of
+the page around it, for the same underlying reason as `#69`'s components, just via a different
+mechanism (in-place rendering, not an escaping default portal) and needing a different fix
+(`createPortal` by hand, not a `container` prop).
+
+Full narrative for both, plus three related non-bug design changes shipped alongside them
+(`.dark-chrome`'s background, sidebar divider visibility, the toast success icon) - all product
+asks, not defects - lives in `apps/web/DESIGN_NOTES.md` §18, not duplicated here.
+
+## Iteration 22 - 2026-08-09 · viewer role UI enforcement + invite/toast follow-ups
+
+### #71 - Viewer role had a correct backend and a completely unenforced frontend
+
+**S2 · FIXED · web · `campaign-editor.tsx`, `campaigns/page.tsx`, `campaign-card.tsx`, `runs/page.tsx`, `runs/new/page.tsx`, `contacts/page.tsx`, `app/page.tsx`, `escalation-card.tsx`, `organisation/page.tsx`, `settings/safety/page.tsx`**
+
+`app/auth/permissions.py` has always correctly restricted the viewer role to read-only
+permissions (`_READ_ONLY | runs:read_team`), and every mutating route correctly rejects a
+viewer's request with a 403 - but no page in `/app` checked a permission before rendering
+its action controls. A viewer could open the campaign editor and type into every field,
+click "Start run," "Delete," "Save," "Invite," "Revoke," or "Mark resolved" anywhere in the
+product, and only discover the action was blocked when the request came back rejected.
+
+**Impact.** Actively misleading, not a security hole - the backend never let a write
+through. But CLAUDE.md §4 #9 ("never show a success state for something that did not
+happen") applies just as much to *showing an action as available* when it structurally
+cannot succeed. `settings/safety/page.tsx` had the least coverage of any page in the app:
+zero permission checks of any kind before this fix - anyone could see live Save buttons
+and every field editable regardless of role.
+
+**Fix.** The existing inline `profile.permissions.includes('permission:string')`
+convention (already used correctly on the Contacts page, Organisation's Team pane, and the
+dashboard's Team preview) was extended to every remaining page and action component rather
+than introducing the unused `hasPermission`/`usePermission` helpers in
+`lib/hooks/use-permission.ts`. `campaign-editor.tsx`'s pre-existing `readOnly`/`blocker`
+pair (previously only accounting for built-in templates) was extended rather than
+duplicated: `readOnly = isBuiltIn || !canWrite`, and `blocker` now names the actual reason
+("Your role can view campaigns but not edit them") ahead of the built-in check.
+`runs/new/page.tsx`'s composer is blocked entirely behind a `NotWiredNotice` for anyone
+without `runs:start`, rather than just disabling the final Start button - contact-grid
+interactions (CSV import, paste, add rows) don't persist server-side until Start is
+clicked, but still read as actions a pure viewer shouldn't be invited to take.
+`escalation-card.tsx`'s three actions ("Call back myself," "Reassign," "Mark resolved")
+are gated on `escalations:resolve`; the dashboard's own condensed escalation preview uses a
+separate, already non-interactive row component and needed no change.
+`components/ui/image-upload.tsx` had no `disabled` prop at all - added one, wired to
+`!canUpdate` (`org:update`) on the Organisation page's logo control, matching the org-name
+field beside it that was already correctly gated.
+
+**Verification.** `npm run type-check`, `npm run lint`, and `npm run build` all clean after
+the full sweep. No backend changes - the permission matrix was already correct.
+
+**Depends on / Blocks:** the role-based UI roadmap's Phase 0 (`.superpowers` plan
+`moonlit-orbiting-blum.md`) names this exact gap for campaigns/runs/settings; this closes
+Phase 0's nav-and-page-level piece for the viewer role specifically. Admin/operator-specific
+UI restrictions from that same roadmap (per-teammate data silo, org/Settings nav hiding for
+operator) remain separate, not-yet-started work.
+
+### #72 - Pending invitations showed no pending status in the Team list
+
+**S3 · FIXED · web · `app/(app)/app/organisation/page.tsx`**
+
+`PendingRow` rendered a role tag and a Revoke button for an invited-but-not-yet-accepted
+teammate with nothing marking the row as pending - visually indistinguishable at a glance
+from an active member, aside from the row's position in a separate list the user had to
+already know to look for.
+
+**Fix.** A plain, neutral `<Tag>Pending</Tag>` now renders ahead of the role tag on every
+pending row. Deliberately not a lamp colour - an earlier draft of this fix used
+`--lamp-brass`, caught and reverted before landing, since lamp colours are reserved for
+call state and nothing else (CLAUDE.md §4 #10) and "pending" is an invitation-lifecycle
+label, the same class of thing `Tag` already exists for elsewhere in this table (role tags)
+and on campaign cards (`Template`/`Custom`).
+
+Revoke was checked against the backend as part of the same pass and already fully
+invalidates the invitation - `invitations_repo`'s revoke path deletes the row outright, and
+a revoked token's accept page correctly shows the standard invalid-invitation state. No
+backend change was needed.
+
+### #73 - Toast's §18 fix depended on an element that doesn't exist on every page
+
+**S3 · FIXED · web · `app/globals.css`, `components/ui/toast.tsx` - supersedes half of `#70`/`apps/web/DESIGN_NOTES.md` §18**
+
+`#70`'s Toast fix portaled `Viewport` to `.app-font-scope` (falling back to `document.body`)
+and applied `.dark-overlay` only when `isAppScopeContainer()` confirmed the portal landed
+inside that scope. The "Joined" toast fired from `/accept-invite/[token]` still rendered
+light, because that route is in the `(auth)` group, which never renders `.app-font-scope`
+at all - it's exclusively rendered by `(app)/app/layout.tsx`. There was no element for the
+fallback to detect, so the dark-styling condition was never true on that page, regardless
+of the portal fix working correctly everywhere it actually applied.
+
+**Fix.** New `.toast-dark-overlay` class, applied unconditionally in `ToastItem` regardless
+of the page that fired it. Unlike `.dark-overlay`, it does not reference `var(--dark-*)` -
+those tokens are deliberately declared only inside `.app-font-scope` (see `#69`'s own note
+on why setting a property to an unresolved custom property collapses it to its initial
+value), so a class that must also work where that scope doesn't exist cannot depend on
+them. `.toast-dark-overlay` hardcodes the literal colour values instead - the one
+deliberate exception in this codebase to "reference the token, never the hex," commented
+as such at the declaration site. With theming no longer dependent on DOM position, the
+`createPortal` machinery `#70` added to `ToastProvider` was removed as unneeded complexity;
+`Viewport` renders in place again (unaffected for positioning purposes, since `position:
+fixed` doesn't care about DOM nesting).
+
+**Depends on:** `#70` (this issue corrects that fix's Toast half; the `/app/profile`
+`.dark-canvas` half of `#70` is unaffected and unchanged).
+
+---
+
+## Iteration 23 - 2026-08-09 · runs-feature audit follow-through: idempotency, cancel, crash recovery
 
 Implementing the P0/P1 findings from a systematic audit of the Runs feature (backend
 orchestration, safety gate, and frontend run pages), requested and implemented in the
 same session. Closes #8 and #54 above; four new findings from the same audit follow.
 
-### #55 - `POST /runs` had no idempotency key - a retried request could start a second real run
+**Merge note (arbaaz/role-handling → jatin/config-resend):** this iteration's #74 fixed
+the same idempotency/`_calls_made` gap as #54 independently of it-16/it-17's module 3/4
+work above, with the same key formula. See `campaign_runner.py`'s own merge commentary for
+which implementation the merged code actually keeps.
+
+### #74 - `POST /runs` had no idempotency key - a retried request could start a second real run
 
 **S2 · FIXED · backend + web · `app/api/v1/routes/runs.py`, `app/database/repositories/runs.py`, `apps/web/lib/api.ts`, `apps/web/app/(app)/app/runs/new/page.tsx`**
 
@@ -1966,10 +2726,10 @@ success.
 
 **Verified.** `tests/test_run_stats.py` n/a here; verified directly against the real
 database with a standalone script exercising `create_run`/`get_run_by_idempotency_key`
-under a repeated key, a fresh key, and a `None` key - see #56-#58 for the same
+under a repeated key, a fresh key, and a `None` key - see #75-#77 for the same
 verification pass. `npm run type-check`/lint/build clean.
 
-### #56 - A run in progress when the API restarted stayed "running" forever
+### #75 - A run in progress when the API restarted stayed "running" forever
 
 **S2 · FIXED · backend · `app/database/repositories/runs.py`, `app/main.py`**
 
@@ -1994,7 +2754,7 @@ Failed with an honest message: "The service restarted before this run finished."
 the log line `"reaped 1 run(s) left running by a previous process"` and the row landing on
 `status='failed'` with the expected error text.
 
-### #57 - There was no way to actually stop a run once started
+### #76 - There was no way to actually stop a run once started
 
 **S2 · FIXED · backend + web · `app/api/v1/routes/runs.py`, `app/services/campaign_runner.py`, `apps/web/app/(app)/app/runs/[id]/page.tsx`**
 
@@ -2026,7 +2786,7 @@ reached get no outcome row at all. Verified `request_cancel`/`is_cancel_requeste
 directly against the real database: idempotent on a second call, rejects a different
 org, rejects a run that's already finished. `npm run type-check`/lint/build clean.
 
-### #58 - A suppressed contact still reserved rate-limit and daily-budget it would never use
+### #77 - A suppressed contact still reserved rate-limit and daily-budget it would never use
 
 **S3 · FIXED · backend · `app/api/v1/routes/runs.py`**
 
@@ -2052,14 +2812,14 @@ parameter's behaviour.
 
 ---
 
-## Iteration 15 - 2026-08-09 · run composer rebuild: contacts UX, phone validation, per-run guards
+## Iteration 24 - 2026-08-09 · run composer rebuild: contacts UX, phone validation, per-run guards
 
 Requested directly: replace the contact grid's Paste/Use-sample buttons with a downloadable
 sample CSV, add real input-level phone validation, audit the "Remove all invalid" button's
 underlying logic, redesign the whole run-composer page, and add per-run safety overrides on top
 of the organisation's own settings.
 
-### #59 - A hand-typed phone number could show valid in the grid while failing E.164 at submission
+### #78 - A hand-typed phone number could show valid in the grid while failing E.164 at submission
 
 **S2 · FIXED · web · `apps/web/components/app/contact-grid.tsx`, `apps/web/lib/contacts.ts`**
 
@@ -2146,14 +2906,14 @@ untouched regardless of what's overridden. 189 backend tests pass (7 new), `ruff
 
 ---
 
-## Iteration 16 - 2026-08-09 · per-run guard audit trail
+## Iteration 25 - 2026-08-09 · per-run guard audit trail
 
-Raised directly, following on from it-14's per-run overrides: nothing recorded what guards
+Raised directly, following on from it-23's per-run overrides: nothing recorded what guards
 actually governed a given run, so once an organisation's Settings → Safety changed, no past
 run's real ceiling/allowlist/rate/budget could be reconstructed - not even for a run that
 never used a per-run override at all.
 
-### #60 - A run's actual guards were never recorded, so past runs became unauditable once settings changed
+### #79 - A run's actual guards were never recorded, so past runs became unauditable once settings changed
 
 **S2 · FIXED · backend + web · `app/database/repositories/runs.py`, `app/api/v1/routes/runs.py`, `apps/web/components/app/safety-bar.tsx`, `apps/web/app/(app)/app/runs/[id]/page.tsx`**
 
@@ -2162,7 +2922,7 @@ deployment defaults fresh on every read - there was never a point where the *res
 that merge, for a specific run, was written down anywhere. For a product whose whole
 premise is that the guards are real and enforced, that is a genuine audit gap: nothing
 could answer "what ceiling actually governed this run" after the fact, for any run, not
-just ones with a per-run override (it-14, #55-#58).
+just ones with a per-run override (it-23, #74-#77).
 
 **Impact.** If a run's behaviour was ever questioned - "why did this only dial 3 people,"
 "prove it respected the allowlist you'd set" - there was no way to answer from the data
@@ -2188,12 +2948,12 @@ round-trips exactly; an empty ("unrestricted") allowlist round-trips as `[]`, di
 every snapshot field `null`, not a fabricated default. 189 backend tests pass, `ruff`
 clean, frontend `type-check`/lint/build all clean.
 
-**Depends on / Blocks:** builds on #55-#58 (it-14, the per-run override this now makes
+**Depends on / Blocks:** builds on #74-#77 (it-23, the per-run override this now makes
 permanently auditable).
 
 ---
 
-## Iteration 17 - 2026-08-09 · dashboard/runs/contacts/escalations UI pass, call-duration bug
+## Iteration 26 - 2026-08-09 · dashboard/runs/contacts/escalations UI pass, call-duration bug
 
 Nine UI/UX changes requested directly against the dashboard, run detail page, contacts
 page, and the "Needs a person" (escalations) worklist. Two of the nine surfaced real bugs
@@ -2201,7 +2961,7 @@ in the course of implementation rather than being pure preference; both are numb
 The rest were requested UX changes, not bugs, and are logged as a narrative batch afterward
 per the existing pattern (`## Visual and architecture work landed this round`, it-11).
 
-### #61 - Call duration was never visible anywhere, because the field it was read from doesn't exist in CALL-E's response
+### #80 - Call duration was never visible anywhere, because the field it was read from doesn't exist in CALL-E's response
 
 **S2 · FIXED · backend · `app/services/campaign_runner.py`, `apps/api/tests/test_orchestrator.py`**
 
@@ -2239,7 +2999,7 @@ touched by anything in this iteration.
 
 ---
 
-### #62 - A long filter value overflowed the Select trigger and broke the escalations filter-row layout
+### #81 - A long filter value overflowed the Select trigger and broke the escalations filter-row layout
 
 **S2 · FIXED · web · `components/ui/select.tsx`, `app/(app)/app/escalations/page.tsx`**
 
@@ -2277,7 +3037,7 @@ second unstyled span. `overflow-hidden` was also added to the trigger itself as 
 so any future case that still slips past `truncate` clips instead of visibly growing the
 box into the content below it.
 
-**Verified.** `type-check`/`lint`/`build` all clean (it-18).
+**Verified.** `type-check`/`lint`/`build` all clean (it-27).
 
 **Depends on / Blocks:** none. Superseded its own first fix - see attempt 2 above.
 
@@ -2294,7 +3054,7 @@ The remaining seven requested changes, none of which were bugs:
   (functional, unavoidable) and still round-trips through the API; only the visible
   `font-mono` display in the page header was removed.
 - **"Guards for this run" panel removed from the run detail page**, per explicit request.
-  This reverses only the *display* added in it-16 (#60) - the underlying
+  This reverses only the *display* added in it-25 (#79) - the underlying
   `safety_snapshot` columns are untouched, still written by `create_run()`, and still
   returned by `GET /api/v1/runs/{id}`; the data just isn't rendered on this page anymore.
   Nothing about dial-time enforcement changed: the allowlist, per-run ceiling, rate limit,
@@ -2333,27 +3093,27 @@ The remaining seven requested changes, none of which were bugs:
 **Verification for the whole batch:** frontend `type-check`/`lint`/`build` all clean (the
 `set-state-in-effect` error above and one unescaped-apostrophe lint error were both
 introduced and fixed within this same round, not pre-existing). Backend: 193 passed, 3
-pre-existing/unrelated failures (see #61), `ruff` clean.
+pre-existing/unrelated failures (see #80), `ruff` clean.
 
 ---
 
-## Iteration 18 - 2026-08-09 · duration still missing after #61, filter dropdown still breaking after #62
+## Iteration 27 - 2026-08-09 · duration still missing after #80, filter dropdown still breaking after #81
 
-User-reported follow-up, same day as it-17: duration was still showing "-" in the contacts
-table after #61 shipped, and the escalations filter dropdown was still visibly breaking
-after #62 shipped. Both turned out to be real, distinct problems the first fix didn't
+User-reported follow-up, same day as it-26: duration was still showing "-" in the contacts
+table after #80 shipped, and the escalations filter dropdown was still visibly breaking
+after #81 shipped. Both turned out to be real, distinct problems the first fix didn't
 reach - not the same bug recurring, and not user error. Investigated by querying the
 production database directly (read-only) for the actual stored rows, then re-fetching each
 call's real, current state straight from CALL-E using its own `provider_call_id` (a status
 re-read, not a new call) to compare against what got persisted at the time.
 
-### #63 - A call's own top-level `status` can go terminal before its nested attempt's `completed_at` does, permanently freezing `duration_seconds` at `None`
+### #82 - A call's own top-level `status` can go terminal before its nested attempt's `completed_at` does, permanently freezing `duration_seconds` at `None`
 
 **S2 · FIXED · backend · `app/services/campaign_runner.py`, `apps/api/tests/test_orchestrator.py`**
 
-#61 fixed the extraction *formula* - and it is correct: re-running `_extract_duration()`
+#80 fixed the extraction *formula* - and it is correct: re-running `_extract_duration()`
 by hand against a real, freshly-re-fetched call (`call_rNS2f5FQn-Py0ElQx0UxeQ`, processed
-*after* #61's fix was already live) returned `0.0`, the right answer for that call's
+*after* #80's fix was already live) returned `0.0`, the right answer for that call's
 same-second decline. The database, though, still had `duration_seconds = None` for that
 exact row. The only place a snapshot of the same call could disagree with itself is the
 moment `_poll_until_done()` first accepted a terminal response: it returns the instant the
@@ -2379,10 +3139,10 @@ before dialing) costs a few extra seconds once, not a hang.
 settled value; one whose duration never settles at all, confirming the call still resolves
 (with `duration_seconds` left `None`) rather than hanging. 51/51 orchestrator tests pass;
 full suite 195 passed, `ruff` clean. Same 3 pre-existing `test_rls_isolation.py` failures
-as it-17 (`create_or_refresh_invitation` missing on the shared dev database) - unrelated,
+as it-26 (`create_or_refresh_invitation` missing on the shared dev database) - unrelated,
 not touched here.
 
-**Depends on / Blocks:** follow-up to #61 (it-17); same underlying eventual-consistency
+**Depends on / Blocks:** follow-up to #80 (it-26); same underlying eventual-consistency
 class as #53 (it-13).
 
 ---
@@ -2390,7 +3150,7 @@ class as #53 (it-13).
 ## Also landed this round (not bugs)
 
 - **Escalation card's "Why it's here" section un-boxed.** The `bg-surface-sunken` panel
-  background added around the reasoning chain in it-17 read as heavier chrome than the
+  background added around the reasoning chain in it-26 read as heavier chrome than the
   "Last thing they said"/"Summary" sections next to it, rather than a matching third
   section - removed so all three share the same plain label-then-content rhythm.
 - **Runs page search bar collapsed to match `/app/campaigns`.** `/app/runs` rendered its

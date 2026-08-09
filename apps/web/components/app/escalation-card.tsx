@@ -10,6 +10,7 @@ import { MaskedPhone } from './masked-phone';
 import type { Outcome } from '@/lib/api';
 import { useAppStore } from '@/lib/app-store';
 import { formatAge, formatDuration, formatTimestamp } from '@/lib/format';
+import { useSession } from '@/lib/hooks/use-session';
 
 /**
  * One item in the escalation worklist.
@@ -30,6 +31,10 @@ export function EscalationCard({
 }) {
   const toast = useToast();
   const { resolveEscalation, campaigns } = useAppStore();
+  const session = useSession();
+  const canResolve =
+    session.status === 'signed-in' &&
+    session.profile.permissions.includes('escalations:resolve');
 
   const chain = buildChain(outcome);
   const campaign = campaigns.find((c) => c.id === outcome.campaign_id);
@@ -140,53 +145,57 @@ export function EscalationCard({
             Open transcript
           </Button>
         ) : null}
-        <Button
-          variant="secondary"
-          size="sm"
-          onClick={() =>
-            toast({
-              tone: 'info',
-              title: "Calling back isn't wired up yet",
-              body: `Dial ${outcome.contact_name} from your own phone - the number is on this card.`,
-            })
-          }
-        >
-          Call back myself
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() =>
-            toast({
-              tone: 'info',
-              title: "Assignment isn't wired up yet",
-              body: 'Team assignment arrives with multi-seat accounts.',
-            })
-          }
-        >
-          Reassign
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => {
-            // Resolution isn't persisted anywhere yet (ISSUES.md #7) - `resolveEscalation`
-            // only drops this outcome from the shared `escalations` list for the rest of
-            // this session, which is what actually makes the worklist, the dashboard
-            // panel, and the nav badge update immediately. The toast says exactly that
-            // instead of implying it was saved, matching "Call back myself"/"Reassign"
-            // above - and there is no "Resolved" state to show here afterward, since this
-            // card unmounts the moment its outcome drops out of that list.
-            resolveEscalation(outcome);
-            toast({
-              tone: 'info',
-              title: 'Hidden for now, not saved',
-              body: "This comes back if you reload - resolution tracking isn't wired up yet.",
-            });
-          }}
-        >
-          Mark resolved
-        </Button>
+        {canResolve ? (
+          <>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() =>
+                toast({
+                  tone: 'info',
+                  title: "Calling back isn't wired up yet",
+                  body: `Dial ${outcome.contact_name} from your own phone - the number is on this card.`,
+                })
+              }
+            >
+              Call back myself
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() =>
+                toast({
+                  tone: 'info',
+                  title: "Assignment isn't wired up yet",
+                  body: 'Team assignment arrives with multi-seat accounts.',
+                })
+              }
+            >
+              Reassign
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                // Resolution isn't persisted anywhere yet (ISSUES.md #7) - `resolveEscalation`
+                // only drops this outcome from the shared `escalations` list for the rest of
+                // this session, which is what actually makes the worklist, the dashboard
+                // panel, and the nav badge update immediately. The toast says exactly that
+                // instead of implying it was saved, matching "Call back myself"/"Reassign"
+                // above - and there is no "Resolved" state to show here afterward, since this
+                // card unmounts the moment its outcome drops out of that list.
+                resolveEscalation(outcome);
+                toast({
+                  tone: 'info',
+                  title: 'Hidden for now, not saved',
+                  body: "This comes back if you reload - resolution tracking isn't wired up yet.",
+                });
+              }}
+            >
+              Mark resolved
+            </Button>
+          </>
+        ) : null}
       </div>
     </Wrapper>
   );

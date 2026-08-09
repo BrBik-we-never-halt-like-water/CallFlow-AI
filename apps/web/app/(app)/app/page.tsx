@@ -119,6 +119,9 @@ export default function OverviewPage() {
   const canInvite =
     session.status === 'signed-in' &&
     session.profile.permissions.includes('team:invite');
+  const canStart =
+    session.status === 'signed-in' &&
+    session.profile.permissions.includes('runs:start');
 
   const settled = useMemo(
     () => outcomes.filter((o) => o.disposition !== 'in_flight'),
@@ -212,7 +215,7 @@ export default function OverviewPage() {
           className="dark-canvas absolute -inset-x-4 -inset-y-6 -z-10 sm:-inset-x-6"
         />
         <div className="flex flex-col gap-6">
-          <PageTitle session={session} />
+          <PageTitle session={session} canStart={canStart} />
           <ConnectionBanner phase={phase} />
           {phase !== 'down' ? <LoadingSkeleton /> : null}
         </div>
@@ -240,7 +243,7 @@ export default function OverviewPage() {
       />
 
       <div className="flex flex-col gap-6">
-        <PageTitle session={session} />
+        <PageTitle session={session} canStart={canStart} />
         <ConnectionBanner phase={phase} />
 
         {/* ---- The Twisty-mapped grid: ~60/40, left column a hero chart over
@@ -310,7 +313,7 @@ export default function OverviewPage() {
               }
             >
               <TeamPreview canInvite={canInvite} />
-              {runs.length > 0 ? null : <NextMoveCard />}
+              {runs.length > 0 ? null : <NextMoveCard canStart={canStart} />}
             </div>
           </div>
 
@@ -416,9 +419,11 @@ export default function OverviewPage() {
                 title="Nothing has been dialled yet"
                 body="Add contacts and start a run."
                 action={
-                  <Button asChild style={PRIMARY_CTA_STYLE}>
-                    <Link href="/app/runs/new">Start a run</Link>
-                  </Button>
+                  canStart ? (
+                    <Button asChild style={PRIMARY_CTA_STYLE}>
+                      <Link href="/app/runs/new">Start a run</Link>
+                    </Button>
+                  ) : undefined
                 }
               />
             ) : (
@@ -464,9 +469,11 @@ export default function OverviewPage() {
               title="No runs yet"
               body="Runs are how contacts get called."
               action={
-                <Button asChild size="sm" style={PRIMARY_CTA_STYLE}>
-                  <Link href="/app/runs/new">Start a run</Link>
-                </Button>
+                canStart ? (
+                  <Button asChild size="sm" style={PRIMARY_CTA_STYLE}>
+                    <Link href="/app/runs/new">Start a run</Link>
+                  </Button>
+                ) : undefined
               }
             />
           ) : (
@@ -771,7 +778,7 @@ function TeamPreview({ canInvite }: { canInvite: boolean }) {
  * once any run exists, `TeamPreview` grows to fill this row instead (this
  * card's other message, "Bring in a teammate", was a second invite entry
  * point duplicating `TeamPreview`'s own "+" - retired, not repurposed). */
-function NextMoveCard() {
+function NextMoveCard({ canStart }: { canStart: boolean }) {
   return (
     <Panel className="dark-panel-glass flex flex-col gap-3 p-5 sm:p-6">
       <span className="flex size-10 items-center justify-center rounded-full bg-dark-accent/15">
@@ -785,14 +792,22 @@ function NextMoveCard() {
           Add contacts and start a run.
         </p>
       </div>
-      <Button asChild size="sm" className="mt-1 self-start" style={PRIMARY_CTA_STYLE}>
-        <Link href="/app/runs/new">Start a run</Link>
-      </Button>
+      {canStart ? (
+        <Button asChild size="sm" className="mt-1 self-start" style={PRIMARY_CTA_STYLE}>
+          <Link href="/app/runs/new">Start a run</Link>
+        </Button>
+      ) : null}
     </Panel>
   );
 }
 
-function PageTitle({ session }: { session: ReturnType<typeof useSession> }) {
+function PageTitle({
+  session,
+  canStart,
+}: {
+  session: ReturnType<typeof useSession>;
+  canStart: boolean;
+}) {
   return (
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div className="flex flex-col gap-1">
@@ -802,9 +817,11 @@ function PageTitle({ session }: { session: ReturnType<typeof useSession> }) {
         <Button asChild variant="secondary">
           <Link href="/app/campaigns">Campaigns</Link>
         </Button>
-        <Button asChild style={PRIMARY_CTA_STYLE}>
-          <Link href="/app/runs/new">Start a run</Link>
-        </Button>
+        {canStart ? (
+          <Button asChild style={PRIMARY_CTA_STYLE}>
+            <Link href="/app/runs/new">Start a run</Link>
+          </Button>
+        ) : null}
       </div>
     </div>
   );
