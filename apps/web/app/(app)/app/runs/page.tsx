@@ -74,9 +74,9 @@ const DARK_SCOPE_VARS: React.CSSProperties = {
   '--lamp-flare-text': 'var(--dark-lamp-flare-text)',
 } as React.CSSProperties;
 
-const STATUS_FILTERS = (['running', 'completed', 'failed'] as RunStatus[]).map(
-  (value) => ({ value, label: lampForRunStatus(value).label }),
-);
+const STATUS_FILTERS = (
+  ['running', 'canceling', 'canceled', 'completed', 'failed'] as RunStatus[]
+).map((value) => ({ value, label: lampForRunStatus(value).label }));
 
 export default function RunsPage() {
   const router = useRouter();

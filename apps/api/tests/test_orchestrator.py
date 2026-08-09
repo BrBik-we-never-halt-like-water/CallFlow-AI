@@ -200,6 +200,77 @@ async def test_run_processes_every_contact() -> None:
     assert len(await runner.run(TRAVEL_DISCOVERY, contacts)) == 2
 
 
+async def test_idempotency_key_is_stable_per_run_and_contact_not_random() -> None:
+    """ISSUES.md #54: a freshly-random suffix per attempt defeated the whole
+    point of an idempotency key. It must depend only on the run id and the
+    contact - calling the same contact twice in one run (or once via two
+    separate CampaignRunner calls sharing a run_id) must produce the same
+    key both times, and different runs must never collide."""
+    seen_keys: list[str] = []
+
+    class RecordingGateway:
+        def start_call(self, **kwargs: Any) -> dict[str, Any]:
+            seen_keys.append(kwargs["idempotency_key"])
+            return {"id": "call_test123", "status": "queued"}
+
+        def get_call(self, call_id: str) -> dict[str, Any]:
+            return {"id": call_id, "status": "completed", "structured_result": {}}
+
+    contact = Contact(name="A", phone="+15555550100")
+    runner = CampaignRunner(gateway=RecordingGateway(), run_id="run_abc")  # type: ignore[arg-type]
+    await runner.run_one(TRAVEL_DISCOVERY, contact)
+    await runner.run_one(TRAVEL_DISCOVERY, contact)
+
+    assert len(seen_keys) == 2
+    assert seen_keys[0] == seen_keys[1]
+
+    other_run = CampaignRunner(gateway=RecordingGateway(), run_id="run_xyz")  # type: ignore[arg-type]
+    await other_run.run_one(TRAVEL_DISCOVERY, contact)
+    assert seen_keys[2] != seen_keys[0]
+
+
+async def test_calls_made_increments_even_when_the_dial_itself_raises() -> None:
+    """ISSUES.md #54: counting only *confirmed successes* left a
+    connection-drop retry uncounted against the per-run ceiling, even though
+    the vendor may already have placed the call. Counting the attempt - not
+    the confirmed result - is the fail-closed choice."""
+    from app.integrations.voice.engine import EngineConnectionError
+
+    runner = CampaignRunner(gateway=FailingGateway(EngineConnectionError("dropped")))  # type: ignore[arg-type]
+    assert runner._calls_made == 0
+    await runner.run_one(TRAVEL_DISCOVERY, Contact(name="A", phone="+15555550100"))
+    assert runner._calls_made == 1
+
+
+async def test_run_stops_early_when_should_cancel_returns_true() -> None:
+    """A canceled run dials no further contacts once should_cancel() flips -
+    but never mid-contact, only between them (see `run()`'s own docstring)."""
+    runner = CampaignRunner(gateway=FakeGateway())  # type: ignore[arg-type]
+    contacts = [
+        Contact(name="A", phone="+15555550100"),
+        Contact(name="B", phone="+15555550101"),
+        Contact(name="C", phone="+15555550102"),
+    ]
+
+    calls = {"n": 0}
+
+    async def should_cancel() -> bool:
+        calls["n"] += 1
+        return calls["n"] > 1  # let the first contact through, then stop
+
+    outcomes = await runner.run(TRAVEL_DISCOVERY, contacts, should_cancel=should_cancel)
+
+    assert len(outcomes) == 1
+    assert outcomes[0].contact_name == "A"
+    assert runner.canceled is True
+
+
+async def test_run_is_not_canceled_when_it_finishes_on_its_own() -> None:
+    runner = CampaignRunner(gateway=FakeGateway())  # type: ignore[arg-type]
+    await runner.run(TRAVEL_DISCOVERY, [Contact(name="A", phone="+15555550100")])
+    assert runner.canceled is False
+
+
 async def test_progress_hook_fires_per_contact() -> None:
     """Each contact fires at least once - a "dialing" event, then the resolved
     outcome - and always in contact order, never interleaved."""

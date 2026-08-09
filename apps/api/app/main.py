@@ -20,7 +20,8 @@ from app.api.v1.routes.runs import router as runs_router
 from app.api.v1.routes.safety import router as safety_router
 from app.api.v1.routes.suppressions import router as suppressions_router
 from app.core.config import config
-from app.database import database
+from app.database import database, privileged
+from app.database.repositories import runs as runs_repo
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("app.main")
@@ -35,6 +36,17 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     """
     try:
         await database.connect()
+        # Every run's dial loop lives inside one BackgroundTasks coroutine in
+        # one process (F18) - there is no queue or worker that could have
+        # kept a "running" row moving across a restart. A row still marked
+        # running the moment this process boots was being driven by the
+        # *previous* process, which is now gone, so it is orphaned by
+        # definition - not a guess based on how long it's been running.
+        # Cross-org, hence `privileged`, not `as_user` (no request, no user).
+        async with privileged.acquire("startup: fail runs orphaned by a restart") as conn:
+            reaped = await runs_repo.reap_orphaned_runs(conn)
+        if reaped:
+            log.warning("reaped %d run(s) left running by a previous process", reaped)
     except Exception:
         log.exception("database unavailable at startup - auth endpoints will fail")
 

@@ -35,7 +35,7 @@ exist in this repo**; `SYSTEM.md` §12 is the closest real gap map until it's wr
 | [#5](#5--rate-limits-and-daily-budget-are-per-process-and-reset-on-restart)                                                       | S2  | Rate limits reset on restart, not shared                                                                              | backend        | it-1  | **PARTLY FIXED** |
 | [#6](#6--three-high-severity-npm-advisories)                                                                                      | S2  | Three high-severity npm advisories                                                                                    | web            | it-1  | OPEN             |
 | [#7](#7--escalation-resolution-is-component-state)                                                                                | S3  | Escalation resolution is component state                                                                              | web            | it-1  | **PARTLY FIXED** |
-| [#8](#8--stats-mixes-denominators)                                                                                                | S3  | `stats` mixes denominators                                                                                            | backend        | it-1  | OPEN             |
+| [#8](#8--stats-mixes-denominators)                                                                                                | S3  | `stats` mixes denominators                                                                                            | backend        | it-1  | **FIXED**        |
 | [#9](#9--renderyaml-contradicts-the-real-deployment)                                                                              | S3  | `render.yaml` contradicts the real deployment                                                                         | infra          | it-1  | **FIXED**        |
 | [#10](#10--no-frontend-tests)                                                                                                     | S3  | No frontend tests                                                                                                     | web            | it-1  | OPEN             |
 | [#11](#11--escalate_on_negative-is-misnamed)                                                                                      | S4  | `escalate_on_negative` is misnamed                                                                                    | backend        | it-1  | OPEN             |
@@ -81,7 +81,11 @@ exist in this repo**; `SYSTEM.md` §12 is the closest real gap map until it's wr
 | [#51](#51--team-invitations-failed-outright--the-from-domain-was-never-verified-in-resend-and-the-error-leaked-a-raw-httpx-dump)  | S2  | Team invitations failed outright - the from-domain was never verified in Resend                                       | backend + docs | it-12 | **PARTLY FIXED** |
 | [#52](#52--transcript-extraction-read-a-top-level-key-that-doesnt-exist-anywhere-in-call-es-real-response)                        | S2  | Transcript extraction read a top-level key that doesn't exist anywhere in CALL-E's real response                      | backend        | it-13 | **FIXED**        |
 | [#53](#53--one-flaky-status-poll-could-mark-an-entire-successfully-completed-call-as-failed)                                      | S2  | One flaky status poll could mark an entire, successfully-completed call as failed                                     | backend        | it-13 | **FIXED**        |
-| [#54](#54--a-retried-call-after-a-connection-error-classification-could-double-dial-without-counting-against-the-per-run-ceiling) | S3  | A retried call after a connection-error classification could double-dial without counting against the per-run ceiling | backend        | it-13 | OPEN             |
+| [#54](#54--a-retried-call-after-a-connection-error-classification-could-double-dial-without-counting-against-the-per-run-ceiling) | S3  | A retried call after a connection-error classification could double-dial without counting against the per-run ceiling | backend        | it-13 | **FIXED**        |
+| [#55](#55--postruns-had-no-idempotency-key-a-retried-request-could-start-a-second-real-run)                                       | S2  | `POST /runs` had no idempotency key - a retried request could start a second real run                                 | backend + web  | it-14 | **FIXED**        |
+| [#56](#56--a-run-in-progress-when-the-api-restarted-stayed-running-forever)                                                       | S2  | A run in progress when the API restarted stayed "running" forever                                                     | backend        | it-14 | **FIXED**        |
+| [#57](#57--there-was-no-way-to-actually-stop-a-run-once-started)                                                                  | S2  | There was no way to actually stop a run once started                                                                  | backend + web  | it-14 | **FIXED**        |
+| [#58](#58--a-suppressed-contact-still-reserved-rate-limit-and-daily-budget-it-would-never-use)                                    | S3  | A suppressed contact still reserved rate-limit and daily-budget it would never use                                    | backend        | it-14 | **FIXED**        |
 
 ---
 
@@ -266,7 +270,7 @@ back. Actively worse than no button, because it implies work was saved.
 
 ### #8 - `stats` mixes denominators
 
-**S3 · OPEN · backend · `callflow/api.py`**
+**S3 · FIXED in it-14 · backend · `app/api/v1/routes/runs.py`**
 
 In `get_run`, `escalated` is counted over `resolved` outcomes, but `auto_closed` and
 `needs_human_pct` are counted over **all** outcomes including `in_flight`.
@@ -275,6 +279,12 @@ In `get_run`, `escalated` is counted over `resolved` outcomes, but `auto_closed`
 reads lower than it is while a run is live. Settles correctly once the run finishes.
 
 **Fix.** Compute every stat over `resolved`, and expose `in_flight` as its own count.
+
+**Fixed in it-14.** Extracted into a pure `_compute_stats(outcomes, total)` helper -
+`completed`, `escalated`, `auto_closed`, and `needs_human_pct` are all now computed over
+`resolved` only, and `in_flight` is its own field in the response rather than folded into
+either side of a percentage. Split out as a pure function specifically so the fix is
+testable with plain dicts (`tests/test_run_stats.py`), no database required.
 
 ---
 
@@ -1878,7 +1888,7 @@ addition. `pytest -q` and `ruff check app tests` pass.
 
 ### #54 - A retried call after a connection-error classification could double-dial without counting against the per-run ceiling
 
-**S3 · OPEN · backend · `apps/api/app/services/campaign_runner.py`**
+**S3 · FIXED in it-14 · backend · `apps/api/app/services/campaign_runner.py`**
 
 Flagged by the same review pass that found the gaps in `#53`, as a narrow follow-up risk
 rather than an active bug - no code change accompanies this entry. Since `#53`'s fix, a
@@ -1911,6 +1921,131 @@ own deliberate pass rather than a drive-by fix.
 **Depends on / Blocks:** related to `CALLE_INTEGRATION_STATUS.md` §3.5 (idempotency key
 regenerated per attempt) and `#53` (introduced the reclassification that makes this
 reachable).
+
+**Fixed in it-14** - both suggested fixes landed together: the idempotency key is now
+`f"{run_id}-{contact.phone}"`, stable for the life of a `CampaignRunner` instead of a
+fresh `uuid.uuid4()` suffix every call, and `_calls_made` now increments right after the
+safety gate passes, before `start_call()` is sent, not after it returns. See #55-#58.
+
+## Iteration 14 - 2026-08-09 · runs-feature audit follow-through: idempotency, cancel, crash recovery
+
+Implementing the P0/P1 findings from a systematic audit of the Runs feature (backend
+orchestration, safety gate, and frontend run pages), requested and implemented in the
+same session. Closes #8 and #54 above; four new findings from the same audit follow.
+
+### #55 - `POST /runs` had no idempotency key - a retried request could start a second real run
+
+**S2 · FIXED · backend + web · `app/api/v1/routes/runs.py`, `app/database/repositories/runs.py`, `apps/web/lib/api.ts`, `apps/web/app/(app)/app/runs/new/page.tsx`**
+
+`POST /api/v1/runs` is a mutating endpoint that dials real phones, with no
+`Idempotency-Key` support - a network-level retry, a double-submit, or a programmatic
+`cfk_…` caller retrying after a timeout had no way to avoid starting a second, independent
+batch of real calls against the same contacts. Direct violation of `CLAUDE.md`
+non-negotiable #6 ("every mutating endpoint... safe to run twice").
+
+**Impact.** Low-probability from the web client (the Start button disables itself while
+the request is in flight, and the fetch client makes no automatic retries) but real for
+any programmatic caller, and the consequence of it firing is a second real phone call to
+a real person, not just a duplicate row.
+
+**Fix.** `public.runs` gained a nullable `idempotency_key` column and a partial unique
+index on `(org_id, idempotency_key) where idempotency_key is not null` (migration
+`f2a8c6e1d9b4`). `start_run()` checks for an existing run under the caller's
+`Idempotency-Key` header before doing anything else - a replay returns the original run
+untouched, with no new dial, no rate-limit charge, no second row. A race between two
+identically-keyed concurrent requests is resolved by `create_run()`'s `on conflict ...
+do nothing returning id`: the loser detects `created = False`, releases the rate-limit
+slots it had reserved, and returns the winner's run instead. The web client now generates
+a UUID once per submit attempt and keeps it across a failed retry, clearing it only on
+success.
+
+**Verified.** `tests/test_run_stats.py` n/a here; verified directly against the real
+database with a standalone script exercising `create_run`/`get_run_by_idempotency_key`
+under a repeated key, a fresh key, and a `None` key - see #56-#58 for the same
+verification pass. `npm run type-check`/lint/build clean.
+
+### #56 - A run in progress when the API restarted stayed "running" forever
+
+**S2 · FIXED · backend · `app/database/repositories/runs.py`, `app/main.py`**
+
+A run's dial loop lives entirely inside one `BackgroundTasks` coroutine in one process
+(`SYSTEM.md` F18) - there is no queue or worker that could keep it going across a
+restart, and CI deploys on every push to `main`. A run interrupted by a routine deploy
+had no path to ever leave `running`.
+
+**Impact.** A run stuck on `running` indefinitely looks identical, from the dashboard's
+point of view, to one that's still genuinely in progress - nothing ever tells the
+operator it died.
+
+**Fix.** `reap_orphaned_runs()` runs once, cross-org, in `main.py`'s startup `lifespan`
+hook via `privileged.acquire()` (the whole point of this call needing to run before any
+request lands and across every organisation, not one). The reasoning is structural, not
+a timeout guess: any row still `running`/`canceling` the moment this process boots was
+being driven by the *previous* process, which is now gone - it is orphaned by definition.
+Failed with an honest message: "The service restarted before this run finished."
+
+**Verified.** Ran the real `lifespan()` context manager directly against a stale
+`running` row inserted by hand (not via a real dial - no calling budget spent): confirmed
+the log line `"reaped 1 run(s) left running by a previous process"` and the row landing on
+`status='failed'` with the expected error text.
+
+### #57 - There was no way to actually stop a run once started
+
+**S2 · FIXED · backend + web · `app/api/v1/routes/runs.py`, `app/services/campaign_runner.py`, `apps/web/app/(app)/app/runs/[id]/page.tsx`**
+
+"Pause run" (the only control on the live run page) only stopped the browser from
+polling for updates - it never stopped a call, and there was no cancel endpoint anywhere
+in the backend (this gap was already known and honestly labelled after `#39`, but never
+closed).
+
+**Impact.** Starting a run against the wrong contact list had no way to be stopped once
+under way.
+
+**Fix.** New `POST /api/v1/runs/{run_id}/cancel` (reuses `Permission.RUNS_START` -
+whoever may spend the organisation's money starting a run may stop one early). Sets
+`runs.status = 'canceling'` and `cancel_requested_at` immediately, visible right away.
+`CampaignRunner.run()` takes an optional `should_cancel` hook, checked **between**
+contacts only - there is no way to interrupt a call already in conversation (the voice
+engine has no cancel operation, confirmed in `VOICE_AGENT_PLATFORM.md`), so the honest
+guarantee is "no further contacts are dialled," not "stops instantly." The run then lands
+on a new terminal `canceled` status, distinct from `completed`/`failed`. Frontend: a real
+"Cancel run" button with a confirm dialog next to "Pause run," `canceling`/`canceled`
+added to `RunStatus` and `lampForRunStatus` (rendered in the neutral `off` lamp colour,
+not a new one - the five lamp colours stay reserved for call-state meaning), and the
+run-detail/dashboard poll loops extended to keep polling through `canceling` instead of
+stopping the instant status leaves `running`.
+
+**Verified.** `tests/test_orchestrator.py`: `run()` stops after the contact in progress
+when `should_cancel` flips, contacts already dialled keep their outcomes, contacts never
+reached get no outcome row at all. Verified `request_cancel`/`is_cancel_requested`
+directly against the real database: idempotent on a second call, rejects a different
+org, rejects a run that's already finished. `npm run type-check`/lint/build clean.
+
+### #58 - A suppressed contact still reserved rate-limit and daily-budget it would never use
+
+**S3 · FIXED · backend · `app/api/v1/routes/runs.py`**
+
+`start_run()` called `limiter.check(calls=len(contacts), ...)` before resolving which
+contacts were suppressed - `check_dial_allowed()` skips a suppressed contact regardless,
+so a run half full of suppressed numbers still burned that many slots from the daily
+budget and rate window for calls that were never going to be placed.
+
+**Impact.** Wasted a safety-critical, finite resource (the daily call budget) on
+contacts guaranteed not to be dialled - in the worst case, an organisation's own
+suppression list could exhaust its budget for the day without a single real call going
+out.
+
+**Fix.** Suppression is now resolved before the rate-limit check, and `limiter.check()`
+is called with `calls = len(contacts) - len(suppressed)` instead of the raw contact
+count.
+
+**Verified.** Existing suppression-gating coverage in `tests/test_orchestrator.py`
+(`test_suppressed_number_is_blocked`) already proves a suppressed contact never reaches
+the gateway; this fix is the route-layer arithmetic feeding the rate limiter the right
+count, confirmed by reading and by `test_ratelimit.py`'s existing coverage of the `calls`
+parameter's behaviour.
+
+---
 
 ## Template for the next iteration
 

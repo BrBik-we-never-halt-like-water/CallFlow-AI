@@ -16,17 +16,41 @@ async def create_run(
     campaign_id: str,
     total: int,
     started_by: UUID,
-) -> None:
-    await conn.execute(
+    idempotency_key: str | None = None,
+) -> bool:
+    """Insert a new run row. Returns False, without inserting, if a run with
+    the same (org_id, idempotency_key) already exists - the caller is then
+    expected to fetch and return that run instead of starting a second one.
+
+    The partial unique index only covers non-null keys, so a caller that
+    never sends one (nothing requires it) always inserts normally.
+    """
+    row = await conn.fetchrow(
         """
-        insert into public.runs (id, org_id, campaign_id, total, started_by)
-        values ($1, $2, $3, $4, $5)
+        insert into public.runs (id, org_id, campaign_id, total, started_by, idempotency_key)
+        values ($1, $2, $3, $4, $5, $6)
+        on conflict (org_id, idempotency_key) where idempotency_key is not null do nothing
+        returning id
         """,
         run_id,
         org_id,
         campaign_id,
         total,
         started_by,
+        idempotency_key,
+    )
+    return row is not None
+
+
+async def get_run_by_idempotency_key(
+    conn: asyncpg.Connection, org_id: UUID, idempotency_key: str
+) -> asyncpg.Record | None:
+    return await conn.fetchrow(
+        """
+        select id, total from public.runs where org_id = $1 and idempotency_key = $2
+        """,
+        org_id,
+        idempotency_key,
     )
 
 
@@ -77,18 +101,83 @@ async def append_outcome(
     )
 
 
-async def finish_run(conn: asyncpg.Connection, run_id: str, error: str | None = None) -> None:
+async def finish_run(
+    conn: asyncpg.Connection,
+    run_id: str,
+    error: str | None = None,
+    *,
+    status: str | None = None,
+) -> None:
+    """Mark a run terminal. `status` overrides the error-based default (used
+    for `canceled`, since stopping a run early is neither a completion nor a
+    failure)."""
+    resolved_status = status if status is not None else ("failed" if error is not None else "completed")
     await conn.execute(
         """
         update public.runs
-           set status = case when $2::text is null then 'completed' else 'failed' end,
+           set status = $2,
                finished_at = now(),
-               error = $2
+               error = $3
          where id = $1
         """,
         run_id,
+        resolved_status,
         error,
     )
+
+
+async def request_cancel(conn: asyncpg.Connection, org_id: UUID, run_id: str) -> str | None:
+    """Marks a run as canceling. Returns the resulting status, or None if the
+    run doesn't exist for this org, or isn't in a cancellable state.
+
+    Idempotent: calling this twice on an already-canceling run just re-confirms
+    the same state (`coalesce` keeps the original request time) rather than
+    erroring on a second click.
+    """
+    row = await conn.fetchrow(
+        """
+        update public.runs
+           set status = 'canceling',
+               cancel_requested_at = coalesce(cancel_requested_at, now())
+         where org_id = $1 and id = $2 and status in ('running', 'canceling')
+        returning status
+        """,
+        org_id,
+        run_id,
+    )
+    return row["status"] if row else None
+
+
+async def is_cancel_requested(conn: asyncpg.Connection, run_id: str) -> bool:
+    row = await conn.fetchrow(
+        "select cancel_requested_at is not null as requested from public.runs where id = $1",
+        run_id,
+    )
+    return bool(row and row["requested"])
+
+
+async def reap_orphaned_runs(conn: asyncpg.Connection) -> int:
+    """Fail every run still 'running'/'canceling' at process boot.
+
+    A run's dial loop lives entirely inside one `BackgroundTasks` coroutine in
+    one process (F18) - there is no queue, no worker, nothing that could have
+    kept it going across a restart. If this process is only just starting,
+    any row still marked running was being driven by the *previous* process,
+    which is now gone: it is orphaned by definition, not by a timeout guess.
+    Called once, cross-org, before the app accepts any new run - the reason
+    this needs `privileged.acquire()` rather than `as_user()`.
+    """
+    result = await conn.execute(
+        """
+        update public.runs
+           set status = 'failed',
+               finished_at = now(),
+               error = 'The service restarted before this run finished.'
+         where status in ('running', 'canceling')
+        """
+    )
+    # asyncpg's Connection.execute() returns a tag string like "UPDATE 3".
+    return int(result.rsplit(" ", 1)[-1]) if result else 0
 
 
 async def get_run(conn: asyncpg.Connection, org_id: UUID, run_id: str) -> asyncpg.Record | None:

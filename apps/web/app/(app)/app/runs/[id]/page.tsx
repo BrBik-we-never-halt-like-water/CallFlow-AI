@@ -9,11 +9,12 @@ import { MaskedPhone } from '@/components/app/masked-phone';
 import { TranscriptView } from '@/components/app/transcript-view';
 import { LampBadge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { DialogRoot, Sheet } from '@/components/ui/dialog';
+import { Dialog, DialogRoot, Sheet } from '@/components/ui/dialog';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Panel } from '@/components/ui/panel';
 import { Skeleton } from '@/components/ui/skeleton';
-import type { Outcome } from '@/lib/api';
+import { useToast } from '@/components/ui/toast';
+import { api, type Outcome } from '@/lib/api';
 import { formatDuration, formatTimestamp } from '@/lib/format';
 import { useProgressAnnouncement, useRunPoll } from '@/lib/hooks/use-run-poll';
 import {
@@ -36,10 +37,35 @@ export default function RunDetailPage() {
   const runId = typeof params?.id === 'string' ? params.id : null;
   const { phase, campaigns } = useAppStore();
 
+  const toast = useToast();
   const [paused, setPaused] = useState(false);
   const [selected, setSelected] = useState<Outcome | null>(null);
+  const [confirmingCancel, setConfirmingCancel] = useState(false);
+  const [canceling, setCanceling] = useState(false);
 
   const { run, error, live, elapsed } = useRunPoll(runId, { paused });
+
+  async function cancelRun() {
+    if (!run) return;
+    setCanceling(true);
+    try {
+      await api.cancelRun(run.id);
+      toast({
+        tone: 'info',
+        title: 'Cancel requested',
+        body: 'No further contacts will be dialled. A call already in progress will finish naturally.',
+      });
+      setConfirmingCancel(false);
+    } catch (error) {
+      toast({
+        tone: 'error',
+        title: "Couldn't cancel this run",
+        body: error instanceof Error ? error.message : undefined,
+      });
+    } finally {
+      setCanceling(false);
+    }
+  }
 
   const settled = useMemo(
     () =>
@@ -129,17 +155,48 @@ export default function RunDetailPage() {
           </div>
         </div>
 
-        {/* Pause is always reachable while a run is live. There is no way to cancel a
-            run in progress yet - pausing only stops this screen from polling for
-            updates; it does not stop any call. */}
+        {/* Pause only stops this screen from polling for updates - it does not stop
+            any call. "Cancel run" is the real thing: it stops the next contact from
+            being dialled, but cannot interrupt a call already in conversation. */}
         {live ? (
           <div className="flex items-center gap-2">
             <Button variant="secondary" onClick={() => setPaused((p) => !p)}>
               {paused ? 'Resume updates' : 'Pause run'}
             </Button>
+            {run.status === 'running' ? (
+              <Button variant="danger" onClick={() => setConfirmingCancel(true)}>
+                Cancel run
+              </Button>
+            ) : (
+              <Button variant="secondary" loading>
+                Canceling…
+              </Button>
+            )}
           </div>
         ) : null}
       </div>
+
+      <DialogRoot open={confirmingCancel} onOpenChange={setConfirmingCancel}>
+        {confirmingCancel ? (
+          <Dialog
+            title="Cancel this run?"
+            description="Contacts not yet reached will not be called. A call already in progress will finish naturally - there is no way to interrupt a live conversation."
+            footer={
+              <>
+                <Button
+                  variant="secondary"
+                  onClick={() => setConfirmingCancel(false)}
+                >
+                  Keep running
+                </Button>
+                <Button variant="danger" onClick={cancelRun} loading={canceling}>
+                  Cancel run
+                </Button>
+              </>
+            }
+          />
+        ) : null}
+      </DialogRoot>
 
       {/* ---- Progress ---------------------------------------------------- */}
       <Panel

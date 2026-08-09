@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Suspense, useMemo, useState } from 'react';
+import { Suspense, useMemo, useRef, useState } from 'react';
 import { cn } from '@/lib/cn';
 import { ConnectionBanner } from '@/components/app/connection-banner';
 import { ContactGrid } from '@/components/app/contact-grid';
@@ -47,6 +47,14 @@ function RunComposer() {
   const [rows, setRows] = useState<ParsedRow[]>([]);
   const [chosenId, setChosenId] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
+  /**
+   * Generated once per submit attempt and kept across a failed retry - so
+   * resubmitting after a dropped connection (the request may have actually
+   * reached the server) replays the same, already-accepted run instead of
+   * risking a second real batch of calls. Cleared only on success, when the
+   * key has done its job and the composer is about to navigate away.
+   */
+  const idempotencyKeyRef = useRef<string | null>(null);
 
   /**
    * The selected campaign is derived, not synced.
@@ -104,8 +112,16 @@ function RunComposer() {
   async function start() {
     if (blocker) return;
     setStarting(true);
+    if (!idempotencyKeyRef.current) {
+      idempotencyKeyRef.current = crypto.randomUUID();
+    }
     try {
-      const { run_id } = await api.startRun(campaignId, contacts);
+      const { run_id } = await api.startRun(
+        campaignId,
+        contacts,
+        idempotencyKeyRef.current,
+      );
+      idempotencyKeyRef.current = null;
       toast({ tone: 'success', title: 'Run started' });
       refresh();
       router.push(`/app/runs/${run_id}`);

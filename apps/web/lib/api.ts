@@ -114,13 +114,21 @@ export interface RunStats {
   escalated: number;
   auto_closed: number;
   needs_human_pct: number;
+  in_flight: number;
 }
+
+export type RunStatus =
+  | 'running'
+  | 'canceling'
+  | 'canceled'
+  | 'completed'
+  | 'failed';
 
 export interface Run {
   id: string;
   campaign_id: string;
   total: number;
-  status: 'running' | 'completed' | 'failed';
+  status: RunStatus;
   started_at: string;
   finished_at: string | null;
   outcomes: Outcome[];
@@ -136,7 +144,7 @@ export interface RunSummary {
   id: string;
   campaign_id: string;
   total: number;
-  status: 'running' | 'completed' | 'failed';
+  status: RunStatus;
   started_at: string;
   finished_at: string | null;
   error: string | null;
@@ -354,13 +362,24 @@ export const api = {
       '/api/v1/campaigns/preview',
       { method: 'POST', body: JSON.stringify({ campaign_id, contacts }) },
     ),
-  startRun: (campaign_id: string, contacts: ContactInput[]) =>
+  startRun: (
+    campaign_id: string,
+    contacts: ContactInput[],
+    idempotencyKey?: string,
+  ) =>
     authReq<{ run_id: string; total: number }>('/api/v1/runs', {
       method: 'POST',
+      headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {},
       body: JSON.stringify({ campaign_id, contacts }),
     }),
   listRuns: () => authReq<RunSummary[]>('/api/v1/runs'),
   getRun: (id: string) => authReq<Run>(`/api/v1/runs/${id}`),
+  /** Stops a run from dialling further contacts. Can't interrupt a call
+   *  already in progress - see the endpoint's own docstring. */
+  cancelRun: (id: string) =>
+    authReq<{ status: string }>(`/api/v1/runs/${id}/cancel`, {
+      method: 'POST',
+    }),
 
   // --- organisations, team, profile - authenticated -----------------------
   listOrganisations: () => authReq<Organisation[]>('/api/v1/organisations'),

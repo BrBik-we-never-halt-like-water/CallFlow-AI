@@ -222,6 +222,7 @@ class CampaignRunner:
         self,
         gateway: EngineGateway | None = None,
         *,
+        run_id: str | None = None,
         result_schema: JsonObject | None = None,
         webhook_url: str | None = None,
         suppressed_hashes: frozenset[str] = frozenset(),
@@ -232,6 +233,17 @@ class CampaignRunner:
         self.webhook_url = webhook_url
         self._gateway = gateway
         self._calls_made = 0
+        self._canceled = False
+        # Stable for the lifetime of this runner even when the caller doesn't
+        # pass one (every unit test constructs a CampaignRunner directly) -
+        # what matters is that it never changes between the safety gate and
+        # the dial for the *same* contact, unlike the freshly-random suffix it
+        # replaces (`uuid.uuid4().hex[:8]` generated fresh on every call,
+        # which defeated the whole point of an idempotency key - ISSUES.md
+        # #54: a connection dropped after the vendor placed the call but
+        # before the response arrived meant a retry looked like a brand new
+        # request to CALL-E).
+        self._run_id = run_id or uuid.uuid4().hex[:12]
         # Resolved once per run (a single query) rather than once per contact.
         self._suppressed_hashes = suppressed_hashes
         # An organisation's own Settings -> Safety override, or None to fall back
@@ -245,15 +257,37 @@ class CampaignRunner:
             self._gateway = EngineGateway()
         return self._gateway
 
+    @property
+    def canceled(self) -> bool:
+        """True once `run()` has stopped early because `should_cancel()`
+        returned True. Distinct from simply "not all contacts were dialled" -
+        a run that raised partway through is not `canceled`, it's failed."""
+        return self._canceled
+
     async def run(
         self,
         campaign: Campaign,
         contacts: Iterable[Contact],
         *,
         on_progress: ProgressHook | None = None,
+        should_cancel: Callable[[], Awaitable[bool]] | None = None,
     ) -> list[CallOutcome]:
+        """Dial each contact in turn, stopping early if `should_cancel` ever
+        returns True.
+
+        Checked *between* contacts only, never mid-call - there is no way to
+        interrupt a call already in conversation (the voice engine has no
+        cancel operation), so the honest guarantee is "no further contacts
+        are dialled," not "the run stops instantly." Contacts never reached
+        get no outcome row at all rather than a fabricated "canceled" one -
+        the run's own `status` already says a canceled run didn't finish, and
+        `total` vs however many outcomes exist already shows how far it got.
+        """
         outcomes: list[CallOutcome] = []
         for contact in contacts:
+            if should_cancel is not None and await should_cancel():
+                self._canceled = True
+                break
             # `on_progress` doubles as the live-status sink so an in-flight
             # call is visible while it happens, not only once it ends.
             outcome = await self.run_one(campaign, contact, on_status=on_progress)
@@ -373,6 +407,14 @@ class CampaignRunner:
             }
         }
 
+        # Reserved before the request is sent, not after a successful return.
+        # A request whose response never arrives (EngineConnectionError) may
+        # still have reached the vendor and placed a real call - undercounting
+        # the per-run ceiling is safe, only counting *confirmed* successes is
+        # not, since it let a connection-drop retry dial past the ceiling
+        # without ever being counted against it (ISSUES.md #54).
+        self._calls_made += 1
+
         try:
             created = await asyncio.to_thread(
                 self.gateway.start_call,
@@ -381,11 +423,14 @@ class CampaignRunner:
                 result_schema=self.result_schema,
                 metadata=metadata,
                 webhook_url=self.webhook_url,
-                idempotency_key=f"{campaign.id}-{contact.phone}-{uuid.uuid4().hex[:8]}",
+                # Stable per (run, contact) - not a fresh random suffix per
+                # attempt - so CALL-E can actually recognise a retry as a
+                # duplicate of a request that already reached it (see
+                # `self._run_id`'s docstring in __init__).
+                idempotency_key=f"{self._run_id}-{contact.phone}",
                 region=contact.region or campaign.region,
                 language=contact.language or campaign.language,
             )
-            self._calls_made += 1
 
             call_id = str(created.get("id", ""))
 
