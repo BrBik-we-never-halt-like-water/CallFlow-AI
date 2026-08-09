@@ -11,13 +11,16 @@
 # Run from the deploy directory, by .github/workflows/ci-cd.yml, which has
 # already cloned or updated the checkout. Required in the environment:
 #
-#   CALLFLOW_ENV    production | dev  - picks the process names and ports
-#   PUBLIC_URL      https://dev.callflow-ai.brbik.com
-#   ENV_FILE_B64    base64 of the .env this environment should run with
+#   CALLFLOW_ENV       production | dev  - picks the process names and ports
+#   PUBLIC_URL         https://dev.calllflow.com
+#   ENV_FILE_B64       base64 of the API .env this environment should run with
+#   WEB_ENV_FILE_B64   base64 of apps/web/.env.local
 #
 # Optional:
 #
-#   CERTBOT_EMAIL   set to have TLS issued automatically on first bring-up
+#   ORIGIN_CERT_B64    Cloudflare Origin certificate, base64. Omit if the pair is
+#   ORIGIN_KEY_B64     already on the VM at /etc/ssl/cloudflare/calllflow.{pem,key}
+#   CERTBOT_EMAIL      Let's Encrypt fallback, for a host not behind Cloudflare
 #
 set -euo pipefail
 
@@ -93,12 +96,12 @@ done
 # ---------------------------------------------------------------------- nginx
 SITE="/etc/nginx/sites-available/callflow-$CALLFLOW_ENV"
 
-# One Origin certificate covers callflow.com and *.callflow.com, so it is not
+# One Origin certificate covers calllflow.com and *.calllflow.com, so it is not
 # per-environment. Path follows the convention already on this box for the other
 # zone, /etc/ssl/cloudflare/<zone>.{pem,key}.
 CERT_DIR=/etc/ssl/cloudflare
-CERT="$CERT_DIR/callflow.pem"
-KEY="$CERT_DIR/callflow.key"
+CERT="$CERT_DIR/calllflow.pem"
+KEY="$CERT_DIR/calllflow.key"
 
 # A Cloudflare Origin CA certificate is a static 15-year file pair, so unlike ACME
 # there is nothing to renew and nothing to keep reachable - it just has to be on

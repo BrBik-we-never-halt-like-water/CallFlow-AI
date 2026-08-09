@@ -22,7 +22,7 @@ is beyond `CALLFLOW_ENV`.
 | --- | --- | --- |
 | Branch | `main` | `dev` |
 | Directory | `/var/www/callflow-ai` | `/var/www/callflow-ai-dev` |
-| Hostname | `callflow.com` | `dev.callflow.com` |
+| Hostname | `calllflow.com` | `dev.calllflow.com` |
 | pm2 processes | `callflow-api`, `callflow-web` | `callflow-api-dev`, `callflow-web-dev` |
 | Ports | 8000 (api), **3001** (web) | 8001 (api), 3003 (web) |
 | Supabase project | the production project | **a separate project** |
@@ -77,7 +77,7 @@ place environment configuration lives.
 | Name | Kind | Example | Notes |
 | --- | --- | --- | --- |
 | `APP_DIR` | var | `/var/www/callflow-ai-dev` | Created if absent |
-| `PUBLIC_URL` | var | `https://dev.callflow.com` | Full origin, with scheme |
+| `PUBLIC_URL` | var | `https://dev.calllflow.com` | Full origin, with scheme |
 | `VM_HOST` | var | `203.0.113.10` | Inherited from repo-level if the same box |
 | `VM_USER` | var | `deploy` | " |
 | `ORIGIN_CERT_B64` | secret | `base64 -w0 origin.pem` | Cloudflare Origin certificate |
@@ -121,7 +121,7 @@ directory.
 
 ## 3a. Cloudflare: DNS and the Origin certificate
 
-`callflow.com` is on Cloudflare, which changes how TLS works and rules certbot out:
+`calllflow.com` is on Cloudflare, which changes how TLS works and rules certbot out:
 ACME's HTTP-01 challenge cannot validate through a proxied record, so certbot fails on
 every run. Use a **Cloudflare Origin CA certificate** instead - a static 15-year pair
 with nothing to renew, no challenge to keep reachable, and no rate limit to trip.
@@ -140,7 +140,7 @@ or the site is broken:
 
 | Type | Name | Content | Proxy |
 | --- | --- | --- | --- |
-| A | `callflow.com` | `140.245.235.251` | Proxied |
+| A | `calllflow.com` | `140.245.235.251` | Proxied |
 | A | `dev` | `140.245.235.251` | Proxied |
 
 ### 2. Issue the certificate
@@ -149,8 +149,8 @@ or the site is broken:
 set the hostnames to cover both environments with one certificate:
 
 ```
-callflow.com
-*.callflow.com
+calllflow.com
+*.calllflow.com
 ```
 
 Cloudflare shows the certificate and the key **once**. Copy both before closing the
@@ -168,17 +168,17 @@ terminates the connection the browser actually sees.
 ### 4. Get them onto the VM
 
 Either route works, and `bootstrap.sh` treats them identically - every decision it
-makes keys on whether `/etc/ssl/cloudflare/callflow.pem` and `.key` exist, not on
+makes keys on whether `/etc/ssl/cloudflare/calllflow.pem` and `.key` exist, not on
 where they came from.
 
 **Route A - place them on the VM directly**, the same way `brbik.pem` already is:
 
 ```bash
 sudo mkdir -p /etc/ssl/cloudflare
-sudo tee /etc/ssl/cloudflare/callflow.pem > /dev/null   # paste, then Ctrl-D
-sudo tee /etc/ssl/cloudflare/callflow.key > /dev/null
-sudo chmod 644 /etc/ssl/cloudflare/callflow.pem
-sudo chmod 600 /etc/ssl/cloudflare/callflow.key
+sudo tee /etc/ssl/cloudflare/calllflow.pem > /dev/null   # paste, then Ctrl-D
+sudo tee /etc/ssl/cloudflare/calllflow.key > /dev/null
+sudo chmod 644 /etc/ssl/cloudflare/calllflow.pem
+sudo chmod 600 /etc/ssl/cloudflare/calllflow.key
 sudo chown root:root /etc/ssl/cloudflare/callflow.*
 ```
 
@@ -202,10 +202,10 @@ machine.
 Route B can be added later without changing anything: with the secrets set, the
 install block simply starts overwriting the files each run.
 
-The same pair serves both environments, since `*.callflow.com` covers `dev`. With Route B,
+The same pair serves both environments, since `*.calllflow.com` covers `dev`. With Route B,
 set them once at repo level rather than per environment.
 
-`bootstrap.sh` installs them to `/etc/ssl/cloudflare/callflow.pem` and `.key` on every run
+`bootstrap.sh` installs them to `/etc/ssl/cloudflare/calllflow.pem` and `.key` on every run
 - matching the convention already used on this box for the brbik zone - so
 rotating the secret rotates the certificate. It verifies the certificate's modulus
 against the key first and leaves the existing pair alone if they do not match - finding
@@ -279,7 +279,7 @@ write it, then re-run certbot.
 
 ```bash
 pm2 list                                    # both processes online
-curl -fsS https://dev.callflow.com/api/health
+curl -fsS https://dev.calllflow.com/api/health
 cd /var/www/callflow-ai-dev/apps/api && ../../.venv/bin/alembic current
 ```
 
