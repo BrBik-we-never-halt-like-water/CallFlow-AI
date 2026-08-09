@@ -67,26 +67,52 @@ place environment configuration lives.
 | `CERTBOT_EMAIL` | var | `ops@brbik.com` | Optional. Set it and TLS is issued automatically |
 | `REPO_URL` | var | `git@github.com:…/CallFlow-AI.git` | Optional, defaults to this repo |
 | `VM_SSH_KEY` | secret | private key | Inherited from repo-level if the same box |
-| `ENV_FILE_B64` | secret | `base64 -w0 .env` | The whole `.env`, base64'd |
+| `ENV_FILE_B64` | secret | `base64 -w0 .env` | The API's `.env`, base64'd |
+| `WEB_ENV_FILE_B64` | secret | `base64 -w0 apps/web/.env.local` | The web app's, base64'd |
 
-`ENV_FILE_B64` is what removes the last manual step. Write the `.env` locally, then:
+The two `_B64` secrets are what remove the last manual step. Write both files locally
+from their `.env.example`s, then:
 
 ```bash
-base64 -w0 .env        # macOS: base64 -i .env
+base64 -w0 .env                    # macOS: base64 -i .env
+base64 -w0 apps/web/.env.local
 ```
 
-Paste the single line in as the secret. Every deploy rewrites the VM's `.env` from it,
-so the file on the machine is a copy of something GitHub holds rather than something
-someone edited in place and cannot reproduce. Change a value by updating the secret and
-re-running the job - never by editing the file on the VM, which the next deploy
-overwrites.
+Paste each single line in as its secret. Every deploy rewrites the VM's copy, so the
+files on the machine are copies of something GitHub holds rather than something someone
+edited in place and cannot reproduce. Change a value by updating the secret and re-running
+the job - never by editing the file on the VM, which the next deploy overwrites.
+
+**They are two files because they are two different sets of names**, not a subset of one
+another. `apps/web/.env.local` is the one that bites: three of its four variables are
+inlined into the JavaScript bundle at **build** time, so a missing one is not a runtime
+error anyone would see in a log. The site builds clean, `isSupabaseConfigured()` returns
+false, the middleware waves every request through, and the dashboard ships with
+authentication disabled. `bootstrap.sh` therefore refuses to continue if
+`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` or `NEXT_PUBLIC_SITE_URL` is
+missing or empty.
 
 Repo-level vars and secrets are inherited, so if dev shares production's VM you only
-need `APP_DIR`, `PUBLIC_URL` and `ENV_FILE_B64` on the dev environment.
+need `APP_DIR`, `PUBLIC_URL`, `ENV_FILE_B64` and `WEB_ENV_FILE_B64` on the dev environment.
 
 The pipeline fails before connecting if `APP_DIR` or `PUBLIC_URL` is unset, naming the
 one that is missing, rather than deploying this branch into the other environment's
 directory.
+
+---
+
+## 3a. Point DNS before the first deploy
+
+An `A` record for the hostname must resolve to the VM **before** the first push, not
+after. Two things depend on it and neither is retried:
+
+- certbot cannot validate a domain that does not point at the machine, so no certificate
+  is issued and the site stays HTTP-only.
+- the health check curls `PUBLIC_URL`, which is `https://…`, and fails - so a first
+  deploy that otherwise worked perfectly reports red.
+
+If you get this order wrong: point DNS, then re-run the failed jobs. `provision` is
+idempotent and will request the certificate on the second attempt.
 
 ---
 
@@ -114,8 +140,9 @@ type-check and test. On a push, three more jobs run in order - one per thing tha
 independently go wrong:
 
 **`provision`** → `scripts/bootstrap.sh`. Clones if absent, pins the checkout to the
-branch being deployed, creates `.venv`, installs the API, writes `.env` from
-`ENV_FILE_B64`, renders the nginx site, requests a certificate, installs the pm2
+branch being deployed, creates `.venv`, installs the API, writes `.env` and
+`apps/web/.env.local` from their secrets, renders the nginx site, requests a
+certificate, installs the pm2
 systemd unit. Idempotent: every step checks the desired state first, so it is a no-op
 on the deploys where nothing changed.
 

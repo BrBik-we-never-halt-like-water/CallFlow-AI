@@ -100,7 +100,7 @@ jobs:
           username: ${{ vars.VM_USER }}
           key: ${{ secrets.VM_SSH_KEY }}
           command_timeout: 20m
-          envs: BRANCH,APP_DIR,PUBLIC_URL,CALLFLOW_ENV,REPO_URL,ENV_FILE_B64,CERTBOT_EMAIL
+          envs: BRANCH,APP_DIR,PUBLIC_URL,CALLFLOW_ENV,REPO_URL,ENV_FILE_B64,WEB_ENV_FILE_B64,CERTBOT_EMAIL
           script: |
             set -euo pipefail
 
@@ -132,6 +132,7 @@ jobs:
           CALLFLOW_ENV: ${{ github.ref_name == 'main' && 'production' || 'dev' }}
           REPO_URL: ${{ vars.REPO_URL || 'git@github.com:BrBik-we-never-halt-like-water/CallFlow-AI.git' }}
           ENV_FILE_B64: ${{ secrets.ENV_FILE_B64 }}
+          WEB_ENV_FILE_B64: ${{ secrets.WEB_ENV_FILE_B64 }}
           CERTBOT_EMAIL: ${{ vars.CERTBOT_EMAIL }}
 
   migrate:

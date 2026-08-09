@@ -946,8 +946,8 @@ go wrong - the machine, the schema, the code:
    merge - which would otherwise fail at deploy time against a real database - for free
 2. `web` - Node 20, `npm ci`, lint, type-check, build in `apps/web`
 3. `provision` - SSH: clone if absent, `checkout -B` the deployed branch, then
-   `scripts/bootstrap.sh` (venv, `pip install -e ./apps/api`, `.env` from the
-   `ENV_FILE_B64` secret, nginx site, certbot, pm2 systemd unit). Idempotent
+   `scripts/bootstrap.sh` (venv, `pip install -e ./apps/api`, `.env` and `apps/web/.env.local`
+   from their secrets, nginx site, certbot, pm2 systemd unit). Idempotent
 4. `migrate` - SSH: `alembic current` → `upgrade head` → `current`, run **from
    `apps/api`**; `alembic.ini` resolves `script_location` and `prepend_sys_path`
    against the CWD, so `-c` from the repo root finds no migrations and silently
@@ -956,7 +956,7 @@ go wrong - the machine, the schema, the code:
    `pm2 startOrRestart` the web app → `pm2 save`, then curls `/api/health` and `/`
 
 Every deployment job resolves `environment: ${{ github.ref_name }}`, so `APP_DIR`,
-`PUBLIC_URL`, `VM_HOST`, `VM_USER`, `VM_SSH_KEY` and `ENV_FILE_B64` come from the
+`PUBLIC_URL`, `VM_HOST`, `VM_USER`, `VM_SSH_KEY`, `ENV_FILE_B64` and `WEB_ENV_FILE_B64` come from the
 GitHub Environment of that name and no job holds an environment literal. `provision`
 fails before connecting if `APP_DIR` or `PUBLIC_URL` is unset.
 

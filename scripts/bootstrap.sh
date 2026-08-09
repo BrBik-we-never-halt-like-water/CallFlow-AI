@@ -44,25 +44,51 @@ log "installing the API"
 .venv/bin/pip install --quiet --upgrade pip
 .venv/bin/pip install --quiet -e ./apps/api
 
-# ----------------------------------------------------------------------- .env
-# Written from the environment's ENV_FILE_B64 secret, so the file on the VM is a
-# copy of something GitHub holds rather than something a person edited in place
-# two months ago and cannot reproduce. base64 because the value is multi-line and
+# --------------------------------------------------------------- env files
+# Written from GitHub Environment secrets, so the files on the VM are copies of
+# something GitHub holds rather than something a person edited in place two
+# months ago and cannot reproduce. base64 because the values are multi-line and
 # would not survive being passed through a shell variable intact.
-if [ -n "${ENV_FILE_B64:-}" ]; then
-  umask 077
-  printf '%s' "$ENV_FILE_B64" | base64 -d > .env.next
-  if cmp -s .env.next .env 2>/dev/null; then
-    rm -f .env.next
-  else
-    mv .env.next .env
-    log ".env updated from the GitHub Environment"
+write_env() {
+  local path="$1" encoded="$2" secret_name="$3"
+
+  if [ -z "$encoded" ]; then
+    if [ -f "$path" ]; then
+      return 0
+    fi
+    echo "FATAL: $path is missing and $secret_name is not set for '$CALLFLOW_ENV'." >&2
+    echo "       Set it with:  base64 -w0 $path" >&2
+    exit 1
   fi
-elif [ ! -f .env ]; then
-  echo "FATAL: this VM has no .env and ENV_FILE_B64 is not set for '$CALLFLOW_ENV'." >&2
-  echo "       Set it with:  base64 -w0 .env" >&2
-  exit 1
-fi
+
+  umask 077
+  printf '%s' "$encoded" | base64 -d > "$path.next"
+  if cmp -s "$path.next" "$path" 2>/dev/null; then
+    rm -f "$path.next"
+  else
+    mv "$path.next" "$path"
+    log "$path updated from the GitHub Environment"
+  fi
+}
+
+write_env .env "${ENV_FILE_B64:-}" ENV_FILE_B64
+
+# The web app's variables are a separate file because Next reads them from its
+# own project root, and separate values because they are different names - not a
+# subset of the API's. Three of the four are inlined into the bundle at BUILD
+# time, so a missing one is not a runtime error you would notice in a log: the
+# site builds clean and ships with `isSupabaseConfigured()` false, which makes
+# the middleware wave every request through and the dashboard render with no
+# auth at all. Hence failing hard here rather than warning.
+write_env apps/web/.env.local "${WEB_ENV_FILE_B64:-}" WEB_ENV_FILE_B64
+
+for required_var in NEXT_PUBLIC_SUPABASE_URL NEXT_PUBLIC_SUPABASE_ANON_KEY NEXT_PUBLIC_SITE_URL; do
+  if ! grep -qE "^${required_var}=.+" apps/web/.env.local; then
+    echo "FATAL: $required_var is missing or empty in apps/web/.env.local." >&2
+    echo "       The build would silently ship a dashboard with authentication disabled." >&2
+    exit 1
+  fi
+done
 
 # ---------------------------------------------------------------------- nginx
 SITE="/etc/nginx/sites-available/callflow-$CALLFLOW_ENV"
