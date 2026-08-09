@@ -21,7 +21,11 @@ const suffix = isDev ? '-dev' : '';
 const apiPort = process.env.API_PORT || (isDev ? '8001' : '8000');
 const webPort = process.env.WEB_PORT || (isDev ? '3001' : '3000');
 
+// Also read by scripts/bootstrap.sh, to render the nginx server block against the
+// same numbers pm2 binds. pm2 only looks at `apps`, so the extra key is inert.
 module.exports = {
+  ports: { api: apiPort, web: webPort },
+
   apps: [
     {
       name: `callflow-api${suffix}`,

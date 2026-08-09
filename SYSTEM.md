@@ -936,30 +936,43 @@ sample once every run dials for real. `run_store.py` is gone with them.
 
 **No frontend tests exist.**
 
-**CI** - `.github/workflows/ci-cd.yml`, on PR and push to `main` **and `dev`**,
-`cancel-in-progress`:
+**CI** - `.github/workflows/ci-cd.yml`, on PR and push to `main` **and `dev`**. Five
+jobs; the last three run on push only, in order, one per thing that can independently
+go wrong - the machine, the schema, the code:
 
-1. `api` - Python 3.11, `pip install -e ".[dev]"` in `apps/api`, ruff, pytest
+1. `api` - Python 3.11, `pip install -e ".[dev]"` in `apps/api`, ruff, **a single
+   migration-head check**, pytest. `alembic heads` reads `alembic/versions` without
+   executing `env.py` or opening a connection, so it catches the two-branches-two-heads
+   merge - which would otherwise fail at deploy time against a real database - for free
 2. `web` - Node 20, `npm ci`, lint, type-check, build in `apps/web`
-3. `deploy` - push only, needs both, SSH to VM: fetch + `checkout -B` the deployed
-   branch → `pip install -e ./apps/api` → `alembic upgrade head` (run **from
-   `apps/api`**; `alembic.ini` resolves `script_location` against the CWD, so `-c`
-   from the repo root finds no migrations) → `pm2 startOrRestart` the API →
-   `npm ci && npm run build` → `pm2 startOrRestart` the web app → `pm2 save`, then
-   curls `/api/health` and `/`
+3. `provision` - SSH: clone if absent, `checkout -B` the deployed branch, then
+   `scripts/bootstrap.sh` (venv, `pip install -e ./apps/api`, `.env` from the
+   `ENV_FILE_B64` secret, nginx site, certbot, pm2 systemd unit). Idempotent
+4. `migrate` - SSH: `alembic current` → `upgrade head` → `current`, run **from
+   `apps/api`**; `alembic.ini` resolves `script_location` and `prepend_sys_path`
+   against the CWD, so `-c` from the repo root finds no migrations and silently
+   upgrades nothing
+5. `deploy` - SSH: `pm2 startOrRestart` the API → `npm ci && npm run build` →
+   `pm2 startOrRestart` the web app → `pm2 save`, then curls `/api/health` and `/`
 
-One `deploy` job serves both branches: `environment: ${{ github.ref_name }}` resolves
-the GitHub Environment from the branch name, so `APP_DIR`, `PUBLIC_URL`, `VM_HOST`,
-`VM_USER` and `VM_SSH_KEY` all come from there and the job holds no environment
-literals. It fails before connecting if `APP_DIR` or `PUBLIC_URL` is unset.
+Every deployment job resolves `environment: ${{ github.ref_name }}`, so `APP_DIR`,
+`PUBLIC_URL`, `VM_HOST`, `VM_USER`, `VM_SSH_KEY` and `ENV_FILE_B64` come from the
+GitHub Environment of that name and no job holds an environment literal. `provision`
+fails before connecting if `APP_DIR` or `PUBLIC_URL` is unset.
+
+`cancel-in-progress` is scoped to pull requests. A push is never cancelled: killing a
+run mid-`migrate` can leave the schema between two revisions.
 
 **Deployment** - `main` → `/var/www/callflow-ai` at `callflow-ai.brbik.com`, `dev` →
 `/var/www/callflow-ai-dev` at `dev.callflow-ai.brbik.com`, each with its own `.env`,
 its own Supabase project, and its own pm2 pair. Process names and ports come from
 `ecosystem.config.js` keyed on `CALLFLOW_ENV`: `callflow-api`/`callflow-web` on
-8000/3000, `callflow-api-dev`/`callflow-web-dev` on 8001/3001. The API runs one worker
-deliberately - the rate limiter is a per-process dict. Full bring-up in
-`DEPLOYMENT.md`.
+8000/3000, `callflow-api-dev`/`callflow-web-dev` on 8001/3001; `scripts/bootstrap.sh`
+reads the ports from that same file to render nginx, so the proxy cannot drift from
+what pm2 binds. The API runs one worker deliberately - the rate limiter is a
+per-process dict. The VM is provisioned by the pipeline, not by hand; the only manual
+steps left are creating the Supabase project and giving the VM read access to this
+repo. Full bring-up in `DEPLOYMENT.md`.
 
 > `render.yaml` was deleted in the monorepo restructure. It described a two-service
 > Render deploy with `healthCheckPath: /`, which was never how this shipped.

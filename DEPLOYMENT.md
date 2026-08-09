@@ -1,19 +1,22 @@
 # Deployment
 
-Bringing up an environment. Written for the dev environment, but production is the
-same document with different values - the two differ only in the table in §1.
+Bringing up an environment. Written for dev, but production is the same document
+with different values - the two differ only in the table in §1.
 
-Everything after the one-time steps is automatic: pushing to `dev` deploys dev,
-pushing to `main` deploys production. Nothing below needs repeating per deploy.
+**The pipeline provisions the machine.** There is no runbook of commands to type on
+a VM: the directory, the venv, the `.env`, the nginx site, the TLS certificate and
+the pm2 processes are all created by the deploy if they are missing. Configure the
+GitHub Environment, push, and the environment builds itself. §4 lists the two things
+that genuinely cannot be automated.
 
 ---
 
-## 0. What an environment is
+## 1. What an environment is
 
-Each environment is **one directory on a VM** holding a checkout of one branch, with
-its own `.env`, its own Supabase project, and its own pair of pm2 processes. Dev and
-production can share a VM because the process names and ports differ; nothing in the
-code knows which one it is beyond `CALLFLOW_ENV`.
+One directory on a VM holding a checkout of one branch, with its own `.env`, its own
+Supabase project, and its own pair of pm2 processes. Dev and production can share a
+VM because the process names and ports differ; nothing in the code knows which one it
+is beyond `CALLFLOW_ENV`.
 
 | | production | dev |
 | --- | --- | --- |
@@ -24,129 +27,143 @@ code knows which one it is beyond `CALLFLOW_ENV`.
 | Ports | 8000 (api), 3000 (web) | 8001 (api), 3001 (web) |
 | Supabase project | the production project | **a separate project** |
 
-The directory, hostname and ports are the only values you choose. The process names
-and ports come from `ecosystem.config.js`, which reads `CALLFLOW_ENV`.
+Process names and ports come from `ecosystem.config.js`, keyed on `CALLFLOW_ENV`.
+`scripts/bootstrap.sh` reads the ports from that same file when it renders nginx, so
+the proxy cannot end up pointing somewhere pm2 is not listening.
 
 ---
 
-## 1. Database
+## 2. The database
 
-**Use a separate Supabase project for dev.** Sharing one with production means a
-migration tested on dev has already run against production data by the time you notice
-it was wrong, and RLS gives you no protection against that - migrations run as the
-owner role, which bypasses it.
+**Use a separate Supabase project for dev.** Migrations run as the owner role, which
+bypasses RLS - so sharing one project with production means a migration tested on dev
+has already run against production data by the time you notice it was wrong.
 
-Follow [`SUPABASE_SETUP.md`](SUPABASE_SETUP.md) start to finish against the new
-project. Two things in it are per-environment and easy to carry over by accident:
+Follow [`SUPABASE_SETUP.md`](SUPABASE_SETUP.md) against the new project. Two values in
+it are per-environment and easy to copy across by accident:
 
-- **§2, Site URL and redirect URLs** must point at the dev hostname, or the
-  password-reset and invitation links in email will send dev users to production.
+- **§2, Site URL and redirect URLs** must point at the dev hostname, or password-reset
+  and invitation links will send dev users into production.
 - **§4, `PHONE_HASH_PEPPER`** must be generated fresh. It is the pepper for the
   suppression list's phone hash; reusing production's makes dev's suppression rows
   collide with real ones.
 
-Do **not** run `alembic upgrade head` by hand. The deploy job runs it on every push,
-so the first deploy applies the whole migration history to the empty project.
+Do **not** run `alembic upgrade head` by hand. The `migrate` job runs it on every push,
+so the first deploy applies the whole history to the empty project.
 
 ---
 
-## 2. Server
+## 3. Configure the GitHub Environment
 
-Once per environment, on the VM:
+**Settings → Environments**, one per branch, named `main` and `dev`. This is the only
+place environment configuration lives.
+
+| Name | Kind | Example | Notes |
+| --- | --- | --- | --- |
+| `APP_DIR` | var | `/var/www/callflow-ai-dev` | Created if absent |
+| `PUBLIC_URL` | var | `https://dev.callflow-ai.brbik.com` | Full origin, with scheme |
+| `VM_HOST` | var | `203.0.113.10` | Inherited from repo-level if the same box |
+| `VM_USER` | var | `deploy` | " |
+| `CERTBOT_EMAIL` | var | `ops@brbik.com` | Optional. Set it and TLS is issued automatically |
+| `REPO_URL` | var | `git@github.com:…/CallFlow-AI.git` | Optional, defaults to this repo |
+| `VM_SSH_KEY` | secret | private key | Inherited from repo-level if the same box |
+| `ENV_FILE_B64` | secret | `base64 -w0 .env` | The whole `.env`, base64'd |
+
+`ENV_FILE_B64` is what removes the last manual step. Write the `.env` locally, then:
 
 ```bash
-sudo mkdir -p /var/www/callflow-ai-dev
-sudo chown "$USER" /var/www/callflow-ai-dev
-git clone git@github.com:BrBik-we-never-halt-like-water/CallFlow-AI.git /var/www/callflow-ai-dev
-cd /var/www/callflow-ai-dev
-git checkout dev
-
-python3 -m venv .venv
-.venv/bin/pip install -e ./apps/api
+base64 -w0 .env        # macOS: base64 -i .env
 ```
 
-Write `/var/www/callflow-ai-dev/.env` from [`.env.example`](.env.example), with the dev
-project's Supabase values, the dev `SITE_URL`, and the fresh `PHONE_HASH_PEPPER`. This
-file is what `apps/api/app/core/config.py` loads - it resolves the repo root from its
-own path, so it finds this file whatever directory the process starts in.
+Paste the single line in as the secret. Every deploy rewrites the VM's `.env` from it,
+so the file on the machine is a copy of something GitHub holds rather than something
+someone edited in place and cannot reproduce. Change a value by updating the secret and
+re-running the job - never by editing the file on the VM, which the next deploy
+overwrites.
 
-> Leave `CALLE_API_KEY` empty until dev should place real calls. Every run dials for
-> real; there is no dry run. Runs are refused with a clear error while it is unset.
+Repo-level vars and secrets are inherited, so if dev shares production's VM you only
+need `APP_DIR`, `PUBLIC_URL` and `ENV_FILE_B64` on the dev environment.
 
-Then nginx, proxying the hostname to the two dev ports:
-
-```nginx
-server {
-    server_name dev.callflow-ai.brbik.com;
-
-    location /api/ { proxy_pass http://127.0.0.1:8001; }
-    location /     { proxy_pass http://127.0.0.1:3001; }
-
-    proxy_set_header Host              $host;
-    proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto $scheme;
-}
-```
-
-`sudo certbot --nginx -d dev.callflow-ai.brbik.com` for TLS, then reload nginx.
-
-You do not start pm2 by hand. The first deploy runs `pm2 startOrRestart` against
-[`ecosystem.config.js`](ecosystem.config.js), which creates both processes and then
-`pm2 save`s them. If pm2 itself has never run on this VM, run `pm2 startup` once and
-follow the command it prints, or nothing comes back after a reboot.
+The pipeline fails before connecting if `APP_DIR` or `PUBLIC_URL` is unset, naming the
+one that is missing, rather than deploying this branch into the other environment's
+directory.
 
 ---
 
-## 3. CI/CD
+## 4. The two things that are not automated
 
-[`.github/workflows/ci-cd.yml`](.github/workflows/ci-cd.yml) lints, type-checks and
-tests both apps on every PR and push to `main` or `dev`, then deploys on push.
+**A Supabase project.** Creating one, and the dashboard settings in `SUPABASE_SETUP.md`,
+are human actions in someone else's UI.
 
-One `deploy` job serves both branches. It reads `environment: ${{ github.ref_name }}`,
-so GitHub resolves the target from the branch name and the job has no environment
-literals in it at all.
+**Read access to this repo from the VM.** The provision job clones over SSH, so the VM
+needs a key that can read the repo - a deploy key on the repo, or the VM user's own key.
+If dev shares production's VM this already exists. An unattended machine has to get
+credentials from somewhere, and baking a token into `.git/config` is worse than a
+deploy key.
 
-In **Settings → Environments**, create one environment per branch:
+Everything else - the directory, the venv, `pip install`, the `.env`, the nginx server
+block, the TLS certificate, the pm2 processes and their systemd unit - is created by
+the pipeline on first run and left alone afterwards.
 
-| Environment | Variables | Secrets |
-| --- | --- | --- |
-| `main` | `APP_DIR`, `PUBLIC_URL`, `VM_HOST`, `VM_USER` | `VM_SSH_KEY` |
-| `dev` | `APP_DIR`, `PUBLIC_URL`, `VM_HOST`, `VM_USER` | `VM_SSH_KEY` |
+---
 
-`PUBLIC_URL` is the full origin with scheme (`https://dev.callflow-ai.brbik.com`) - it
-is baked into the frontend build as `NEXT_PUBLIC_API_URL` and used for the post-deploy
-health check. Repo-level variables and secrets are inherited, so if dev shares the VM
-with production you only need to set `APP_DIR` and `PUBLIC_URL` on the dev environment.
+## 5. What the pipeline does
 
-The job fails before connecting if `APP_DIR` or `PUBLIC_URL` is unset, rather than
-deploying the dev branch into whatever directory the other environment uses.
+`.github/workflows/ci-cd.yml`, on PR and push to `main` or `dev`. `api` and `web` lint,
+type-check and test. On a push, three more jobs run in order - one per thing that can
+independently go wrong:
 
-### What a deploy does
+**`provision`** → `scripts/bootstrap.sh`. Clones if absent, pins the checkout to the
+branch being deployed, creates `.venv`, installs the API, writes `.env` from
+`ENV_FILE_B64`, renders the nginx site, requests a certificate, installs the pm2
+systemd unit. Idempotent: every step checks the desired state first, so it is a no-op
+on the deploys where nothing changed.
 
-1. Fetch and hard-set the checkout to the branch being deployed
-2. Refuse to continue unless `apps/api` and `apps/web` both exist
-3. `pip install -e ./apps/api`
-4. `alembic upgrade head`, run **from `apps/api`** - `alembic.ini` resolves
-   `script_location` and `prepend_sys_path` against the working directory, so running
-   it from the repo root with `-c` finds no migrations
-5. Start or restart the API process
-6. `npm ci` and `npm run build` in `apps/web`, then start or restart the web process
-7. `pm2 save`
-8. `curl` `/api/health` and `/` against `PUBLIC_URL`
+**`migrate`** → `alembic current`, `upgrade head`, `current` again, run from `apps/api`.
+`alembic.ini` sets `script_location` and `prepend_sys_path` to `.` and alembic resolves
+both against the working directory, so running it from the repo root with `-c` finds no
+migrations and silently upgrades nothing.
 
-The frontend is built **on the VM**, not in CI, because `NEXT_PUBLIC_API_URL` is baked
+**`deploy`** → `pm2 startOrRestart` the API, `npm ci && npm run build` the web app with
+`NEXT_PUBLIC_API_URL` set to `PUBLIC_URL`, restart it, `pm2 save`, then health-check
+`/api/health` and `/`.
+
+The frontend is built on the VM rather than in CI because `NEXT_PUBLIC_API_URL` is baked
 in at build time and differs per environment.
 
+`cancel-in-progress` applies to pull requests only. A push is never cancelled - killing
+a run mid-`migrate` can leave the schema halfway between two revisions.
+
+### The nginx site is written once
+
+`scripts/nginx.conf.template` is rendered only if the site file does not already exist,
+because certbot rewrites that file in place to add the TLS block. Re-rendering on every
+deploy would strip HTTPS back out. To change it: delete the file, let the next deploy
+write it, then re-run certbot.
+
 ---
 
-## 4. Verifying
+## 6. Verifying
 
 ```bash
-pm2 list                                    # both -dev processes online
+pm2 list                                    # both processes online
 curl -fsS https://dev.callflow-ai.brbik.com/api/health
 cd /var/www/callflow-ai-dev/apps/api && ../../.venv/bin/alembic current
 ```
 
-`alembic current` should print the newest revision in `apps/api/alembic/versions`.
-If it prints nothing, the migrations never ran against this project - check
-`DATABASE_URL` in `.env`.
+`alembic current` should print the newest revision in `apps/api/alembic/versions`. If it
+prints nothing, migrations never ran against this project - check `DATABASE_URL` in the
+`.env`, which means checking `ENV_FILE_B64`.
+
+---
+
+## 7. Known gaps
+
+- **No backup or rollback around the migration.** If `upgrade head` fails partway the
+  job stops, but the schema is left halfway and pm2 is still serving the previous code.
+  Migrate-then-restart is right for additive changes and wrong for destructive ones.
+- **The RLS suite does not run in CI.** `test_rls_isolation.py` skips unless
+  `DATABASE_URL` is set, and CI does not set it - so the 31 cross-tenant isolation tests
+  guarding the most expensive bug this product can ship run on no pull request. Fixing it
+  needs a Supabase-shaped database in CI (`auth` schema, `authenticated`/`anon` roles),
+  not a plain Postgres container.
