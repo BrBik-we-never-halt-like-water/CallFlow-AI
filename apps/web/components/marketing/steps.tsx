@@ -29,7 +29,7 @@ const STEPS = [
   {
     n: '03',
     title: 'Run it',
-    body: 'Press start and it dials. Results arrive as each call ends, in real time.',
+    body: 'Rows are validated and the guards checked before anything dials. Results arrive as each call ends.',
     panel: <RunPanel />,
   },
   {
@@ -140,6 +140,15 @@ function CampaignPanel() {
 function RunPanel() {
   return (
     <div className="flex flex-col gap-2">
+      {/* The guards are named before the lamps, because the point of the panel
+          is that the run was gated before it was live - not just that it is. */}
+      <p className="eyebrow text-text-mute">Guards on</p>
+      <div className="flex flex-wrap gap-1">
+        <Tag>ALLOWLIST</Tag>
+        <Tag>CEILING 25</Tag>
+        <Tag>RATE 2/HR</Tag>
+      </div>
+
       <p className="eyebrow text-lamp-brass-text">Live · Real calls</p>
       <LampStrip
         lamps={[

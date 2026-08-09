@@ -46,6 +46,12 @@ const DEMO_GUARDS: Guard[] = [
 
 const GUARDS_EXPLAINED = [
   {
+    name: 'Validation first',
+    behaviour: 'Before any dial',
+    detail:
+      'Every run validates the rows and walks the safety gates before a single number is dialled - a row that fails is skipped and says why. Starting a run takes a deliberate confirmation that shows you the contact count, the credit estimate, and the window.',
+  },
+  {
     name: 'Allowlist',
     behaviour: 'Fails closed',
     detail:
