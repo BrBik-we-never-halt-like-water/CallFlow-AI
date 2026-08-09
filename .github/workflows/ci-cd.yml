@@ -118,6 +118,12 @@ jobs:
             fi
 
             cd "$APP_DIR"
+
+            # An existing checkout may point at git@github.com from before this
+            # was automated, which fails on a machine with no key. The pipeline
+            # owns this directory, so normalise the remote rather than depending
+            # on how it happened to be cloned.
+            git remote set-url origin "$REPO_URL"
             git fetch --prune origin
             # checkout -B rather than `git pull`: pins the checkout to the branch
             # being deployed instead of trusting whatever it was left on.
@@ -130,7 +136,10 @@ jobs:
             bash scripts/bootstrap.sh
         env:
           CALLFLOW_ENV: ${{ github.ref_name == 'main' && 'production' || 'dev' }}
-          REPO_URL: ${{ vars.REPO_URL || 'git@github.com:BrBik-we-never-halt-like-water/CallFlow-AI.git' }}
+          # HTTPS, not SSH: the repo is public, so the VM needs no key, no deploy
+          # key and no credential of any kind to read it. Override with a REPO_URL
+          # variable if it ever goes private.
+          REPO_URL: ${{ vars.REPO_URL || 'https://github.com/BrBik-we-never-halt-like-water/CallFlow-AI.git' }}
           ENV_FILE_B64: ${{ secrets.ENV_FILE_B64 }}
           WEB_ENV_FILE_B64: ${{ secrets.WEB_ENV_FILE_B64 }}
           ORIGIN_CERT_B64: ${{ secrets.ORIGIN_CERT_B64 }}

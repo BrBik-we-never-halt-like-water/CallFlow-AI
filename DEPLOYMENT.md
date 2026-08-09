@@ -191,20 +191,20 @@ does not resolve yet. If you get the order wrong: fix DNS, then re-run the faile
 
 ---
 
-## 4. The two things that are not automated
+## 4. The one thing that is not automated
 
 **A Supabase project.** Creating one, and the dashboard settings in `SUPABASE_SETUP.md`,
 are human actions in someone else's UI.
 
-**Read access to this repo from the VM.** The provision job clones over SSH, so the VM
-needs a key that can read the repo - a deploy key on the repo, or the VM user's own key.
-If dev shares production's VM this already exists. An unattended machine has to get
-credentials from somewhere, and baking a token into `.git/config` is worse than a
-deploy key.
+Everything else - the directory, the checkout, the venv, `pip install`, both env files,
+the nginx server block, the TLS certificate, the pm2 processes and their systemd unit -
+is created by the pipeline on first run and left alone afterwards.
 
-Everything else - the directory, the venv, `pip install`, the `.env`, the nginx server
-block, the TLS certificate, the pm2 processes and their systemd unit - is created by
-the pipeline on first run and left alone afterwards.
+The repository is **public**, so the VM needs no key, deploy key or token to read it:
+`provision` clones over HTTPS. If it ever goes private, set a `REPO_URL` variable to the
+SSH form and give the machine a read-only deploy key. `provision` also runs
+`git remote set-url origin` on every deploy, so a checkout cloned over SSH before this
+was automated is repointed rather than failing on a machine with no key.
 
 ---
 
