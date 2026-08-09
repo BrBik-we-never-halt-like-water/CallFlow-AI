@@ -936,19 +936,33 @@ sample once every run dials for real. `run_store.py` is gone with them.
 
 **No frontend tests exist.**
 
-**CI** - `.github/workflows/ci-cd.yml`, on PR and push to `main`, `cancel-in-progress`:
+**CI** - `.github/workflows/ci-cd.yml`, on PR and push to `main` **and `dev`**,
+`cancel-in-progress`:
 
-1. `backend` - Python 3.11, `pip install -e ".[dev]"`, ruff, pytest
-2. `frontend` - Node 20, `npm ci`, lint, type-check, build
-3. `deploy` - push to `main` only, needs both, SSH to VM: `git pull` → `pip install -e .` →
-   `pm2 restart callflow-api` → `npm ci && npm run build` → `pm2 restart callflow-web`,
-   then curls `/api/health` and `/`
+1. `api` - Python 3.11, `pip install -e ".[dev]"` in `apps/api`, ruff, pytest
+2. `web` - Node 20, `npm ci`, lint, type-check, build in `apps/web`
+3. `deploy` - push only, needs both, SSH to VM: fetch + `checkout -B` the deployed
+   branch → `pip install -e ./apps/api` → `alembic upgrade head` (run **from
+   `apps/api`**; `alembic.ini` resolves `script_location` against the CWD, so `-c`
+   from the repo root finds no migrations) → `pm2 startOrRestart` the API →
+   `npm ci && npm run build` → `pm2 startOrRestart` the web app → `pm2 save`, then
+   curls `/api/health` and `/`
 
-**Deployment** - one VM, pm2 processes `callflow-api` (uvicorn) and `callflow-web` (next
-start), both behind `callflow-ai.brbik.com`. Secrets via GitHub Actions `vars`/`secrets`.
+One `deploy` job serves both branches: `environment: ${{ github.ref_name }}` resolves
+the GitHub Environment from the branch name, so `APP_DIR`, `PUBLIC_URL`, `VM_HOST`,
+`VM_USER` and `VM_SSH_KEY` all come from there and the job holds no environment
+literals. It fails before connecting if `APP_DIR` or `PUBLIC_URL` is unset.
 
-> ⚠️ **`render.yaml` is stale.** It describes a two-service Render deploy with
-> `healthCheckPath: /`, which is not how this ships. Delete it or mark it unused.
+**Deployment** - `main` → `/var/www/callflow-ai` at `callflow-ai.brbik.com`, `dev` →
+`/var/www/callflow-ai-dev` at `dev.callflow-ai.brbik.com`, each with its own `.env`,
+its own Supabase project, and its own pm2 pair. Process names and ports come from
+`ecosystem.config.js` keyed on `CALLFLOW_ENV`: `callflow-api`/`callflow-web` on
+8000/3000, `callflow-api-dev`/`callflow-web-dev` on 8001/3001. The API runs one worker
+deliberately - the rate limiter is a per-process dict. Full bring-up in
+`DEPLOYMENT.md`.
+
+> `render.yaml` was deleted in the monorepo restructure. It described a two-service
+> Render deploy with `healthCheckPath: /`, which was never how this shipped.
 
 **Local pre-commit hook** (`.githooks/pre-commit`, opt-in) resolves ruff/pytest from
 `.venv` first, falls back to PATH, and skips with a warning rather than blocking if

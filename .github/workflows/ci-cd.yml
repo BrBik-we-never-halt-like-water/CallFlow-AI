@@ -81,10 +81,15 @@ jobs:
             set -euo pipefail
             cd "$APP_DIR"
 
-            # dev runs beside prod on its own pm2 apps. Derived here rather than
-            # in a workflow expression, where an empty string is falsy: the
-            # obvious `== 'main' && '' || '-dev'` hands main the dev suffix.
-            if [ "$BRANCH" = "main" ]; then SUFFIX=""; else SUFFIX="-dev"; fi
+            # dev runs beside prod on its own pm2 apps and ports. CALLFLOW_ENV
+            # is what ecosystem.config.js keys off. Derived here rather than in
+            # a workflow expression, where an empty string is falsy: the obvious
+            # `== 'main' && '' || '-dev'` hands main the dev suffix.
+            if [ "$BRANCH" = "main" ]; then
+              SUFFIX=""; export CALLFLOW_ENV=production
+            else
+              SUFFIX="-dev"; export CALLFLOW_ENV=dev
+            fi
 
             # checkout -B rather than `git pull`: it pins the checkout to the
             # branch being deployed instead of trusting whatever it was left on.
@@ -105,12 +110,22 @@ jobs:
             # which alembic resolves against the CWD - so it has to run from
             # apps/api, not from the repo root with -c.
             (cd apps/api && "$APP_DIR/.venv/bin/alembic" upgrade head)
-            pm2 restart "callflow-api$SUFFIX" --update-env
+
+            # startOrRestart, not restart: the first deploy into a fresh
+            # directory has no pm2 process to restart yet, and this way the
+            # process definition lives in the repo instead of in whatever
+            # someone typed on the VM once.
+            pm2 startOrRestart "$APP_DIR/ecosystem.config.js" \
+              --only "callflow-api$SUFFIX" --update-env
 
             cd apps/web
             NEXT_PUBLIC_API_URL="$PUBLIC_URL" npm ci
             NEXT_PUBLIC_API_URL="$PUBLIC_URL" npm run build
-            pm2 restart "callflow-web$SUFFIX" --update-env
+            pm2 startOrRestart "$APP_DIR/ecosystem.config.js" \
+              --only "callflow-web$SUFFIX" --update-env
+
+            # Persist the process list so a VM reboot brings both back.
+            pm2 save
 
       - name: Health check
         run: |
