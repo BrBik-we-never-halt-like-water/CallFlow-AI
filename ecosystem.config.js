@@ -18,8 +18,16 @@
 const isDev = process.env.CALLFLOW_ENV === 'dev';
 const suffix = isDev ? '-dev' : '';
 
+// Production's web port is 3001, not the 3000 you would guess: that is what the
+// live nginx site has proxied `/` to since before this file existed. Changing it
+// here would restart the app on a port nginx is not pointed at, which is a 502
+// for production and no error anywhere that says why. Dev therefore starts at
+// 3002 rather than colliding with it.
+//
+// The whole box also hosts other sites, so confirm a port is actually free
+// before claiming it:  ss -ltnp
 const apiPort = process.env.API_PORT || (isDev ? '8001' : '8000');
-const webPort = process.env.WEB_PORT || (isDev ? '3001' : '3000');
+const webPort = process.env.WEB_PORT || (isDev ? '3002' : '3001');
 
 // Also read by scripts/bootstrap.sh, to render the nginx server block against the
 // same numbers pm2 binds. pm2 only looks at `apps`, so the extra key is inert.
