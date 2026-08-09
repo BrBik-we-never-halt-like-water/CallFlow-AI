@@ -42,6 +42,14 @@ TERMINAL = {"completed", "failed", "canceled"}
 # new code the engine adds later - falls through to INTERNAL rather than raising
 # a KeyError, per CLAUDE.md's fail-closed rule: an unmapped code should never be
 # treated as if it were a known, safe-to-retry failure.
+#
+# Five of the engine's 24 documented codes are Goals-only (`goal_not_published`,
+# `goal_not_executable`, `goal_not_ready`, `schema_override_not_allowed`,
+# `variables_invalid`) and deliberately absent - the Goals API isn't integrated,
+# so they can never actually be raised against this codebase. Every other code
+# is mapped explicitly below, even where the result is the same INTERNAL
+# fallback an unmapped code would already get, so a future reader can see this
+# code was considered rather than wondering if it was missed.
 _ERROR_CODE_MAP: dict[str, DialFailure] = {
     "invalid_phone": DialFailure.INVALID_NUMBER,
     "invalid_recipient": DialFailure.INVALID_NUMBER,
@@ -55,6 +63,22 @@ _ERROR_CODE_MAP: dict[str, DialFailure] = {
     "unauthorized": DialFailure.UNAUTHORIZED,
     "forbidden": DialFailure.UNAUTHORIZED,
     "provider_unavailable": DialFailure.PROVIDER_UNAVAILABLE,
+    # `call_not_ready`/`not_found` only ever occur on a poll (`GET /v1/calls/{id}`
+    # for a call that hasn't been indexed yet) - a real but short-lived
+    # read-after-write race, never a `start_call` response - so they get the
+    # same transient, retryable treatment as `provider_unavailable`.
+    "call_not_ready": DialFailure.PROVIDER_UNAVAILABLE,
+    "not_found": DialFailure.PROVIDER_UNAVAILABLE,
+    # A malformed request, an idempotency-key/payload mismatch, or a
+    # `result_schema` the engine's structured-extraction can't honour are all
+    # configuration problems, not something a retry or a different phone
+    # number fixes - fails closed to INTERNAL like the unmapped default, but
+    # explicitly, since each is a distinct, real, reachable code.
+    "invalid_request": DialFailure.INTERNAL,
+    "idempotency_conflict": DialFailure.INTERNAL,
+    "result_schema_invalid": DialFailure.INTERNAL,
+    "recipient_result_schema_invalid": DialFailure.INTERNAL,
+    "internal_error": DialFailure.INTERNAL,
 }
 
 
@@ -160,9 +184,15 @@ class EngineGateway:
             timeout_seconds=timeout_seconds or config.poll_timeout_seconds,
         )
 
-    def list_events(self, call_id: str, *, limit: int | None = None) -> JsonObject:
-        """Event stream for a call - powers live dashboard progress."""
-        return self._client.calls.list_events(call_id, limit=limit)
+    def list_events(
+        self, call_id: str, *, cursor: str | None = None, limit: int | None = None
+    ) -> JsonObject:
+        """Event stream for a call - powers live dashboard progress.
+
+        The endpoint is cursor-paginated; forwarding it is what lets a caller
+        actually reach past the first page on a long-running call.
+        """
+        return self._client.calls.list_events(call_id, cursor=cursor, limit=limit)
 
 
 __all__ = [

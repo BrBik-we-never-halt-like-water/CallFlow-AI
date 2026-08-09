@@ -11,6 +11,7 @@ defaults - `resolve_safety_settings()` is the one place that merge happens.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import secrets
 import uuid
@@ -24,6 +25,7 @@ from app.api.v1.routes.campaigns import resolve_campaign
 from app.auth.dependencies import CurrentUser, RequirePermission, current_user
 from app.auth.permissions import Permission
 from app.core.config import config
+from app.core.logging import CallContext
 from app.core.rate_limit import limiter
 from app.database import database
 from app.database.repositories import runs as runs_repo
@@ -31,6 +33,13 @@ from app.database.repositories import safety_settings as safety_settings_repo
 from app.database.repositories import suppressions as suppressions_repo
 from app.domain.entities import CallOutcome, Contact
 from app.domain.safety import phone_hash, resolve_safety_settings
+from app.integrations.voice.engine import (
+    EngineAPIError,
+    EngineConnectionError,
+    EngineGateway,
+    EngineTimeoutError,
+    classify_error,
+)
 from app.services.campaign_runner import CampaignRunner
 
 log = logging.getLogger("app.api.v1.runs")
@@ -44,6 +53,25 @@ class ContactIn(BaseModel):
     region: str | None = None
     language: str | None = None
     context: dict[str, Any] = Field(default_factory=dict)
+
+
+class DeveloperEventOut(BaseModel):
+    """One entry from CALL-E's developer event log (`GET /v1/calls/{id}/events`) -
+    every status transition with its own timestamp, plus warning/error-level
+    diagnostics a 2-second status poll has no way to see at all."""
+
+    id: str
+    type: str
+    created_at: str
+    level: str
+    status: str
+    message: str
+    details: dict[str, Any] = Field(default_factory=dict)
+
+
+class CallEventsOut(BaseModel):
+    events: list[DeveloperEventOut]
+    next_cursor: str | None = None
 
 
 class RunRequest(BaseModel):
@@ -71,11 +99,22 @@ async def _run_and_persist(
     max_calls_per_run: int | None,
     allowlist: frozenset[str] | None,
 ) -> None:
+    # Empty when either half is unconfigured - falls back to polling only,
+    # today's behaviour, unchanged. See `config.webhook_secret`'s own comment
+    # for why an unset secret must not send `webhook_url` at all rather than
+    # sending one CALL-E would just never successfully deliver to.
+    webhook_url = (
+        f"{config.public_api_url}/api/v1/webhooks/calle/{config.webhook_secret}"
+        if config.public_api_url and config.webhook_secret
+        else None
+    )
     runner = CampaignRunner(
         result_schema=result_schema,
+        webhook_url=webhook_url,
         suppressed_hashes=suppressed_hashes,
         max_calls_per_run=max_calls_per_run,
         allowlist=allowlist,
+        run_id=run_id,
     )
 
     async def on_progress(outcome: CallOutcome) -> None:
@@ -84,14 +123,19 @@ async def _run_and_persist(
         async with database.as_user(auth_user_id) as conn:
             await runs_repo.append_outcome(conn, run_id=run_id, org_id=org_id, outcome=record)
 
-    try:
-        await runner.run(campaign, contacts, on_progress=on_progress)
-        async with database.as_user(auth_user_id) as conn:
-            await runs_repo.finish_run(conn, run_id)
-    except Exception as exc:
-        log.exception("run %s failed", run_id)
-        async with database.as_user(auth_user_id) as conn:
-            await runs_repo.finish_run(conn, run_id, error=f"{type(exc).__name__}: {exc}")
+    # Every log line this run produces - in this module, `CampaignRunner`, and
+    # `engine.py` - carries `run_id`/`org_id` for the run's whole lifetime, so
+    # one run's lines can be grepped together regardless of which contact or
+    # module emitted them.
+    with CallContext(run_id=run_id, org_id=str(org_id)):
+        try:
+            await runner.run(campaign, contacts, on_progress=on_progress)
+            async with database.as_user(auth_user_id) as conn:
+                await runs_repo.finish_run(conn, run_id)
+        except Exception as exc:
+            log.exception("run %s failed", run_id)
+            async with database.as_user(auth_user_id) as conn:
+                await runs_repo.finish_run(conn, run_id, error=f"{type(exc).__name__}: {exc}")
 
 
 @router.post("", status_code=status.HTTP_200_OK)
@@ -228,6 +272,11 @@ async def get_run(
             "error": o["error"],
             "duration_seconds": o["duration_seconds"],
             "created_at": o["created_at"].isoformat(),
+            "task_completed": o["task_completed"],
+            "completion_confidence_score": o["completion_confidence_score"],
+            "completion_confidence_label": o["completion_confidence_label"],
+            "evidence": o["evidence"],
+            "attempts": o["attempts"],
         }
         for o in outcome_rows
     ]
@@ -251,3 +300,65 @@ async def get_run(
             "needs_human_pct": round(100 * escalated / len(outcomes)) if outcomes else 0,
         },
     }
+
+
+@router.get("/{run_id}/calls/{provider_call_id}/events", response_model=CallEventsOut)
+async def get_call_events(
+    run_id: str,
+    provider_call_id: str,
+    user: Annotated[CurrentUser, Depends(current_user)],
+    cursor: str | None = None,
+) -> CallEventsOut:
+    """CALL-E's developer event log for one call - on demand, not fetched
+    automatically for every call. Most calls never need this level of detail,
+    and fetching it unconditionally would double the request volume against
+    CALL-E for data most calls don't need inspected. Richer than the coarse
+    status polling `CampaignRunner` already surfaces: every transition gets
+    its own timestamp here (a fast run of states between two 2-second polls
+    can otherwise never be seen at all), plus warning/error-level
+    diagnostics polling has no way to see regardless of interval.
+    """
+    async with database.as_user(user.auth_user_id) as conn:
+        run = await runs_repo.get_run(conn, user.org_id, run_id)
+        if run is None:
+            raise HTTPException(status_code=404, detail="Run not found")
+        outcome_rows = await runs_repo.list_outcomes(conn, run_id)
+
+    # Confirms this call id actually belongs to a contact in *this* run,
+    # itself scoped to the caller's own org by the lookups above - a caller
+    # cannot probe an arbitrary CALL-E call id through their own session.
+    if not any(o["provider_call_id"] == provider_call_id for o in outcome_rows):
+        raise HTTPException(status_code=404, detail="Call not found in this run")
+
+    if not config.api_key:
+        raise HTTPException(
+            status_code=400, detail="No Voice API key is configured - cannot reach the voice engine."
+        )
+
+    gateway = EngineGateway()
+    try:
+        raw = await asyncio.to_thread(gateway.list_events, provider_call_id, cursor=cursor)
+    except (EngineAPIError, EngineTimeoutError, EngineConnectionError) as exc:
+        failure = classify_error(exc)
+        raise HTTPException(
+            status_code=502, detail=f"Could not reach the voice engine: {failure.value}"
+        ) from exc
+    finally:
+        gateway.close()
+
+    raw_events = raw.get("data") if isinstance(raw, dict) else None
+    events = [
+        DeveloperEventOut(
+            id=str(event.get("id", "")),
+            type=str(event.get("type", "")),
+            created_at=str(event.get("created_at", "")),
+            level=str(event.get("level", "")),
+            status=str(event.get("status", "")),
+            message=str(event.get("message", "")),
+            details=event.get("details") or {},
+        )
+        for event in raw_events
+        if isinstance(event, dict)
+    ] if isinstance(raw_events, list) else []
+    next_cursor = raw.get("next_cursor") if isinstance(raw, dict) else None
+    return CallEventsOut(events=events, next_cursor=next_cursor)

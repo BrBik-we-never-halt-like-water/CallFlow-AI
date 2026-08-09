@@ -44,8 +44,11 @@ async def append_outcome(
         insert into public.call_outcomes
             (run_id, org_id, contact_name, phone_masked, status, provider_call_id,
              transcript, summary, sentiment, sentiment_reason, extracted,
-             disposition, disposition_reason, error, duration_seconds)
-        values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+             disposition, disposition_reason, error, duration_seconds,
+             task_completed, completion_confidence_score, completion_confidence_label,
+             evidence, attempts)
+        values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
+                $16, $17, $18, $19, $20)
         on conflict (run_id, contact_name, phone_masked) do update set
             status = excluded.status,
             provider_call_id = excluded.provider_call_id,
@@ -57,7 +60,12 @@ async def append_outcome(
             disposition = excluded.disposition,
             disposition_reason = excluded.disposition_reason,
             error = excluded.error,
-            duration_seconds = excluded.duration_seconds
+            duration_seconds = excluded.duration_seconds,
+            task_completed = excluded.task_completed,
+            completion_confidence_score = excluded.completion_confidence_score,
+            completion_confidence_label = excluded.completion_confidence_label,
+            evidence = excluded.evidence,
+            attempts = excluded.attempts
         """,
         run_id,
         org_id,
@@ -74,6 +82,11 @@ async def append_outcome(
         outcome.get("disposition_reason"),
         outcome.get("error"),
         outcome.get("duration_seconds"),
+        outcome.get("task_completed"),
+        outcome.get("completion_confidence_score"),
+        outcome.get("completion_confidence_label"),
+        outcome.get("evidence", []),
+        outcome.get("attempts", []),
     )
 
 
@@ -88,6 +101,21 @@ async def finish_run(conn: asyncpg.Connection, run_id: str, error: str | None = 
         """,
         run_id,
         error,
+    )
+
+
+async def lookup_owner_for_webhook(conn: asyncpg.Connection, run_id: str) -> asyncpg.Record | None:
+    """Unauthenticated resolution, via the SECURITY DEFINER
+    `lookup_run_owner_for_webhook` function - the CALL-E webhook receiver has
+    no signed-in user to scope a plain query with. Runs on a
+    `database.anonymous()` connection, same shape as `invitations_repo.lookup_public`.
+
+    Returns the run's *starter*, not just any org member - see the migration's
+    own docstring for why that's the deliberate choice.
+    """
+    return await conn.fetchrow(
+        "select org_id, campaign_id, auth_user_id from public.lookup_run_owner_for_webhook($1)",
+        run_id,
     )
 
 
@@ -108,7 +136,8 @@ async def list_outcomes(conn: asyncpg.Connection, run_id: str) -> list[asyncpg.R
         """
         select contact_name, phone_masked, status, provider_call_id, transcript, summary,
                sentiment, sentiment_reason, extracted, disposition, disposition_reason,
-               error, duration_seconds, created_at
+               error, duration_seconds, created_at, task_completed,
+               completion_confidence_score, completion_confidence_label, evidence, attempts
         from public.call_outcomes
         where run_id = $1
         order by created_at

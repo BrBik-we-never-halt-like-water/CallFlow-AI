@@ -19,10 +19,12 @@ from app.api.v1.routes.profile import router as profile_router
 from app.api.v1.routes.runs import router as runs_router
 from app.api.v1.routes.safety import router as safety_router
 from app.api.v1.routes.suppressions import router as suppressions_router
+from app.api.v1.routes.webhooks import router as webhooks_router
 from app.core.config import config
+from app.core.logging import configure_logging
 from app.database import database
 
-logging.basicConfig(level=logging.INFO)
+configure_logging(json_format=config.log_format == "json")
 log = logging.getLogger("app.main")
 
 @asynccontextmanager
@@ -72,6 +74,7 @@ app.include_router(safety_router)
 app.include_router(suppressions_router)
 app.include_router(api_keys_router)
 app.include_router(integrations_router)
+app.include_router(webhooks_router)
 
 
 @app.get("/")
