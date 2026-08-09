@@ -2,9 +2,9 @@ name: CI/CD
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, dev]
   push:
-    branches: [main]
+    branches: [main, dev]
 
 concurrency:
   group: callflow-ai-${{ github.ref }}
@@ -47,12 +47,28 @@ jobs:
         env:
           NEXT_PUBLIC_API_URL: https://callflow-ai.brbik.com
 
+  # One job serves both targets. `environment` resolves to the branch name, so
+  # main and dev each supply their own VM_HOST / VM_USER / VM_SSH_KEY / APP_DIR /
+  # PUBLIC_URL from the GitHub Environment of that name - a second copy of this
+  # job would only be the same steps with different literals in it.
   deploy:
-    name: Deploy to VM
+    name: Deploy ${{ github.ref_name }}
     needs: [api, web]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
+    environment: ${{ github.ref_name }}
+    env:
+      BRANCH: ${{ github.ref_name }}
+      APP_DIR: ${{ vars.APP_DIR }}
+      PUBLIC_URL: ${{ vars.PUBLIC_URL }}
     steps:
+      # An unset var would otherwise deploy the dev branch into whatever
+      # directory the prod default happened to be.
+      - name: Check the environment is configured
+        run: |
+          test -n "$APP_DIR"    || { echo "APP_DIR is not set for environment '$BRANCH'";    exit 1; }
+          test -n "$PUBLIC_URL" || { echo "PUBLIC_URL is not set for environment '$BRANCH'"; exit 1; }
+
       - name: SSH deploy
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -60,10 +76,20 @@ jobs:
           username: ${{ vars.VM_USER }}
           key: ${{ secrets.VM_SSH_KEY }}
           command_timeout: 15m
+          envs: BRANCH,APP_DIR,PUBLIC_URL
           script: |
             set -euo pipefail
-            cd /var/www/callflow-ai
-            git pull
+            cd "$APP_DIR"
+
+            # dev runs beside prod on its own pm2 apps. Derived here rather than
+            # in a workflow expression, where an empty string is falsy: the
+            # obvious `== 'main' && '' || '-dev'` hands main the dev suffix.
+            if [ "$BRANCH" = "main" ]; then SUFFIX=""; else SUFFIX="-dev"; fi
+
+            # checkout -B rather than `git pull`: it pins the checkout to the
+            # branch being deployed instead of trusting whatever it was left on.
+            git fetch --prune origin
+            git checkout -B "$BRANCH" "origin/$BRANCH"
 
             # The repo moved to apps/api + apps/web. Fail loudly rather than
             # deploying a half-updated tree if the checkout predates the move.
@@ -75,16 +101,19 @@ jobs:
             done
 
             .venv/bin/pip install -e ./apps/api
-            .venv/bin/alembic -c apps/api/alembic.ini upgrade head
-            pm2 restart callflow-api --update-env
+            # alembic.ini's script_location and prepend_sys_path are both `.`,
+            # which alembic resolves against the CWD - so it has to run from
+            # apps/api, not from the repo root with -c.
+            (cd apps/api && "$APP_DIR/.venv/bin/alembic" upgrade head)
+            pm2 restart "callflow-api$SUFFIX" --update-env
 
             cd apps/web
-            NEXT_PUBLIC_API_URL=https://callflow-ai.brbik.com npm ci
-            NEXT_PUBLIC_API_URL=https://callflow-ai.brbik.com npm run build
-            pm2 restart callflow-web --update-env
+            NEXT_PUBLIC_API_URL="$PUBLIC_URL" npm ci
+            NEXT_PUBLIC_API_URL="$PUBLIC_URL" npm run build
+            pm2 restart "callflow-web$SUFFIX" --update-env
 
       - name: Health check
         run: |
           sleep 5
-          curl -fsS https://callflow-ai.brbik.com/api/health
-          curl -fsS -o /dev/null https://callflow-ai.brbik.com/
+          curl -fsS "$PUBLIC_URL/api/health"
+          curl -fsS -o /dev/null "$PUBLIC_URL/"
