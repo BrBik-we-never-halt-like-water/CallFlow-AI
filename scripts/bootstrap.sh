@@ -93,6 +93,36 @@ done
 # ---------------------------------------------------------------------- nginx
 SITE="/etc/nginx/sites-available/callflow-$CALLFLOW_ENV"
 
+CERT_DIR=/etc/ssl/callflow
+CERT="$CERT_DIR/$CALLFLOW_ENV.pem"
+KEY="$CERT_DIR/$CALLFLOW_ENV.key"
+
+# A Cloudflare Origin CA certificate is a static 15-year file pair, so unlike ACME
+# there is nothing to renew and nothing to keep reachable - it just has to be on
+# disk before nginx is told to use it. Installed on every run so rotating the
+# secret rotates the certificate.
+if [ -n "${ORIGIN_CERT_B64:-}" ] && [ -n "${ORIGIN_KEY_B64:-}" ] && have_sudo; then
+  sudo mkdir -p "$CERT_DIR"
+  printf '%s' "$ORIGIN_CERT_B64" | base64 -d | sudo tee "$CERT.next" > /dev/null
+  printf '%s' "$ORIGIN_KEY_B64"  | base64 -d | sudo tee "$KEY.next"  > /dev/null
+
+  # Refuse to install a pair that does not match, rather than finding out from
+  # nginx refusing to start after the old one has already been replaced.
+  cert_mod=$(sudo openssl x509 -noout -modulus -in "$CERT.next" | sha256sum)
+  key_mod=$(sudo openssl rsa -noout -modulus -in "$KEY.next" 2>/dev/null | sha256sum \
+    || sudo openssl ec -noout -text -in "$KEY.next" 2>/dev/null | sha256sum)
+  if [ "$cert_mod" != "$key_mod" ]; then
+    log "certificate and key do not match - leaving the existing pair in place"
+    sudo rm -f "$CERT.next" "$KEY.next"
+  else
+    sudo mv "$CERT.next" "$CERT"
+    sudo mv "$KEY.next" "$KEY"
+    sudo chmod 644 "$CERT"
+    sudo chmod 600 "$KEY"
+    log "Cloudflare Origin certificate installed for $CALLFLOW_ENV"
+  fi
+fi
+
 if [ ! -f "$SITE" ] && have_sudo; then
   # Ports come from ecosystem.config.js so the proxy cannot point somewhere pm2
   # is not listening. Read here rather than at the top of the script: node is on
@@ -101,25 +131,60 @@ if [ ! -f "$SITE" ] && have_sudo; then
   API_PORT=$(node -p "require('$PWD/ecosystem.config.js').ports.api")
   WEB_PORT=$(node -p "require('$PWD/ecosystem.config.js').ports.web")
 
-  log "writing the nginx site for $PUBLIC_HOST (web $WEB_PORT, api $API_PORT)"
-  sed -e "s|@HOST@|$PUBLIC_HOST|g" \
-      -e "s|@API_PORT@|$API_PORT|g" \
-      -e "s|@WEB_PORT@|$WEB_PORT|g" \
-      scripts/nginx.conf.template | sudo tee "$SITE" > /dev/null
+  render() {
+    sed -e "s|@HOST@|$PUBLIC_HOST|g" \
+        -e "s|@ENV@|$CALLFLOW_ENV|g" \
+        -e "s|@API_PORT@|$API_PORT|g" \
+        -e "s|@WEB_PORT@|$WEB_PORT|g" "$1"
+  }
+
+  sudo mkdir -p /etc/nginx/snippets
+  render scripts/nginx.locations.template \
+    | sudo tee "/etc/nginx/snippets/callflow-$CALLFLOW_ENV.conf" > /dev/null
+
+  if [ -f "$CERT" ] && [ -f "$KEY" ]; then
+    template=scripts/nginx-tls.conf.template
+  else
+    template=scripts/nginx.conf.template
+  fi
+
+  log "writing the nginx site for $PUBLIC_HOST from ${template##*/} (web $WEB_PORT, api $API_PORT)"
+  render "$template" | sudo tee "$SITE" > /dev/null
   sudo ln -sfn "$SITE" "/etc/nginx/sites-enabled/callflow-$CALLFLOW_ENV"
   sudo nginx -t
   sudo systemctl reload nginx
 elif [ ! -f "$SITE" ]; then
-  log "SKIPPED nginx: no passwordless sudo. Render scripts/nginx.conf.template by hand."
+  log "SKIPPED nginx: no passwordless sudo. Render the templates in scripts/ by hand."
+else
+  # The site file already exists, so the server blocks are left alone - but the
+  # snippet is ours and safe to keep current, which is where the ports live.
+  API_PORT=$(node -p "require('$PWD/ecosystem.config.js').ports.api")
+  WEB_PORT=$(node -p "require('$PWD/ecosystem.config.js').ports.web")
+  if have_sudo; then
+    sudo mkdir -p /etc/nginx/snippets
+    sed -e "s|@API_PORT@|$API_PORT|g" -e "s|@WEB_PORT@|$WEB_PORT|g" \
+      scripts/nginx.locations.template \
+      | sudo tee "/etc/nginx/snippets/callflow-$CALLFLOW_ENV.conf.next" > /dev/null
+    if ! sudo cmp -s "/etc/nginx/snippets/callflow-$CALLFLOW_ENV.conf.next" \
+                     "/etc/nginx/snippets/callflow-$CALLFLOW_ENV.conf"; then
+      sudo mv "/etc/nginx/snippets/callflow-$CALLFLOW_ENV.conf.next" \
+              "/etc/nginx/snippets/callflow-$CALLFLOW_ENV.conf"
+      sudo nginx -t && sudo systemctl reload nginx
+      log "nginx proxy snippet updated"
+    else
+      sudo rm -f "/etc/nginx/snippets/callflow-$CALLFLOW_ENV.conf.next"
+    fi
+  fi
 fi
 
-# TLS on first bring-up only. certbot is idempotent, but pointing it at a host
-# whose DNS has not propagated yet burns a Let's Encrypt rate limit, and a
-# failure here should not fail a deploy that is otherwise fine.
-if [ -n "${CERTBOT_EMAIL:-}" ] && [ ! -d "/etc/letsencrypt/live/$PUBLIC_HOST" ] && have_sudo; then
-  log "requesting a certificate for $PUBLIC_HOST"
+# Let's Encrypt remains the path for a host that is NOT behind Cloudflare. Skipped
+# entirely once an Origin certificate is installed - ACME cannot validate through
+# a proxied record with HTTP-01 anyway.
+if [ ! -f "$CERT" ] && [ -n "${CERTBOT_EMAIL:-}" ] \
+   && [ ! -d "/etc/letsencrypt/live/$PUBLIC_HOST" ] && have_sudo; then
+  log "requesting a Let's Encrypt certificate for $PUBLIC_HOST"
   sudo certbot --nginx -d "$PUBLIC_HOST" -n --agree-tos -m "$CERTBOT_EMAIL" --redirect \
-    || log "certbot failed - is DNS for $PUBLIC_HOST pointed here yet? HTTP still serves."
+    || log "certbot failed - is DNS for $PUBLIC_HOST pointed here, unproxied? HTTP still serves."
 fi
 
 # --------------------------------------------------------- pm2 across reboots

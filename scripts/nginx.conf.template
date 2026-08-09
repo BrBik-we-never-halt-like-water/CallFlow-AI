@@ -1,39 +1,14 @@
-# Rendered by scripts/bootstrap.sh into /etc/nginx/sites-available/callflow-<env>.
-# @HOST@, @API_PORT@ and @WEB_PORT@ are substituted; the ports come from
-# ecosystem.config.js, so they cannot drift from what pm2 actually binds.
+# HTTP-only server block. Used when no TLS material is available - either a first
+# bring-up before certificates are configured, or a host that sits behind
+# something else terminating TLS.
 #
-# Written once and then left alone: certbot rewrites this file in place to add
-# the TLS server block, and re-rendering on every deploy would strip that back
-# out and take HTTPS down. To change it, delete the file and let the next deploy
-# write it again, then re-run certbot.
+# Rendered by scripts/bootstrap.sh into /etc/nginx/sites-available/callflow-<env>,
+# and only when that file does not already exist: certbot rewrites it in place to
+# add its own TLS block, and re-rendering every deploy would strip that back out.
 
 server {
     listen 80;
     server_name @HOST@;
 
-    # Headers are spelled out rather than `include proxy_params` - that file is
-    # a Debian/Ubuntu convention and its absence fails `nginx -t` on anything else.
-    proxy_set_header Host              $host;
-    proxy_set_header X-Real-IP         $remote_addr;
-    proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto $scheme;
-
-    # A call that runs long should not be cut off mid-transcript.
-    proxy_read_timeout 300s;
-    client_max_body_size 25m;
-
-    # The API is mounted under /api on the same origin as the site, so the
-    # browser makes no cross-origin request and CORS never enters into it.
-    location /api/ {
-        proxy_pass http://127.0.0.1:@API_PORT@;
-    }
-
-    location / {
-        proxy_pass http://127.0.0.1:@WEB_PORT@;
-
-        # Next streams RSC payloads over a connection it expects to keep open.
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-    }
+    include /etc/nginx/snippets/callflow-@ENV@.conf;
 }
