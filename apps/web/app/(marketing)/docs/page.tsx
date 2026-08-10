@@ -1,3 +1,4 @@
+import { CaretRightIcon } from "@phosphor-icons/react/dist/ssr";
 import Link from "next/link";
 import { Eyebrow } from "@/components/ui/panel";
 import { DOC_SECTIONS } from "@/lib/docs";
@@ -27,10 +28,16 @@ export default function DocsIndexPage() {
                 <li key={page.slug} className="border-b border-rule">
                   <Link
                     href={`/docs/${page.slug}`}
-                    className="flex flex-col gap-1 py-3 transition-colors hover:bg-surface-hover"
+                    className="group flex items-center gap-4 py-3 transition-colors hover:bg-surface-hover"
                   >
-                    <span className="text-h4 font-medium text-text">{page.title}</span>
-                    <span className="measure text-small text-text-dim">{page.summary}</span>
+                    <span className="flex min-w-0 flex-1 flex-col gap-1">
+                      <span className="text-h4 font-medium text-text">{page.title}</span>
+                      <span className="measure text-small text-text-dim">{page.summary}</span>
+                    </span>
+                    <CaretRightIcon
+                      aria-hidden
+                      className="size-4 shrink-0 text-text-mute transition-transform duration-(--dur-base) ease-(--ease-out) group-hover:translate-x-1"
+                    />
                   </Link>
                 </li>
               ))}

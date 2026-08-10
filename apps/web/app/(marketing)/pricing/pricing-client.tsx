@@ -71,12 +71,11 @@ export function PricingClient() {
       </section>
 
       <Divider />
-      <CostComparison currency={currency} />
+      <CostComparison />
 
       <Divider />
       <section className="mx-auto max-w-(--container-marketing) px-4 sm:px-6">
         <SectionHeading
-          eyebrow="Every feature"
           title="What each plan includes."
           sub="Hover a feature name for a one-line explanation of what it actually does."
         />
@@ -87,7 +86,7 @@ export function PricingClient() {
 
       <Divider />
       <section className="mx-auto max-w-(--container-marketing) px-4 sm:px-6">
-        <SectionHeading eyebrow="Questions" title="Pricing questions, answered plainly." />
+        <SectionHeading title="Pricing questions, answered plainly." />
         <div className="mt-8 max-w-3xl">
           <Accordion
             items={PRICING_FAQ.map((item) => ({ title: item.q, content: item.a }))}
