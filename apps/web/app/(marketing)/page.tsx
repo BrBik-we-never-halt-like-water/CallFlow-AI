@@ -1,52 +1,62 @@
-import { CapabilityGrid } from '@/components/marketing/capability-grid';
-import { FinalCta } from '@/components/marketing/final-cta';
-import { Hero } from '@/components/marketing/hero';
-import { PricingPreview } from '@/components/marketing/pricing-preview';
-import { ProblemCompare } from '@/components/marketing/problem-compare';
-import { SafetySection } from '@/components/marketing/safety-section';
-import { Steps } from '@/components/marketing/steps';
-import { VerticalStrip } from '@/components/marketing/vertical-strip';
+import { CapabilityGrid } from "@/components/marketing/capability-grid";
+import { FinalCta } from "@/components/marketing/final-cta";
+import { Hero } from "@/components/marketing/hero";
+import { Listening } from "@/components/marketing/listening";
+import { PricingPreview } from "@/components/marketing/pricing-preview";
+import { SafetySection } from "@/components/marketing/safety-section";
+import { Steps } from "@/components/marketing/steps";
+import { VerticalStrip } from "@/components/marketing/vertical-strip";
+import { DeckSection, SectionDeck } from "@/components/marketing/section-deck";
 
 /**
- * The home page.
+ * The home page, as a deck.
  *
- * Section order carries the argument: show the product working, explain why a
- * call log is not enough, show the four steps, list what you get, name who it is
- * for, prove the guards, price it, then close on the free daily call budget.
+ * Each section fills the screen and depth carries the transition: the one being
+ * read sits forward, the ones around it scale back and take a veil. It reads as
+ * moving through a stack rather than past a list, which means the page is
+ * understood one argument at a time.
  *
- * Sections are separated by open space rather than by rules or alternating
- * background bands. The one surface inversion on the page is saved for the
- * closing CTA.
+ * Order carries that argument: show the product working, show it still working
+ * while you read, explain why a call log is not enough, show the four steps,
+ * list what you get, name who it is for, prove the guards, price it, close.
+ *
+ * Ground alternates so no two adjacent sections share a surface. At this size a
+ * repeated ground makes two sections read as one.
  */
 export default function HomePage() {
   return (
     <>
       <Hero />
 
-      <SpineDivider />
-      <ProblemCompare />
+      <SectionDeck>
+        <DeckSection id="listening" ground="sand">
+          <div className="mx-auto max-w-(--container-marketing) px-4 sm:px-6">
+            <Listening />
+          </div>
+        </DeckSection>
 
-      <SpineDivider />
-      <Steps />
+        <DeckSection id="how">
+          <Steps />
+        </DeckSection>
 
-      <SpineDivider />
-      <CapabilityGrid />
+        <DeckSection id="capabilities">
+          <CapabilityGrid />
+        </DeckSection>
 
-      <SpineDivider />
-      <VerticalStrip />
+        <DeckSection id="verticals" ground="sunken">
+          <VerticalStrip />
+        </DeckSection>
 
-      <SpineDivider />
-      <SafetySection />
+        <DeckSection id="guards" ground="sand">
+          <SafetySection />
+        </DeckSection>
 
-      <SpineDivider />
-      <PricingPreview />
+        <DeckSection id="pricing">
+          <PricingPreview />
+        </DeckSection>
+      </SectionDeck>
 
       <FinalCta />
     </>
   );
-}
-
-/** Open space between sections - the page's only separator. */
-function SpineDivider() {
-  return <div aria-hidden className="h-(--space-section)" />;
 }
