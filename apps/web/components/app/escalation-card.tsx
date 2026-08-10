@@ -9,7 +9,7 @@ import { useToast } from '@/components/ui/toast';
 import { MaskedPhone } from './masked-phone';
 import type { Outcome } from '@/lib/api';
 import { useAppStore } from '@/lib/app-store';
-import { formatAge, formatDuration } from '@/lib/format';
+import { formatAge, formatDuration, formatTimestamp } from '@/lib/format';
 import { useSession } from '@/lib/hooks/use-session';
 
 /**
@@ -30,13 +30,14 @@ export function EscalationCard({
   onOpen?: () => void;
 }) {
   const toast = useToast();
-  const { resolveEscalation } = useAppStore();
+  const { resolveEscalation, campaigns } = useAppStore();
   const session = useSession();
   const canResolve =
     session.status === 'signed-in' &&
     session.profile.permissions.includes('escalations:resolve');
 
   const chain = buildChain(outcome);
+  const campaign = campaigns.find((c) => c.id === outcome.campaign_id);
 
   // The dashboard's condensed preview reads as a list - hairline dividers
   // between rows, like the rest of that column - not a stack of boxed cards.
@@ -55,62 +56,87 @@ export function EscalationCard({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2">
           <Lamp state="flare" size="md" label="Needs a person" />
-          <div className="flex min-w-0 flex-col">
-            <p className="truncate text-small font-medium text-text">
-              {outcome.contact_name}
-            </p>
+          <div className="flex min-w-0 flex-col gap-0.5">
+            <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+              <p className="truncate text-small font-medium text-text">
+                {outcome.contact_name}
+              </p>
+              {campaign ? (
+                <Tag className="shrink-0">{campaign.name}</Tag>
+              ) : null}
+            </div>
             <MaskedPhone phone={outcome.phone_masked} />
           </div>
         </div>
 
-        <div className="flex shrink-0 items-center gap-2">
-          <span className="font-mono text-data text-text-mute">
-            {formatAge(outcome.created_at)}
+        <div className="flex shrink-0 flex-col items-end gap-0.5">
+          <span
+            className="font-mono text-data text-text-mute"
+            title={formatTimestamp(outcome.created_at)}
+          >
+            Waiting {formatAge(outcome.created_at)}
           </span>
           {outcome.duration_seconds != null ? (
-            <span className="font-mono text-data tabular-nums text-text-mute">
-              {formatDuration(outcome.duration_seconds)}
+            <span className="font-mono text-data tabular-nums text-text-dim">
+              {formatDuration(outcome.duration_seconds)} call
             </span>
           ) : null}
         </div>
       </div>
 
-      {/* The reasoning chain. Tag's own `whitespace-nowrap` is right for a short
-          role/template label, but disposition_reason/sentiment_reason are full
-          sentences - overridden back to wrapping here so a long one wraps
-          inside the card instead of pushing past its edge. */}
-      <ol className="flex flex-wrap items-start gap-1.5">
-        {chain.map((step, i) => (
-          <li key={i} className="flex min-w-0 max-w-full items-center gap-1.5">
-            {i > 0 ? (
-              <span
-                aria-hidden
-                className="shrink-0 font-mono text-data text-text-mute"
-              >
-                →
-              </span>
-            ) : null}
-            <Tag
-              mono={false}
-              className={cn(
-                'min-w-0 whitespace-normal break-words',
-                i === chain.length - 1 && 'text-lamp-flare-text',
-              )}
+      {/* The reasoning chain. No boxed background here - kept flush with
+          "Last thing they said"/"Summary" below so all three read as one
+          consistent rhythm of label-then-content, not one section singled
+          out with heavier chrome. Tag's own `whitespace-nowrap` is right for
+          a short role/template label, but disposition_reason/sentiment_reason
+          are full sentences - overridden back to wrapping here so a long one
+          wraps inside the card instead of pushing past its edge. */}
+      <div className="flex flex-col gap-1.5">
+        <p className="text-small font-bold text-text-mute">Why it&apos;s here</p>
+        <ol className="flex flex-wrap items-start gap-x-1.5 gap-y-2">
+          {chain.map((step, i) => (
+            <li
+              key={i}
+              className="flex min-w-0 max-w-full items-center gap-1.5"
             >
-              {step}
-            </Tag>
-          </li>
-        ))}
-      </ol>
+              {i > 0 ? (
+                <span
+                  aria-hidden
+                  className="shrink-0 font-mono text-data text-text-mute"
+                >
+                  →
+                </span>
+              ) : null}
+              <Tag
+                mono={false}
+                className={cn(
+                  'min-w-0 whitespace-normal break-words',
+                  i === chain.length - 1 && 'text-lamp-flare-text',
+                )}
+              >
+                {step}
+              </Tag>
+            </li>
+          ))}
+        </ol>
+      </div>
 
       {!compact && outcome.transcript ? (
-        <blockquote className="border-l-2 border-rule pl-3 text-small text-text-dim">
-          {excerpt(outcome.transcript)}
-        </blockquote>
+        <div className="flex flex-col gap-1">
+          <p className="text-small font-bold text-text-mute">
+            Last thing they said
+          </p>
+          <blockquote className="border-l-2 border-rule pl-3 text-small text-text-dim">
+            {excerpt(outcome.transcript)}
+          </blockquote>
+        </div>
       ) : null}
 
       {!compact && outcome.summary ? (
-        <p className="text-small text-text-dim">{outcome.summary}</p>
+        <div className="flex flex-col gap-1">
+          <p className="text-small font-bold text-text-mute">Summary</p>
+          <p className="text-small text-text-dim">{outcome.summary}</p>
+        </div>
       ) : null}
 
       <div className="flex flex-wrap items-center gap-2">

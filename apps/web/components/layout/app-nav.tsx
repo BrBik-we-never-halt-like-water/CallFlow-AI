@@ -12,6 +12,7 @@ import {
 } from '@phosphor-icons/react/dist/ssr';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { AnimatedNavIcon } from '@/components/ui/animated-nav-icon';
 import { cn } from '@/lib/cn';
 import { UserMenu } from './user-menu';
 import type { SessionProfile } from '@/lib/hooks/use-session';
@@ -132,15 +133,11 @@ export function AppTabBar({
             href={item.href}
             aria-current={active ? 'page' : undefined}
             className={cn(
-              'relative flex min-h-14 flex-1 flex-col items-center justify-center gap-1 px-1 py-2',
+              'group relative flex min-h-14 flex-1 flex-col items-center justify-center gap-1 px-1 py-2',
               active ? 'text-text' : 'text-text-mute',
             )}
           >
-            <item.icon
-              aria-hidden
-              weight={active ? 'fill' : 'regular'}
-              className="size-5"
-            />
+            <AnimatedNavIcon icon={item.icon} active={active} className="size-5" />
             <span className="truncate text-[0.6875rem] leading-none">
               {item.label === 'Needs a person' ? 'Needs you' : item.label}
             </span>

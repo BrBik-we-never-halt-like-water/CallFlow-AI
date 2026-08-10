@@ -32,7 +32,12 @@ from app.database.repositories import runs as runs_repo
 from app.database.repositories import safety_settings as safety_settings_repo
 from app.database.repositories import suppressions as suppressions_repo
 from app.domain.entities import CallOutcome, Contact
-from app.domain.safety import phone_hash, resolve_safety_settings
+from app.domain.safety import (
+    apply_run_override,
+    is_e164,
+    phone_hash,
+    resolve_safety_settings,
+)
 from app.integrations.voice.engine import (
     EngineAPIError,
     EngineConnectionError,
@@ -77,6 +82,12 @@ class CallEventsOut(BaseModel):
 class RunRequest(BaseModel):
     campaign_id: str
     contacts: list[ContactIn]
+    # Per-run overrides of this organisation's own safety settings - tighten
+    # only, never looser (see `apply_run_override`'s own docstring for why).
+    # Both optional; omitting either leaves that guard at the organisation's
+    # configured value.
+    max_calls_per_run: int | None = Field(default=None, gt=0)
+    allowlist: list[str] | None = None
 
 
 def _is_owner(request: Request) -> bool:
@@ -109,12 +120,12 @@ async def _run_and_persist(
         else None
     )
     runner = CampaignRunner(
+        run_id=run_id,
         result_schema=result_schema,
         webhook_url=webhook_url,
         suppressed_hashes=suppressed_hashes,
         max_calls_per_run=max_calls_per_run,
         allowlist=allowlist,
-        run_id=run_id,
     )
 
     async def on_progress(outcome: CallOutcome) -> None:
@@ -123,15 +134,19 @@ async def _run_and_persist(
         async with database.as_user(auth_user_id) as conn:
             await runs_repo.append_outcome(conn, run_id=run_id, org_id=org_id, outcome=record)
 
+    async def should_cancel() -> bool:
+        async with database.as_user(auth_user_id) as conn:
+            return await runs_repo.is_cancel_requested(conn, run_id)
+
     # Every log line this run produces - in this module, `CampaignRunner`, and
     # `engine.py` - carries `run_id`/`org_id` for the run's whole lifetime, so
     # one run's lines can be grepped together regardless of which contact or
     # module emitted them.
     with CallContext(run_id=run_id, org_id=str(org_id)):
         try:
-            await runner.run(campaign, contacts, on_progress=on_progress)
+            await runner.run(campaign, contacts, on_progress=on_progress, should_cancel=should_cancel)
             async with database.as_user(auth_user_id) as conn:
-                await runs_repo.finish_run(conn, run_id)
+                await runs_repo.finish_run(conn, run_id, status="canceled" if runner.canceled else None)
         except Exception as exc:
             log.exception("run %s failed", run_id)
             async with database.as_user(auth_user_id) as conn:
@@ -145,6 +160,19 @@ async def start_run(
     background: BackgroundTasks,
     user: Annotated[CurrentUser, Depends(RequirePermission(Permission.RUNS_START))],
 ) -> dict[str, Any]:
+    # A replay of an already-accepted request returns the original run and
+    # does nothing else - no new dial, no rate-limit charge, no second row.
+    # Checked first, and cheaply, so a retried/double-submitted request never
+    # reaches anything with a side effect (CLAUDE.md non-negotiable #6).
+    idempotency_key = request.headers.get("idempotency-key") or None
+    if idempotency_key:
+        async with database.as_user(user.auth_user_id) as conn:
+            existing = await runs_repo.get_run_by_idempotency_key(
+                conn, user.org_id, idempotency_key
+            )
+        if existing is not None:
+            return {"run_id": existing["id"], "total": existing["total"]}
+
     async with database.as_user(user.auth_user_id) as conn:
         resolved = await resolve_campaign(conn, user.org_id, req.campaign_id)
     if resolved is None:
@@ -174,9 +202,36 @@ async def start_run(
         daily_budget=safety_row["daily_budget"] if safety_row else None,
     )
 
+    if req.allowlist:
+        bad = [n for n in req.allowlist if not is_e164(n)]
+        if bad:
+            raise HTTPException(
+                status_code=400, detail=f"Not valid E.164 numbers: {', '.join(bad)}"
+            )
+
+    # Per-run override, tighten-only - see apply_run_override's own docstring.
+    # calls_per_window/window_minutes/daily_budget pass through unchanged, so
+    # this is safe to apply before the rate-limit check below even though
+    # that check only cares about those three fields.
+    effective = apply_run_override(
+        effective, max_calls_per_run=req.max_calls_per_run, allowlist=req.allowlist
+    )
+
+    # Resolved before the rate-limit check (not after) so a suppressed
+    # contact - who check_dial_allowed will skip regardless - never reserves
+    # a slot from the daily budget or rate window for a call that will never
+    # actually be placed.
+    async with database.as_user(user.auth_user_id) as conn:
+        suppressed: set[str] = set()
+        for contact in contacts:
+            digest = phone_hash(contact.phone)
+            if await suppressions_repo.is_suppressed(conn, user.org_id, digest):
+                suppressed.add(digest)
+
+    dialable = len(contacts) - len(suppressed)
     verdict = limiter.check(
         str(user.org_id),
-        calls=len(contacts),
+        calls=dialable,
         is_owner=_is_owner(request),
         rate_limit_calls=effective.calls_per_window,
         rate_limit_window_seconds=effective.window_minutes * 60,
@@ -195,20 +250,36 @@ async def start_run(
 
     run_id = uuid.uuid4().hex[:12]
     async with database.as_user(user.auth_user_id) as conn:
-        suppressed: set[str] = set()
-        for contact in contacts:
-            digest = phone_hash(contact.phone)
-            if await suppressions_repo.is_suppressed(conn, user.org_id, digest):
-                suppressed.add(digest)
-
-        await runs_repo.create_run(
+        created = await runs_repo.create_run(
             conn,
             run_id=run_id,
             org_id=user.org_id,
             campaign_id=campaign.id,
             total=len(contacts),
             started_by=user.id,
+            idempotency_key=idempotency_key,
+            # A permanent snapshot of the exact guards this run is governed
+            # by - the same `effective` object used for the dial gate and
+            # the rate-limit check above, not a fresh read of
+            # org_safety_settings, which can change after the fact and
+            # would otherwise silently rewrite this run's own history.
+            max_calls_per_run=effective.max_calls_per_run,
+            allowlist=effective.allowlist,
+            calls_per_window=effective.calls_per_window,
+            window_minutes=effective.window_minutes,
+            daily_budget=effective.daily_budget,
         )
+
+    if not created:
+        # Lost a race to a concurrent, identically-keyed request - it already
+        # created the real run. Return that one instead of starting a second.
+        limiter.release(str(user.org_id), dialable)
+        async with database.as_user(user.auth_user_id) as conn:
+            existing = await runs_repo.get_run_by_idempotency_key(
+                conn, user.org_id, idempotency_key  # type: ignore[arg-type]
+            )
+        assert existing is not None
+        return {"run_id": existing["id"], "total": existing["total"]}
 
     background.add_task(
         _run_and_persist,
@@ -223,6 +294,34 @@ async def start_run(
         allowlist=effective.allowlist,
     )
     return {"run_id": run_id, "total": len(contacts)}
+
+
+@router.post("/{run_id}/cancel")
+async def cancel_run(
+    run_id: str,
+    user: Annotated[CurrentUser, Depends(RequirePermission(Permission.RUNS_START))],
+) -> dict[str, Any]:
+    """Stops a run from dialling any further contacts.
+
+    Reuses `RUNS_START`: whoever is trusted to spend the organisation's money
+    starting a real run is trusted to stop one early, and there is no
+    narrower existing permission for "manage a run in progress" worth adding
+    just for this. Cannot interrupt a call already in conversation - there is
+    no `cancel_call()` on the voice engine (VOICE_AGENT_PLATFORM.md) - so the
+    background loop finishes whatever contact it is currently dialling and
+    then stops before starting the next one.
+    """
+    async with database.as_user(user.auth_user_id) as conn:
+        run = await runs_repo.get_run(conn, user.org_id, run_id)
+        if run is None:
+            raise HTTPException(status_code=404, detail="Run not found")
+        if run["status"] not in ("running", "canceling"):
+            raise HTTPException(
+                status_code=400,
+                detail=f"This run already {run['status']} - there's nothing left to cancel.",
+            )
+        new_status = await runs_repo.request_cancel(conn, user.org_id, run_id)
+    return {"status": new_status}
 
 
 @router.get("")
@@ -245,6 +344,29 @@ async def list_runs(user: Annotated[CurrentUser, Depends(current_user)]) -> list
         }
         for r in rows
     ]
+
+
+def _compute_stats(outcomes: list[dict[str, Any]], total: int) -> dict[str, Any]:
+    """Pure summary of a run's outcomes so far.
+
+    Every rate is computed over *resolved* outcomes (disposition != in_flight)
+    - an in-flight call is not progress yet, and counting it in the
+    denominator diluted `needs_human_pct` while a run was still going
+    (ISSUES.md #8). `in_flight` is reported on its own instead, rather than
+    folded into either side of a percentage. Split out as a pure function,
+    with no I/O, specifically so this is testable with plain dicts instead of
+    a database (CLAUDE.md: split the decision from the I/O).
+    """
+    resolved = [o for o in outcomes if o["disposition"] != "in_flight"]
+    escalated = sum(1 for o in resolved if o["disposition"] == "escalated")
+    return {
+        "completed": len(resolved),
+        "total": total,
+        "escalated": escalated,
+        "auto_closed": sum(1 for o in resolved if o["disposition"] == "auto_closed"),
+        "needs_human_pct": round(100 * escalated / len(resolved)) if resolved else 0,
+        "in_flight": len(outcomes) - len(resolved),
+    }
 
 
 class TeamMemberSummary(BaseModel):
@@ -312,8 +434,6 @@ async def get_run(
         }
         for o in outcome_rows
     ]
-    resolved = [o for o in outcomes if o["disposition"] != "in_flight"]
-    escalated = sum(1 for o in resolved if o["disposition"] == "escalated")
 
     started_by = run["started_by"]
     return {
@@ -328,13 +448,20 @@ async def get_run(
         "started_by_name": run["started_by_name"],
         "started_by_avatar_url": run["started_by_avatar_url"],
         "outcomes": outcomes,
-        "stats": {
-            "completed": len(resolved),
-            "total": run["total"],
-            "escalated": escalated,
-            "auto_closed": sum(1 for o in outcomes if o["disposition"] == "auto_closed"),
-            "needs_human_pct": round(100 * escalated / len(outcomes)) if outcomes else 0,
-        },
+        "stats": _compute_stats(outcomes, run["total"]),
+        # Permanent snapshot of this run's actual guards (ISSUES.md it-16) -
+        # null on any run created before this field existed, never
+        # backfilled from today's org_safety_settings, which would fabricate
+        # a history this run never actually had.
+        "safety_snapshot": {
+            "max_calls_per_run": run["max_calls_per_run"],
+            "allowlist": run["allowlist"] or [],
+            "calls_per_window": run["calls_per_window"],
+            "window_minutes": run["window_minutes"],
+            "daily_budget": run["daily_budget"],
+        }
+        if run["max_calls_per_run"] is not None
+        else None,
     }
 
 

@@ -7,6 +7,7 @@ call, regardless of which path noticed the call finished first.
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
 from app.domain.entities import AttemptSummary, CallOutcome
@@ -172,6 +173,47 @@ def _extract_transcript(call: JsonObject) -> str | None:
     return "\n".join(parts) if parts else None
 
 
+def _extract_duration(call: JsonObject) -> float | None:
+    """Computes how long the call lasted from the final attempt's own
+    timestamps.
+
+    There is no `duration_seconds` field anywhere in CALL-E's real response -
+    confirmed against the installed SDK's generated `CallTaskAttempt` model,
+    which declares only `started_at`/`completed_at`, no duration of any kind
+    (`ISSUES.md` #61/#80, same bug class as #52's transcript key - the
+    richer-outcome-data pass that added `task_completed`/`completion_confidence`/
+    `evidence` extraction to this module still read the non-existent flat key
+    for duration specifically, so it survived that rewrite uncaught). Uses the
+    same `_final_attempt()` selection as `_extract_transcript` so the reported
+    duration always corresponds to the same attempt whose transcript is shown,
+    not a different one.
+    """
+    recipients = call.get("recipients")
+    if not isinstance(recipients, list) or not recipients:
+        return None
+    first = recipients[0]
+    if not isinstance(first, dict):
+        return None
+
+    attempts = first.get("attempts")
+    if not isinstance(attempts, list):
+        return None
+    attempt = _final_attempt(attempts)
+    if attempt is None:
+        return None
+
+    started = attempt.get("started_at")
+    completed = attempt.get("completed_at")
+    if not started or not completed:
+        return None
+    try:
+        start_dt = datetime.fromisoformat(started)
+        end_dt = datetime.fromisoformat(completed)
+    except (TypeError, ValueError):
+        return None
+    return max(0.0, (end_dt - start_dt).total_seconds())
+
+
 def _resolve_outcome(
     base: CallOutcome, final: JsonObject, *, escalate_on_negative: bool
 ) -> CallOutcome:
@@ -194,7 +236,7 @@ def _resolve_outcome(
             "transcript": _extract_transcript(final),
             "summary": extracted.get("summary") or final.get("summary"),
             "extracted": extracted,
-            "duration_seconds": final.get("duration_seconds"),
+            "duration_seconds": _extract_duration(final),
             "task_completed": final.get("task_completed"),
             "completion_confidence_score": confidence_score,
             "completion_confidence_label": confidence_label,
@@ -248,6 +290,7 @@ def base_outcome_from_webhook_payload(call: JsonObject) -> CallOutcome | None:
 
 __all__ = [
     "_extract_attempts",
+    "_extract_duration",
     "_extract_result",
     "_extract_transcript",
     "_final_attempt",
