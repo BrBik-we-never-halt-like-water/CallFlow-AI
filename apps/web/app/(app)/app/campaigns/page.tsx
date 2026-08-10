@@ -40,6 +40,8 @@ const STATUS_FILTER_LABEL: Record<StatusFilter, string> = {
   all: 'All',
   not_run: 'Not run yet',
   running: 'Running',
+  canceling: 'Canceling…',
+  canceled: 'Canceled',
   completed: 'Completed',
   failed: 'Failed',
 };

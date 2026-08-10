@@ -63,7 +63,7 @@ export function Select({
         aria-describedby={field?.describedBy}
         aria-invalid={field?.invalid || undefined}
         className={cn(
-          'inline-flex h-10 w-full cursor-pointer items-center justify-between gap-2 rounded-sm border bg-surface-raised px-3',
+          'inline-flex h-10 w-full cursor-pointer items-center justify-between gap-2 overflow-hidden rounded-sm border bg-surface-raised px-3',
           'text-body text-text transition-colors duration-(--dur-micro)',
           'data-[placeholder]:text-text-mute',
           'disabled:cursor-not-allowed disabled:opacity-45',
@@ -75,8 +75,24 @@ export function Select({
           triggerClassName,
         )}
       >
-        <RadixSelect.Value placeholder={placeholder} />
-        <RadixSelect.Icon>
+        {/* `min-w-0` is required for `truncate` to work at all on a flex child.
+            That alone isn't enough here, though: left without children, Radix
+            mirrors the selected `Select.Item`'s own `ItemText` span into this
+            node via a portal - and that span (rendered again, unstyled, for
+            the dropdown row) has no `nowrap` of its own, so a full-sentence
+            "reason" value wraps across several lines and blows out the
+            trigger's height instead of clipping. Passing the label directly
+            as plain text here bypasses that mirroring, so `truncate` actually
+            lands on the text node it's meant to. `overflow-hidden` on the
+            trigger itself is the backstop in case anything else ever slips
+            through untruncated. */}
+        <RadixSelect.Value
+          placeholder={placeholder}
+          className="min-w-0 flex-1 truncate text-left"
+        >
+          {options.find((option) => option.value === value)?.label}
+        </RadixSelect.Value>
+        <RadixSelect.Icon className="shrink-0">
           <CaretDownIcon
             aria-hidden
             className="size-4 shrink-0 text-text-mute"

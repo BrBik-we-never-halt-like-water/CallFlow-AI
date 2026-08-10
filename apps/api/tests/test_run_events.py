@@ -186,6 +186,11 @@ async def _seed_run_with_outcome(tenant: Tenant, run_id: str) -> None:
             campaign_id=TRAVEL_DISCOVERY.id,
             total=1,
             started_by=tenant.user_id,
+            max_calls_per_run=10,
+            allowlist=[],
+            calls_per_window=10,
+            window_minutes=60,
+            daily_budget=100,
         )
         await runs_repo.append_outcome(
             conn,

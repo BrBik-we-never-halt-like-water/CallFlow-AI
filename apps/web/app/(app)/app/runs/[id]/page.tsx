@@ -9,11 +9,12 @@ import { MaskedPhone } from '@/components/app/masked-phone';
 import { TranscriptView } from '@/components/app/transcript-view';
 import { LampBadge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { DialogRoot, Sheet } from '@/components/ui/dialog';
+import { Dialog, DialogRoot } from '@/components/ui/dialog';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Panel } from '@/components/ui/panel';
 import { Skeleton } from '@/components/ui/skeleton';
-import type { Outcome } from '@/lib/api';
+import { useToast } from '@/components/ui/toast';
+import { api, type Outcome } from '@/lib/api';
 import { formatDuration, formatTimestamp } from '@/lib/format';
 import { useProgressAnnouncement, useRunPoll } from '@/lib/hooks/use-run-poll';
 import {
@@ -36,10 +37,35 @@ export default function RunDetailPage() {
   const runId = typeof params?.id === 'string' ? params.id : null;
   const { phase, campaigns } = useAppStore();
 
+  const toast = useToast();
   const [paused, setPaused] = useState(false);
   const [selected, setSelected] = useState<Outcome | null>(null);
+  const [confirmingCancel, setConfirmingCancel] = useState(false);
+  const [canceling, setCanceling] = useState(false);
 
   const { run, error, live, elapsed } = useRunPoll(runId, { paused });
+
+  async function cancelRun() {
+    if (!run) return;
+    setCanceling(true);
+    try {
+      await api.cancelRun(run.id);
+      toast({
+        tone: 'info',
+        title: 'Cancel requested',
+        body: 'No further contacts will be dialled. A call already in progress will finish naturally.',
+      });
+      setConfirmingCancel(false);
+    } catch (error) {
+      toast({
+        tone: 'error',
+        title: "Couldn't cancel this run",
+        body: error instanceof Error ? error.message : undefined,
+      });
+    } finally {
+      setCanceling(false);
+    }
+  }
 
   const settled = useMemo(
     () =>
@@ -119,7 +145,6 @@ export default function RunDetailPage() {
             {campaign?.name ?? run.campaign_id}
           </h1>
           <div className="flex flex-wrap items-center gap-2">
-            <span className="font-mono text-data text-text-mute">{run.id}</span>
             <LampBadge state={runLamp.state} pulse={runLamp.pulse}>
               {runLamp.label}
             </LampBadge>
@@ -129,29 +154,76 @@ export default function RunDetailPage() {
           </div>
         </div>
 
-        {/* Pause is always reachable while a run is live. There is no way to cancel a
-            run in progress yet - pausing only stops this screen from polling for
-            updates; it does not stop any call. */}
+        {/* Pause only stops this screen from polling for updates - it does not stop
+            any call. "Cancel run" is the real thing: it stops the next contact from
+            being dialled, but cannot interrupt a call already in conversation. */}
         {live ? (
           <div className="flex items-center gap-2">
             <Button variant="secondary" onClick={() => setPaused((p) => !p)}>
               {paused ? 'Resume updates' : 'Pause run'}
             </Button>
+            {run.status === 'running' ? (
+              <Button variant="danger" onClick={() => setConfirmingCancel(true)}>
+                Cancel run
+              </Button>
+            ) : (
+              <Button variant="secondary" loading>
+                Canceling…
+              </Button>
+            )}
           </div>
         ) : null}
       </div>
 
-      {/* ---- Progress ---------------------------------------------------- */}
+      <DialogRoot open={confirmingCancel} onOpenChange={setConfirmingCancel}>
+        {confirmingCancel ? (
+          <Dialog
+            title="Cancel this run?"
+            description="Contacts not yet reached will not be called. A call already in progress will finish naturally - there is no way to interrupt a live conversation."
+            footer={
+              <>
+                <Button
+                  variant="secondary"
+                  onClick={() => setConfirmingCancel(false)}
+                >
+                  Keep running
+                </Button>
+                <Button variant="danger" onClick={cancelRun} loading={canceling}>
+                  Cancel run
+                </Button>
+              </>
+            }
+          />
+        ) : null}
+      </DialogRoot>
+
+      {/* ---- Progress ------------------------------------------------------
+          The big settled-count leads (the number an operator actually wants
+          at a glance), the lamp strip follows as its own clearly labelled
+          section - it's still the only progress indicator on this page
+          (CLAUDE.md: no separate progress bar, the strip says how it went,
+          not just how much is done), just given room to read as one rather
+          than competing with the header row for space. */}
       <Panel
         className={cn(
-          'flex flex-col gap-4 p-4 pl-4 sm:p-5',
+          'flex flex-col gap-5 p-4 pl-4 sm:p-5',
           'border-l-2 border-l-lamp-brass',
         )}
       >
-        <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <p className="text-small font-bold text-text-mute">
-            Live · Real calls
-          </p>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="flex flex-col gap-1">
+            <p className="text-small font-bold text-text-mute">
+              Live · Real calls
+            </p>
+            <div className="flex items-baseline gap-2">
+              <span className="font-display text-h2 tabular-nums text-text">
+                {counts.settled}
+              </span>
+              <span className="text-small text-text-dim">
+                of {run.total} settled
+              </span>
+            </div>
+          </div>
           {live ? (
             <span className="font-mono text-data tabular-nums text-text-mute">
               {formatDuration(elapsed)} elapsed
@@ -159,40 +231,38 @@ export default function RunDetailPage() {
           ) : null}
         </div>
 
-        {/* Before the first outcome lands: lamps in sequence, captioned. Never a spinner. */}
-        {run.outcomes.length === 0 && live ? (
-          <div className="flex flex-col gap-2">
-            <LampStrip
-              lamps={Array.from(
-                { length: Math.min(run.total, 12) },
-                (_, i) => ({
-                  state:
-                    i < Math.floor(elapsed * 1.5) % 13
-                      ? ('brass' as const)
-                      : ('off' as const),
-                  label: 'Starting',
-                }),
-              )}
-              size="md"
-            />
-            <p className="font-mono text-data text-text-dim">
-              Dialling the first contacts…
-            </p>
-          </div>
-        ) : (
-          <LampStrip lamps={lamps} size="md" wrap counts />
-        )}
-
-        <div className="flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-rule pt-3">
-          <span className="font-mono text-data tabular-nums text-text">
-            {counts.settled} of {run.total} settled
-          </span>
-          {paused ? (
-            <span className="font-mono text-data text-lamp-brass-text">
-              Updates paused - the run itself is still going
-            </span>
-          ) : null}
+        <div className="flex flex-col gap-2 border-t border-rule pt-4">
+          <p className="text-small font-bold text-text-mute">Progress</p>
+          {/* Before the first outcome lands: lamps in sequence, captioned. Never a spinner. */}
+          {run.outcomes.length === 0 && live ? (
+            <div className="flex flex-col gap-2">
+              <LampStrip
+                lamps={Array.from(
+                  { length: Math.min(run.total, 12) },
+                  (_, i) => ({
+                    state:
+                      i < Math.floor(elapsed * 1.5) % 13
+                        ? ('brass' as const)
+                        : ('off' as const),
+                    label: 'Starting',
+                  }),
+                )}
+                size="md"
+              />
+              <p className="font-mono text-data text-text-dim">
+                Dialling the first contacts…
+              </p>
+            </div>
+          ) : (
+            <LampStrip lamps={lamps} size="md" wrap counts />
+          )}
         </div>
+
+        {paused ? (
+          <p className="font-mono text-data text-lamp-brass-text">
+            Updates paused - the run itself is still going
+          </p>
+        ) : null}
 
         {/* One debounced announcement, not one per row. */}
         <p aria-live="polite" className="sr-only">
@@ -249,6 +319,12 @@ export default function RunDetailPage() {
                   </th>
                   <th
                     scope="col"
+                    className="text-small font-bold px-3 py-2 text-right text-text-mute"
+                  >
+                    Call time
+                  </th>
+                  <th
+                    scope="col"
                     className="text-small font-bold px-3 py-2 text-text-mute"
                   >
                     Summary
@@ -279,6 +355,9 @@ export default function RunDetailPage() {
                       <td className="px-3 py-2 text-right font-mono text-data tabular-nums text-text-mute">
                         {formatDuration(outcome.duration_seconds)}
                       </td>
+                      <td className="px-3 py-2 text-right font-mono text-data tabular-nums text-text-mute">
+                        {formatTimestamp(outcome.created_at)}
+                      </td>
                       <td className="max-w-md truncate px-3 py-2 text-small text-text-dim">
                         {outcome.summary ?? outcome.disposition_reason ?? '-'}
                       </td>
@@ -291,15 +370,20 @@ export default function RunDetailPage() {
         )}
       </Panel>
 
-      {/* ---- Transcript sheet -------------------------------------------- */}
+      {/* ---- Transcript, centered ------------------------------------------ */}
       <DialogRoot
         open={selected !== null}
         onOpenChange={(open) => !open && setSelected(null)}
       >
         {selected ? (
-          <Sheet title={selected.contact_name} description={`Run ${run.id}`}>
+          <Dialog
+            title={selected.contact_name}
+            description={selected.disposition_reason ?? undefined}
+            size="xl"
+            contentClassName=""
+          >
             <TranscriptView outcome={selected} />
-          </Sheet>
+          </Dialog>
         ) : null}
       </DialogRoot>
     </div>

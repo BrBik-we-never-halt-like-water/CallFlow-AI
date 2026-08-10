@@ -30,6 +30,7 @@ export function Dialog({
   children,
   footer,
   className,
+  contentClassName = 'p-5',
   size = 'md',
   dismissible = true,
 }: {
@@ -39,11 +40,20 @@ export function Dialog({
   children?: React.ReactNode;
   footer?: React.ReactNode;
   className?: string;
-  size?: 'sm' | 'md' | 'lg';
+  /** Wrapper class around `children` - default matches every existing caller.
+   * Pass `''` for content (like `TranscriptView`) that already manages its
+   * own internal padding, so it isn't padded twice. */
+  contentClassName?: string;
+  size?: 'sm' | 'md' | 'lg' | 'xl';
   /** False for a mandatory step: no close button, no Esc, no click-outside. */
   dismissible?: boolean;
 }) {
-  const width = { sm: 'max-w-sm', md: 'max-w-lg', lg: 'max-w-2xl' }[size];
+  const width = {
+    sm: 'max-w-sm',
+    md: 'max-w-lg',
+    lg: 'max-w-2xl',
+    xl: 'max-w-4xl',
+  }[size];
   const container = usePortalContainer();
 
   return (
@@ -81,7 +91,7 @@ export function Dialog({
           ) : null}
         </div>
 
-        {children ? <div className="p-5">{children}</div> : null}
+        {children ? <div className={contentClassName}>{children}</div> : null}
 
         {footer ? (
           <div className="flex flex-wrap items-center justify-end gap-2 border-t border-rule p-5">

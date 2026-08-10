@@ -26,7 +26,7 @@ from app.core.config import config
 from app.core.logging import CallContext
 from app.domain.entities import CallOutcome, Campaign, Contact, DialFailure, Disposition
 from app.domain.goal_rendering import render_goal
-from app.domain.outcome_extraction import _resolve_outcome
+from app.domain.outcome_extraction import _extract_duration, _resolve_outcome
 from app.domain.safety import check_dial_allowed, mask, phone_hash
 from app.integrations.voice.engine import (
     TERMINAL,
@@ -102,6 +102,7 @@ class CampaignRunner:
         # dialling itself still runs concurrently; only that brief moment is
         # serialised.
         self._calls_made_lock = asyncio.Lock()
+        self._canceled = False
         # Resolved once per run (a single query) rather than once per contact.
         self._suppressed_hashes = suppressed_hashes
         # An organisation's own Settings -> Safety override, or None to fall back
@@ -109,8 +110,11 @@ class CampaignRunner:
         self._max_calls_per_run = max_calls_per_run
         self._allowlist = allowlist
         # The persisted run this instance belongs to, if any - gives each
-        # contact's idempotency key a stable scope (see `run_one()`). `None`
-        # for a caller with no real run (ad hoc use, tests).
+        # contact's idempotency key a stable scope (see `_idempotency_key()`)
+        # and lets the webhook receiver correlate a terminal event back to a
+        # real row. `None` for a caller with no real run (ad hoc use, tests) -
+        # deliberately never fabricated, since a made-up id here would be one
+        # the webhook receiver could never actually look up.
         self._run_id = run_id
         self._max_concurrent_calls = (
             max_concurrent_calls if max_concurrent_calls is not None else config.max_concurrent_calls
@@ -122,14 +126,24 @@ class CampaignRunner:
             self._gateway = EngineGateway()
         return self._gateway
 
+    @property
+    def canceled(self) -> bool:
+        """True once `run()` skipped at least one contact because
+        `should_cancel()` returned True. Distinct from simply "not all
+        contacts were dialled" - a run that raised partway through is not
+        `canceled`, it's failed."""
+        return self._canceled
+
     async def run(
         self,
         campaign: Campaign,
         contacts: Iterable[Contact],
         *,
         on_progress: ProgressHook | None = None,
+        should_cancel: Callable[[], Awaitable[bool]] | None = None,
     ) -> list[CallOutcome]:
-        """Dial every contact, up to `_max_concurrent_calls` at once.
+        """Dial every contact, up to `_max_concurrent_calls` at once, stopping
+        early if `should_cancel` ever returns True.
 
         Was a strict one-at-a-time loop - for a run of N contacts at a
         minute or two per call, that's N minutes of wall-clock time when it
@@ -141,20 +155,35 @@ class CampaignRunner:
         failure - `run_one()` already turns those into a FAILED outcome
         without raising) must not cancel every *other* contact's real,
         already-in-flight phone call the way an unhandled `gather()`
-        exception otherwise would - there is no sequential analog to that
-        failure mode, since a one-at-a-time loop never has more than one
-        contact in flight to abandon.
+        exception otherwise would.
+
+        `should_cancel` is checked right before each contact's own dial, not
+        once up front - every contact's coroutine is already created and
+        queued on the concurrency semaphore the moment `gather()` is called,
+        so "stop between contacts" has to mean "skip the ones that haven't
+        started dialling yet," checked at the one point each is guaranteed
+        to still be waiting: the moment it acquires its semaphore slot.
+        There is still no way to interrupt a call already in conversation
+        (the voice engine has no cancel operation), so the honest guarantee
+        remains "no further contacts are dialled," not "the run stops
+        instantly." A skipped contact gets no outcome row at all rather than
+        a fabricated "canceled" one - the run's own `status` already says a
+        canceled run didn't finish, and `total` vs however many outcomes
+        exist already shows how far it got.
         """
         contact_list = list(contacts)
         semaphore = asyncio.Semaphore(self._max_concurrent_calls)
 
-        async def _dial(contact: Contact) -> CallOutcome:
+        async def _dial(contact: Contact) -> CallOutcome | None:
             # `on_progress` doubles as the live-status sink so an in-flight
             # call is visible while it happens, not only once it ends. Held
             # only around the dial/poll itself, not the final progress
             # write below - that's our own DB, not CALL-E, and doesn't need
             # to compete for the same concurrency budget.
             async with semaphore:
+                if should_cancel is not None and await should_cancel():
+                    self._canceled = True
+                    return None
                 outcome = await self.run_one(campaign, contact, on_status=on_progress)
             if on_progress:
                 await on_progress(outcome)
@@ -166,6 +195,8 @@ class CampaignRunner:
 
         outcomes: list[CallOutcome] = []
         for contact, result in zip(contact_list, results, strict=True):
+            if result is None:
+                continue
             if isinstance(result, BaseException):
                 log.exception("contact processing crashed for %s", mask(contact.phone))
                 outcomes.append(
@@ -234,7 +265,7 @@ class CampaignRunner:
             status = str(call.get("status", "")).lower()
 
             if status in TERMINAL:
-                return call
+                return await self._await_settled_duration(call_id, call)
 
             if status and status != last_status and on_status is not None:
                 last_status = status
@@ -252,6 +283,32 @@ class CampaignRunner:
             await asyncio.sleep(2.0)
 
         raise TimeoutError(f"Call {call_id} did not finish within the timeout.")
+
+    async def _await_settled_duration(self, call_id: str, call: JsonObject) -> JsonObject:
+        """Close the gap between the top-level `status` going terminal and the
+        same response's nested attempt timestamps catching up.
+
+        Confirmed against a real call (ISSUES.md #61's follow-up): a live
+        re-fetch of a call that had already been sitting at `duration_seconds =
+        None` in the database returned a fully-settled `completed`/`failed`
+        attempt with both `started_at` and `completed_at` populated, and
+        `_extract_duration` computed the correct value from it without any
+        change to that function. The only place the two could have disagreed
+        is the moment the *original* poll accepted its terminal response - so
+        the engine's own top-level `status` field and its nested
+        `recipients[0].attempts[].completed_at` are not written atomically,
+        the same class of eventual-consistency gap as the flaky-poll bug
+        already fixed for status itself (#53). A few short re-fetches close
+        it; if it never settles, this returns the last response anyway rather
+        than blocking the whole run - a stuck `duration_seconds` is a data gap,
+        not a reason to fail the call.
+        """
+        for _ in range(3):
+            if _extract_duration(call) is not None:
+                return call
+            await asyncio.sleep(1.5)
+            call = await asyncio.to_thread(self.gateway.get_call, call_id)
+        return call
 
     def _idempotency_key(self, campaign: Campaign, contact: Contact) -> str:
         """A retry of the *same* logical attempt must reuse the same key -
@@ -297,10 +354,10 @@ class CampaignRunner:
         # contacts dialled at the same time could both read the same
         # under-the-ceiling count before either increments, letting more
         # calls through than `max_calls_per_run` allows. The reservation
-        # happens *before* the dial is attempted, not after it succeeds
-        # (unlike the previous, sequential-only version) - a failed or
-        # lost-response attempt still spent a real slot at CALL-E and must
-        # still count, per CLAUDE.md's fail-closed rule (`ISSUES.md` #54).
+        # happens *before* the dial is attempted, not after it succeeds - a
+        # failed or lost-response attempt still spent a real slot at CALL-E
+        # and must still count, per CLAUDE.md's fail-closed rule
+        # (`ISSUES.md` #54).
         async with self._calls_made_lock:
             gate = check_dial_allowed(
                 contact.phone,

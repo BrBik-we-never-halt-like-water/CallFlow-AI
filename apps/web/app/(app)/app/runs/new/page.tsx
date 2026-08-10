@@ -1,31 +1,39 @@
 'use client';
 
+import {
+  CaretDownIcon,
+  PlusIcon,
+  SlidersHorizontalIcon,
+} from '@phosphor-icons/react/dist/ssr';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Suspense, useMemo, useState } from 'react';
-import { cn } from '@/lib/cn';
+import { Suspense, useMemo, useRef, useState } from 'react';
 import { ConnectionBanner } from '@/components/app/connection-banner';
 import { ContactGrid } from '@/components/app/contact-grid';
-import { guardsFromSafety, SafetyBar } from '@/components/app/safety-bar';
 import { NotWiredNotice } from '@/components/app/settings-section';
 import { Button } from '@/components/ui/button';
+import { Dialog, DialogRoot } from '@/components/ui/dialog';
 import { Field } from '@/components/ui/field';
+import { Input } from '@/components/ui/input';
 import { Panel } from '@/components/ui/panel';
 import { Select } from '@/components/ui/select';
 import { Tooltip } from '@/components/ui/tooltip';
 import { useToast } from '@/components/ui/toast';
-import { api } from '@/lib/api';
+import { api, type Campaign } from '@/lib/api';
 import { useAppStore } from '@/lib/app-store';
 import { renderGoalPreview } from '@/lib/campaign-fields';
 import { toContactInputs, type ParsedRow } from '@/lib/contacts';
+import { isE164, normalisePhone } from '@/lib/format/phone';
 import { useSession } from '@/lib/hooks/use-session';
 
 /**
  * The run composer.
  *
- * Three stacked steps on one page, not a wizard. Someone starting their fifth run of
- * the day should be able to see everything at once and change any of it - a wizard
- * makes the second run as slow as the first, and hides the safety state behind a step
- * you have already clicked past.
+ * One flat, single-column page, not a wizard and not a dashboard of boxes.
+ * Campaign and this run's own guard overrides are picked from two dialogs
+ * opened off the header, so the page itself is just the contacts table -
+ * unboxed, not nested inside its own card - with the guard bar and the
+ * Start/Cancel buttons in one bar at the bottom, sticky on wide screens so
+ * they stay reachable while a long list scrolls.
  */
 export default function NewRunPage() {
   return (
@@ -50,6 +58,23 @@ function RunComposer() {
   const [rows, setRows] = useState<ParsedRow[]>([]);
   const [chosenId, setChosenId] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
+  const [campaignDialogOpen, setCampaignDialogOpen] = useState(false);
+  const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
+  /**
+   * Generated once per submit attempt and kept across a failed retry - so
+   * resubmitting after a dropped connection (the request may have actually
+   * reached the server) replays the same, already-accepted run instead of
+   * risking a second real batch of calls. Cleared only on success, when the
+   * key has done its job and the composer is about to navigate away.
+   */
+  const idempotencyKeyRef = useRef<string | null>(null);
+
+  // --- This run's own guard overrides --------------------------------------
+  // Tighten-only, mirroring the backend's `apply_run_override` exactly (see
+  // its own docstring for why): a run may ask for less than the organisation
+  // allows, never more. Blank means "use the organisation's own value."
+  const [runCeiling, setRunCeiling] = useState('');
+  const [runAllowlist, setRunAllowlist] = useState('');
 
   /**
    * The selected campaign is derived, not synced.
@@ -70,18 +95,38 @@ function RunComposer() {
   const validRows = useMemo(() => rows.filter((r) => r.valid), [rows]);
   const contacts = useMemo(() => toContactInputs(rows), [rows]);
 
-  const guards = useMemo(
-    () => guardsFromSafety(safetySettings),
-    [safetySettings],
-  );
+  const orgCeiling = safetySettings?.max_calls_per_run ?? null;
 
-  const ceiling = safetySettings?.max_calls_per_run ?? null;
-  const overCeiling = ceiling !== null && validRows.length > ceiling;
+  /** What the ceiling actually will be for this run - the organisation's own
+   * value, tightened by whatever's set in the run-settings dialog. Computed
+   * client-side too (not just trusted to the API's own capping) so the
+   * estimate and the blocker message are honest before the request is ever
+   * sent. */
+  const effectiveCeiling = useMemo(() => {
+    const requestedCeiling = Number(runCeiling);
+    if (!runCeiling.trim() || !Number.isFinite(requestedCeiling) || requestedCeiling <= 0) {
+      return orgCeiling;
+    }
+    return orgCeiling !== null ? Math.min(requestedCeiling, orgCeiling) : requestedCeiling;
+  }, [runCeiling, orgCeiling]);
+
+  const runAllowlistNumbers = useMemo(
+    () =>
+      runAllowlist
+        .split(',')
+        .map((n) => normalisePhone(n.trim()))
+        .filter(Boolean),
+    [runAllowlist],
+  );
+  const badAllowlistEntry = runAllowlistNumbers.find((n) => !isE164(n));
+  const hasRunOverride = runCeiling.trim().length > 0 || runAllowlistNumbers.length > 0;
+
+  const overCeiling = effectiveCeiling !== null && validRows.length > effectiveCeiling;
 
   /** Exactly why Start is blocked. Never a generic complaint. */
   const blocker = useMemo<string | null>(() => {
     if (phase !== 'up') return 'Waiting for the service to respond.';
-    if (!campaignId) return 'Pick a campaign first.';
+    if (!campaignId) return 'Add a campaign first.';
     if (validRows.length === 0) {
       return rows.length === 0
         ? 'Add at least one contact.'
@@ -90,8 +135,11 @@ function RunComposer() {
     if (!health?.api_key_configured) {
       return "No Voice API key is configured - calls can't be placed yet.";
     }
+    if (badAllowlistEntry) {
+      return `"${badAllowlistEntry}" in this run's allowlist isn't a valid E.164 number. Fix it in Run settings.`;
+    }
     if (overCeiling) {
-      return `This run has ${validRows.length} contacts but the per-run ceiling is ${ceiling}. Raise the ceiling in Settings → Safety, or remove some rows.`;
+      return `This run has ${validRows.length} contacts but the ceiling for this run is ${effectiveCeiling}. Raise it in Run settings, remove some rows, or raise the organisation's own ceiling in Settings → Safety.`;
     }
     return null;
   }, [
@@ -100,15 +148,28 @@ function RunComposer() {
     validRows.length,
     rows.length,
     health,
+    badAllowlistEntry,
     overCeiling,
-    ceiling,
+    effectiveCeiling,
   ]);
 
   async function start() {
     if (blocker) return;
     setStarting(true);
+    if (!idempotencyKeyRef.current) {
+      idempotencyKeyRef.current = crypto.randomUUID();
+    }
     try {
-      const { run_id } = await api.startRun(campaignId, contacts);
+      const { run_id } = await api.startRun(
+        campaignId,
+        contacts,
+        idempotencyKeyRef.current,
+        {
+          max_calls_per_run: runCeiling.trim() ? Number(runCeiling) : undefined,
+          allowlist: runAllowlistNumbers.length > 0 ? runAllowlistNumbers : undefined,
+        },
+      );
+      idempotencyKeyRef.current = null;
       toast({ tone: 'success', title: 'Run started' });
       refresh();
       router.push(`/app/runs/${run_id}`);
@@ -151,108 +212,91 @@ function RunComposer() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-1">
-        <p className="text-small font-bold text-text-mute">New run</p>
-        <h1 className="font-display text-h2 text-text">Start a run</h1>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex flex-col gap-1">
+          <p className="text-small font-bold text-text-mute">New run</p>
+          <h1 className="font-display text-h2 text-text">Start a run</h1>
+          <p className="measure text-small text-text-dim">
+            Add contacts, then start the run.
+          </p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            variant="secondary"
+            onClick={() => setCampaignDialogOpen(true)}
+          >
+            {campaign ? (
+              <>
+                {campaign.name}
+                <CaretDownIcon aria-hidden className="size-3.5" />
+              </>
+            ) : (
+              <>
+                <PlusIcon aria-hidden className="size-4" />
+                Add campaign
+              </>
+            )}
+          </Button>
+          <Button
+            variant="secondary"
+            className="relative"
+            onClick={() => setSettingsDialogOpen(true)}
+          >
+            <SlidersHorizontalIcon aria-hidden className="size-4" />
+            Run settings
+            {hasRunOverride ? (
+              <span
+                aria-hidden
+                className="absolute right-1.5 top-1.5 size-1.5 rounded-full bg-text"
+              />
+            ) : null}
+          </Button>
+
+          <span aria-hidden className="mx-1 h-6 w-px bg-rule" />
+
+          <Button variant="secondary" onClick={() => router.push('/app/runs')}>
+            Cancel
+          </Button>
+          {blocker ? (
+            <Tooltip content={blocker} wrapTrigger>
+              <Button disabled>Start run</Button>
+            </Tooltip>
+          ) : (
+            <Button loading={starting} onClick={start}>
+              Start run
+            </Button>
+          )}
+        </div>
       </div>
 
       <ConnectionBanner phase={phase} />
 
-      {/* ---- 1 · Contacts ------------------------------------------------ */}
-      <Step
-        n="01"
-        title="Contacts"
-        detail="Every row is validated before anything is dialled."
-      >
-        <ContactGrid rows={rows} onChange={setRows} />
-      </Step>
+      <ContactGrid rows={rows} onChange={setRows} />
 
-      {/* ---- 2 · Campaign ----------------------------------------------- */}
-      <Step n="02" title="Campaign" detail="What each contact will hear.">
-        <div className="flex flex-col gap-4">
-          <div className="max-w-md">
-            <Field label="Campaign" required>
-              <Select
-                value={campaignId}
-                onValueChange={setCampaignId}
-                options={campaigns.map((c) => ({
-                  value: c.id,
-                  label: c.name,
-                  hint: c.built_in ? 'Template' : undefined,
-                }))}
-                placeholder={
-                  campaigns.length === 0
-                    ? 'No campaigns available'
-                    : 'Pick a campaign'
-                }
-                disabled={campaigns.length === 0}
-              />
-            </Field>
-          </div>
+      <CampaignDialog
+        open={campaignDialogOpen}
+        onOpenChange={setCampaignDialogOpen}
+        campaigns={campaigns}
+        campaignId={campaignId}
+        onSelect={(id) => {
+          setCampaignId(id);
+          setCampaignDialogOpen(false);
+        }}
+        previewName={validRows[0]?.name}
+        previewNote={validRows[0]?.note}
+      />
 
-          {campaign ? (
-            <Panel sunken className="flex flex-col gap-2 p-4">
-              <p className="text-small font-bold text-text-mute">
-                {validRows[0]
-                  ? `What ${validRows[0].name.split(' ')[0] || 'the first contact'} will hear`
-                  : 'What each contact will hear'}
-              </p>
-              <div className="max-h-56 overflow-y-auto whitespace-pre-wrap font-mono text-data text-text">
-                {renderGoalPreview(campaign.goal_template, {
-                  name: validRows[0]?.name || 'there',
-                  context: {
-                    enquiry_note: validRows[0]?.note || 'no note on file',
-                    appointment_time: 'tomorrow at 4pm',
-                  },
-                })}
-              </div>
-            </Panel>
-          ) : null}
-        </div>
-      </Step>
-
-      {/* ---- 3 · Run ---------------------------------------------------- */}
-      <Step
-        n="03"
-        title="Run"
-        detail="The guards below apply to every call in this run."
-      >
-        <div className="flex flex-col gap-4 pl-4 border-l-2 border-l-rule-strong">
-          <SafetyBar guards={guards} />
-
-          <dl className="flex flex-wrap gap-x-8 gap-y-2 border-t border-rule pt-4">
-            <Estimate label="Contacts" value={String(validRows.length)} />
-            {ceiling !== null ? (
-              <Estimate
-                label="Per-run ceiling"
-                value={String(ceiling)}
-                warn={overCeiling}
-              />
-            ) : null}
-          </dl>
-
-          <div className="flex flex-wrap items-center gap-3">
-            {blocker ? (
-              <Tooltip content={blocker} wrapTrigger>
-                <Button size="lg" disabled>
-                  Start run
-                </Button>
-              </Tooltip>
-            ) : (
-              <Button size="lg" loading={starting} onClick={start}>
-                Start run
-              </Button>
-            )}
-            <Button
-              variant="secondary"
-              size="lg"
-              onClick={() => router.push('/app/runs')}
-            >
-              Cancel
-            </Button>
-          </div>
-        </div>
-      </Step>
+      <RunSettingsDialog
+        open={settingsDialogOpen}
+        onOpenChange={setSettingsDialogOpen}
+        orgCeiling={orgCeiling}
+        runCeiling={runCeiling}
+        onRunCeilingChange={setRunCeiling}
+        runAllowlist={runAllowlist}
+        onRunAllowlistChange={setRunAllowlist}
+        badAllowlistEntry={badAllowlistEntry}
+      />
     </div>
   );
 }
@@ -273,58 +317,143 @@ function ComposerFallback() {
   );
 }
 
-function Step({
-  n,
-  title,
-  detail,
-  children,
+
+/** Picks the campaign this run will use, with a live preview of the goal. */
+function CampaignDialog({
+  open,
+  onOpenChange,
+  campaigns,
+  campaignId,
+  onSelect,
+  previewName,
+  previewNote,
 }: {
-  n: string;
-  title: string;
-  detail: string;
-  children: React.ReactNode;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  campaigns: Campaign[];
+  campaignId: string;
+  onSelect: (id: string) => void;
+  previewName?: string;
+  previewNote?: string;
 }) {
+  const campaign = campaigns.find((c) => c.id === campaignId);
+
   return (
-    <Panel className="flex flex-col gap-5 p-4 sm:p-5">
-      <div className="flex items-start gap-3">
-        <span className="mt-1 shrink-0 text-small font-bold text-text">
-          {n}
-        </span>
-        <div className="flex flex-col gap-0.5">
-          <h2 className="text-h3 font-medium text-text">{title}</h2>
-          <p className="text-small text-text-dim">{detail}</p>
+    <DialogRoot open={open} onOpenChange={onOpenChange}>
+      <Dialog
+        title="Campaign"
+        description="What every contact in this run will hear."
+        footer={
+          <Button onClick={() => onOpenChange(false)}>Done</Button>
+        }
+      >
+        <div className="flex flex-col gap-4">
+          <Field label="Campaign" required>
+            <Select
+              value={campaignId}
+              onValueChange={onSelect}
+              options={campaigns.map((c) => ({
+                value: c.id,
+                label: c.name,
+                hint: c.built_in ? 'Template' : undefined,
+              }))}
+              placeholder={
+                campaigns.length === 0
+                  ? 'No campaigns available'
+                  : 'Pick a campaign'
+              }
+              disabled={campaigns.length === 0}
+            />
+          </Field>
+
+          {campaign ? (
+            <Panel sunken className="flex flex-col gap-2 p-4">
+              <p className="text-small font-bold text-text-mute">
+                {previewName
+                  ? `What ${previewName.split(' ')[0] || 'the first contact'} will hear`
+                  : 'What each contact will hear'}
+              </p>
+              <div className="max-h-56 overflow-y-auto whitespace-pre-wrap font-mono text-data text-text">
+                {renderGoalPreview(campaign.goal_template, {
+                  name: previewName || 'there',
+                  context: {
+                    enquiry_note: previewNote || 'no note on file',
+                    appointment_time: 'tomorrow at 4pm',
+                  },
+                })}
+              </div>
+            </Panel>
+          ) : null}
         </div>
-      </div>
-      {children}
-    </Panel>
+      </Dialog>
+    </DialogRoot>
   );
 }
 
-function Estimate({
-  label,
-  value,
-  detail,
-  warn = false,
+/** This run's own tightened guards - see `apply_run_override`'s docstring
+ * (backend, `app/domain/safety.py`) for the tighten-only rule this mirrors. */
+function RunSettingsDialog({
+  open,
+  onOpenChange,
+  orgCeiling,
+  runCeiling,
+  onRunCeilingChange,
+  runAllowlist,
+  onRunAllowlistChange,
+  badAllowlistEntry,
 }: {
-  label: string;
-  value: string;
-  detail?: string;
-  warn?: boolean;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  orgCeiling: number | null;
+  runCeiling: string;
+  onRunCeilingChange: (value: string) => void;
+  runAllowlist: string;
+  onRunAllowlistChange: (value: string) => void;
+  badAllowlistEntry?: string;
 }) {
   return (
-    <div className="flex flex-col gap-0.5">
-      <dt className="text-small font-bold text-text-mute">{label}</dt>
-      <dd
-        className={cn(
-          'font-mono text-data tabular-nums',
-          warn ? 'text-lamp-flare-text' : 'text-text',
-        )}
+    <DialogRoot open={open} onOpenChange={onOpenChange}>
+      <Dialog
+        title="Run settings"
+        description="Tighten this organisation's own safety guards for this run only - never looser than what's set in Settings → Safety."
+        size="sm"
+        footer={<Button onClick={() => onOpenChange(false)}>Done</Button>}
       >
-        {value}
-        {detail ? (
-          <span className="ml-1.5 text-text-mute">{detail}</span>
-        ) : null}
-      </dd>
-    </div>
+        <div className="flex flex-col gap-4">
+          <Field
+            label="Ceiling for this run"
+            hint={
+              orgCeiling !== null
+                ? `Optional - up to the organisation's own ${orgCeiling}. Leave blank to use it as-is.`
+                : 'Optional. Leave blank to use the organisation default.'
+            }
+          >
+            <Input
+              type="number"
+              min={1}
+              max={orgCeiling ?? undefined}
+              placeholder={orgCeiling !== null ? String(orgCeiling) : undefined}
+              value={runCeiling}
+              onChange={(e) => onRunCeilingChange(e.target.value)}
+            />
+          </Field>
+          <Field
+            label="Extra allowlist for this run"
+            hint="Optional, comma-separated. Narrows the organisation's own allowlist further - never widens it."
+            error={
+              badAllowlistEntry
+                ? `"${badAllowlistEntry}" isn't a valid E.164 number.`
+                : undefined
+            }
+          >
+            <Input
+              value={runAllowlist}
+              onChange={(e) => onRunAllowlistChange(e.target.value)}
+              placeholder="+919876543210, +15555550100"
+            />
+          </Field>
+        </div>
+      </Dialog>
+    </DialogRoot>
   );
 }

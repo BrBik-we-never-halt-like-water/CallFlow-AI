@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { cn } from '@/lib/cn';
 import { Popover } from '@/components/ui/disclosure';
-import type { SafetySettings } from '@/lib/api';
+import type { RunSafetySnapshot, SafetySettings } from '@/lib/api';
 
 export interface Guard {
   id: string;
@@ -136,6 +136,41 @@ export function guardsFromSafety(settings: SafetySettings | null): Guard[] {
       value: null,
       explanation:
         "Restricting calls to certain hours isn't enforced yet - a run can dial at any time of day until this ships.",
+      settingsHref: '/app/settings/safety',
+    },
+  ];
+}
+
+/**
+ * Builds the guard list from a run's own permanent safety snapshot - what
+ * actually governed that run, not this organisation's current settings
+ * (which may have changed since). Same chip rendering as `guardsFromSafety`
+ * so a past run's guards read identically to a live one; only the source of
+ * truth differs.
+ */
+export function guardsFromSnapshot(snapshot: RunSafetySnapshot): Guard[] {
+  return [
+    {
+      id: 'allowlist',
+      label: 'Allowlist',
+      value: snapshot.allowlist.length > 0 ? 'ON' : null,
+      explanation:
+        'While the allowlist had any number on it, those were the only numbers this run could dial.',
+      settingsHref: '/app/settings/safety',
+    },
+    {
+      id: 'ceiling',
+      label: 'Ceiling',
+      value: `${snapshot.max_calls_per_run}/RUN`,
+      explanation:
+        'The hard cap on how many real calls this run could place.',
+      settingsHref: '/app/settings/safety',
+    },
+    {
+      id: 'rate',
+      label: 'Rate',
+      value: `${snapshot.calls_per_window}/${formatWindow(snapshot.window_minutes)}`,
+      explanation: 'How fast this run was allowed to place calls.',
       settingsHref: '/app/settings/safety',
     },
   ];
