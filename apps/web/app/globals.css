@@ -1,0 +1,1422 @@
+@import 'tailwindcss';
+
+/* ==========================================================================
+   CallFlow AI - token layer.
+   Every value in the design system lives here. No hard-coded hex anywhere
+   else in the codebase.
+
+   LIGHT MODE ONLY. There is no dark theme and no surface toggle: one set of
+   surfaces, tuned properly, rather than two that are each slightly wrong.
+
+   The palette is a cool grey-green - deliberately not cream, and deliberately
+   not the blue-grey every B2B dashboard defaults to. Accent colour is reserved
+   for call state (the lamps, §"Lamps" below) and nothing else.
+   ========================================================================== */
+
+:root {
+  color-scheme: light;
+
+  /* ---- Surfaces ---------------------------------------------------------- */
+  --surface: #f3f4f6; /* page background */
+  --surface-raised: #ffffff; /* cards, inputs, panels */
+  --surface-sunken: #eceff0; /* wells, table headers, code blocks */
+  --surface-hover: #e7ebeb; /* hover background */
+
+  /* ---- Text -------------------------------------------------------------- */
+  --text: #111318; /* primary */
+  --text-dim: #47545a; /* secondary - 7.4:1 on --surface */
+  /* ISSUES.md #47: was `#6b7280` (a stale comment here claimed 4.6:1 on --surface; the
+     real number was 4.39:1, below the 4.5:1 AA minimum that applies almost everywhere
+     this token is actually used - small `text-small`/`text-data`/`.eyebrow`/placeholder
+     text, never large enough for the 3:1 large-text exception). Pre-existing, not
+     introduced by round 3's glass treatment; caught during this round's own contrast
+     check and darkened here to actually clear the bar. */
+  --text-mute: #666d7b; /* tertiary, placeholders - 4.73:1 on --surface, 4.80:1 on
+     --glass-surface composited over the worst-case (`.canvas-tint`) backdrop */
+  --text-inverse: #ffffff; /* on --surface-inverse */
+
+  /* Inverted surface. The primary CTA is monochrome, never brand-coloured. */
+  --surface-inverse: #12181c;
+
+  /* ---- Rules ------------------------------------------------------------- */
+  --rule: #dde2e1;
+  --rule-strong: #c2cac8;
+
+  /* ---- Glass - the dashboard's surface material --------------------------
+     Round 3 pushes the previous round's subtle "monochrome glass" (a flat,
+     mostly-opaque card) into real glassmorphism: a translucent fill over a
+     `backdrop-filter` blur, so a panel reads as frosted glass floating above
+     the page rather than a card painted onto it. Built only from the existing
+     surface/rule tokens - `color-mix`ing with `transparent` changes alpha
+     only, never hue or lightness, so this stays achromatic like everything
+     else (CLAUDE.md §4 #10: the five lamp colours are the only colour that
+     means something). `--glass-border` dims `--rule-strong` the same way, so
+     the hairline still reads against a see-through fill instead of vanishing
+     into it. Contrast of `--text`/`--text-mute` against this fill composited
+     over the dashboard's `--accent-wash`-tinted canvas - the worst-case
+     backdrop - is verified in the round-3 task-1 report: ~17:1 / ~4.80:1,
+     both clearing the 4.5:1 AA body-text minimum with room to spare (see
+     ISSUES.md #47 for why `--text-mute` needed the 4.5:1 bar, not 3:1, and
+     for the value change that got it there). */
+  --glass-surface: color-mix(in oklab, var(--surface-raised) 66%, transparent);
+  --glass-border: color-mix(in oklab, var(--rule-strong) 62%, transparent);
+  --glass-blur: blur(24px) saturate(150%);
+
+  /* ---- Lamps - semantic only --------------------------------------------
+     These five colours communicate call state and nothing else. They are
+     never used for buttons, links, headings, hovers, or decoration. That
+     discipline is what makes a lit lamp mean something on an otherwise
+     monochrome page. */
+  --lamp-off: #b3bcbb;
+  --lamp-ice: #4b82c4;
+  --lamp-brass: #c2871a;
+  --lamp-jade: #2f8f6b;
+  --lamp-flare: #d2402a;
+
+  /* Text-safe variants. The pure lamp colours above do not all reach 4.5:1
+     against a light surface, so anything setting *text* in a lamp colour uses
+     these; the dot itself keeps the pure colour. */
+  --lamp-off-text: #5c6a6f;
+  --lamp-ice-text: #2b5688;
+  --lamp-brass-text: #7a5810;
+  --lamp-jade-text: #1c6349;
+  --lamp-flare-text: #9d2c1a;
+
+  /* ---- Forest - the Lush Forest palette (round-3 dashboard-polish) ------
+     Four raw swatches, `/app/*`-only by way of everywhere they're actually
+     consumed (below). `--accent`/`--accent-text`/`--accent-wash` are built
+     from three of the four exactly as before, just a new hue: `--forest-
+     deep` for the surface, `--forest-ink` for text/icons (the text-safe
+     variant - same job as the lamp `-text` tokens), `--forest-mint` for the
+     wash. `--forest-mid` has no solid-fill role of its own - 2.35:1 against
+     white, 2.14:1 against `--surface`, short of both the 3:1 non-text and
+     4.5:1 text bars - so it never sits under a label or icon. It appears
+     once, as the /app-only primary-button pulse ring (`.app-font-scope
+     .btn-pulse`, below), which is translucent motion with no text on it.
+
+     Worth flagging for whoever picks this up next: `--forest-deep`/`--forest-
+     mid` sit only ~21° of hue away from `--lamp-jade` (both read as "green"
+     at a glance) - closer than the indigo this replaces, which was chosen
+     specifically to sit far from every lamp hue. `--accent` is never used
+     inside `Lamp`/`LampBadge`/`DonutChart`/`OutcomeCount` (verified - the
+     letter of the rule below holds), but the family resemblance to jade is a
+     real one, not just a hue-wheel technicality, and is worth a second look
+     before this palette extends any further. */
+  --forest-deep: #2e6f40;
+  --forest-mint: #cfffdc;
+  --forest-mid: #68ba7f;
+  --forest-ink: #253d2c;
+
+  /* ---- Accent - decorative only, never state ----------------------------
+     This is the product's only other colour: dashboard chart accents, one
+     CTA card, the dashboard's primary-button family (`.app-font-scope
+     .btn-glass-primary`, below), quiet visual warmth - never a `Lamp`,
+     `LampBadge`, `DonutChart` segment, or anything else that represents
+     call/run/escalation state. If a component means something about a call,
+     it uses a lamp colour or none at all; if it doesn't, it may use this one. */
+  --accent: var(--forest-deep);
+  --accent-text: var(--forest-ink); /* ~10.7:1 on --surface, for text/icons */
+  --accent-wash: var(--forest-mint); /* the tinted-canvas colour */
+
+  /* ---- Type scale (fluid) ------------------------------------------------ */
+  --t-display-xl: clamp(2.5rem, 5.6vw, 4.5rem);
+  --t-display-l: clamp(2rem, 4.2vw, 3.25rem);
+  --t-h2: clamp(1.625rem, 3vw, 2.375rem);
+  --t-h3: 1.375rem;
+  --t-h4: 1.0625rem;
+  --t-body-l: 1.125rem;
+  --t-body: 1rem;
+  --t-small: 0.875rem;
+  --t-data: 0.8125rem;
+  --t-label: 0.6875rem;
+
+  /* ---- Space ------------------------------------------------------------- */
+  --space-section: clamp(72px, 9vw, 132px);
+
+  /* ---- Radius ------------------------------------------------------------
+     Softer than an instrument panel, still precise. Nothing is pill-shaped
+     except lamps, status badges, and avatars. */
+  --r-xs: 4px;
+  --r-sm: 7px;
+  --r-md: 12px;
+  --r-lg: 18px;
+  --r-xl: 24px;
+  --r-full: 999px;
+
+  /* ---- Depth ------------------------------------------------------------
+     A soft shadow scale, used sparingly and always with a hairline border so
+     a card still has an edge on a light surface. */
+  --shadow-xs: 0 1px 2px rgba(11, 15, 18, 0.05);
+  --shadow-sm:
+    0 1px 2px rgba(11, 15, 18, 0.05), 0 3px 8px -2px rgba(11, 15, 18, 0.08);
+  --shadow-md:
+    0 2px 4px rgba(11, 15, 18, 0.05), 0 10px 24px -6px rgba(11, 15, 18, 0.12);
+  --shadow-lg:
+    0 4px 8px rgba(11, 15, 18, 0.05), 0 24px 48px -12px rgba(11, 15, 18, 0.14);
+  --shadow-overlay:
+    0 1px 2px rgba(11, 15, 18, 0.08), 0 16px 40px -8px rgba(11, 15, 18, 0.22);
+  /* One diffuse, single-value shadow for every card on the page - a
+     deliberately softer, wider spread than --shadow-sm/md, used so every
+     card reads with the exact same depth instead of each picking a rung off
+     the scale above. */
+  --shadow-card: 0 8px 24px -4px rgba(16, 24, 40, 0.06);
+
+  /* ---- Motion - 200-300ms with gentle easing ---------------------------- */
+  --dur-micro: 150ms;
+  --dur-base: 240ms;
+  --dur-enter: 420ms;
+  --dur-settle: 900ms;
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-inout: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* ---- Layout ------------------------------------------------------------ */
+  --w-marketing: 1180px;
+  --w-app: 1440px;
+  --h-site-header: 68px;
+  --h-app-topbar: 60px;
+}
+
+/* --------------------------------------------------------------------------
+   Tailwind v4 theme bridge.
+   -------------------------------------------------------------------------- */
+
+@theme inline {
+  --color-surface: var(--surface);
+  --color-surface-raised: var(--surface-raised);
+  --color-surface-sunken: var(--surface-sunken);
+  --color-surface-hover: var(--surface-hover);
+  --color-surface-inverse: var(--surface-inverse);
+
+  --color-text: var(--text);
+  --color-text-dim: var(--text-dim);
+  --color-text-mute: var(--text-mute);
+  --color-text-inverse: var(--text-inverse);
+
+  --color-rule: var(--rule);
+  --color-rule-strong: var(--rule-strong);
+
+  --color-lamp-off: var(--lamp-off);
+  --color-lamp-ice: var(--lamp-ice);
+  --color-lamp-brass: var(--lamp-brass);
+  --color-lamp-jade: var(--lamp-jade);
+  --color-lamp-flare: var(--lamp-flare);
+
+  --color-lamp-off-text: var(--lamp-off-text);
+  --color-lamp-ice-text: var(--lamp-ice-text);
+  --color-lamp-brass-text: var(--lamp-brass-text);
+  --color-lamp-jade-text: var(--lamp-jade-text);
+  --color-lamp-flare-text: var(--lamp-flare-text);
+
+  --color-forest-deep: var(--forest-deep);
+  --color-forest-mint: var(--forest-mint);
+  --color-forest-mid: var(--forest-mid);
+  --color-forest-ink: var(--forest-ink);
+
+  --color-accent: var(--accent);
+  --color-accent-text: var(--accent-text);
+  --color-accent-wash: var(--accent-wash);
+
+  --font-display: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-inter-tight), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, monospace;
+
+  --text-display-xl: var(--t-display-xl);
+  --text-display-xl--line-height: 0.98;
+  --text-display-xl--letter-spacing: -0.03em;
+  --text-display-l: var(--t-display-l);
+  --text-display-l--line-height: 1.04;
+  --text-display-l--letter-spacing: -0.022em;
+  --text-h2: var(--t-h2);
+  --text-h2--line-height: 1.12;
+  --text-h2--letter-spacing: -0.018em;
+  --text-h3: var(--t-h3);
+  --text-h3--line-height: 1.25;
+  --text-h3--letter-spacing: -0.01em;
+  --text-h4: var(--t-h4);
+  --text-h4--line-height: 1.35;
+  --text-body-l: var(--t-body-l);
+  --text-body-l--line-height: 1.6;
+  --text-body: var(--t-body);
+  --text-body--line-height: 1.65;
+  --text-small: var(--t-small);
+  --text-small--line-height: 1.5;
+  --text-data: var(--t-data);
+  --text-data--line-height: 1.45;
+  --text-label: var(--t-label);
+  --text-label--line-height: 1;
+  --text-label--letter-spacing: 0.14em;
+
+  --radius-xs: var(--r-xs);
+  --radius-sm: var(--r-sm);
+  --radius-md: var(--r-md);
+  --radius-lg: var(--r-lg);
+  --radius-xl: var(--r-xl);
+  --radius-full: var(--r-full);
+
+  --shadow-xs: var(--shadow-xs);
+  --shadow-sm: var(--shadow-sm);
+  --shadow-md: var(--shadow-md);
+  --shadow-lg: var(--shadow-lg);
+  --shadow-overlay: var(--shadow-overlay);
+  --shadow-card: var(--shadow-card);
+
+  --glass-surface: var(--glass-surface);
+  --glass-border: var(--glass-border);
+  --glass-blur: var(--glass-blur);
+
+  --ease-out: var(--ease-out);
+  --ease-inout: var(--ease-inout);
+
+  --container-marketing: var(--w-marketing);
+  --container-app: var(--w-app);
+}
+
+/* --------------------------------------------------------------------------
+   Base
+   -------------------------------------------------------------------------- */
+
+html {
+  scroll-padding-top: calc(var(--h-site-header) + 24px);
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--font-inter-tight), ui-sans-serif, system-ui, sans-serif;
+  font-size: var(--t-body);
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Ubuntu, scoped to the dashboard only - `app/(app)/app/layout.tsx` wraps its
+   tree in this class because that layout doesn't render `<html>`/`<body>`
+   itself (those stay Inter Tight for marketing/auth in the true root layout).
+   `font-family` is set directly here, not just redeclared as the `--font-sans`
+   custom property, because `body` above hardcodes `--font-inter-tight` rather
+   than routing through `--font-sans` - redeclaring the token alone would
+   leave the rendered face unchanged. `--font-sans` is redeclared too so
+   anything that *does* reach for the Tailwind `font-sans` utility anywhere
+   under `/app` still resolves to Ubuntu rather than silently falling back to
+   Inter Tight. */
+.app-font-scope {
+  --font-sans: var(--font-ubuntu), ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--font-ubuntu), ui-sans-serif, system-ui, sans-serif;
+}
+
+/* Archivo at width 112 ("Expanded"). Applied through a class rather than an
+   element selector so it is never inherited by body copy. */
+.font-display {
+  font-family: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
+  font-variation-settings: 'wdth' 112;
+  font-weight: 600;
+}
+
+/* Every piece of machine-produced data in this product is set in mono, with
+   tabular figures so columns and counters never jitter. */
+.font-mono,
+code,
+kbd,
+samp,
+pre {
+  font-variant-numeric: tabular-nums;
+}
+
+/* The uppercase mono eyebrow - the one place uppercase is used by design. */
+.eyebrow {
+  font-family: var(--font-jetbrains-mono), ui-monospace, monospace;
+  font-size: var(--t-label);
+  line-height: 1;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.measure {
+  max-width: 68ch;
+}
+
+.measure-display {
+  max-width: 20ch;
+}
+
+/* --------------------------------------------------------------------------
+   Focus. Visible focus is a hard requirement.
+   -------------------------------------------------------------------------- */
+
+:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
+  border-radius: inherit;
+}
+
+/* The mega-menu triggers open on hover; while a menu is open, the panel itself
+   is the affordance, so a focus outline on the trigger reads as an ugly box.
+   Suppress it only in the open state - a closed trigger still shows a focus ring
+   for keyboard navigation. Higher specificity than :focus-visible, so no
+   !important needed. */
+button[data-menu][data-state='open']:focus-visible {
+  outline: none;
+}
+
+.skip-link {
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  z-index: 100;
+  padding: 10px 16px;
+  background: var(--surface-raised);
+  color: var(--text);
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--r-sm);
+  box-shadow: var(--shadow-md);
+  font-size: var(--t-small);
+  transform: translateY(-200%);
+  transition: transform var(--dur-base) var(--ease-out);
+}
+
+.skip-link:focus-visible {
+  transform: translateY(0);
+}
+
+::selection {
+  background: var(--surface-inverse);
+  color: var(--text-inverse);
+}
+
+/* --------------------------------------------------------------------------
+   Water - the flow language.
+
+   Where a section used to be two hard-bordered boxes, it becomes one soft
+   basin: content sits *in* a shallow, gradient-lit pool with no rectangular
+   edge, the two halves are joined by a seam that fades out top and bottom
+   instead of a full-height rule, and overflowing content dissolves at the edge
+   like a water surface rather than being chopped by a border. Softness plus
+   continuity is what reads as flow.
+   -------------------------------------------------------------------------- */
+
+.pool {
+  border-radius: var(--r-xl);
+  background: radial-gradient(
+    130% 90% at 50% -10%,
+    color-mix(in oklab, var(--surface-raised) 65%, var(--surface-sunken)),
+    var(--surface-sunken) 62%
+  );
+  box-shadow:
+    inset 0 1px 0 color-mix(in oklab, #ffffff 55%, transparent),
+    var(--shadow-sm);
+}
+
+/* A card: a flat raised surface with a soft hairline edge and a tighter radius -
+   defined without reading as a hard instrument-panel box. Shadow is left to the
+   element so the same surface can be a quiet card (shadow-sm) or lift on hover. */
+.surface-flow {
+  border-radius: var(--r-md);
+  background: var(--surface-raised);
+  border: 1px solid var(--rule);
+}
+
+/* The hero readout. Not a crisp card: a big 32px radius, a clearly visible
+   top-to-bottom gradient (bright at the top, settling into the cool page grey),
+   and a wide, very soft glow so the edges melt into the page rather than drawing
+   a hard rectangle. */
+.card-flow {
+  border-radius: 32px;
+  background: linear-gradient(
+    170deg,
+    #ffffff 0%,
+    var(--surface-raised) 34%,
+    color-mix(in oklab, var(--surface-raised) 82%, var(--surface-sunken)) 100%
+  );
+  box-shadow:
+    inset 0 1px 0 color-mix(in oklab, #ffffff 85%, transparent),
+    0 2px 6px -2px rgba(11, 15, 18, 0.06),
+    0 40px 80px -32px rgba(11, 15, 18, 0.4);
+}
+
+/* --------------------------------------------------------------------------
+   Monochrome glass - frosted content panels.
+
+   Real translucency, not just a border and a flat fill: a `color-mix`ed
+   background sits over a `backdrop-filter` blur, with the same soft
+   depth-and-highlight recipe `.pool` already uses. Built only from the
+   existing surface and rule tokens, so nothing here is a new hue - the five
+   lamp colours stay the only colour in the product (CLAUDE.md §4 #10).
+
+   `-sunken` reads recessed rather than raised, for a panel that sits inside
+   another. `-flat` drops the resting shadow down to just the hairline
+   highlight, for a panel nested inside a panel. `-interactive` is the hover
+   elevation: written as one rule rather than composed from `hover:shadow-md`,
+   because that Tailwind utility would replace the whole `box-shadow` and
+   erase the inset highlight instead of deepening it. */
+
+.panel-glass {
+  background: var(--glass-surface);
+  border-color: var(--glass-border);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  box-shadow:
+    inset 0 1px 0 color-mix(in oklab, var(--surface-raised) 55%, transparent),
+    var(--shadow-card);
+}
+
+.panel-glass-sunken {
+  background: color-mix(in oklab, var(--surface-sunken) 60%, transparent);
+  border-color: var(--glass-border);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  box-shadow: inset 0 1px 0
+    color-mix(in oklab, var(--surface-raised) 30%, transparent);
+}
+
+.panel-glass.panel-glass-flat {
+  box-shadow: inset 0 1px 0
+    color-mix(in oklab, var(--surface-raised) 55%, transparent);
+}
+
+/* Neither combination is used anywhere today, but the specificity tie below
+   would otherwise let :hover silently win over -flat/-sunken's own intent the
+   moment a caller does combine them - fixed now rather than left as a trap
+   for whoever adds the first real caller. */
+.panel-glass-flat.panel-glass-interactive:hover {
+  box-shadow: inset 0 1px 0
+    color-mix(in oklab, var(--surface-raised) 65%, transparent);
+}
+
+.panel-glass-sunken.panel-glass-interactive:hover {
+  box-shadow: inset 0 1px 0
+    color-mix(in oklab, var(--surface-raised) 40%, transparent);
+}
+
+.panel-glass-interactive {
+  transition:
+    box-shadow var(--dur-base) var(--ease-out),
+    border-color var(--dur-base) var(--ease-out),
+    transform var(--dur-base) var(--ease-out);
+}
+
+.panel-glass-interactive:hover {
+  border-color: color-mix(in oklab, var(--rule-strong) 80%, transparent);
+  box-shadow:
+    inset 0 1px 0 color-mix(in oklab, var(--surface-raised) 55%, transparent),
+    var(--shadow-md);
+}
+
+/* Browsers without backdrop-filter support (or a user who has turned
+   transparency effects off at the OS level) get a fully opaque panel instead
+   of a translucent one sitting directly over whatever's behind it with no
+   blur to soften it - a real contrast/legibility regression, not just a
+   missed visual flourish. */
+@supports not (backdrop-filter: blur(1px)) {
+  .panel-glass {
+    background: var(--surface-raised);
+  }
+
+  .panel-glass-sunken {
+    background: var(--surface-sunken);
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .panel-glass {
+    background: var(--surface-raised);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  .panel-glass-sunken {
+    background: var(--surface-sunken);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+
+/* The dashboard header, in the same glass as the content below it - the
+   header and the page canvas share one background token instead of an
+   opaque white bar over a grey page: the header is simply a translucent,
+   blurred view of whatever's actually behind it (the plain `--surface`, or
+   `.canvas-tint`'s wash on the dashboard). `border-b` (applied by the
+   caller) still gives it a seam where one is wanted.
+
+   Tinted with `--accent-wash` (round-3 dashboard-polish, Lush Forest
+   follow-up) rather than left as plain frosted white - `AppShell` only
+   renders `.header-glass` on `/app/*` (verified: its two call sites are both
+   inside `components/layout/app-shell.tsx`, which nothing outside the
+   dashboard imports), so unlike `Button` this class needed no
+   `.app-font-scope` scoping trick; it can carry the tint directly. The tint
+   is baked into the base colour *before* the existing translucency mix
+   (`50% --surface-raised, 50% --accent-wash`, then the same 66%-over-
+   transparent alpha every other glass surface already uses) rather than by
+   raising the alpha, so the header keeps the same blur/opacity recipe as
+   `.panel-glass` - it just frosts a pale mint instead of plain white. Kept
+   deliberately pale (mixing in `--forest-mid` for a stronger green was
+   tried and rejected - it pushed `--text-mute`, used for inactive nav
+   links, down toward ~4.3–4.5:1, too close to the 4.5:1 AA floor for
+   functional nav text). Verified contrast, computed rather than eyeballed,
+   worst-case backdrop (`--surface-sunken` scrolled behind the blur):
+   `--text` ~17:1, `--text-dim` (Wordmark's "AI" suffix) ~7.2:1, `--text-mute`
+   (inactive nav links, credit balance) ~4.8:1 - all clear 4.5:1 with real
+   margin. */
+.header-glass {
+  background: color-mix(
+    in oklab,
+    color-mix(in oklab, var(--surface-raised) 50%, var(--accent-wash) 50%) 66%,
+    transparent
+  );
+  border-color: var(--glass-border);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+}
+
+@supports not (backdrop-filter: blur(1px)) {
+  .header-glass {
+    background: color-mix(
+      in oklab,
+      var(--surface-raised) 50%,
+      var(--accent-wash) 50%
+    );
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .header-glass {
+    background: color-mix(
+      in oklab,
+      var(--surface-raised) 50%,
+      var(--accent-wash) 50%
+    );
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+
+/* Buttons get the same material as Panel, so one sitting on a glass panel
+   doesn't read as a different substance. `-primary` tints toward
+   `--surface-inverse` (the monochrome CTA colour, CLAUDE.md §4 #10) rather
+   than `--glass-surface`, so the solid action still stays the darkest,
+   most committed-looking element on the page - it just now catches the
+   same blur as everything else. `-secondary` reuses `--glass-surface`
+   directly: it used to be fully transparent (`bg-transparent`), which on
+   top of an already-translucent Panel let two layers of "nothing" stack
+   into no visible button at all.
+   Hover/active are written here rather than as Tailwind `hover:`/`active:`
+   utilities on the component, for the same reason `.panel-glass-interactive`
+   is: this file is unlayered, so a layered utility touching `background`
+   would never be able to override it (see the note above `.panel-glass-
+   interactive`). */
+.btn-glass-primary {
+  background: color-mix(in oklab, var(--surface-inverse) 88%, transparent);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+}
+
+.btn-glass-secondary {
+  background: var(--glass-surface);
+  border-color: var(--glass-border);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+}
+
+.btn-glass-secondary:hover {
+  background: color-mix(in oklab, var(--surface-raised) 82%, transparent);
+}
+
+.btn-glass-secondary:active {
+  background: color-mix(in oklab, var(--surface-sunken) 78%, transparent);
+}
+
+@supports not (backdrop-filter: blur(1px)) {
+  .btn-glass-primary {
+    background: var(--surface-inverse);
+  }
+
+  .btn-glass-secondary {
+    background: var(--surface-raised);
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .btn-glass-primary {
+    background: var(--surface-inverse);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  .btn-glass-secondary {
+    background: var(--surface-raised);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+
+/* The dashboard's primary CTA, scoped to `/app/*` only via `.app-font-scope`
+   (the same wrapper `app/(app)/app/layout.tsx` uses to scope Ubuntu) - the
+   round-3 dashboard-polish approval to extend `--accent` into "primary
+   buttons/CTAs ... within /app/*" (DESIGN_NOTES §2). `Button` is one shared
+   component rendered on marketing and auth too (DESIGN_NOTES §13: the glass
+   treatment is product-wide), so the override lives here as a descendant
+   selector rather than in `button.tsx` - only a `.btn-glass-primary` nested
+   inside `.app-font-scope` picks it up via ordinary specificity (two classes
+   beat one); marketing and auth keep the monochrome `--surface-inverse` CTA
+   above, untouched. `92%` rather than the `88%` used above: `--accent` is
+   lighter than `--surface-inverse`, so a higher opacity is needed to hold
+   white button text at 4.5:1+ against the button's own composited colour
+   (verified ~5.1:1 against both the `--surface` and `.canvas-tint`-wash
+   backdrops an /app button actually sits on - see design-v2-report.md). */
+.app-font-scope .btn-glass-primary {
+  background: color-mix(in oklab, var(--accent) 92%, transparent);
+}
+
+@supports not (backdrop-filter: blur(1px)) {
+  .app-font-scope .btn-glass-primary {
+    background: var(--accent);
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .app-font-scope .btn-glass-primary {
+    background: var(--accent);
+  }
+}
+
+/* Hairlines that fade at both ends - the flow-language replacement for a hard
+   full-width / full-height divider. `seam-x` is horizontal, `seam-y` vertical;
+   `flow-seam-l` is the desktop-only fading left border used between columns. */
+.seam-x {
+  height: 1px;
+  border: 0;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--rule-strong),
+    transparent
+  );
+}
+
+.seam-y {
+  width: 1px;
+  align-self: stretch;
+  background: linear-gradient(
+    180deg,
+    transparent,
+    var(--rule-strong),
+    transparent
+  );
+}
+
+@media (min-width: 1024px) {
+  .flow-seam-l {
+    border-left: 1px solid transparent;
+    border-image: linear-gradient(
+        180deg,
+        transparent,
+        var(--rule-strong) 28%,
+        var(--rule-strong) 72%,
+        transparent
+      )
+      1;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Signal field - the dashboard's own atmosphere.
+
+   An ambient glow built from the lamp colours themselves, not a new hue: three
+   very soft, blurred blooms in jade/ice/brass sitting behind the live outcome
+   strip, like a switchboard's own light spilling onto the wall behind it. The
+   lamps stay the only colour that means something (CLAUDE.md §4 #10) - this
+   is that same colour, diffused into atmosphere rather than decoration, and
+   only where the page is actually showing live call signal.
+   -------------------------------------------------------------------------- */
+
+.signal-field {
+  position: relative;
+  isolation: isolate;
+  /* The glow (`::before`, below) is deliberately oversized past this box so
+     `blur(40px)` has room to soften its edge instead of cutting the gradient
+     off hard - but with nothing here to clip it, that oversized box was real
+     layout, not just paint: it widened this element's own scrollable overflow,
+     and with no ancestor between here and `<body>` clipping horizontally
+     either, the whole page picked up a horizontal scrollbar the moment this
+     section rendered (ISSUES.md - "the whole UI scrolls left" report).
+     `overflow: hidden` contains the bleed to this card, where the glow was
+     always meant to stay. */
+  overflow: hidden;
+}
+
+.signal-field::before {
+  content: '';
+  position: absolute;
+  inset: -20% -10%;
+  z-index: -1;
+  background:
+    radial-gradient(
+      38% 55% at 12% 20%,
+      color-mix(in oklab, var(--lamp-jade) 16%, transparent),
+      transparent 70%
+    ),
+    radial-gradient(
+      34% 50% at 88% 15%,
+      color-mix(in oklab, var(--lamp-ice) 15%, transparent),
+      transparent 70%
+    ),
+    radial-gradient(
+      30% 45% at 50% 100%,
+      color-mix(in oklab, var(--lamp-brass) 12%, transparent),
+      transparent 70%
+    );
+  filter: blur(40px);
+  opacity: 0.8;
+}
+
+@media (prefers-contrast: more) {
+  .signal-field::before {
+    display: none;
+  }
+}
+
+/* The dashboard's own hero card - card-flow's gradient lift, at a bigger radius
+   and with room for a display-scale number. Distinct from `.card-flow` itself
+   (marketing's hero) so tuning one never silently moves the other. */
+.hero-flow {
+  border-radius: var(--r-xl);
+  background: linear-gradient(
+    165deg,
+    #ffffff 0%,
+    var(--surface-raised) 38%,
+    color-mix(in oklab, var(--surface-raised) 85%, var(--surface-sunken)) 100%
+  );
+  box-shadow:
+    inset 0 1px 0 color-mix(in oklab, #ffffff 80%, transparent),
+    var(--shadow-card);
+}
+
+/* A soft tint on the page canvas behind the dashboard's cards, so a white
+   card actually reads as floating rather than as a slightly-lighter rectangle
+   on an already-near-white page. Same accent hue as --accent, just diluted -
+   this is the one place the accent tints something structural rather than a
+   single decorative element, since it's the canvas the whole page sits on,
+   not a claim about any one piece of content. */
+.canvas-tint {
+  background: radial-gradient(
+    130% 80% at 50% -15%,
+    var(--accent-wash) 0%,
+    var(--surface) 78%
+  );
+}
+
+/* --------------------------------------------------------------------------
+   Page texture.
+
+   A single, very quiet grid behind the hero. Not a gradient blob and not a
+   mesh - a draughtsman's grid, masked so it fades out rather than ending at a
+   hard edge. It reads as paper, which is the point.
+   -------------------------------------------------------------------------- */
+
+.grid-field {
+  background-image:
+    linear-gradient(
+      to right,
+      color-mix(in oklab, var(--text) 5%, transparent) 1px,
+      transparent 1px
+    ),
+    linear-gradient(
+      to bottom,
+      color-mix(in oklab, var(--text) 5%, transparent) 1px,
+      transparent 1px
+    );
+  background-size: 56px 56px;
+  mask-image: radial-gradient(
+    ellipse 80% 55% at 50% 0%,
+    #000 20%,
+    transparent 78%
+  );
+}
+
+/* Ambient voice field: a very faint waveform, tiled and drifting slowly, that
+   replaces the draughtsman's grid behind the hero and closing CTA - so even the
+   background reads as voice. Masked to fade out; still under prefers-reduced-
+   motion it simply stops drifting. */
+.wave-field {
+  background-image: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='240'%20height='80'%3E%3Cpath%20d='M0%2040%20Q30%2012%2060%2040%20T120%2040%20T180%2040%20T240%2040'%20fill='none'%20stroke='%230b0f12'%20stroke-opacity='0.06'%20stroke-width='1.2'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+  background-size: 240px 80px;
+  animation: wave-drift 30s linear infinite;
+  mask-image: radial-gradient(
+    ellipse 82% 60% at 50% 0%,
+    #000 18%,
+    transparent 80%
+  );
+  -webkit-mask-image: radial-gradient(
+    ellipse 82% 60% at 50% 0%,
+    #000 18%,
+    transparent 80%
+  );
+}
+
+@keyframes wave-drift {
+  to {
+    background-position: 240px 0;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   The relay settle - the signature micro-interaction.
+
+   One fast flicker, then hold, plus the lamp's own glow fading in over the
+   last 300ms. It reads as an electromechanical relay closing. Never loops.
+   -------------------------------------------------------------------------- */
+
+@keyframes relay-settle {
+  0% {
+    opacity: 0.2;
+  }
+  12% {
+    opacity: 1;
+  }
+  22% {
+    opacity: 0.35;
+  }
+  40% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+@keyframes relay-glow {
+  0%,
+  66% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+  100% {
+    box-shadow: 0 0 0 3px var(--lamp-halo-color, transparent);
+  }
+}
+
+.lamp-settle {
+  animation:
+    relay-settle var(--dur-settle) var(--ease-out) both,
+    relay-glow var(--dur-settle) var(--ease-out) both;
+}
+
+/* A lamp holding its lit state keeps the halo without re-running the flicker.
+   On a light surface a glow reads as a soft ring rather than a bloom. */
+.lamp-lit {
+  box-shadow: 0 0 0 3px var(--lamp-halo-color, transparent);
+}
+
+/* --------------------------------------------------------------------------
+   Site loader - the first-paint brand splash.
+
+   A full surface with the wordmark over a listening waveform, which holds
+   briefly then fades and hides itself. Self-dismissing in pure CSS so it can
+   never trap the page; skipped entirely under prefers-reduced-motion (below).
+   -------------------------------------------------------------------------- */
+
+.site-loader {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: grid;
+  place-items: center;
+  background: var(--surface);
+  animation: loader-out 0.55s var(--ease-out) 0.9s forwards;
+}
+
+@keyframes loader-out {
+  to {
+    opacity: 0;
+    visibility: hidden;
+  }
+}
+
+.loader-bar {
+  transform-origin: center;
+  animation: loader-bar 1s var(--ease-inout) infinite;
+}
+
+@keyframes loader-bar {
+  0%,
+  100% {
+    transform: scaleY(0.28);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+
+/* Primary CTA: a soft pulse ring echoes outward on hover, like a voice emitting
+   a pulse. Off under prefers-reduced-motion. */
+@keyframes btn-pulse {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in oklab, var(--text) 22%, transparent);
+    opacity: 0.55;
+  }
+  100% {
+    box-shadow: 0 0 0 12px transparent;
+    opacity: 0;
+  }
+}
+
+.btn-pulse::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+}
+
+.btn-pulse:hover::after {
+  animation: btn-pulse 1.3s var(--ease-out) infinite;
+}
+
+/* The dashboard-only variant of the ring above: tints toward `--forest-mid`
+   instead of `--text`, so hovering the dashboard's now-green primary CTA
+   sends out a ring in the same colour family rather than a plain-ink flash.
+   `--forest-mid` is otherwise unused as a solid fill (see the note over
+   `--forest-mid` near the top of this file) - a low-opacity, text-free ring
+   is exactly the one place its weak contrast doesn't matter. Only
+   `.app-font-scope` descendants get this; marketing/auth keep `btn-pulse`
+   as-is, via the same specificity trick as `.btn-glass-primary` above. */
+@keyframes btn-pulse-forest {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in oklab, var(--forest-mid) 45%, transparent);
+    opacity: 0.55;
+  }
+  100% {
+    box-shadow: 0 0 0 12px transparent;
+    opacity: 0;
+  }
+}
+
+.app-font-scope .btn-pulse:hover::after {
+  animation-name: btn-pulse-forest;
+}
+
+/* The 1–2 bars at the waveform's leading edge get a small live flutter as the
+   line is spoken. Transform-based so it never fights the inline height. */
+@keyframes wave-active {
+  0%,
+  100% {
+    transform: scaleY(1);
+  }
+  50% {
+    transform: scaleY(1.28);
+  }
+}
+
+.wave-active {
+  transform-origin: center;
+  animation: wave-active 0.5s var(--ease-inout) infinite;
+}
+
+@keyframes lamp-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}
+
+.lamp-pulse {
+  animation: lamp-pulse 2.4s var(--ease-inout) infinite;
+}
+
+/* --------------------------------------------------------------------------
+   Reveal + streaming rows
+   -------------------------------------------------------------------------- */
+
+.reveal {
+  opacity: 0;
+  transform: translateY(14px);
+  transition:
+    opacity var(--dur-enter) var(--ease-out),
+    transform var(--dur-enter) var(--ease-out);
+}
+
+.reveal[data-shown='true'] {
+  opacity: 1;
+  transform: none;
+}
+
+@keyframes row-enter {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.row-enter {
+  animation: row-enter var(--dur-base) var(--ease-out) both;
+}
+
+@keyframes caret {
+  0%,
+  49% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0;
+  }
+}
+
+.caret::after {
+  content: '';
+  display: inline-block;
+  width: 1px;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  background: currentColor;
+  animation: caret 1s steps(1, end) infinite;
+}
+
+/* --------------------------------------------------------------------------
+   Overlays - mega-menu popover and the mobile sheet.
+
+   The menu grows from its top edge with a small lift; the sheet fades up. The
+   menu closes instantly (see below); both collapse to an instant appearance
+   under prefers-reduced-motion (below).
+   -------------------------------------------------------------------------- */
+
+@keyframes menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.menu-pop[data-state='open'] {
+  animation: menu-in var(--dur-base) var(--ease-out);
+}
+
+/* No exit animation on purpose: with one-menu-at-a-time coordination, a closing
+   panel must vanish at once so it never overlaps the panel opening beside it.
+   Radix unmounts immediately when the closed state has no animation to await. */
+
+@keyframes sheet-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.sheet-in[data-state='open'] {
+  animation: sheet-in var(--dur-base) var(--ease-out);
+}
+
+/* --------------------------------------------------------------------------
+   Page transition.
+
+   Next remounts `template.tsx` on every navigation, so a fresh `.page-enter`
+   element is created each time and this animation replays - a gentle fade and
+   settle as the new route lands, while the persistent header/footer stay put.
+
+   CSS rather than a JS library on purpose: the resting state is fully visible,
+   so a crawler or a JS-disabled browser sees the content, never a blank page
+   stuck at opacity 0. `backwards` holds the start frame during the (zero) delay
+   so there is no pre-paint flash, and dropping `forwards` means no lingering
+   transform is left on the wrapper to trip up fixed/sticky descendants.
+   -------------------------------------------------------------------------- */
+
+@keyframes page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.page-enter {
+  animation: page-enter var(--dur-base) var(--ease-out) backwards;
+}
+
+/* --------------------------------------------------------------------------
+   View Transitions - the real cross-dissolve between routes.
+
+   Where the browser supports it, navigation is driven through
+   startViewTransition (see components/layout/view-transitions.tsx) and the old
+   page dissolves into the new one. Tuned to the design's own duration and
+   easing rather than the UA default. The `.page-enter` fade is redundant here,
+   so it is switched off wherever View Transitions run - the two would otherwise
+   stack into a double animation.
+   -------------------------------------------------------------------------- */
+
+@supports (view-transition-name: none) {
+  .page-enter {
+    animation: none;
+  }
+
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation-duration: var(--dur-base);
+    animation-timing-function: var(--ease-out);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Reduced motion. Durations collapse and transforms are removed. Lamps still
+   change colour - they simply stop flickering. Parallax is switched off
+   entirely by the components that use it.
+   -------------------------------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .reveal {
+    opacity: 1;
+    transform: none;
+  }
+
+  .lamp-settle {
+    animation: none;
+    box-shadow: 0 0 0 3px var(--lamp-halo-color, transparent);
+  }
+
+  .lamp-pulse,
+  .caret::after,
+  .page-enter,
+  .loader-bar {
+    animation: none;
+  }
+
+  /* Skip the splash entirely rather than letting it hold on screen. */
+  .site-loader {
+    display: none !important;
+  }
+}
+
+@media (prefers-contrast: more) {
+  :root {
+    --text-dim: var(--text);
+    --text-mute: #3b464b;
+    --rule: var(--rule-strong);
+  }
+}
+
+@supports (scrollbar-color: auto) {
+  * {
+    scrollbar-color: var(--rule-strong) transparent;
+    scrollbar-width: thin;
+  }
+}
+
+/* ==========================================================================
+   CAL-4 "Signal" surfaces, for the marketing site only.
+
+   The merge that brought the design-and-motion overhaul onto this branch kept
+   the dashboard on the existing token layer and took CAL-4 for marketing. These
+   rules are what marketing needs and the token layer above does not already
+   provide - appended rather than merged into the blocks above, so nothing the
+   dashboard resolves against changes.
+
+   --primary is decorative and belongs to this surface set. It must never reach
+   Lamp, LampBadge, DonutChart or anything else that renders call state
+   (CLAUDE.md section 4.10).
+   ========================================================================== */
+
+:root {
+  --primary: #3b2fd9;
+  --secondary: #f0e9de;
+  --glass: color-mix(in oklab, var(--surface-raised) 72%, transparent);
+  --glass-edge: color-mix(in oklab, var(--text) 8%, transparent);
+  --space-band: clamp(36px, 4.5vw, 64px);
+}
+
+/* No borders.
+   A card is a pool of lighter surface, not a box with an edge drawn round it.
+   Separation comes from the wash and from space; the moment every group of
+   content gets a rectangle, a page reads as a form rather than a composition.
+   The radius is large enough that the corner never reads as a frame. */
+.card {
+  background: linear-gradient(170deg, var(--surface-raised) 0%, var(--surface-sunken) 100%);
+  border: 0;
+  border-radius: var(--r-xl);
+}
+
+.card-raised {
+  background: linear-gradient(
+    170deg,
+    var(--surface-raised) 0%,
+    color-mix(in oklab, var(--surface-sunken) 55%, var(--surface-raised)) 100%
+  );
+  border: 0;
+  border-radius: var(--r-xl);
+  box-shadow: 0 1px 2px rgba(14, 17, 20, 0.03), 0 14px 30px -18px rgba(14, 17, 20, 0.16);
+}
+
+/* Earns attention by light, not by an outline: a warmer fill and a soft halo
+   in the primary, with no edge to draw. */
+.card-feature {
+  background: linear-gradient(
+    170deg,
+    var(--surface-raised) 0%,
+    color-mix(in oklab, var(--primary) 5%, var(--surface-raised)) 100%
+  );
+  border: 0;
+  border-radius: var(--r-xl);
+  box-shadow:
+    0 1px 2px rgba(14, 17, 20, 0.04),
+    0 20px 44px -22px color-mix(in oklab, var(--primary) 42%, transparent);
+}
+
+/* Interactive cards lift on hover. Transform and shadow only — never a
+   border-colour change, which reflows nothing but reads as a flicker. */
+.card-interactive {
+  transition:
+    box-shadow var(--dur-base) var(--ease-out),
+    transform var(--dur-base) var(--ease-out);
+}
+
+.card-interactive:hover {
+  box-shadow: var(--shadow-md);
+  transform: translateY(-3px);
+}
+
+/* A sunken basin: content sits in a shallow well. Also borderless. */
+.card-sunken {
+  background: linear-gradient(
+    170deg,
+    var(--surface-sunken) 0%,
+    color-mix(in oklab, var(--surface-sunken) 70%, var(--surface-raised)) 100%
+  );
+  border: 0;
+  border-radius: var(--r-xl);
+}
+
+/* Glass, used sparingly — the header and the one featured card. Falls back to
+   a solid surface where backdrop-filter is unavailable, so text never lands on
+   a half-transparent panel with nothing behind it. */
+.glass {
+  background: var(--surface-raised);
+  border: 1px solid var(--rule);
+  border-radius: var(--r-lg);
+}
+
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+  .glass {
+    background: var(--glass);
+    border-color: var(--glass-edge);
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(1.4);
+    backdrop-filter: blur(var(--glass-blur)) saturate(1.4);
+  }
+}
+
+/* --------------------------------------------------------------------------
+   The deck.
+
+   One section fills the screen; depth carries the transition. `--d` is written
+   per section by use-scroll-depth (1 = centred), and defaults to 1 so the page
+   is fully legible before hydration and under reduced motion.
+
+   Snap is `proximity`, never `mandatory`: mandatory snapping fights anyone who
+   wants to stop halfway, and traps keyboard and screen-reader users mid-section.
+   -------------------------------------------------------------------------- */
+
+.deck {
+  scroll-snap-type: y proximity;
+}
+
+/* The default lives here, on the element the hook writes to — putting it on
+   .deck-inner would shadow the inherited value and depth would never apply. */
+.deck-section {
+  --d: 1;
+  scroll-snap-align: start;
+  scroll-snap-stop: normal;
+}
+
+.deck-inner {
+  transform: scale(calc(0.955 + 0.045 * var(--d)));
+  opacity: calc(0.45 + 0.55 * var(--d));
+  transition:
+    transform 120ms linear,
+    opacity 120ms linear;
+  will-change: transform, opacity;
+}
+
+/* The receding veil. Cheaper than blurring a full-viewport section, which
+   forces a compositor layer per section and is where this pattern usually
+   starts dropping frames. */
+.deck-section::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: var(--surface);
+  opacity: calc((1 - var(--d, 1)) * 0.35);
+  transition: opacity 120ms linear;
+}
+
+/* --------------------------------------------------------------------------
+   Section grounds.
+
+   Rhythm comes from alternating ground rather than from a rule between every
+   block. `sand` is the warm secondary surface; it appears on marketing only.
+   -------------------------------------------------------------------------- */
+
+.ground-sand {
+  background: var(--secondary);
+}
+
+.ground-sunken {
+  background: var(--surface-sunken);
+}
+
+.ground-inverse {
+  background: var(--surface-inverse);
+  color: var(--text-inverse);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card-interactive:hover {
+    transform: none;
+  }
+
+  .deck {
+    scroll-snap-type: none;
+  }
+
+  .deck-inner {
+    transform: none;
+    opacity: 1;
+  }
+
+  .deck-section::after {
+    opacity: 0;
+  }
+}

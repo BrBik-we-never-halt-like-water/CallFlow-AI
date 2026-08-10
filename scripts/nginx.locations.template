@@ -1,0 +1,31 @@
+# The proxy body, shared by both server-block templates so the HTTP-only and the
+# TLS variants cannot drift. Rendered to /etc/nginx/snippets/callflow-<env>.conf
+# and pulled in with `include`. @API_PORT@ and @WEB_PORT@ come from
+# ecosystem.config.js, so they cannot disagree with what pm2 binds.
+
+proxy_set_header Host              $host;
+proxy_set_header X-Real-IP         $remote_addr;
+proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+
+# Behind Cloudflare the origin always sees https on the proxied leg, but the
+# scheme the visitor actually used is the one the app should believe.
+proxy_set_header X-Forwarded-Proto $scheme;
+
+# A call that runs long should not be cut off mid-transcript.
+proxy_read_timeout 300s;
+client_max_body_size 25m;
+
+# The API is mounted under /api on the same origin as the site, so the browser
+# makes no cross-origin request and CORS never enters into it.
+location /api/ {
+    proxy_pass http://127.0.0.1:@API_PORT@;
+}
+
+location / {
+    proxy_pass http://127.0.0.1:@WEB_PORT@;
+
+    # Next streams RSC payloads over a connection it expects to keep open.
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+}

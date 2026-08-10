@@ -1,0 +1,49 @@
+# TLS server block for a Cloudflare Origin CA certificate.
+#
+# An Origin CA certificate is NOT publicly trusted - no browser accepts it
+# directly. It is only ever presented to Cloudflare, which means two things have
+# to be true or the site breaks:
+#
+#   1. the DNS record is proxied (orange cloud), so Cloudflare is the only client
+#      that ever completes this handshake
+#   2. SSL/TLS mode is Full (strict), so Cloudflare actually verifies it
+#
+# In exchange the certificate lasts 15 years and there is no renewal to automate,
+# no ACME challenge to keep reachable, and no rate limit to trip.
+#
+# Rendered by scripts/bootstrap.sh. @HOST@, @ENV@, @API_PORT@ and @WEB_PORT@ are
+# substituted.
+
+server {
+    listen 80;
+    server_name @HOST@;
+
+    # Cloudflare requests the origin over https once the mode is Full (strict),
+    # so port 80 exists only to catch anything that bypasses the proxy.
+    return 301 https://$host$request_uri;
+}
+
+server {
+    # `listen ... http2` rather than the newer `http2 on;`: the latter needs
+    # nginx 1.25.1+, and on anything older it is an unknown directive that fails
+    # `nginx -t` outright. The old form still works on new nginx - it only warns.
+    listen 443 ssl http2;
+    server_name @HOST@;
+
+    # One Cloudflare Origin certificate covers calllflow.com and *.calllflow.com,
+    # so both environments present the same pair. Path follows the convention
+    # already on this box, /etc/ssl/cloudflare/<zone>.{pem,key}.
+    ssl_certificate     /etc/ssl/cloudflare/calllflow.pem;
+    ssl_certificate_key /etc/ssl/cloudflare/calllflow.key;
+
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers off;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 1d;
+
+    # No HSTS here: Cloudflare terminates the connection the browser sees, so the
+    # header belongs in Cloudflare's Edge Certificates settings. Setting it on the
+    # origin only describes the leg the browser never talks to.
+
+    include /etc/nginx/snippets/callflow-@ENV@.conf;
+}
