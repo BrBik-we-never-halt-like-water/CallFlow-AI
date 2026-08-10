@@ -106,11 +106,18 @@ NEXT_PUBLIC_SITE_URL=http://localhost:3000
 `@` breaks the URL parser, which reads the first `@` as the host delimiter and fails with
 a confusing connection error. `BrBik@0192837465` must be written `BrBik%400192837465`.
 
-**`DATABASE_URL` is the direct connection (5432), not the pooler (6543).** The API is a
+**`DATABASE_URL` must not be the transaction pooler (6543).** The API is a
 long-lived process with its own pool, and every request runs `SET LOCAL ROLE authenticated`
 so RLS applies - transaction-mode pooling makes that session state unpredictable, and
 asyncpg's prepared statements are unsupported there. Revisit only if the API moves to a
 serverless runtime.
+
+The **direct** connection (`db.<ref>.supabase.co:5432`) resolves to IPv6 only unless the
+project has the IPv4 add-on, so a host without IPv6 fails with `Network is unreachable`.
+The deployment VM is one of those, so deployed environments use the **session pooler**
+(`<region>.pooler.supabase.com:5432`) instead - session mode keeps both prepared
+statements and `SET LOCAL ROLE`, so it is a drop-in. Its username is `postgres.<ref>`,
+not `postgres`.
 
 **`PHONE_HASH_PEPPER` is effectively permanent.** It is mixed into every suppression
 `phone_hash`; changing it orphans every existing do-not-call entry.
