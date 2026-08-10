@@ -13,6 +13,8 @@ import {
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/cn';
+import { UserMenu } from './user-menu';
+import type { SessionProfile } from '@/lib/hooks/use-session';
 
 export interface NavItem {
   label: string;
@@ -23,11 +25,11 @@ export interface NavItem {
 }
 
 /**
- * Every /app/* destination. The header (`AppShell`'s `AppTopBar`) renders the
- * first five as its primary nav row; `Organisation` and `Settings` are lower-
+ * Every /app/* destination. The sidebar (`AppShell`'s `AppSidebar`) renders the
+ * first five as its primary nav list; `Organisation` and `Settings` are lower-
  * frequency and live in the account menu (`UserMenu`) instead - folding them
- * into the header row would mean either compressing type or cramming seven
- * links into one line, both worse than one extra click for a rare action.
+ * into the sidebar too would mean either compressing type or cramming seven
+ * links into one column, both worse than one extra click for a rare action.
  */
 export const NAV_ITEMS: Omit<NavItem, 'badge'>[] = [
   { label: 'Dashboard', href: '/app', icon: GaugeIcon },
@@ -39,7 +41,7 @@ export const NAV_ITEMS: Omit<NavItem, 'badge'>[] = [
   { label: 'Settings', href: '/app/settings', icon: GearSixIcon },
 ];
 
-/** The five destinations shown as text links in the header's primary nav row. */
+/** The five destinations shown as the sidebar's primary nav list. */
 export const PRIMARY_NAV_ITEMS = NAV_ITEMS.filter(
   (item) => item.href !== '/app/organisation' && item.href !== '/app/settings',
 );
@@ -95,16 +97,30 @@ export function OrgMark({
   );
 }
 
-/** Bottom tab bar - the only nav surface below `lg`, where the header's
- *  primary nav row doesn't have room to show without compressing type. */
-export function AppTabBar({ escalationCount }: { escalationCount: number }) {
+/**
+ * Bottom tab bar - the only nav surface below `lg`, where there's no room
+ * for the sidebar's fixed column. Carries a fifth slot, `UserMenu`'s
+ * `variant="tab"` trigger, since `AppTopBar` (the header that used to be
+ * the one place a mobile user reached the account menu) was removed
+ * entirely this round - without this, a signed-in mobile user would have no
+ * way to reach Settings/Profile/Organisation or sign out at all.
+ */
+export function AppTabBar({
+  escalationCount,
+  profile,
+  loading,
+}: {
+  escalationCount: number;
+  profile: SessionProfile | null;
+  loading: boolean;
+}) {
   const pathname = usePathname() ?? '';
   const items = NAV_ITEMS.filter((item) => MOBILE_ITEMS.includes(item.href));
 
   return (
     <nav
       aria-label="Dashboard"
-      className="sticky bottom-0 z-30 flex shrink-0 border-t border-rule bg-surface-raised lg:hidden"
+      className="dark-chrome sticky bottom-0 z-30 flex shrink-0 border-t lg:hidden"
     >
       {items.map((item) => {
         const active = isActive(pathname, item.href);
@@ -128,18 +144,24 @@ export function AppTabBar({ escalationCount }: { escalationCount: number }) {
             <span className="truncate text-[0.6875rem] leading-none">
               {item.label === 'Needs a person' ? 'Needs you' : item.label}
             </span>
+            {/* Always a plain dot, never a numeric pill - same rule as the
+                sidebar's identical badge (app-shell.tsx). The exact count
+                still reaches a screen reader either way. */}
             {badge > 0 ? (
               <span
-                className="absolute right-1/4 top-1.5 inline-flex min-w-4 items-center justify-center rounded-full px-1 font-mono text-[0.625rem] tabular-nums text-white"
+                aria-hidden
+                className="absolute right-1/4 top-1.5 size-2 rounded-full"
                 style={{ background: 'var(--lamp-flare)' }}
-              >
-                {badge > 9 ? '9+' : badge}
-                <span className="sr-only"> waiting for a person</span>
-              </span>
+              />
+            ) : null}
+            {badge > 0 ? (
+              <span className="sr-only">{badge} waiting for a person</span>
             ) : null}
           </Link>
         );
       })}
+
+      <UserMenu variant="tab" profile={profile} loading={loading} />
     </nav>
   );
 }

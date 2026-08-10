@@ -1,0 +1,10 @@
+{
+  "name": "callflow-ai",
+  "private": true,
+  "description": "Repo-root convenience scripts. apps/web and apps/api each keep their own package.json/pyproject.toml - this one only wraps the database commands so they don't require activating the venv first.",
+  "scripts": {
+    "db:migrate": "node scripts/db.js migrate",
+    "db:generate": "node scripts/db.js generate",
+    "db:reset": "node scripts/db.js reset"
+  }
+}

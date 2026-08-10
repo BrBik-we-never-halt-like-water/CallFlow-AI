@@ -50,6 +50,20 @@ def triage(outcome: CallOutcome, *, escalate_on_negative: bool = True) -> CallOu
             "Contact showed frustration during the call - review before dialing again."
         )
 
+    # CALL-E's own holistic judgment that the conversation never reached a
+    # clear resolution - independent of whatever the campaign's own
+    # result_schema managed to extract. Ranked above the plain-status
+    # buckets below, since an explicit `False` here is a real, considered
+    # signal, not a fallback the way "no extracted fields" is; ranked below
+    # the explicit human-said-so signals above, since those are more
+    # specific and more actionable than CALL-E's summary-level judgment.
+    elif outcome.task_completed is False:
+        updates["disposition"] = Disposition.ESCALATED
+        updates["disposition_reason"] = (
+            "CALL-E judged the conversation did not reach a clear resolution - review "
+            "before counting this as closed."
+        )
+
     # Negative tone without frustration is usually "bad time, not bad mood".
     # That deserves another attempt, not a human escalation.
     elif escalate_on_negative and sentiment is Sentiment.NEGATIVE:

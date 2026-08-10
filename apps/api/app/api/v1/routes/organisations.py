@@ -264,7 +264,6 @@ async def invite(
             role=role,
             token=token,
             expires_at=expires_at,
-            invited_by=user.id,
         )
 
     accept_url = f"{config.site_url}/accept-invite/{token}"
@@ -336,6 +335,13 @@ async def remove_member(
                 current_role = await org_repo.get_member_role(conn, user.org_id, member_user_id)
                 if current_role is not None:
                     _ensure_can_act_on(user, current_role)
-            await org_repo.remove_member(conn, user.org_id, member_user_id)
+                # Removing someone else reassigns their org data to the caller
+                # and deletes their account entirely - a different, heavier
+                # operation than leaving your own org (below).
+                await org_repo.remove_teammate_and_reassign_data(
+                    conn, user.org_id, member_user_id
+                )
+            else:
+                await org_repo.remove_member(conn, user.org_id, member_user_id)
         except asyncpg.exceptions.RestrictViolationError as exc:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=exc.message) from exc

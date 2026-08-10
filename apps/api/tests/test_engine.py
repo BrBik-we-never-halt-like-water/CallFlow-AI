@@ -39,6 +39,24 @@ def test_cancel_call_raises_not_implemented(gateway: EngineGateway) -> None:
         gateway.cancel_call("call_123")
 
 
+def test_list_events_forwards_cursor_and_limit_to_the_sdk(
+    gateway: EngineGateway, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The endpoint is cursor-paginated - without forwarding it, only the first
+    # page of a long call's events would ever be reachable through this
+    # gateway, silently dropping the rest.
+    captured: dict[str, Any] = {}
+
+    def fake_list_events(call_id: str, *, cursor: str | None = None, limit: int | None = None) -> dict[str, Any]:
+        captured.update(call_id=call_id, cursor=cursor, limit=limit)
+        return {"events": []}
+
+    monkeypatch.setattr(gateway._client.calls, "list_events", fake_list_events)
+    gateway.list_events("call_123", cursor="cur_abc", limit=50)
+
+    assert captured == {"call_id": "call_123", "cursor": "cur_abc", "limit": 50}
+
+
 class StubVoiceProvider:
     """A second, deliberately different `VoiceProvider` - no vendor behind it,
     just enough to prove the protocol is a real interface rather than a
@@ -62,7 +80,9 @@ class StubVoiceProvider:
     def cancel_call(self, call_id: str) -> None:
         return None
 
-    def list_events(self, call_id: str, *, limit: int | None = None) -> dict[str, Any]:
+    def list_events(
+        self, call_id: str, *, cursor: str | None = None, limit: int | None = None
+    ) -> dict[str, Any]:
         raise NotImplementedForProvider("StubVoiceProvider has no live event stream.")
 
 
@@ -78,6 +98,31 @@ def test_both_providers_satisfy_the_same_protocol(gateway: EngineGateway) -> Non
     assert _accepts_any_voice_provider(stub) is False
     with pytest.raises(NotImplementedForProvider):
         stub.list_events("call_123")
+
+
+@pytest.mark.parametrize(
+    ("code", "expected"),
+    [
+        # Poll-time-only codes - a short-lived read-after-write race, not a
+        # start_call response - treated as transient like provider_unavailable.
+        ("call_not_ready", DialFailure.PROVIDER_UNAVAILABLE),
+        ("not_found", DialFailure.PROVIDER_UNAVAILABLE),
+        # Configuration/request-shape problems - fail closed to INTERNAL,
+        # explicitly rather than via the unmapped-code fallback.
+        ("invalid_request", DialFailure.INTERNAL),
+        ("idempotency_conflict", DialFailure.INTERNAL),
+        ("result_schema_invalid", DialFailure.INTERNAL),
+        ("recipient_result_schema_invalid", DialFailure.INTERNAL),
+        ("internal_error", DialFailure.INTERNAL),
+    ],
+)
+def test_classify_error_maps_the_remaining_documented_codes(
+    code: str, expected: DialFailure
+) -> None:
+    from app.integrations.voice.engine import EngineAPIError
+
+    exc = EngineAPIError(code=code, message="?", status_code=422)
+    assert classify_error(exc) is expected
 
 
 def test_classify_error_maps_connection_error_to_provider_unavailable() -> None:

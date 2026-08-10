@@ -98,6 +98,19 @@ class Campaign(BaseModel):
     escalate_on_negative: bool = True
 
 
+class AttemptSummary(BaseModel):
+    """One dial attempt at a recipient - CALL-E can redial the same recipient
+    within one call task, and tracks each attempt separately in
+    `recipients[].attempts[]`. `CallOutcome` used to keep only whichever
+    attempt `_final_attempt()` picked for its transcript and discard the
+    rest; this preserves the full history alongside it."""
+
+    status: str
+    started_at: str | None = None
+    completed_at: str | None = None
+    had_transcript: bool = False
+
+
 class CallOutcome(BaseModel):
     """Everything CallFlow AI knows after one call reaches a terminal state."""
 
@@ -115,6 +128,18 @@ class CallOutcome(BaseModel):
     sentiment: Sentiment = Sentiment.UNKNOWN
     sentiment_reason: str | None = None
     extracted: dict[str, Any] = Field(default_factory=dict)
+
+    # CALL-E's own holistic judgment of whether the call accomplished its
+    # task - confirmed against the live OpenAPI spec as task-level fields,
+    # never per-recipient. Independent of `extracted`: a campaign's own
+    # result_schema can be satisfied while CALL-E still judges the
+    # conversation itself unresolved (see `triage()`'s use of
+    # `task_completed`).
+    task_completed: bool | None = None
+    completion_confidence_score: float | None = None
+    completion_confidence_label: str | None = None
+    evidence: list[str] = Field(default_factory=list)
+    attempts: list[AttemptSummary] = Field(default_factory=list)
 
     disposition: Disposition = Disposition.SKIPPED
     disposition_reason: str | None = None

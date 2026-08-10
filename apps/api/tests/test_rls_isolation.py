@@ -22,7 +22,9 @@ import pytest
 import pytest_asyncio
 
 from app.core.config import config
+from app.database.repositories import invitations as invitations_repo
 from app.database.repositories import organisations as org_repo
+from app.database.repositories import runs as runs_repo
 from app.domain.api_keys import generate_api_key, hash_api_key
 
 pytestmark = [
@@ -978,13 +980,16 @@ async def test_owner_can_create_a_real_invitation_through_the_repository(
             role="operator",
             token=token,
             expires_at=expires_at,
-            invited_by=a.user_id,
         )
 
     assert row is not None
     assert row["role"] == "operator"
     assert row["email"] == "brand-new-invitee@example.com"
     assert row["accepted_at"] is None
+    # `invited_by` is derived from the caller's own identity inside the
+    # SECURITY DEFINER function (migration `d7f3a8c2e951`), not trusted from
+    # an argument - pin that it actually resolves to the real caller.
+    assert row["invited_by"] == a.user_id
 
     await _as_postgres(db)
     await db.execute("delete from public.invitations where token = $1", token)
@@ -1009,7 +1014,6 @@ async def test_owner_can_refresh_a_pending_invitation_through_the_repository(
             role="operator",
             token=first_token,
             expires_at=expires_at,
-            invited_by=a.user_id,
         )
 
     async with db.transaction():
@@ -1021,7 +1025,6 @@ async def test_owner_can_refresh_a_pending_invitation_through_the_repository(
             role="viewer",
             token=second_token,
             expires_at=expires_at,
-            invited_by=a.user_id,
         )
 
     assert second["id"] == first["id"], "re-invite should refresh the same row, not duplicate it"
@@ -1062,7 +1065,6 @@ async def test_admin_cannot_create_an_owner_invitation_through_the_repository(
                 role="owner",
                 token=token,
                 expires_at=expires_at,
-                invited_by=admin.user_id,
             )
 
     await _as_postgres(db)
@@ -1072,4 +1074,452 @@ async def test_admin_cannot_create_an_owner_invitation_through_the_repository(
     assert not seated, "an Admin created a pending owner-role invitation"
 
     await db.execute("delete from auth.users where id = $1", admin.auth_user_id)
+    await db.execute("delete from public.organisations where deleted_at is not null")
+
+
+# --- Per-creator visibility silo (migration `d4bcc27a2b70`) ----------------
+#
+# Role-based UI roadmap, Phase 1: `campaigns_select`/`runs_select`/
+# `call_outcomes_select` used to be pure `is_org_member(org_id)` - any member
+# could see any other member's rows. Now an operator sees only what they
+# created (or, for call_outcomes, what belongs to a run they started);
+# owner/admin/viewer are unaffected and keep seeing every row in the org.
+# This is the first feature where *same-org* isolation between two ordinary
+# members matters as much as cross-tenant isolation - CLAUDE.md's checklist
+# calls for exactly this kind of test on any tenant-scoped RLS change.
+
+
+async def _seat(db: asyncpg.Connection, org_id: uuid.UUID, tenant: Tenant, role: str) -> None:
+    await db.execute(
+        "insert into public.memberships (org_id, user_id, role) values ($1, $2, $3)",
+        org_id,
+        tenant.user_id,
+        role,
+    )
+
+
+async def _insert_campaign(
+    db: asyncpg.Connection, *, org_id: uuid.UUID, created_by: uuid.UUID
+) -> str:
+    campaign_id = f"silo-campaign-{uuid.uuid4().hex[:8]}"
+    await db.execute(
+        """
+        insert into public.campaigns (id, org_id, name, goal_template, created_by)
+        values ($1, $2, 'silo test campaign', $3, $4)
+        """,
+        campaign_id,
+        org_id,
+        "x" * 40,
+        created_by,
+    )
+    return campaign_id
+
+
+async def _insert_run(
+    db: asyncpg.Connection, *, org_id: uuid.UUID, started_by: uuid.UUID
+) -> str:
+    run_id = f"silo-run-{uuid.uuid4().hex[:8]}"
+    await db.execute(
+        """
+        insert into public.runs (id, org_id, campaign_id, total, started_by)
+        values ($1, $2, 'travel_discovery', 1, $3)
+        """,
+        run_id,
+        org_id,
+        started_by,
+    )
+    return run_id
+
+
+async def _insert_call_outcome(db: asyncpg.Connection, *, org_id: uuid.UUID, run_id: str) -> None:
+    await db.execute(
+        """
+        insert into public.call_outcomes (run_id, org_id, contact_name, phone_masked)
+        values ($1, $2, 'Silo Contact', '+1 555 0100')
+        """,
+        run_id,
+        org_id,
+    )
+
+
+async def test_operator_cannot_see_a_teammates_campaign(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    a, _ = tenants
+    await _as_postgres(db)
+
+    op1 = await _create_tenant(db, "silo-op1")
+    op2 = await _create_tenant(db, "silo-op2")
+    await _seat(db, a.org_id, op1, "operator")
+    await _seat(db, a.org_id, op2, "operator")
+    await _insert_campaign(db, org_id=a.org_id, created_by=op1.user_id)
+
+    async with db.transaction():
+        await _as_user(db, op2.auth_user_id)
+        rows = await db.fetch(
+            "select created_by from public.campaigns where org_id = $1", a.org_id
+        )
+    assert rows == [], "operator can see a teammate's campaign"
+
+    async with db.transaction():
+        await _as_user(db, op1.auth_user_id)
+        rows = await db.fetch(
+            "select created_by from public.campaigns where org_id = $1", a.org_id
+        )
+    assert [r["created_by"] for r in rows] == [op1.user_id]
+
+    await _as_postgres(db)
+    await db.execute("delete from public.campaigns where org_id = $1", a.org_id)
+    await db.execute(
+        "delete from auth.users where id = any($1::uuid[])",
+        [op1.auth_user_id, op2.auth_user_id],
+    )
+    await db.execute("delete from public.organisations where deleted_at is not null")
+
+
+async def test_operator_cannot_see_a_teammates_run_or_its_call_outcomes(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    a, _ = tenants
+    await _as_postgres(db)
+
+    op1 = await _create_tenant(db, "silo-run-op1")
+    op2 = await _create_tenant(db, "silo-run-op2")
+    await _seat(db, a.org_id, op1, "operator")
+    await _seat(db, a.org_id, op2, "operator")
+    run_id = await _insert_run(db, org_id=a.org_id, started_by=op1.user_id)
+    await _insert_call_outcome(db, org_id=a.org_id, run_id=run_id)
+
+    async with db.transaction():
+        await _as_user(db, op2.auth_user_id)
+        runs = await db.fetch("select id from public.runs where org_id = $1", a.org_id)
+        outcomes = await db.fetch(
+            "select id from public.call_outcomes where org_id = $1", a.org_id
+        )
+    assert runs == [], "operator can see a teammate's run"
+    assert outcomes == [], "operator can see a call outcome from a teammate's run"
+
+    async with db.transaction():
+        await _as_user(db, op1.auth_user_id)
+        runs = await db.fetch("select id from public.runs where org_id = $1", a.org_id)
+        outcomes = await db.fetch(
+            "select id from public.call_outcomes where org_id = $1", a.org_id
+        )
+    assert [r["id"] for r in runs] == [run_id]
+    assert len(outcomes) == 1
+
+    await _as_postgres(db)
+    await db.execute("delete from public.runs where org_id = $1", a.org_id)
+    await db.execute(
+        "delete from auth.users where id = any($1::uuid[])",
+        [op1.auth_user_id, op2.auth_user_id],
+    )
+    await db.execute("delete from public.organisations where deleted_at is not null")
+
+
+async def test_admin_and_viewer_see_every_operators_campaigns_and_runs(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    a, _ = tenants
+    await _as_postgres(db)
+
+    admin = await _create_tenant(db, "silo-admin")
+    viewer = await _create_tenant(db, "silo-viewer")
+    op1 = await _create_tenant(db, "silo-seen-op1")
+    op2 = await _create_tenant(db, "silo-seen-op2")
+    await _seat(db, a.org_id, admin, "admin")
+    await _seat(db, a.org_id, viewer, "viewer")
+    await _seat(db, a.org_id, op1, "operator")
+    await _seat(db, a.org_id, op2, "operator")
+
+    await _insert_campaign(db, org_id=a.org_id, created_by=op1.user_id)
+    await _insert_campaign(db, org_id=a.org_id, created_by=op2.user_id)
+    run1 = await _insert_run(db, org_id=a.org_id, started_by=op1.user_id)
+    run2 = await _insert_run(db, org_id=a.org_id, started_by=op2.user_id)
+    await _insert_call_outcome(db, org_id=a.org_id, run_id=run1)
+    await _insert_call_outcome(db, org_id=a.org_id, run_id=run2)
+
+    for viewer_tenant in (admin, viewer):
+        async with db.transaction():
+            await _as_user(db, viewer_tenant.auth_user_id)
+            campaigns = await db.fetch(
+                "select created_by from public.campaigns where org_id = $1", a.org_id
+            )
+            runs = await db.fetch(
+                "select started_by from public.runs where org_id = $1", a.org_id
+            )
+            outcomes = await db.fetch(
+                "select id from public.call_outcomes where org_id = $1", a.org_id
+            )
+        assert {r["created_by"] for r in campaigns} == {op1.user_id, op2.user_id}
+        assert {r["started_by"] for r in runs} == {op1.user_id, op2.user_id}
+        assert len(outcomes) == 2
+
+    await _as_postgres(db)
+    await db.execute("delete from public.campaigns where org_id = $1", a.org_id)
+    await db.execute("delete from public.runs where org_id = $1", a.org_id)
+    await db.execute(
+        "delete from auth.users where id = any($1::uuid[])",
+        [admin.auth_user_id, viewer.auth_user_id, op1.auth_user_id, op2.auth_user_id],
+    )
+    await db.execute("delete from public.organisations where deleted_at is not null")
+
+
+async def test_summarize_by_member_reflects_the_callers_own_rls_scope(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    """The dashboard team-breakdown query (`runs_repo.summarize_by_member`,
+    backing `GET /api/v1/runs/team-summary`) has no ownership filter of its
+    own - it leans entirely on `runs_select`. `Permission.RUNS_READ_TEAM` is
+    what actually keeps an operator from calling the route at all; this pins
+    that RLS alone would otherwise just silently narrow their result to
+    their own row rather than the whole team, exactly as the repository
+    function's docstring claims."""
+    a, _ = tenants
+    await _as_postgres(db)
+
+    admin = await _create_tenant(db, "summary-admin")
+    op1 = await _create_tenant(db, "summary-op1")
+    op2 = await _create_tenant(db, "summary-op2")
+    await _seat(db, a.org_id, admin, "admin")
+    await _seat(db, a.org_id, op1, "operator")
+    await _seat(db, a.org_id, op2, "operator")
+
+    run1 = await _insert_run(db, org_id=a.org_id, started_by=op1.user_id)
+    run2 = await _insert_run(db, org_id=a.org_id, started_by=op2.user_id)
+    await _insert_call_outcome(db, org_id=a.org_id, run_id=run1)
+    await _insert_call_outcome(db, org_id=a.org_id, run_id=run2)
+
+    async with db.transaction():
+        await _as_user(db, admin.auth_user_id)
+        rows = await runs_repo.summarize_by_member(db, a.org_id)
+    assert {r["started_by"] for r in rows} == {op1.user_id, op2.user_id}
+    by_member = {r["started_by"]: r for r in rows}
+    assert by_member[op1.user_id]["total_calls"] == 1
+    assert by_member[op2.user_id]["total_calls"] == 1
+
+    async with db.transaction():
+        await _as_user(db, op1.auth_user_id)
+        rows = await runs_repo.summarize_by_member(db, a.org_id)
+    assert {r["started_by"] for r in rows} == {op1.user_id}
+
+    await _as_postgres(db)
+    await db.execute("delete from public.runs where org_id = $1", a.org_id)
+    await db.execute(
+        "delete from auth.users where id = any($1::uuid[])",
+        [admin.auth_user_id, op1.auth_user_id, op2.auth_user_id],
+    )
+    await db.execute("delete from public.organisations where deleted_at is not null")
+
+
+# --- First-time invitation acceptance (migration `202608092400`) -----------
+#
+# `invitations_repo.accept()`'s lookup used to `join public.organisations` under
+# the RLS-scoped connection - `organisations_select` is plain `is_org_member(id)`,
+# which a brand-new invitee fails by definition (they aren't a member of anything
+# yet). The join silently dropped the row, so no one could ever actually accept
+# their first invitation - found via real-world testing, not by any existing
+# test, since nothing here previously exercised a genuine brand-new signup
+# accepting a real invitation end to end (`ISSUES.md` #68).
+
+
+async def _sign_up(db: asyncpg.Connection, email: str) -> uuid.UUID:
+    """A bare signup, no name - fires the same `handle_new_auth_user()` trigger
+    a real `supabase.auth.signUp()` call does, giving the new user their own
+    auto-created org exactly like a genuine first-time signup would."""
+    auth_user_id = uuid.uuid4()
+    await db.execute(
+        """
+        insert into auth.users (id, instance_id, aud, role, email, encrypted_password,
+                                email_confirmed_at, raw_app_meta_data, raw_user_meta_data,
+                                created_at, updated_at)
+        values ($1, '00000000-0000-0000-0000-000000000000', 'authenticated',
+                'authenticated', $2, crypt('x', gen_salt('bf')), now(),
+                '{"provider":"email"}', '{}'::jsonb, now(), now())
+        """,
+        auth_user_id,
+        email,
+    )
+    return auth_user_id
+
+
+async def test_a_brand_new_invitee_can_actually_accept_their_first_invitation(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    a, _ = tenants
+    await _as_postgres(db)
+
+    token = uuid.uuid4().hex
+    invitee_email = f"brand-new-invitee-{uuid.uuid4().hex[:8]}@example.com"
+    await db.execute(
+        """
+        insert into public.invitations (org_id, email, role, token, invited_by, expires_at)
+        values ($1, $2, 'operator', $3, $4, now() + interval '7 days')
+        """,
+        a.org_id,
+        invitee_email,
+        token,
+        a.user_id,
+    )
+    invitee_auth_id = await _sign_up(db, invitee_email)
+
+    async with db.transaction():
+        await _as_user(db, invitee_auth_id)
+        result = await invitations_repo.accept(db, token)
+
+    assert result is not None, "a brand-new invitee could not accept their own first invitation"
+    assert result["org_id"] == a.org_id
+    assert result["role"] == "operator"
+
+    await _as_postgres(db)
+    role = await db.fetchval(
+        """
+        select role from public.memberships m join public.users u on u.id = m.user_id
+        where m.org_id = $1 and u.auth_user_id = $2
+        """,
+        a.org_id,
+        invitee_auth_id,
+    )
+    assert role == "operator"
+    accepted = await db.fetchval(
+        "select accepted_at is not null from public.invitations where token = $1", token
+    )
+    assert accepted
+
+    await db.execute("delete from auth.users where id = $1", invitee_auth_id)
+    await db.execute("delete from public.organisations where deleted_at is not null")
+
+
+async def test_an_expired_invitation_cannot_be_accepted(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    """`accept()` never checked `expires_at` before this fix - only `accepted_at`."""
+    a, _ = tenants
+    await _as_postgres(db)
+
+    token = uuid.uuid4().hex
+    invitee_email = f"expired-invitee-{uuid.uuid4().hex[:8]}@example.com"
+    await db.execute(
+        """
+        insert into public.invitations (org_id, email, role, token, invited_by, expires_at)
+        values ($1, $2, 'operator', $3, $4, now() - interval '1 hour')
+        """,
+        a.org_id,
+        invitee_email,
+        token,
+        a.user_id,
+    )
+    invitee_auth_id = await _sign_up(db, invitee_email)
+
+    async with db.transaction():
+        await _as_user(db, invitee_auth_id)
+        result = await invitations_repo.accept(db, token)
+
+    assert result is None, "an expired invitation was accepted"
+
+    await _as_postgres(db)
+    await db.execute("delete from auth.users where id = $1", invitee_auth_id)
+    await db.execute("delete from public.organisations where deleted_at is not null")
+
+
+# --- Remove a teammate: data reassignment + full account deletion (migration
+# `202608092600`) -------------------------------------------------------------
+#
+# Product decision (confirmed with the user): removing a teammate is not just a
+# membership delete. What they created in this org is reassigned to whoever
+# removed them, and their account is deleted entirely - not just this one
+# membership. Any OTHER organisation they belong to is unaffected by the
+# reassignment (the removing admin has no relationship to that org's data) and
+# falls back to the ordinary `on delete set null`, exactly like a self-deleted
+# account already does today.
+
+
+async def test_admin_removing_a_teammate_reassigns_their_org_data_and_deletes_their_account(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    a, _ = tenants
+    await _as_postgres(db)
+
+    op1 = await _create_tenant(db, "remove-op1")
+    await _seat(db, a.org_id, op1, "operator")
+    shared_campaign = await _insert_campaign(db, org_id=a.org_id, created_by=op1.user_id)
+
+    # op1's own auto-created org from signup - unrelated to `a`, should be
+    # untouched by the reassignment `a`'s removal triggers.
+    own_org_id = await db.fetchval(
+        "select org_id from public.memberships where user_id = $1 and role = 'owner'",
+        op1.user_id,
+    )
+    own_campaign = await _insert_campaign(db, org_id=own_org_id, created_by=op1.user_id)
+
+    async with db.transaction():
+        await _as_user(db, a.auth_user_id)
+        await db.execute(
+            "select public.remove_member_and_reassign_data($1, $2)", a.org_id, op1.user_id
+        )
+
+    await _as_postgres(db)
+    creator = await db.fetchval(
+        "select created_by from public.campaigns where id = $1", shared_campaign
+    )
+    assert creator == a.user_id, "the removed teammate's campaign was not reassigned to the admin"
+
+    still_a_member = await db.fetchval(
+        "select exists(select 1 from public.memberships where org_id = $1 and user_id = $2)",
+        a.org_id,
+        op1.user_id,
+    )
+    assert not still_a_member
+
+    account_gone = await db.fetchval(
+        "select exists(select 1 from public.users where id = $1)", op1.user_id
+    )
+    assert account_gone is False, "the removed teammate's account was not deleted"
+
+    own_campaign_creator = await db.fetchval(
+        "select created_by from public.campaigns where id = $1", own_campaign
+    )
+    assert own_campaign_creator is None, "an unrelated org's data was touched by this removal"
+
+    await db.execute(
+        "delete from public.campaigns where id = any($1::text[])",
+        [shared_campaign, own_campaign],
+    )
+    await db.execute("delete from public.organisations where deleted_at is not null")
+
+
+async def test_an_operator_cannot_call_remove_member_and_reassign_data_directly(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    """Defense in depth: even called directly (bypassing the API's own
+    `Permission.TEAM_REMOVE` check), the `SECURITY DEFINER` function
+    re-verifies the caller's role itself - same reasoning as
+    `create_or_refresh_invitation()`'s own internal `has_org_role` check."""
+    a, _ = tenants
+    await _as_postgres(db)
+
+    op1 = await _create_tenant(db, "remove-guard-op1")
+    op2 = await _create_tenant(db, "remove-guard-op2")
+    await _seat(db, a.org_id, op1, "operator")
+    await _seat(db, a.org_id, op2, "operator")
+
+    with pytest.raises(asyncpg.exceptions.InsufficientPrivilegeError):
+        async with db.transaction():
+            await _as_user(db, op1.auth_user_id)
+            await db.execute(
+                "select public.remove_member_and_reassign_data($1, $2)", a.org_id, op2.user_id
+            )
+
+    await _as_postgres(db)
+    still_there = await db.fetchval(
+        "select exists(select 1 from public.memberships where org_id = $1 and user_id = $2)",
+        a.org_id,
+        op2.user_id,
+    )
+    assert still_there, "an operator removed a teammate directly, bypassing the role check"
+
+    await db.execute(
+        "delete from auth.users where id = any($1::uuid[])",
+        [op1.auth_user_id, op2.auth_user_id],
+    )
     await db.execute("delete from public.organisations where deleted_at is not null")

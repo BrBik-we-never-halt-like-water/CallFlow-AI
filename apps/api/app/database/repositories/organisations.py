@@ -140,9 +140,32 @@ async def set_member_role(
 
 
 async def remove_member(conn: asyncpg.Connection, org_id: UUID, user_id: UUID) -> None:
+    """Leaving your own organisation - membership only, nothing else. Never
+    call this for removing someone else; see `remove_teammate_and_reassign_data`."""
     async with conn.transaction():
         await conn.execute(
             "delete from public.memberships where org_id = $1 and user_id = $2", org_id, user_id
+        )
+
+
+async def remove_teammate_and_reassign_data(
+    conn: asyncpg.Connection, org_id: UUID, target_user_id: UUID
+) -> None:
+    """An admin/owner removing someone else - not the lightweight membership
+    delete `remove_member` does for leaving your own org.
+
+    Goes through `public.remove_member_and_reassign_data()` (migration
+    `202608092600`), a `SECURITY DEFINER` function, because it does two
+    things a plain RLS-scoped delete cannot: reassigns whatever the removed
+    teammate created in this org (`created_by`/`started_by`) to the caller,
+    and then deletes the removed teammate's account entirely - not just
+    their membership here - which needs privileges on `auth.users` the
+    `authenticated` role never holds (product decision, confirmed with the
+    user: removal is account-wide, not per-org).
+    """
+    async with conn.transaction():
+        await conn.execute(
+            "select public.remove_member_and_reassign_data($1, $2)", org_id, target_user_id
         )
 
 
@@ -154,7 +177,6 @@ async def create_invitation(
     role: str,
     token: str,
     expires_at: Any,
-    invited_by: UUID,
 ) -> asyncpg.Record:
     """Create a pending invite, or refresh it if one is already outstanding.
 
@@ -170,18 +192,23 @@ async def create_invitation(
     `has_org_role`/`can_grant_role` itself (the same checks the RLS-scoped
     path would otherwise rely on, since bypassing RLS means enforcing them
     explicitly - same reasoning as `create_organisation()`).
+
+    `invited_by` is not a parameter here - the function derives it from
+    `current_user_id()` itself (migration `d7f3a8c2e951`). It used to be a
+    plain argument, which meant nothing stopped a caller reaching the
+    `SECURITY DEFINER` function directly (e.g. through Supabase's Data API,
+    entirely outside this backend) from forging who an invitation credits.
     """
     return await conn.fetchrow(
         """
         select * from public.create_or_refresh_invitation(
-            $1, $2, $3::public.org_role, $4, $5, $6
+            $1, $2, $3::public.org_role, $4, $5
         )
         """,
         org_id,
         email,
         role,
         token,
-        invited_by,
         expires_at,
     )
 

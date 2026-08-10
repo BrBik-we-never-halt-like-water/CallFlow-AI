@@ -142,6 +142,7 @@ function OrganisationPane({
               onChange={setLogoUrl}
               label="Upload an organisation logo"
               shape="square"
+              disabled={!canUpdate}
             />
           </Field>
 
@@ -314,6 +315,7 @@ function TeamPane({ profile }: { profile: SessionProfile }) {
   const [team, setTeam] = useState<Team | null>(null);
   const [loading, setLoading] = useState(true);
   const [inviting, setInviting] = useState(false);
+  const [pendingRemove, setPendingRemove] = useState<Member | null>(null);
 
   function load() {
     api
@@ -365,6 +367,7 @@ function TeamPane({ profile }: { profile: SessionProfile }) {
                 canRemove={canRemove}
                 canSetRole={canSetRole}
                 onChanged={load}
+                onRequestRemove={setPendingRemove}
               />
             ))}
             {team.pending.map((invite) => (
@@ -413,7 +416,84 @@ function TeamPane({ profile }: { profile: SessionProfile }) {
         onOpenChange={setInviting}
         onInvited={load}
       />
+
+      <RemoveTeammateDialog
+        member={pendingRemove}
+        onOpenChange={(open) => {
+          if (!open) setPendingRemove(null);
+        }}
+        onRemoved={load}
+      />
     </div>
+  );
+}
+
+function RemoveTeammateDialog({
+  member,
+  onOpenChange,
+  onRemoved,
+}: {
+  member: Member | null;
+  onOpenChange: (open: boolean) => void;
+  onRemoved: () => void;
+}) {
+  const toast = useToast();
+  const [typed, setTyped] = useState('');
+  const [removing, setRemoving] = useState(false);
+  const label = member?.name?.trim() || member?.email || '';
+
+  async function confirmRemove() {
+    if (!member) return;
+    setRemoving(true);
+    try {
+      await api.removeMember(member.user_id);
+      onOpenChange(false);
+      toast({ tone: 'success', title: 'Teammate removed' });
+      onRemoved();
+    } catch (error) {
+      toast({
+        tone: 'error',
+        title: "Couldn't remove",
+        body: error instanceof Error ? error.message : undefined,
+      });
+    } finally {
+      setRemoving(false);
+    }
+  }
+
+  return (
+    <DialogRoot
+      open={member !== null}
+      onOpenChange={(next) => {
+        onOpenChange(next);
+        if (!next) setTyped('');
+      }}
+    >
+      <Dialog
+        title={member ? `Remove ${label}?` : 'Remove teammate?'}
+        description="This deletes their CallFlow account entirely, not just their access here - campaigns and runs they created in this organisation move to you, but anything they own in another organisation is unaffected. This can't be undone."
+        size="sm"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => onOpenChange(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              onClick={confirmRemove}
+              loading={removing}
+              disabled={typed.trim() !== label}
+            >
+              Remove {label}
+            </Button>
+          </>
+        }
+      >
+        <Field label={`Type "${label}" to confirm`}>
+          <Input value={typed} onChange={(e) => setTyped(e.target.value)} autoFocus />
+        </Field>
+      </Dialog>
+    </DialogRoot>
   );
 }
 
@@ -423,31 +503,30 @@ function MemberRow({
   canRemove,
   canSetRole,
   onChanged,
+  onRequestRemove,
 }: {
   member: Member;
   self: boolean;
   canRemove: boolean;
   canSetRole: boolean;
   onChanged: () => void;
+  onRequestRemove: (member: Member) => void;
 }) {
   const toast = useToast();
   const [busy, setBusy] = useState(false);
   const canAct = (canRemove || self) && !busy;
   const isOwner = member.role === 'owner';
 
-  async function remove() {
+  async function leave() {
     setBusy(true);
     try {
       await api.removeMember(member.user_id);
-      toast({
-        tone: 'success',
-        title: self ? 'You left the organisation' : 'Teammate removed',
-      });
+      toast({ tone: 'success', title: 'You left the organisation' });
       onChanged();
     } catch (error) {
       toast({
         tone: 'error',
-        title: "Couldn't remove",
+        title: "Couldn't leave",
         body: error instanceof Error ? error.message : undefined,
       });
     } finally {
@@ -503,9 +582,16 @@ function MemberRow({
                     </DropdownMenuItem>
                   ))
                 : null}
-              {canRemove || self ? (
-                <DropdownMenuItem destructive onSelect={remove}>
-                  {self ? 'Leave organisation' : 'Remove'}
+              {self ? (
+                <DropdownMenuItem destructive onSelect={leave}>
+                  Leave organisation
+                </DropdownMenuItem>
+              ) : canRemove ? (
+                <DropdownMenuItem
+                  destructive
+                  onSelect={() => onRequestRemove(member)}
+                >
+                  Remove
                 </DropdownMenuItem>
               ) : null}
             </DropdownMenuContent>
@@ -553,6 +639,11 @@ function PendingRow({
         </span>
       </div>
       <div className="flex items-center gap-2">
+        {/* Plain, neutral tag - not a lamp colour. Lamp colours are call
+            state and nothing else (CLAUDE.md §4 #10); "pending" is an
+            invitation-lifecycle status, the same class of label `Tag`
+            already exists for. */}
+        <Tag>Pending</Tag>
         <Tag>{invite.role}</Tag>
         {canRevoke ? (
           <Button variant="ghost" size="sm" onClick={revoke} loading={revoking}>

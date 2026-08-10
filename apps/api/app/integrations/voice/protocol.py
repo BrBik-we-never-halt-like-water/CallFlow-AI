@@ -65,7 +65,9 @@ class VoiceProvider(Protocol):
         cancel an in-flight call - CALL-E's SDK doesn't expose one today."""
         ...
 
-    def list_events(self, call_id: str, *, limit: int | None = None) -> JsonObject:
+    def list_events(
+        self, call_id: str, *, cursor: str | None = None, limit: int | None = None
+    ) -> JsonObject:
         """Raises `NotImplementedForProvider` if this provider has no per-turn
         event stream - check `supports(VoiceCapability.LIVE_EVENTS)` first.
         Declaring the capability without a method to exercise it would leave a

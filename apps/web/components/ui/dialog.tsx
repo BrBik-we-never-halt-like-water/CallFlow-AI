@@ -3,6 +3,7 @@
 import * as RadixDialog from '@radix-ui/react-dialog';
 import { XIcon } from '@phosphor-icons/react/dist/ssr';
 import { cn } from '@/lib/cn';
+import { usePortalContainer } from '@/lib/hooks/use-portal-container';
 
 /**
  * Dialog and Sheet, both on Radix Dialog - so both get a focus trap, `Esc` to
@@ -43,16 +44,17 @@ export function Dialog({
   dismissible?: boolean;
 }) {
   const width = { sm: 'max-w-sm', md: 'max-w-lg', lg: 'max-w-2xl' }[size];
+  const container = usePortalContainer();
 
   return (
-    <RadixDialog.Portal>
+    <RadixDialog.Portal container={container}>
       <Overlay />
       <RadixDialog.Content
         onEscapeKeyDown={(e) => !dismissible && e.preventDefault()}
         onPointerDownOutside={(e) => !dismissible && e.preventDefault()}
         onInteractOutside={(e) => !dismissible && e.preventDefault()}
         className={cn(
-          'fixed left-1/2 top-1/2 z-50 w-[calc(100vw-32px)] -translate-x-1/2 -translate-y-1/2',
+          'dark-overlay fixed left-1/2 top-1/2 z-50 w-[calc(100vw-32px)] -translate-x-1/2 -translate-y-1/2',
           'max-h-[calc(100dvh-64px)] overflow-y-auto rounded-md border border-rule-strong bg-surface-raised shadow-overlay',
           width,
           className,
@@ -110,12 +112,14 @@ export function Sheet({
   footer?: React.ReactNode;
   className?: string;
 }) {
+  const container = usePortalContainer();
+
   return (
-    <RadixDialog.Portal>
+    <RadixDialog.Portal container={container}>
       <Overlay />
       <RadixDialog.Content
         className={cn(
-          'fixed inset-0 z-50 flex flex-col bg-surface-raised shadow-overlay',
+          'dark-overlay fixed inset-0 z-50 flex flex-col bg-surface-raised shadow-overlay',
           'md:inset-y-0 md:left-auto md:right-0 md:w-[min(720px,92vw)] md:border-l md:border-rule-strong',
           className,
         )}

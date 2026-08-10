@@ -1,17 +1,21 @@
 """Orchestrator behaviour: every run dials for real, guarded by the safety gate."""
 
+import threading
+import time
 from typing import Any
 
 import pytest
 
 from app.domain.campaigns import TRAVEL_DISCOVERY
-from app.domain.entities import Contact, Disposition
-from app.services.campaign_runner import (
-    CampaignRunner,
+from app.domain.entities import CallOutcome, Contact, Disposition
+from app.domain.goal_rendering import render_goal
+from app.domain.outcome_extraction import (
+    _extract_attempts,
     _extract_result,
     _extract_transcript,
-    render_goal,
+    _resolve_outcome,
 )
+from app.services.campaign_runner import CampaignRunner
 
 
 class ExplodingGateway:
@@ -38,6 +42,44 @@ class FakeGateway:
                 "summary": "Wants a Bali package.",
             },
         }
+
+
+class RecordingGateway(FakeGateway):
+    """A `FakeGateway` that also remembers every `idempotency_key` it was asked
+    to dial with, in call order."""
+
+    def __init__(self) -> None:
+        self.idempotency_keys: list[str] = []
+
+    def start_call(self, **kwargs: Any) -> dict[str, Any]:
+        self.idempotency_keys.append(kwargs["idempotency_key"])
+        return super().start_call(**kwargs)
+
+
+class ConcurrencyTrackingGateway(FakeGateway):
+    """Records the peak number of `start_call`s in flight at once, to prove
+    `run()` actually overlaps contacts rather than dialling one at a time.
+
+    The delay is a real `time.sleep()`, not `asyncio.sleep()` - it runs
+    inside the worker thread `asyncio.to_thread` dispatches to, so the
+    `_no_real_sleep` fixture (which only patches the event-loop sleep between
+    polls) does not affect it, and concurrent calls genuinely overlap in
+    wall-clock time.
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._in_flight = 0
+        self.peak_in_flight = 0
+
+    def start_call(self, **_: Any) -> dict[str, Any]:
+        with self._lock:
+            self._in_flight += 1
+            self.peak_in_flight = max(self.peak_in_flight, self._in_flight)
+        time.sleep(0.05)
+        with self._lock:
+            self._in_flight -= 1
+        return {"id": "call_test", "status": "completed"}
 
 
 @pytest.fixture(autouse=True)
@@ -177,6 +219,58 @@ async def test_ceiling_blocks_further_calls(monkeypatch: pytest.MonkeyPatch) -> 
     assert result.disposition is Disposition.SKIPPED
 
 
+async def test_idempotency_key_is_stable_across_retries_of_the_same_run_and_contact() -> None:
+    # The entire point of Idempotency-Key: a retry of the same logical attempt
+    # (same run, same contact) must reuse the same key, so CALL-E can
+    # recognise a duplicate instead of placing a second real call (#54).
+    gateway = RecordingGateway()
+    runner = CampaignRunner(gateway=gateway, run_id="run_abc123")  # type: ignore[arg-type]
+    contact = Contact(name="A", phone="+15555550100")
+
+    await runner.run_one(TRAVEL_DISCOVERY, contact)
+    await runner.run_one(TRAVEL_DISCOVERY, contact)
+
+    assert len(gateway.idempotency_keys) == 2
+    assert gateway.idempotency_keys[0] == gateway.idempotency_keys[1]
+
+
+async def test_idempotency_key_differs_across_different_runs_for_the_same_contact() -> None:
+    # An old run's key must never be replayable against a new one.
+    contact = Contact(name="A", phone="+15555550100")
+
+    gateway_1 = RecordingGateway()
+    await CampaignRunner(gateway=gateway_1, run_id="run_one").run_one(  # type: ignore[arg-type]
+        TRAVEL_DISCOVERY, contact
+    )
+    gateway_2 = RecordingGateway()
+    await CampaignRunner(gateway=gateway_2, run_id="run_two").run_one(  # type: ignore[arg-type]
+        TRAVEL_DISCOVERY, contact
+    )
+
+    assert gateway_1.idempotency_keys[0] != gateway_2.idempotency_keys[0]
+
+
+async def test_idempotency_key_never_contains_the_raw_phone_number() -> None:
+    gateway = RecordingGateway()
+    runner = CampaignRunner(gateway=gateway, run_id="run_abc123")  # type: ignore[arg-type]
+    await runner.run_one(TRAVEL_DISCOVERY, Contact(name="A", phone="+15555550100"))
+
+    assert "5555550100" not in gateway.idempotency_keys[0]
+
+
+async def test_idempotency_key_falls_back_to_a_fresh_one_without_a_run_id() -> None:
+    # No real run means no stable job identity to key off of - not idempotent,
+    # but no worse than the behaviour this replaces.
+    gateway = RecordingGateway()
+    runner = CampaignRunner(gateway=gateway)  # type: ignore[arg-type]
+    contact = Contact(name="A", phone="+15555550100")
+
+    await runner.run_one(TRAVEL_DISCOVERY, contact)
+    await runner.run_one(TRAVEL_DISCOVERY, contact)
+
+    assert gateway.idempotency_keys[0] != gateway.idempotency_keys[1]
+
+
 async def test_suppressed_number_is_blocked() -> None:
     from app.domain.safety import phone_hash
 
@@ -201,20 +295,73 @@ async def test_run_processes_every_contact() -> None:
 
 
 async def test_progress_hook_fires_per_contact() -> None:
-    """Each contact fires at least once - a "dialing" event, then the resolved
-    outcome - and always in contact order, never interleaved."""
-    seen: list[str] = []
+    """Each contact fires at least once - a "dialing" event, then the
+    resolved outcome - in that relative order *for that contact*. Contacts
+    now dial concurrently, so the two contacts' events can interleave with
+    each other; only each contact's own event order is guaranteed."""
+    seen: list[tuple[str, Disposition]] = []
     runner = CampaignRunner(gateway=FakeGateway())  # type: ignore[arg-type]
 
     async def on_progress(outcome: Any) -> None:
-        seen.append(outcome.contact_name)
+        seen.append((outcome.contact_name, outcome.disposition))
 
     await runner.run(
         TRAVEL_DISCOVERY,
         [Contact(name="A", phone="+15555550100"), Contact(name="B", phone="+15555550101")],
         on_progress=on_progress,
     )
-    assert seen == ["A", "A", "B", "B"]
+    for name in ("A", "B"):
+        events = [disposition for contact_name, disposition in seen if contact_name == name]
+        assert events == [Disposition.IN_FLIGHT, Disposition.AUTO_CLOSED]
+
+
+async def test_run_dials_contacts_concurrently_not_one_at_a_time() -> None:
+    gateway = ConcurrencyTrackingGateway()
+    runner = CampaignRunner(gateway=gateway, max_concurrent_calls=3)  # type: ignore[arg-type]
+    contacts = [Contact(name=f"C{i}", phone=f"+155555501{i:02d}") for i in range(5)]
+
+    await runner.run(TRAVEL_DISCOVERY, contacts)
+
+    assert gateway.peak_in_flight > 1
+
+
+async def test_run_never_exceeds_the_configured_concurrency_limit() -> None:
+    gateway = ConcurrencyTrackingGateway()
+    runner = CampaignRunner(gateway=gateway, max_concurrent_calls=2)  # type: ignore[arg-type]
+    contacts = [Contact(name=f"C{i}", phone=f"+155555501{i:02d}") for i in range(6)]
+
+    await runner.run(TRAVEL_DISCOVERY, contacts)
+
+    assert gateway.peak_in_flight <= 2
+
+
+async def test_ceiling_holds_under_concurrent_dialing(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The check-and-reserve race this guards against only shows up under
+    # real concurrency - a sequential loop could never over-admit.
+    import dataclasses
+
+    from app.domain import safety
+
+    monkeypatch.setattr(safety, "config", dataclasses.replace(safety.config, max_calls_per_run=2))
+    runner = CampaignRunner(gateway=FakeGateway(), max_concurrent_calls=5)  # type: ignore[arg-type]
+    contacts = [Contact(name=f"C{i}", phone=f"+155555501{i:02d}") for i in range(5)]
+
+    outcomes = await runner.run(TRAVEL_DISCOVERY, contacts)
+
+    blocked = [o for o in outcomes if o.disposition is Disposition.SKIPPED]
+    admitted = [o for o in outcomes if o.disposition is not Disposition.SKIPPED]
+    assert len(admitted) == 2
+    assert len(blocked) == 3
+
+
+async def test_run_preserves_input_order_regardless_of_completion_order() -> None:
+    gateway = ConcurrencyTrackingGateway()
+    runner = CampaignRunner(gateway=gateway, max_concurrent_calls=5)  # type: ignore[arg-type]
+    contacts = [Contact(name=f"C{i}", phone=f"+155555501{i:02d}") for i in range(5)]
+
+    outcomes = await runner.run(TRAVEL_DISCOVERY, contacts)
+
+    assert [o.contact_name for o in outcomes] == [c.name for c in contacts]
 
 
 @pytest.mark.parametrize(
@@ -434,6 +581,71 @@ def test_extract_transcript_skips_a_turn_with_null_text_instead_of_rendering_non
 )
 def test_extract_transcript_returns_none_when_nothing_usable(call: dict[str, Any]) -> None:
     assert _extract_transcript(call) is None
+
+
+def test_extract_attempts_preserves_every_attempt_not_just_the_final_one() -> None:
+    call = {
+        "recipients": [
+            {
+                "attempts": [
+                    {"status": "no_answer", "started_at": "2026-08-09T10:00:00Z"},
+                    {"status": "completed", "started_at": "2026-08-09T10:05:00Z"},
+                ]
+            }
+        ]
+    }
+    attempts = _extract_attempts(call)
+    assert [a.status for a in attempts] == ["no_answer", "completed"]
+
+
+def test_extract_attempts_records_whether_each_attempt_had_a_transcript() -> None:
+    call = {
+        "recipients": [
+            {
+                "attempts": [
+                    {"status": "no_answer", "transcript_turns": []},
+                    {"status": "completed", "transcript_turns": [{"speaker": "bot", "text": "hi"}]},
+                ]
+            }
+        ]
+    }
+    attempts = _extract_attempts(call)
+    assert [a.had_transcript for a in attempts] == [False, True]
+
+
+@pytest.mark.parametrize("call", [{}, {"recipients": []}, {"recipients": [{"attempts": "not-a-list"}]}])
+def test_extract_attempts_returns_empty_list_when_nothing_usable(call: dict[str, Any]) -> None:
+    assert _extract_attempts(call) == []
+
+
+def _base() -> CallOutcome:
+    return CallOutcome(contact_name="A", phone_masked="+91***210", campaign_id="c")
+
+
+def test_resolve_outcome_extracts_task_completed_and_confidence() -> None:
+    call = {
+        "status": "completed",
+        "id": "call_1",
+        "task_completed": False,
+        "completion_confidence": {"score": 0.3, "label": "low"},
+        "evidence": ["Contact hung up mid-sentence."],
+    }
+    resolved = _resolve_outcome(_base(), call, escalate_on_negative=True)
+    assert resolved.task_completed is False
+    assert resolved.completion_confidence_score == 0.3
+    assert resolved.completion_confidence_label == "low"
+    assert resolved.evidence == ["Contact hung up mid-sentence."]
+    assert resolved.disposition is Disposition.ESCALATED
+
+
+def test_resolve_outcome_defaults_confidence_and_evidence_when_absent() -> None:
+    call = {"status": "completed", "id": "call_1"}
+    resolved = _resolve_outcome(_base(), call, escalate_on_negative=True)
+    assert resolved.task_completed is None
+    assert resolved.completion_confidence_score is None
+    assert resolved.completion_confidence_label is None
+    assert resolved.evidence == []
+    assert resolved.attempts == []
 
 
 async def test_run_one_surfaces_the_real_transcript() -> None:

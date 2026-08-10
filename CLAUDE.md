@@ -192,7 +192,10 @@ These override style preference, convenience, and personal taste.
 4. **Phone numbers are masked by default,** through the one shared formatter. Revealing a
    full number is a separate permissioned, audit-logged action.
 5. **No PII in logs.** Numbers, tokens, keys, and transcript bodies are redacted by a global
-   filter - and the redaction is tested.
+   filter - `app/core/logging.py`'s `RedactingFilter`, attached to every handler by
+   `configure_logging()` - and the redaction is tested (`tests/test_logging.py`). Manual
+   `mask()` discipline (`domain/safety.py`) at each call site is still the primary defence;
+   the filter is the backstop for whatever a call site misses, not a replacement for it.
 6. **Idempotency.** Every mutating endpoint and every background job is safe to run twice.
 7. **Explicit state machines.** Runs, calls, subscriptions, escalations: enum states with
    declared transitions. An invalid transition raises rather than quietly succeeding.
@@ -332,11 +335,25 @@ npm run lint
 npm run type-check
 npm run build
 
-# Database
-supabase link --project-ref <ref>
-supabase db push                       # apply migrations
-supabase db reset                      # local: rebuild from migrations + seed
+# Database  (from the repo root - wraps Alembic, apps/api/)
+npm run db:migrate                     # alembic upgrade head
+npm run db:generate -- -m "message"    # alembic revision --autogenerate
+npm run db:reset -- --yes              # DESTRUCTIVE: downgrade base, replay head
 ```
+
+There is no `supabase/migrations/` directory in this repo - Alembic
+(`apps/api/alembic/`) is the only migration system, applied directly against
+whatever `DATABASE_URL`/`DIRECT_URL` the repo-root `.env` points at. That is
+almost always the shared Supabase instance, not a disposable local database -
+`db:reset` rewinds every migration to base and replays them, dropping every
+table Alembic manages, which is why it refuses to run without `--yes`. The
+npm scripts (`scripts/db.js`) resolve the interpreter from the repo-root
+`.venv` before falling back to `PATH`, the same reasoning as
+`.githooks/pre-commit`'s `find_tool()` - a bare `alembic` only works when the
+venv happens to be activated. `alembic revision --autogenerate` only sees
+`database/models.py`'s ORM tables - `campaigns`, `runs`, `call_outcomes`,
+and every RLS policy/function/grant are hand-authored in the migration
+itself and invisible to autogenerate (§4b).
 
 ---
 

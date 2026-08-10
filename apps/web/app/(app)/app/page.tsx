@@ -1,15 +1,19 @@
 'use client';
 
 import {
+  ChartLineUpIcon,
+  PhoneOutgoingIcon,
   PhoneSlashIcon,
   PhoneCallIcon,
   PlusIcon,
+  QuotesIcon,
+  TrendDownIcon,
+  TrendUpIcon,
 } from '@phosphor-icons/react/dist/ssr';
 import Link from 'next/link';
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type CSSProperties } from 'react';
 import { Lamp } from '@/components/brand/lamp';
 import { ConnectionBanner } from '@/components/app/connection-banner';
-import { EscalationCard } from '@/components/app/escalation-card';
 import { InviteDialog } from '@/components/app/invite-dialog';
 import { MaskedPhone } from '@/components/app/masked-phone';
 import { TeamControls } from '@/components/app/overview-org-section';
@@ -21,7 +25,7 @@ import { Panel } from '@/components/ui/panel';
 import { Skeleton } from '@/components/ui/skeleton';
 import { formatAge, formatDuration } from '@/lib/format';
 import { countLamps, lampForOutcome, type LampState } from '@/lib/lamp';
-import { api, type Team } from '@/lib/api';
+import { api, type Outcome, type Team } from '@/lib/api';
 import { useAppStore } from '@/lib/app-store';
 import { useOrgScopedEffect } from '@/lib/hooks/use-org-scoped-effect';
 import { useSession } from '@/lib/hooks/use-session';
@@ -52,6 +56,62 @@ const DISPOSITION_STAT_TRIO: {
 /** The strip shows the most recent calls. 100 is the design's stated window. */
 const STRIP_WINDOW = 100;
 
+/**
+ * Re-scopes the generic colour tokens (`--text`, `--surface-raised`, the ten
+ * `--lamp-*` pairs, ...) to their `--dark-*` equivalents - the exact
+ * mechanism `.dark-chrome`/`.dark-panel-glass` use in globals.css (CSS
+ * custom properties inherit through the DOM regardless of component
+ * boundaries), applied inline here because this page can't add a class to
+ * `AppShell`'s own wrapper (out of scope for this task - see the D2 report).
+ * Every `.dark-panel-glass` card on this page carries the same block, so
+ * this is only load-bearing for what's rendered *outside* a card: the page
+ * header's buttons, `ConnectionBanner`, the loading skeleton. Radix portals
+ * (`Popover`/`Dialog` content, e.g. the Team popover) render outside this
+ * element's subtree and correctly keep rendering light, same as every other
+ * popover in this pivot.
+ */
+const DARK_SCOPE_STYLE = {
+  '--text': 'var(--dark-text)',
+  '--text-dim': 'var(--dark-text-dim)',
+  '--text-mute': 'var(--dark-text-mute)',
+  '--rule': 'var(--dark-rule)',
+  '--rule-strong': 'var(--dark-rule-strong)',
+  '--surface-raised': 'var(--dark-surface)',
+  '--surface-hover': 'var(--dark-surface-hover)',
+  '--surface-sunken': 'var(--dark-surface-sunken)',
+  '--lamp-off': 'var(--dark-lamp-off)',
+  '--lamp-ice': 'var(--dark-lamp-ice)',
+  '--lamp-brass': 'var(--dark-lamp-brass)',
+  '--lamp-jade': 'var(--dark-lamp-jade)',
+  '--lamp-flare': 'var(--dark-lamp-flare)',
+  '--lamp-off-text': 'var(--dark-lamp-off-text)',
+  '--lamp-ice-text': 'var(--dark-lamp-ice-text)',
+  '--lamp-brass-text': 'var(--dark-lamp-brass-text)',
+  '--lamp-jade-text': 'var(--dark-lamp-jade-text)',
+  '--lamp-flare-text': 'var(--dark-lamp-flare-text)',
+} as CSSProperties;
+
+/**
+ * The primary button's background is `--accent` within all of `/app/*`
+ * already (globals.css, `.app-font-scope .btn-glass-primary` - the round-3
+ * approval documented in DESIGN_NOTES §2), which on this page would mean the
+ * *light* theme's forest-green CTA sitting on a dark purple-accented page -
+ * `--accent`/`--dark-accent` are kept deliberately independent tokens
+ * (globals.css, CLAUDE.md §4 #10), so nothing flips that automatically.
+ * Rather than touch the shared `Button`/globals.css (out of this task's file
+ * scope, and shared with every other `/app/*` page), every primary button
+ * on this page gets this inline override instead - still token-only, no raw
+ * hex. `--dark-accent` is a low-luminance violet (globals.css's own
+ * citation for the exact number), so white text sits on it correctly
+ * (~5.4:1) - the inverse of this token's previous cyan value, where white
+ * only cleared ~2.4:1 and had to be swapped for dark text instead. Text
+ * flips along with the color, not independently of it.
+ */
+const PRIMARY_CTA_STYLE = {
+  background: 'color-mix(in oklab, var(--dark-accent) 92%, transparent)',
+  color: 'var(--dark-text)',
+} as CSSProperties;
+
 export default function OverviewPage() {
   const session = useSession();
   const { phase, outcomes, runs, campaigns, escalations, loadingRuns } =
@@ -59,6 +119,9 @@ export default function OverviewPage() {
   const canInvite =
     session.status === 'signed-in' &&
     session.profile.permissions.includes('team:invite');
+  const canStart =
+    session.status === 'signed-in' &&
+    session.profile.permissions.includes('runs:start');
 
   const settled = useMemo(
     () => outcomes.filter((o) => o.disposition !== 'in_flight'),
@@ -102,6 +165,34 @@ export default function OverviewPage() {
     });
   }, [settled]);
 
+  const weekTotal = useMemo(
+    () => volumeSeries.reduce((sum, d) => sum + d.value, 0),
+    [volumeSeries],
+  );
+
+  // A real week-over-week comparison, from the same real timestamps as
+  // `volumeSeries` - not fabricated. With no full prior week to compare
+  // against, there's nothing honest to show, so the pill is omitted rather
+  // than printing a misleading +100%.
+  const trend = useMemo(() => {
+    if (settled.length === 0) return null;
+    const now = new Date(settled[0].created_at).getTime();
+    const day = 86_400_000;
+    const currentCount = settled.filter((o) => {
+      const at = new Date(o.created_at).getTime();
+      return at > now - 7 * day && at <= now;
+    }).length;
+    const previousCount = settled.filter((o) => {
+      const at = new Date(o.created_at).getTime();
+      return at > now - 14 * day && at <= now - 7 * day;
+    }).length;
+    if (previousCount === 0) return null;
+    const pct = Math.round(
+      ((currentCount - previousCount) / previousCount) * 100,
+    );
+    return { pct, up: pct >= 0 };
+  }, [settled]);
+
   const dispositionBreakdown = useMemo(
     () =>
       DISPOSITION_STAT_TRIO.map(({ state, label, match }) => ({
@@ -118,286 +209,369 @@ export default function OverviewPage() {
   // Once real data exists, never fall back to this, even on a background refetch.
   if ((phase !== 'up' || loadingRuns) && !hasAnything) {
     return (
-      <div className="flex flex-col gap-6">
-        <PageTitle session={session} />
-        <ConnectionBanner phase={phase} />
-        {phase !== 'down' ? <LoadingSkeleton /> : null}
+      <div className="relative isolate min-h-full" style={DARK_SCOPE_STYLE}>
+        <div
+          aria-hidden
+          className="dark-canvas absolute -inset-x-4 -inset-y-6 -z-10 sm:-inset-x-6"
+        />
+        <div className="flex flex-col gap-6">
+          <PageTitle session={session} canStart={canStart} />
+          <ConnectionBanner phase={phase} />
+          {phase !== 'down' ? <LoadingSkeleton /> : null}
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col gap-6">
-      <PageTitle session={session} />
-      <ConnectionBanner phase={phase} />
+    <div className="relative isolate min-h-full" style={DARK_SCOPE_STYLE}>
+      {/* The dark canvas + indigo glow, bled into `<main>`'s own padding
+          (AppShell, out of scope for this task) via negative inset rather
+          than negative margin, so it fills the space that padding already
+          reserves instead of creating any new page overflow. `isolate`
+          gives this wrapper its own stacking context so the backdrop's
+          negative z-index is only ever compared against its own sibling,
+          regardless of `template.tsx`'s `.page-enter` transform animation
+          (which briefly creates its own stacking context on every route
+          change and, without `isolate` here, let the ancestor `.canvas-tint`
+          wash paint in front of the backdrop for that ~240ms window -
+          confirmed with the browser's computed stacking order, not just
+          inferred from spec-reading). */}
+      <div
+        aria-hidden
+        className="dark-canvas absolute -inset-x-4 -inset-y-6 -z-10 sm:-inset-x-6"
+      />
 
-      {/* ---- The Twisty-mapped grid: ~60/40, left column a hero chart over
-          two secondary cards, right column a taller list over a stat-trio -
-          same slots, same proportions, our own cards and data. ------------ */}
-      <div className="grid gap-6 lg:grid-cols-[3fr_2fr]">
-        {/* ================= Left column (~60%) ================= */}
-        <div className="flex flex-col gap-6">
-          <div className="hero-flow flex flex-col gap-3 p-5 sm:p-7">
-            <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <p className="text-small font-bold text-text-mute">
-                Volume, last 7 days
-              </p>
-              <span className="text-small tabular-nums text-text-mute">
-                {runs.length} {runs.length === 1 ? 'run' : 'runs'}
-              </span>
-            </div>
-            {volumeSeries.length > 0 ? (
-              <AreaChart data={volumeSeries} />
-            ) : (
-              <p className="py-6 text-center text-small text-text-dim">
-                No calls yet
-              </p>
-            )}
-            <div className="flex flex-wrap items-baseline gap-2">
-              <span className="font-display text-h2 text-text tabular-nums">
-                {settled.length}
-              </span>
-              <span className="text-small text-text-dim">
-                call{settled.length === 1 ? '' : 's'} settled this week
-              </span>
+      <div className="flex flex-col gap-6">
+        <PageTitle session={session} canStart={canStart} />
+        <ConnectionBanner phase={phase} />
+
+        {/* ---- The Twisty-mapped grid: ~60/40, left column a hero chart over
+            two secondary cards, right column a taller list over a stat-trio -
+            same slots, same proportions, our own cards and data. ------------ */}
+        <div className="grid gap-6 lg:grid-cols-[3fr_2fr]">
+          {/* ================= Left column (~60%) ================= */}
+          <div className="flex flex-col gap-6">
+            <Panel className="dark-panel-glass flex flex-col gap-4 p-5 sm:p-7">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-dark-accent/15 text-dark-accent">
+                    <ChartLineUpIcon aria-hidden className="size-4.5" />
+                  </span>
+                  <div className="flex flex-col">
+                    <p className="text-small font-bold text-text">Volume</p>
+                    <p className="text-small text-text-mute">Last 7 days</p>
+                  </div>
+                </div>
+                {trend ? (
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-rule bg-surface-hover px-2.5 py-1 text-small font-medium text-text">
+                    {trend.up ? (
+                      <TrendUpIcon
+                        aria-hidden
+                        className="size-3.5 text-dark-accent"
+                      />
+                    ) : (
+                      <TrendDownIcon
+                        aria-hidden
+                        className="size-3.5 text-text-mute"
+                      />
+                    )}
+                    {trend.pct > 0 ? '+' : ''}
+                    {trend.pct}% vs last week
+                  </span>
+                ) : null}
+              </div>
+
+              {volumeSeries.length > 0 ? (
+                <AreaChart data={volumeSeries} tone="dark" />
+              ) : (
+                <p className="py-6 text-center text-small text-text-dim">
+                  No calls yet
+                </p>
+              )}
+              <div className="flex flex-wrap items-baseline gap-2">
+                <span className="font-display text-h2 text-text tabular-nums">
+                  {weekTotal}
+                </span>
+                <span className="text-small text-text-dim">
+                  call{weekTotal === 1 ? '' : 's'} settled this week
+                </span>
+              </div>
+            </Panel>
+
+            {/* ---- Team (55%) + next move (45%) ----------------------------
+                `NextMoveCard` only has one message left ("place your first
+                call") now that "bring in a teammate" - a second invite entry
+                point duplicating `TeamPreview`'s own "+" - was retired. Once
+                a run exists there's nothing left for this slot to say, so it
+                disappears and Team grows to fill the row. */}
+            <div
+              className={
+                runs.length > 0
+                  ? 'grid gap-4'
+                  : 'grid gap-4 sm:grid-cols-[11fr_9fr]'
+              }
+            >
+              <TeamPreview canInvite={canInvite} />
+              {runs.length > 0 ? null : <NextMoveCard canStart={canStart} />}
             </div>
           </div>
 
-          {/* ---- Team (55%) + next move (45%) ----------------------------
-              `NextMoveCard` only has one message left ("place your first
-              call") now that "bring in a teammate" - a second invite entry
-              point duplicating `TeamPreview`'s own "+" - was retired. Once
-              a run exists there's nothing left for this slot to say, so it
-              disappears and Team grows to fill the row. */}
-          <div
-            className={
-              runs.length > 0
-                ? 'grid gap-4'
-                : 'grid gap-4 sm:grid-cols-[11fr_9fr]'
-            }
-          >
-            <TeamPreview canInvite={canInvite} />
-            {runs.length > 0 ? null : <NextMoveCard />}
+          {/* ================= Right column (~40%) ================= */}
+          <div className="flex flex-col gap-6">
+            {/* ---- Needs a person: taller, full right-column width -------- */}
+            <Panel
+              interactive
+              className="dark-panel-glass flex flex-1 flex-col gap-4 p-5 sm:p-6"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-small font-bold text-text-mute">
+                  Needs a person
+                </p>
+                {escalations.length > 0 ? (
+                  <Link
+                    href="/app/escalations"
+                    className="text-small font-medium text-text hover:text-text-dim"
+                  >
+                    See all {escalations.length}
+                  </Link>
+                ) : null}
+              </div>
+
+              {escalations.length === 0 ? (
+                <EmptyState
+                  title="Nothing needs you right now"
+                  body="Frustration, opt-outs, or requests for a person land here."
+                />
+              ) : (
+                <ul className="flex flex-col divide-y divide-rule">
+                  {escalations.slice(0, 5).map((outcome, i) => (
+                    <li key={`${outcome.contact_name}-${i}`}>
+                      <NeedsPersonRow outcome={outcome} />
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Panel>
+
+            {/* ---- Disposition, as a stat-trio ------------------------------
+                Deviation, flagged per the brief: no sparkline under each
+                number yet (there's no Sparkline component in this codebase
+                to wire one from today - the brief's own accepted fallback for
+                "more work than it's worth right now" is a resized donut; this
+                goes one step further into the actual stat-trio shape since the
+                layout cost of that was low, just without the sparkline detail). */}
+            <Panel className="dark-panel-glass flex flex-col gap-4 p-5 sm:p-6">
+              <div className="flex items-baseline justify-between gap-2">
+                <p className="text-small font-bold text-text-mute">
+                  Disposition
+                </p>
+                <span className="text-small tabular-nums text-text-mute">
+                  {formatDuration(avgDuration)} avg
+                </span>
+              </div>
+              {settled.length > 0 ? (
+                <div className="grid grid-cols-3 divide-x divide-rule">
+                  {dispositionBreakdown.map((item) => (
+                    <div
+                      key={item.label}
+                      className="flex flex-col gap-1 px-3 first:pl-0 last:pr-0"
+                    >
+                      <span className="font-display text-h3 text-text tabular-nums">
+                        {item.value}
+                      </span>
+                      <p className="truncate text-small font-bold text-text-mute">
+                        {item.label}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="py-6 text-center text-small text-text-dim">
+                  No calls yet
+                </p>
+              )}
+            </Panel>
           </div>
         </div>
 
-        {/* ================= Right column (~40%) ================= */}
-        <div className="flex flex-col gap-6">
-          {/* ---- Needs a person: taller, full right-column width -------- */}
-          <Panel interactive className="flex flex-1 flex-col gap-4 p-5 sm:p-6">
-            <div className="flex items-center justify-between gap-2">
+        {/* ---- Outcome distribution: the page's visual anchor, full width --
+            The count-per-disposition row below is the primary visual, not a
+            single lamp standing in for the whole distribution - at the volumes
+            this page usually shows, one dot (or one donut slice) reads as far
+            more definitive than the sample backing it. A zero count still
+            renders, dimmed: "0 need a person" is real information. --------- */}
+        <div className="signal-field rounded-xl">
+          <Panel className="dark-panel-glass flex flex-col gap-5 p-5 sm:p-7">
+            <div className="flex flex-col gap-1">
               <p className="text-small font-bold text-text-mute">
-                Needs a person
+                Outcome distribution
               </p>
-              {escalations.length > 0 ? (
-                <Link
-                  href="/app/escalations"
-                  className="text-small font-medium text-text hover:text-text-dim"
-                >
-                  See all {escalations.length}
-                </Link>
-              ) : null}
+              <h2 className="font-display text-h3 text-text">
+                The last {Math.min(settled.length, STRIP_WINDOW)}{' '}
+                {settled.length === 1 ? 'call' : 'calls'}
+              </h2>
             </div>
 
-            {escalations.length === 0 ? (
+            {recent.length === 0 ? (
               <EmptyState
-                title="Nothing needs you right now"
-                body="Escalations land here when someone sounds frustrated, asks to opt out, or asks for a person."
+                icon={PhoneSlashIcon}
+                title="Nothing has been dialled yet"
+                body="Add contacts and start a run."
+                action={
+                  canStart ? (
+                    <Button asChild style={PRIMARY_CTA_STYLE}>
+                      <Link href="/app/runs/new">Start a run</Link>
+                    </Button>
+                  ) : undefined
+                }
               />
             ) : (
-              <ul className="flex flex-col">
-                {escalations.slice(0, 5).map((outcome, i) => (
-                  <li key={`${outcome.contact_name}-${i}`}>
-                    <EscalationCard outcome={outcome} compact />
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Panel>
-
-          {/* ---- Disposition, as a stat-trio ------------------------------
-              Deviation, flagged per the brief: no sparkline under each
-              number yet (there's no Sparkline component in this codebase
-              to wire one from today - the brief's own accepted fallback for
-              "more work than it's worth right now" is a resized donut; this
-              goes one step further into the actual stat-trio shape since the
-              layout cost of that was low, just without the sparkline detail). */}
-          <Panel className="flex flex-col gap-4 p-5 sm:p-6">
-            <div className="flex items-baseline justify-between gap-2">
-              <p className="text-small font-bold text-text-mute">Disposition</p>
-              <span className="text-small tabular-nums text-text-mute">
-                {formatDuration(avgDuration)} avg
-              </span>
-            </div>
-            {settled.length > 0 ? (
-              <div className="grid grid-cols-3 divide-x divide-rule">
-                {dispositionBreakdown.map((item) => (
-                  <div
-                    key={item.label}
-                    className="flex flex-col gap-1 px-3 first:pl-0 last:pr-0"
-                  >
-                    <span className="font-display text-h3 text-text tabular-nums">
-                      {item.value}
-                    </span>
-                    <p className="truncate text-small font-bold text-text-mute">
-                      {item.label}
-                    </p>
-                  </div>
-                ))}
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-data">
+                <OutcomeCount
+                  state="jade"
+                  n={outcomeCounts.closed}
+                  label="closed"
+                />
+                <OutcomeCount
+                  state="brass"
+                  n={outcomeCounts.retry}
+                  label="retry"
+                  pulse
+                />
+                <OutcomeCount
+                  state="flare"
+                  n={outcomeCounts.needsPerson}
+                  label="need a person"
+                />
               </div>
-            ) : (
-              <p className="py-6 text-center text-small text-text-dim">
-                No calls yet
-              </p>
             )}
           </Panel>
         </div>
-      </div>
 
-      {/* ---- Outcome distribution: the page's visual anchor, full width --
-          The count-per-disposition row below is the primary visual, not a
-          single lamp standing in for the whole distribution - at the volumes
-          this page usually shows, one dot (or one donut slice) reads as far
-          more definitive than the sample backing it. A zero count still
-          renders, dimmed: "0 need a person" is real information. --------- */}
-      <div className="signal-field rounded-xl">
-        <Panel className="flex flex-col gap-5 p-5 sm:p-7">
-          <div className="flex flex-col gap-1">
-            <p className="text-small font-bold text-text-mute">
-              Outcome distribution
-            </p>
-            <h2 className="font-display text-h3 text-text">
-              The last {Math.min(settled.length, STRIP_WINDOW)}{' '}
-              {settled.length === 1 ? 'call' : 'calls'}
-            </h2>
+        {/* ---- Recent runs --------------------------------------------------- */}
+        <Panel
+          interactive
+          className="dark-panel-glass flex flex-col gap-4 p-5 sm:p-6"
+        >
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-small font-bold text-text-mute">Recent runs</p>
+            <Link
+              href="/app/runs"
+              className="text-small font-medium text-text hover:text-text-dim"
+            >
+              All runs
+            </Link>
           </div>
 
-          {recent.length === 0 ? (
+          {runs.length === 0 ? (
             <EmptyState
-              icon={PhoneSlashIcon}
-              title="Nothing has been dialled yet"
-              body="Add a few contacts and start a run - results appear here as calls settle."
+              title="No runs yet"
+              body="Runs are how contacts get called."
               action={
-                <Button asChild>
-                  <Link href="/app/runs/new">Start a run</Link>
-                </Button>
+                canStart ? (
+                  <Button asChild size="sm" style={PRIMARY_CTA_STYLE}>
+                    <Link href="/app/runs/new">Start a run</Link>
+                  </Button>
+                ) : undefined
               }
             />
           ) : (
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-data">
-              <OutcomeCount
-                state="jade"
-                n={outcomeCounts.closed}
-                label="closed"
-              />
-              <OutcomeCount
-                state="brass"
-                n={outcomeCounts.retry}
-                label="retry"
-                pulse
-              />
-              <OutcomeCount
-                state="flare"
-                n={outcomeCounts.needsPerson}
-                label="need a person"
-              />
-            </div>
+            <ul className="flex flex-col">
+              {runs.slice(0, 5).map((run) => {
+                const name =
+                  campaigns.find((c) => c.id === run.campaign_id)?.name ??
+                  run.campaign_id;
+                return (
+                  <li
+                    key={run.id}
+                    className="border-b border-rule last:border-0"
+                  >
+                    <Link
+                      href={`/app/runs/${run.id}`}
+                      className="-mx-2 flex items-center gap-3 rounded-md px-2 py-2.5 transition-colors hover:bg-surface-hover"
+                    >
+                      <span
+                        aria-hidden
+                        className="flex size-8 shrink-0 items-center justify-center rounded-md bg-surface-inverse text-small font-medium text-text-inverse"
+                      >
+                        {name.charAt(0).toUpperCase()}
+                      </span>
+                      <span className="min-w-0 flex-1 truncate text-small text-text">
+                        {name}
+                      </span>
+                      <LampBadge
+                        state={run.completed >= run.total ? 'jade' : 'brass'}
+                        pulse={run.completed < run.total}
+                      >
+                        {run.completed}/{run.total}
+                      </LampBadge>
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
           )}
         </Panel>
-      </div>
 
-      {/* ---- Recent runs --------------------------------------------------- */}
-      <Panel interactive className="flex flex-col gap-4 p-5 sm:p-6">
-        <div className="flex items-center justify-between gap-2">
-          <p className="text-small font-bold text-text-mute">Recent runs</p>
-          <Link
-            href="/app/runs"
-            className="text-small font-medium text-text hover:text-text-dim"
-          >
-            All runs
-          </Link>
-        </div>
-
-        {runs.length === 0 ? (
-          <EmptyState
-            title="No runs yet"
-            body="Runs are how contacts get called. Start one to see the pipeline end to end."
-            action={
-              <Button asChild size="sm">
-                <Link href="/app/runs/new">Start a run</Link>
-              </Button>
-            }
-          />
-        ) : (
-          <ul className="flex flex-col">
-            {runs.slice(0, 5).map((run) => {
-              const name =
-                campaigns.find((c) => c.id === run.campaign_id)?.name ??
-                run.campaign_id;
-              return (
-                <li key={run.id} className="border-b border-rule last:border-0">
-                  <Link
-                    href={`/app/runs/${run.id}`}
-                    className="-mx-2 flex items-center gap-3 rounded-md px-2 py-2.5 transition-colors hover:bg-surface-hover"
+        {/* ---- Recent calls ---------------------------------------------- */}
+        {settled.length > 0 ? (
+          <Panel className="dark-panel-glass flex flex-col gap-1 p-5 sm:p-6">
+            <p className="pb-2 text-small font-bold text-text-mute">
+              Recent calls
+            </p>
+            <ul className="flex flex-col">
+              {settled.slice(0, 6).map((outcome, i) => {
+                const lamp = lampForOutcome(outcome);
+                const campaign = campaigns.find(
+                  (c) => c.id === outcome.campaign_id,
+                );
+                return (
+                  <li
+                    key={`${outcome.contact_name}-${i}`}
+                    className="flex flex-wrap items-center gap-3 border-b border-rule py-3 last:border-0"
                   >
-                    <span
+                    {/* CallFlow only ever dials out - there's no inbound leg
+                        to distinguish - so this stays a fixed "outbound"
+                        glyph rather than a direction toggle with nothing to
+                        toggle. */}
+                    <PhoneOutgoingIcon
                       aria-hidden
-                      className="flex size-8 shrink-0 items-center justify-center rounded-md bg-surface-inverse text-small font-medium text-text-inverse"
-                    >
-                      {name.charAt(0).toUpperCase()}
+                      className="size-3.5 shrink-0 text-text-mute"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-small text-text">
+                        {outcome.contact_name}
+                      </p>
+                      <MaskedPhone
+                        phone={outcome.phone_masked}
+                        className="text-label"
+                      />
+                    </div>
+                    {campaign ? (
+                      <Tag mono={false} className="shrink-0">
+                        {/* `truncate` on `Tag`'s own inline-flex root doesn't
+                            reliably render the ellipsis in Chrome - it needs
+                            a block-level box of its own to clip against. */}
+                        <span className="block max-w-32 truncate">
+                          {campaign.name}
+                        </span>
+                      </Tag>
+                    ) : null}
+                    <span className="inline-flex shrink-0 items-center gap-1.5 text-small text-text">
+                      <Lamp state={lamp.state} size="sm" pulse={lamp.pulse} />
+                      {lamp.label}
                     </span>
-                    <span className="min-w-0 flex-1 truncate text-small text-text">
-                      {name}
+                    <span className="w-16 shrink-0 text-right font-mono text-data tabular-nums text-text-mute">
+                      {formatDuration(outcome.duration_seconds)}
                     </span>
-                    <LampBadge
-                      state={run.completed >= run.total ? 'jade' : 'brass'}
-                      pulse={run.completed < run.total}
-                    >
-                      {run.completed}/{run.total}
-                    </LampBadge>
-                  </Link>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </Panel>
-
-      {/* ---- Latest results ---------------------------------------------- */}
-      {settled.length > 0 ? (
-        <Panel className="flex flex-col gap-4 p-5 sm:p-6">
-          <p className="text-small font-bold text-text-mute">Latest results</p>
-          <ul className="flex flex-col">
-            {settled.slice(0, 6).map((outcome, i) => {
-              const lamp = lampForOutcome(outcome);
-              return (
-                <li
-                  key={`${outcome.contact_name}-${i}`}
-                  className="flex flex-wrap items-center gap-3 border-b border-rule py-3 last:border-0"
-                >
-                  <LampBadge
-                    state={lamp.state}
-                    pulse={lamp.pulse}
-                    className="text-small"
-                  >
-                    {lamp.label}
-                  </LampBadge>
-                  <span className="min-w-0 flex-1 truncate text-small text-text">
-                    {outcome.contact_name}
-                  </span>
-                  <MaskedPhone phone={outcome.phone_masked} />
-                  <span className="font-mono text-data tabular-nums text-text-mute">
-                    {formatDuration(outcome.duration_seconds)}
-                  </span>
-                  <span className="font-mono text-data text-text-mute">
-                    {formatAge(outcome.created_at)}
-                  </span>
-                </li>
-              );
-            })}
-          </ul>
-        </Panel>
-      ) : null}
+                  </li>
+                );
+              })}
+            </ul>
+          </Panel>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -441,6 +615,86 @@ function OutcomeCount({
   );
 }
 
+/** The last thing they said before this got escalated - the one line that
+ * usually explains the decision faster than any typed field can. */
+function lastTranscriptTurn(transcript: string | null): string | null {
+  if (!transcript) return null;
+  const turns = transcript.split('\n').filter(Boolean);
+  return turns.at(-1) ?? null;
+}
+
+function capitalise(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+/**
+ * One row of the "Needs a person" worklist preview: avatar, name + age, a
+ * muted/label-forward urgency indicator (`LampBadge` - text is the primary
+ * signal, the tinted pill background is the secondary accent, never a bold
+ * saturated fill), the last thing the contact said, the sentiment behind the
+ * escalation, and a real link into the worklist where the actual actions
+ * (call back, reassign, mark resolved) live. Named "Review", not "Takeover" -
+ * this product has no live call-transfer feature, and CLAUDE.md §4 #9 rules
+ * out labelling a link with a verb it can't actually perform.
+ */
+function NeedsPersonRow({ outcome }: { outcome: Outcome }) {
+  const quote = lastTranscriptTurn(outcome.transcript);
+  const sentimentLine =
+    outcome.sentiment !== 'unknown'
+      ? [capitalise(outcome.sentiment), outcome.sentiment_reason]
+          .filter(Boolean)
+          .join(' - ')
+      : outcome.disposition_reason;
+
+  return (
+    <div className="flex flex-col gap-2.5 py-3 first:pt-0 last:pb-0">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <span
+            aria-hidden
+            className="flex size-9 shrink-0 items-center justify-center rounded-full bg-surface-sunken text-small font-medium text-text"
+          >
+            {outcome.contact_name.charAt(0).toUpperCase()}
+          </span>
+          <div className="flex min-w-0 flex-col">
+            <p className="truncate text-small font-medium text-text">
+              {outcome.contact_name}
+            </p>
+            <span className="font-mono text-data text-text-mute">
+              {formatAge(outcome.created_at)}
+            </span>
+          </div>
+        </div>
+        <LampBadge state="flare" className="shrink-0">
+          Needs a person
+        </LampBadge>
+      </div>
+
+      {quote ? (
+        <blockquote className="flex items-start gap-1.5 border-l-2 border-rule pl-3 text-small text-text-dim italic">
+          <QuotesIcon
+            aria-hidden
+            weight="fill"
+            className="mt-0.5 size-3 shrink-0 text-text-mute"
+          />
+          <span className="min-w-0">{quote}</span>
+        </blockquote>
+      ) : null}
+
+      {sentimentLine ? (
+        <p className="truncate text-small text-text-mute">{sentimentLine}</p>
+      ) : null}
+
+      <Link
+        href="/app/escalations"
+        className="self-start text-small font-medium text-text hover:text-text-dim"
+      >
+        Review &rarr;
+      </Link>
+    </div>
+  );
+}
+
 /** Who's on this - a quiet counterpart to the run/escalation data around it. */
 function TeamPreview({ canInvite }: { canInvite: boolean }) {
   const [team, setTeam] = useState<Team | null>(null);
@@ -461,7 +715,7 @@ function TeamPreview({ canInvite }: { canInvite: boolean }) {
   const shown = members.slice(0, 3);
 
   return (
-    <Panel className="flex flex-col gap-3 p-5 sm:p-6">
+    <Panel className="dark-panel-glass flex flex-col gap-3 p-5 sm:p-6">
       <div className="flex items-center justify-between gap-2">
         <p className="text-small font-bold text-text-mute">Team</p>
         <div className="flex items-center gap-1.5">
@@ -524,29 +778,36 @@ function TeamPreview({ canInvite }: { canInvite: boolean }) {
  * once any run exists, `TeamPreview` grows to fill this row instead (this
  * card's other message, "Bring in a teammate", was a second invite entry
  * point duplicating `TeamPreview`'s own "+" - retired, not repurposed). */
-function NextMoveCard() {
+function NextMoveCard({ canStart }: { canStart: boolean }) {
   return (
-    <div className="hero-flow flex flex-col gap-3 p-5 sm:p-6">
-      <span className="flex size-10 items-center justify-center rounded-full bg-accent-wash">
-        <PhoneCallIcon aria-hidden className="size-5 text-accent-text" />
+    <Panel className="dark-panel-glass flex flex-col gap-3 p-5 sm:p-6">
+      <span className="flex size-10 items-center justify-center rounded-full bg-dark-accent/15">
+        <PhoneCallIcon aria-hidden className="size-5 text-dark-accent" />
       </span>
       <div className="flex flex-col gap-1">
         <h3 className="font-display text-h4 text-text">
           Place your first call
         </h3>
         <p className="text-small text-text-dim">
-          Add a few contacts and start a run - this card turns into your weekly
-          trend once one settles.
+          Add contacts and start a run.
         </p>
       </div>
-      <Button asChild size="sm" className="mt-1 self-start">
-        <Link href="/app/runs/new">Start a run</Link>
-      </Button>
-    </div>
+      {canStart ? (
+        <Button asChild size="sm" className="mt-1 self-start" style={PRIMARY_CTA_STYLE}>
+          <Link href="/app/runs/new">Start a run</Link>
+        </Button>
+      ) : null}
+    </Panel>
   );
 }
 
-function PageTitle({ session }: { session: ReturnType<typeof useSession> }) {
+function PageTitle({
+  session,
+  canStart,
+}: {
+  session: ReturnType<typeof useSession>;
+  canStart: boolean;
+}) {
   return (
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div className="flex flex-col gap-1">
@@ -556,9 +817,11 @@ function PageTitle({ session }: { session: ReturnType<typeof useSession> }) {
         <Button asChild variant="secondary">
           <Link href="/app/campaigns">Campaigns</Link>
         </Button>
-        <Button asChild>
-          <Link href="/app/runs/new">Start a run</Link>
-        </Button>
+        {canStart ? (
+          <Button asChild style={PRIMARY_CTA_STYLE}>
+            <Link href="/app/runs/new">Start a run</Link>
+          </Button>
+        ) : null}
       </div>
     </div>
   );
@@ -569,14 +832,14 @@ function LoadingSkeleton() {
     <div className="flex flex-col gap-4">
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {Array.from({ length: 4 }, (_, i) => (
-          <Panel key={i} className="flex flex-col gap-3 p-4">
+          <Panel key={i} className="dark-panel-glass flex flex-col gap-3 p-4">
             <Skeleton className="h-2.5 w-20" />
             <Skeleton className="h-8 w-16" />
             <Skeleton className="h-2.5 w-24" />
           </Panel>
         ))}
       </div>
-      <Panel className="flex flex-col gap-3 p-5">
+      <Panel className="dark-panel-glass flex flex-col gap-3 p-5">
         <Skeleton className="h-2.5 w-32" />
         <Skeleton className="h-6 w-48" />
         <Skeleton className="h-3 w-full" />

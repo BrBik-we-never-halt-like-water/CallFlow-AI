@@ -3,6 +3,7 @@
 import * as Radix from "@radix-ui/react-dropdown-menu";
 import { CheckIcon } from "@phosphor-icons/react/dist/ssr";
 import { cn } from "@/lib/cn";
+import { usePortalContainer } from "@/lib/hooks/use-portal-container";
 
 /**
  * Dropdown menu. Used for row overflow actions, the table's column-visibility
@@ -25,14 +26,15 @@ export function DropdownMenuContent({
   align?: "start" | "center" | "end";
   className?: string;
 }) {
+  const container = usePortalContainer();
   return (
-    <Radix.Portal>
+    <Radix.Portal container={container}>
       <Radix.Content
         align={align}
         sideOffset={4}
         collisionPadding={12}
         className={cn(
-          "z-50 min-w-48 overflow-hidden rounded-md border border-rule-strong bg-surface-raised p-1 shadow-overlay",
+          "dark-overlay z-50 min-w-48 overflow-hidden rounded-md border border-rule-strong bg-surface-raised p-1 shadow-overlay",
           className,
         )}
       >

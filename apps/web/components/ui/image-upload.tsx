@@ -18,6 +18,7 @@ export interface ImageUploadProps {
   onChange: (url: string) => void;
   label: string;
   shape?: 'circle' | 'square';
+  disabled?: boolean;
 }
 
 /**
@@ -31,6 +32,7 @@ export function ImageUpload({
   onChange,
   label,
   shape = 'circle',
+  disabled = false,
 }: ImageUploadProps) {
   const toast = useToast();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -79,9 +81,10 @@ export function ImageUpload({
       <button
         type="button"
         onClick={() => inputRef.current?.click()}
+        disabled={disabled}
         aria-label={label}
         className={cn(
-          'flex size-16 shrink-0 items-center justify-center overflow-hidden border border-rule bg-surface-sunken text-text-dim transition-colors hover:bg-surface-hover',
+          'flex size-16 shrink-0 items-center justify-center overflow-hidden border border-rule bg-surface-sunken text-text-dim transition-colors hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-surface-sunken',
           shape === 'circle' ? 'rounded-full' : 'rounded-lg',
         )}
       >
@@ -101,6 +104,7 @@ export function ImageUpload({
           variant="secondary"
           size="sm"
           loading={uploading}
+          disabled={disabled}
           onClick={() => inputRef.current?.click()}
         >
           {value ? 'Change image' : 'Upload image'}

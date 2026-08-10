@@ -105,11 +105,12 @@ CallFlow doesn't have to re-implement. Flagged for a follow-up decision.
 `POST /calle/webhook` - your server receives terminal call events (`call.completed`,
 `call.failed`, `call.result_validation_failed`), each carrying a full terminal `CallTask`
 snapshot in `data`. Requires a `CALL-E-Event-Id` header on receipt (for de-duplication).
-**This codebase does not implement a webhook receiver today** - `_poll_until_done()` in
-`engine.py` polls every 2s instead. Given CALL-E supports webhooks natively, polling is the
-choice this codebase made, not a CALL-E limitation - worth revisiting once runs are
-persisted (polling an in-memory dict across a whole pm2 process lifetime is fine; polling
-against Postgres at scale is a straightforward reason to switch to the webhook).
+**Implemented - iteration 18, `ISSUES.md` #61.** `POST /api/v1/webhooks/calle/{secret}`
+(`api/v1/routes/webhooks.py`) is now the fast path; polling stays as the backstop for a
+dropped delivery or a deployment with `CALLFLOW_PUBLIC_API_URL`/`CALLFLOW_WEBHOOK_SECRET`
+unset. See `SYSTEM.md`'s API reference for the endpoint's own entry - CALL-E's webhooks
+turned out to be unsigned (its SDK's HMAC helpers are deprecated), which shaped the
+receiver's trust model more than this doc anticipated when it was written.
 
 ## 4. Error taxonomy (from the spec - a real, exhaustive list)
 

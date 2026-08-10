@@ -40,3 +40,6 @@ apps/web/AGENTS.md
 
 # subagent-driven-development scratch (plans, ledgers, task briefs/reports)
 .superpowers/
+
+# Playwright MCP session scratch (screenshots, console logs, page snapshots)
+.playwright-mcp/

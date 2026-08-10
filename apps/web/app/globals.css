@@ -5,8 +5,13 @@
    Every value in the design system lives here. No hard-coded hex anywhere
    else in the codebase.
 
-   LIGHT MODE ONLY. There is no dark theme and no surface toggle: one set of
-   surfaces, tuned properly, rather than two that are each slightly wrong.
+   LIGHT MODE, product-wide, with one deliberate exception: `/app/*` is mid-
+   pivot to a dark-glassmorphism surface (round-3 dashboard-polish, dark
+   theme). Marketing and auth stay light-only, no toggle, same as before -
+   there is still exactly one surface for each part of the product, never a
+   user-facing choice between two. The `--dark-*` tokens live on `.app-font-
+   scope` (below) so they only exist where that surface is actually rolling
+   out; see the comment there for the scoping mechanism and the palette.
 
    The palette is a cool grey-green - deliberately not cream, and deliberately
    not the blue-grey every B2B dashboard defaults to. Accent colour is reserved
@@ -172,6 +177,8 @@
   /* ---- Layout ------------------------------------------------------------ */
   --w-marketing: 1180px;
   --w-app: 1440px;
+  --w-app-sidebar: 240px;
+  --w-app-sidebar-collapsed: 68px;
   --h-site-header: 68px;
   --h-app-topbar: 60px;
 }
@@ -215,6 +222,38 @@
   --color-accent: var(--accent);
   --color-accent-text: var(--accent-text);
   --color-accent-wash: var(--accent-wash);
+
+  /* Dark-pivot palette (see `.app-font-scope` above for values, scoping,
+     and the contrast citation) - registered the same way as every light
+     token above so `/app/*` page rebuilds get `bg-dark-surface`,
+     `text-dark-text-mute`, etc. for free, resolving only where `--dark-*`
+     is actually defined. */
+  --color-dark-bg: var(--dark-bg);
+  --color-dark-bg-glow: var(--dark-bg-glow);
+  --color-dark-surface: var(--dark-surface);
+  --color-dark-surface-hover: var(--dark-surface-hover);
+  --color-dark-surface-sunken: var(--dark-surface-sunken);
+  --color-dark-text: var(--dark-text);
+  --color-dark-text-dim: var(--dark-text-dim);
+  --color-dark-text-mute: var(--dark-text-mute);
+  --color-dark-rule: var(--dark-rule);
+  --color-dark-rule-strong: var(--dark-rule-strong);
+  --color-dark-accent: var(--dark-accent);
+
+  --color-dark-lamp-off: var(--dark-lamp-off);
+  --color-dark-lamp-ice: var(--dark-lamp-ice);
+  --color-dark-lamp-brass: var(--dark-lamp-brass);
+  --color-dark-lamp-jade: var(--dark-lamp-jade);
+  --color-dark-lamp-flare: var(--dark-lamp-flare);
+  --color-dark-lamp-off-text: var(--dark-lamp-off-text);
+  --color-dark-lamp-ice-text: var(--dark-lamp-ice-text);
+  --color-dark-lamp-brass-text: var(--dark-lamp-brass-text);
+  --color-dark-lamp-jade-text: var(--dark-lamp-jade-text);
+  --color-dark-lamp-flare-text: var(--dark-lamp-flare-text);
+
+  --dark-glass-surface: var(--dark-glass-surface);
+  --dark-glass-border: var(--dark-glass-border);
+  --dark-glass-blur: var(--dark-glass-blur);
 
   --font-display: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
   --font-sans: var(--font-inter-tight), ui-sans-serif, system-ui, sans-serif;
@@ -303,6 +342,152 @@ body {
 .app-font-scope {
   --font-sans: var(--font-ubuntu), ui-sans-serif, system-ui, sans-serif;
   font-family: var(--font-ubuntu), ui-sans-serif, system-ui, sans-serif;
+
+  /* ---- Dark glassmorphism palette (round-3 dashboard-polish, dark pivot) -
+     Additive, not a swap: every light token above keeps its light value
+     everywhere. These `--dark-*` custom properties are declared only here,
+     inside `.app-font-scope` - the identical trick this rule already uses
+     for `--font-sans` - so they resolve for every element under `/app/*`
+     (the only tree this class wraps, `app/(app)/app/layout.tsx`) and are
+     unset (not "wrong", genuinely absent) for marketing and auth, which
+     never render inside it.
+
+     One neutral-black glass family now, not two - see `.superpowers/sdd/
+     round3-dashboard-polish/dark-theme-D1-report.md` §7-§10 for the full
+     history. An earlier pass on this same palette split chrome (sidebar/
+     tab bar) from content cards into two different bases (near-black vs a
+     navy `--dark-surface`) for a real reason - keeping a card visually
+     distinct from the chrome behind it. The user's actual ask cut across
+     that split entirely: a *true*, neutral black foundation everywhere
+     (`--dark-bg` and `--dark-surface` both), with colour reserved for
+     exactly one place - the ambient purple gradient on the main content
+     body (`--dark-bg-glow`, `.dark-canvas` below). Two different "black"
+     bases for chrome vs cards stopped being a meaningful distinction once
+     both are genuinely neutral, so they're unified back into one
+     `--dark-surface` this pass, at OKLab chroma 0 (perfectly grey/black,
+     confirmed by computing it, not assumed) - `#020617`'s old chroma was
+     ~0.041, exactly the "reads blue, not black" the user flagged.
+
+     `--dark-bg-glow` moved from `#4338ca` (indigo, OKLab hue ~277deg - the
+     blue/purple boundary, leaning blue) to `#9333ea` (hue ~302deg, well
+     into unambiguous purple/violet territory) - both computed, not
+     eyeballed, so "still kind of blue" isn't a guess either way.
+
+     `--dark-accent` started as a cyan chosen to sit deliberately far from
+     every lamp hue (CLAUDE.md §4 #10) - correct in principle, but a real
+     rendered screenshot showed it reading as green in practice (small
+     saturated UI elements compress hue perception; `#06b6d4`'s green
+     channel, 182, sits closer to its blue channel, 212, than "cyan" implies
+     at a glance) - exactly the look the user explicitly ruled out
+     everywhere, action buttons included, not just status labels. Unified
+     with `--dark-bg-glow` instead: same violet the ambient gradient already
+     uses, so the one interactive accent color and the one decorative color
+     are now the same hue, deliberately - simpler than maintaining two
+     "different but both far from every lamp" colors, and the far-from-jade
+     property (OKLab hue ~302deg vs jade's ~157deg) holds just as well as
+     the cyan did. The dashboard's status pills still stay label-forward and
+     reuse the *existing* lamp semantics via the `--dark-lamp-*` variants
+     below, muted/lightened for a dark surface - this accent is not a
+     second status-colour system, it never appears in a status pill. The
+     escalation badge is dot-only now (never a numeric pill) - see
+     `--dark-lamp-flare`'s own comment for why that retired a now-unneeded
+     darkening.
+
+     Contrast, computed the same way as `--text-mute`'s own citation above
+     (`color-mix`/OKLab math, not eyeballed) and against the actual worst
+     case: `.dark-canvas`'s ambient glow peaks at `color-mix(in oklab,
+     --dark-bg-glow 26%, --dark-bg)` = `#231436` - used as the backdrop for
+     the chrome's own composite too (`.dark-chrome`, below `.dark-panel-
+     glass`), even though the sidebar most likely sits over a dimmer
+     stretch of the gradient in practice (its own position is nearer the
+     edge than the centre) - using the peak anyway is the same "worst
+     case, not the easier one" rule every other number in this file
+     follows. `--dark-glass-surface` lowered from 66% `--dark-surface` over
+     transparent to 42% - cards read as "blackish" rather than actual glass
+     at 66%, since so little of the ambient gradient behind them showed
+     through; contrast margin at 66% was large enough (see below) to give
+     up a lot of opacity before any number gets close to the 4.5:1 floor.
+     42% composited over the peak renders `#191024` (barely different from
+     66%'s `#120d19` - both endpoints are dark enough that the mix ratio
+     barely moves the result, which is exactly why there was room to spend
+     it on translucency instead). Against `#191024`: `--dark-text` ~16.9:1,
+     `--dark-text-dim` ~12.4:1, `--dark-text-mute` ~7.2:1,
+     `--dark-lamp-flare-text` ~7.7:1 - all still comfortably clear of 4.5:1,
+     each only a few tenths under the old 66% numbers. The escalation dot
+     (`--dark-lamp-flare`) is ~4.4:1 against this composite - just under
+     the 4.5:1 text bar, but it only ever needed the 3:1 non-text guideline
+     as a small decorative mark, same reasoning as the light `--lamp-*`
+     dots, and clears that with margin.
+
+     `--dark-accent` as a *solid button fill* (not decorative foreground
+     text) is a separate contrast question, since now something has to sit
+     ON it, not beside it: white text (`Button`'s own default
+     `text-inverse`) on solid `#9333ea` is 5.38:1 - clears 4.5:1 with real
+     margin, a genuine improvement over the old cyan, where white text only
+     managed ~2.4:1 (cyan is high-luminance; white-on-white-ish always was
+     the wrong pairing) and had to be compensated for with dark text
+     instead (see `apps/web/app/(app)/app/page.tsx`'s `PRIMARY_CTA_STYLE`,
+     now corrected to match - purple is low-luminance, so the correct
+     pairing inverted along with the color). */
+  --dark-bg: #050505;
+  --dark-bg-glow: #9333ea;
+  --dark-surface: #0a0a0a;
+  --dark-glass-surface: color-mix(in oklab, var(--dark-surface) 42%, transparent);
+  --dark-glass-border: color-mix(in oklab, #ffffff 14%, transparent);
+  --dark-glass-blur: blur(24px) saturate(150%);
+  --dark-rule: color-mix(in oklab, #ffffff 10%, transparent);
+  --dark-rule-strong: color-mix(in oklab, #ffffff 18%, transparent);
+
+  /* Tonal variants of the one neutral `--dark-surface` now, shared by
+     `.dark-chrome` and `.dark-panel-glass` alike (both re-scope
+     `--surface-hover`/`--surface-sunken` to these, below). `-hover` is a
+     translucent white lift rather than an opaque tint on purpose - it
+     reads correctly layered over an already-translucent glass element
+     without covering the glass effect it's hovering on top of, which an
+     opaque fill would. */
+  --dark-surface-hover: color-mix(in oklab, #ffffff 8%, transparent);
+  --dark-surface-sunken: #2d2d2d; /* +18% white, OKLab, over --dark-surface */
+
+  --dark-text: #f1f5f9;
+  --dark-text-dim: #cbd5e1;
+  --dark-text-mute: #94a3b8;
+
+  --dark-accent: #9333ea;
+
+  /* Desaturated/lightened for a dark surface - not the light `--lamp-*`
+     hexes as-is. Same job as `--lamp-*-text` above: the dot stays the muted
+     pure colour, anything setting *text* uses the `-text` tier. */
+  --dark-lamp-off: #838787;
+  --dark-lamp-ice: #5883b7;
+  --dark-lamp-brass: #a47f47;
+  --dark-lamp-jade: #4b9073;
+  /* Back to the same OKLCH lightness (L 0.60) as the other four - the
+     escalation badge is dot-only now, never a numeric pill (this same
+     round), so the one constraint that justified darkening this
+     specifically past its siblings (solid white count-text needing 4.5:1
+     against the pill's own fill) no longer applies anywhere in the app.
+     Re-verified against the new near-black chrome composite rather than
+     just reverted blindly: `#c15f4d` clears ~4.6:1 there (better than the
+     darkened `#b45342` it's replacing, ~3.9:1) - reverting is a genuine
+     improvement, not just a tidy-up. */
+  --dark-lamp-flare: #c15f4d;
+
+  --dark-lamp-off-text: #bbbfbe;
+  --dark-lamp-ice-text: #8db4e5;
+  --dark-lamp-brass-text: #ccab7c;
+  --dark-lamp-jade-text: #88bfa6;
+  --dark-lamp-flare-text: #e49282;
+}
+
+/* Dark-mode high-contrast: same treatment `:root`'s own `prefers-contrast:
+   more` block (bottom of this file) gives the light tokens - muted text
+   moves closer to primary, the hairline moves to its stronger variant. */
+@media (prefers-contrast: more) {
+  .app-font-scope {
+    --dark-text-dim: var(--dark-text);
+    --dark-text-mute: #c7d0e0;
+    --dark-rule: var(--dark-rule-strong);
+  }
 }
 
 /* Archivo at width 112 ("Expanded"). Applied through a class rather than an
@@ -541,10 +726,19 @@ button[data-menu][data-state='open']:focus-visible {
 
    Tinted with `--accent-wash` (round-3 dashboard-polish, Lush Forest
    follow-up) rather than left as plain frosted white - `AppShell` only
-   renders `.header-glass` on `/app/*` (verified: its two call sites are both
-   inside `components/layout/app-shell.tsx`, which nothing outside the
-   dashboard imports), so unlike `Button` this class needed no
-   `.app-font-scope` scoping trick; it can carry the tint directly. The tint
+   rendered `.header-glass` on `/app/*` (all three call sites were inside
+   `components/layout/app-shell.tsx`/`app-nav.tsx`, which nothing outside
+   the dashboard imports), so unlike `Button` this class needed no
+   `.app-font-scope` scoping trick; it could carry the tint directly.
+
+   **Currently unused** as of the dark-theme-pivot chrome reskin: all three
+   call sites (`AppSidebar`, `AppTopBar`, `MinimalTopBar`) and `AppTabBar`'s
+   equivalent light treatment were switched to `.dark-chrome` (below
+   `.dark-panel-glass`), which is opaque rather than translucent - see that
+   class's own comment for why. Left defined rather than deleted: the
+   contrast work and Lush Forest tinting history below are still real
+   provenance, and this is the class to revive if `/app/*` ever needs a
+   light-chrome path again (a toggle, a fallback). The tint
    is baked into the base colour *before* the existing translucency mix
    (`50% --surface-raised, 50% --accent-wash`, then the same 66%-over-
    transparent alpha every other glass surface already uses) rather than by
@@ -804,6 +998,367 @@ button[data-menu][data-state='open']:focus-visible {
     var(--accent-wash) 0%,
     var(--surface) 78%
   );
+}
+
+/* --------------------------------------------------------------------------
+   Dark glassmorphism - the /app/* pivot's own canvas + card material.
+
+   The dark-theme equivalents of `.canvas-tint` and `.panel-glass` above,
+   built from the `--dark-*` tokens declared on `.app-font-scope` (top of
+   this file) - same `color-mix(in oklab, ...)` glass mechanism, new
+   palette.
+
+   `.dark-canvas` belongs on the main *content* column specifically
+   (`AppShell`'s content `<div>`, `components/layout/app-shell.tsx`) - the
+   one deliberately coloured surface in the whole dark pivot, not the
+   sidebar/chrome, which stays neutral black glass (`.dark-chrome`, below
+   `.dark-panel-glass`) with no purple mixed into its own resting fill.
+   The outer shell wrapper (the flex row containing both the sidebar and
+   the content column) gets a *flat* `bg-dark-bg` instead - true black,
+   no gradient - so whatever's visible behind the sidebar specifically
+   (a translucent element, sitting beside the content column, not on top
+   of it) reads as plain black, never purple. Broadened this pass from a
+   top-only glow to a much wider spread, per the user's "diffuse ... all
+   over, not just near the top" request - the 90% stop is deliberately far
+   out; a page taller than the viewport still fades to flat `--dark-bg`
+   well before its bottom edge, which is the point. `.dark-canvas`'s 26%
+   glow stop is the exact figure the contrast citation on `.app-font-scope`
+   is computed against - changing it here invalidates that number. */
+
+.dark-canvas {
+  background: radial-gradient(
+    170% 150% at 50% -10%,
+    color-mix(in oklab, var(--dark-bg-glow) 26%, var(--dark-bg)),
+    var(--dark-bg) 90%
+  );
+
+  /* Same generic-token re-scoping as `.dark-chrome`/`.dark-panel-glass` (see
+     their comments) - but here because a real instance of the gap surfaced:
+     a `Button` sitting directly in the content column, not inside any card,
+     rendered with a light glass background because nothing between it and
+     the page root redeclared `--glass-surface` etc. `.dark-canvas` is the
+     one wrapper every piece of dark-theme content is guaranteed to sit
+     inside, so it's the right place to close this for good - not just for
+     the one button found, but for anything future work drops loose into a
+     page without wrapping it in `.dark-panel-glass` first. */
+  --text: var(--dark-text);
+  --text-dim: var(--dark-text-dim);
+  --text-mute: var(--dark-text-mute);
+  --rule: var(--dark-rule);
+  --rule-strong: var(--dark-rule-strong);
+  --surface-raised: var(--dark-surface);
+  --surface-hover: var(--dark-surface-hover);
+  --surface-sunken: var(--dark-surface-sunken);
+  --glass-surface: var(--dark-glass-surface);
+  --glass-border: var(--dark-glass-border);
+  --glass-blur: var(--dark-glass-blur);
+  /* Closes the same class of gap as everything above, for `--accent` -
+     `.btn-glass-primary` (globals.css) always reads `--accent` directly, and
+     without this, every primary button on a dark page (found live:
+     `campaign-card.tsx`'s "Run") rendered the *light* theme's forest-green
+     CTA instead of `--dark-accent`'s purple, since `--accent` is a `:root`
+     token with no closer override for anything to inherit otherwise. */
+  --accent: var(--dark-accent);
+  --accent-text: var(--dark-text);
+  --accent-wash: var(--dark-bg-glow);
+  --lamp-off: var(--dark-lamp-off);
+  --lamp-ice: var(--dark-lamp-ice);
+  --lamp-brass: var(--dark-lamp-brass);
+  --lamp-jade: var(--dark-lamp-jade);
+  --lamp-flare: var(--dark-lamp-flare);
+  --lamp-off-text: var(--dark-lamp-off-text);
+  --lamp-ice-text: var(--dark-lamp-ice-text);
+  --lamp-brass-text: var(--dark-lamp-brass-text);
+  --lamp-jade-text: var(--dark-lamp-jade-text);
+  --lamp-flare-text: var(--dark-lamp-flare-text);
+}
+
+.dark-panel-glass {
+  background: var(--dark-glass-surface);
+  border-color: var(--dark-glass-border);
+  backdrop-filter: var(--dark-glass-blur);
+  -webkit-backdrop-filter: var(--dark-glass-blur);
+  box-shadow:
+    inset 0 1px 0 color-mix(in oklab, #ffffff 8%, transparent),
+    var(--shadow-card);
+
+  /* Re-scope the generic tokens (below) the same way `.dark-chrome` does -
+     added when building `.dark-chrome` and folded back in here so a card
+     using this class gets legible children (`text-text`, `text-text-mute`,
+     a `Lamp`, a lamp-coloured badge, `bg-surface-sunken`, ...) automatically,
+     for free, the moment it's dropped into `/app/*` markup - no per-child
+     colour edit needed. See `.dark-chrome`'s own comment for why this is
+     safe (CSS custom properties inherit through the DOM regardless of
+     component boundaries, and Radix portals - DropdownMenu/Tooltip content -
+     render outside this element's subtree, so popovers stay correctly
+     unaffected either way).
+
+     `--glass-surface`/`--glass-border`/`--glass-blur` (the light theme's own
+     composite glass tokens, defined at `:root` above) are re-scoped here too -
+     a gap the D3/D4 dark-rebuild tasks both found independently: `DataTable`'s
+     table wrapper (`.panel-glass`), `Panel`, and `Button`'s secondary variant
+     (`.btn-glass-secondary`) all read these three names directly, not the
+     `--dark-*` family, so a component using one of them inside a
+     `.dark-panel-glass` card previously kept rendering the *light* glass
+     recipe even though every other token around it had gone dark - each of
+     those tasks had to re-derive the same three tokens locally (an inline
+     `style` object on their own page) rather than get them for free from this
+     class, exactly like the generic set above already provides. Fixed at the
+     source here instead: any descendant that reads `--glass-surface` et al -
+     with zero awareness of the dark pivot - now resolves to the correct dark
+     composite the moment it renders inside this class, the same way the
+     generic re-scoping above already works. */
+  --text: var(--dark-text);
+  --text-dim: var(--dark-text-dim);
+  --text-mute: var(--dark-text-mute);
+  --rule: var(--dark-rule);
+  --rule-strong: var(--dark-rule-strong);
+  --surface-raised: var(--dark-surface);
+  --surface-hover: var(--dark-surface-hover);
+  --surface-sunken: var(--dark-surface-sunken);
+
+  --glass-surface: var(--dark-glass-surface);
+  --glass-border: var(--dark-glass-border);
+  --glass-blur: var(--dark-glass-blur);
+
+  /* Same `--accent` gap-close as `.dark-canvas` (see its own comment for the
+     live "Run" button bug this fixes) - a primary button rendered in the
+     sidebar/chrome or inside any card needs this exactly as much. */
+  --accent: var(--dark-accent);
+  --accent-text: var(--dark-text);
+  --accent-wash: var(--dark-bg-glow);
+
+  --lamp-off: var(--dark-lamp-off);
+  --lamp-ice: var(--dark-lamp-ice);
+  --lamp-brass: var(--dark-lamp-brass);
+  --lamp-jade: var(--dark-lamp-jade);
+  --lamp-flare: var(--dark-lamp-flare);
+  --lamp-off-text: var(--dark-lamp-off-text);
+  --lamp-ice-text: var(--dark-lamp-ice-text);
+  --lamp-brass-text: var(--dark-lamp-brass-text);
+  --lamp-jade-text: var(--dark-lamp-jade-text);
+  --lamp-flare-text: var(--dark-lamp-flare-text);
+}
+
+@supports not (backdrop-filter: blur(1px)) {
+  .dark-panel-glass {
+    background: var(--dark-surface);
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .dark-panel-glass {
+    background: var(--dark-surface);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Dark chrome - the persistent /app/* shell (sidebar, mobile tab bar, the
+   profile route's minimal header), as opposed to `.dark-panel-glass` above
+   (floating content cards). `AppTopBar` - the third surface this class
+   used to cover - was removed entirely this pass (the user asked for no
+   persistent top bar at all); its two jobs, the account menu and the
+   credit balance, moved into `AppSidebar` and `AppTabBar` instead. See
+   `dark-theme-D1-report.md` §8 for that move and why `UserMenu` couldn't
+   just disappear with the header (mobile has no other path to sign out).
+
+   Translucent again, not opaque - a real reversal of an earlier pass on
+   this exact class, kept honest rather than silently discarded: that pass
+   went opaque because translucency pulled `--dark-text-mute` down toward
+   4.5:1 when the backdrop behind the sidebar was still the *old*, still-
+   light page content (D2-D4 hadn't run, so nothing dark existed to show
+   through the blur). That was a real bug at the time, but it was a
+   symptom of a missing background, not a reason translucency itself is
+   unsafe - fixed at the source this pass by giving the content column an
+   actual dark canvas to sit on (`.dark-canvas`, above), which makes
+   `.dark-chrome`'s blur reveal true black/dark-purple instead of light
+   grey. Once that's true, translucency is exactly as safe as
+   `.dark-panel-glass` already is, so this class now shares its literal
+   background formula (`--dark-glass-surface`) instead of inventing a
+   second, chrome-specific ratio.
+
+   The real payoff of this class isn't its own handful of properties -
+   it's the custom-property re-scoping below. Every existing chrome child
+   already styled with a *generic* token class (`AppSidebar`'s nav links in
+   `text-text`/`text-text-mute`, `SidebarOrgSwitcher`'s `bg-surface-sunken`
+   skeleton, `Wordmark`'s `text-text-dim` "AI" suffix, the credit balance
+   pill, the escalation badge's inline `var(--lamp-flare)`) inherits the
+   overridden value the instant it renders inside this element - CSS
+   custom properties cascade through the DOM regardless of which component
+   drew which node, exactly like `--font-sans` already flips for all of
+   `/app/*` inside `.app-font-scope`, just scoped to one chrome element
+   instead of the whole dashboard. `DropdownMenu`/`Popover`/`Dialog` are
+   unaffected by *this specific* class either way, since Radix portals
+   their content to `document.body`, outside this element's DOM subtree -
+   but they are no longer left light as a result. DESIGN_NOTES §14's "leave
+   popover chrome alone" call is superseded (§17): they now portal inside
+   `.app-font-scope` instead and pick up `.dark-overlay`, below.
+   `Tooltip`/`Select` are the one genuine exception - shared with a
+   light-themed marketing page, so they stay conditional or untouched
+   rather than always dark (see `.dark-overlay`'s own comment).
+
+   Contrast numbers, method, and the worst-case composite this is checked
+   against all live on `.app-font-scope`'s own citation now (top of this
+   file) - `.dark-chrome` and `.dark-panel-glass` share the identical
+   background token, so a second, separate citation here would just be a
+   second place for the two to drift out of sync. */
+/* `.dark-overlay` - DropdownMenu/Popover/Dialog content, portaled by Radix.
+   Reverses this file's former §14/§15 "leave popover chrome alone" call
+   (DESIGN_NOTES.md §17) - the user asked explicitly, twice, for these
+   surfaces to read as part of the same dark, purple-tinted product as
+   everything else, not a shared, unthemed exception. Requires the portal to
+   actually mount inside `.app-font-scope` first (`usePortalContainer()`,
+   `lib/hooks/use-portal-container.ts`) - CSS custom properties only
+   inherit through the real DOM tree, and Radix portals to `document.body`
+   by default, a *sibling* of `.app-font-scope`, not a descendant of it.
+   Every one of these components is exclusively used inside `/app`
+   (confirmed - `(auth)`/`(marketing)` never import DropdownMenu, Popover,
+   or Dialog outright; `Select` is the one exception, shared with a
+   marketing form, so it applies this class conditionally rather than
+   unconditionally - see its own component for the check).
+
+   The `background` is `.dark-canvas`'s own radial-gradient formula, not a
+   flat fill or `.dark-chrome`'s glass - the ask was specifically "the same
+   purple gradient as the main content", and a popover is exactly the kind
+   of small, opaque-appropriate surface that gradient already suits (unlike
+   `.dark-chrome`, which is deliberately neutral so nothing behind its own
+   translucency reads as coloured chrome). Percentages are relative to each
+   element's own box, so a small popover gets a tighter, more concentrated
+   version of the same glow rather than a literal crop of the page-wide one -
+   same recipe, correctly proportioned for a smaller surface. */
+.dark-overlay {
+  background: radial-gradient(
+    170% 150% at 50% -10%,
+    color-mix(in oklab, var(--dark-bg-glow) 26%, var(--dark-bg)),
+    var(--dark-bg) 90%
+  );
+  --text: var(--dark-text);
+  --text-dim: var(--dark-text-dim);
+  --text-mute: var(--dark-text-mute);
+  --rule: var(--dark-rule);
+  --rule-strong: var(--dark-rule-strong);
+  --surface-raised: var(--dark-surface);
+  --surface-hover: var(--dark-surface-hover);
+  --surface-sunken: var(--dark-surface-sunken);
+  --lamp-off: var(--dark-lamp-off);
+  --lamp-ice: var(--dark-lamp-ice);
+  --lamp-brass: var(--dark-lamp-brass);
+  --lamp-jade: var(--dark-lamp-jade);
+  --lamp-flare: var(--dark-lamp-flare);
+  --lamp-off-text: var(--dark-lamp-off-text);
+  --lamp-ice-text: var(--dark-lamp-ice-text);
+  --lamp-brass-text: var(--dark-lamp-brass-text);
+  --lamp-jade-text: var(--dark-lamp-jade-text);
+  --lamp-flare-text: var(--dark-lamp-flare-text);
+}
+
+/* `.toast-dark-overlay` - Toast, unconditionally, on every page (§18 follow-up).
+   Every other portaled surface (`.dark-overlay`, above) only goes dark when its
+   portal actually lands inside `.app-font-scope`, since `--dark-*` is
+   deliberately declared only there (see that class's own citation: "unset, not
+   wrong, for marketing and auth, which never render inside it" - a considered
+   boundary, not an oversight). Toast breaks that pattern on purpose: the user
+   asked for it to read as CallFlow's own notification chrome on *every* page,
+   including the light accept-invite screen, which never renders
+   `.app-font-scope` at all - there is nothing to inherit `--dark-*` from there,
+   conditionally or otherwise. So this hardcodes the same literal values
+   `.app-font-scope` defines, rather than referencing them - the one deliberate
+   exception to "reference the token, never the hex" in this file, and it's
+   here specifically because the whole point is to *not* depend on where the
+   toast is mounted. If the dark palette changes, update both places. */
+.toast-dark-overlay {
+  background: radial-gradient(
+    170% 150% at 50% -10%,
+    color-mix(in oklab, #9333ea 26%, #050505),
+    #050505 90%
+  );
+  border-color: color-mix(in oklab, #ffffff 18%, transparent);
+  --text: #f1f5f9;
+  --text-dim: #cbd5e1;
+  --text-mute: #94a3b8;
+  --rule: color-mix(in oklab, #ffffff 10%, transparent);
+  --rule-strong: color-mix(in oklab, #ffffff 18%, transparent);
+  --surface-hover: color-mix(in oklab, #ffffff 8%, transparent);
+  --lamp-ice: #5883b7;
+  --lamp-brass: #a47f47;
+  --lamp-jade: #4b9073;
+  --lamp-flare: #c15f4d;
+  --lamp-ice-text: #8db4e5;
+  --lamp-brass-text: #ccab7c;
+  --lamp-jade-text: #88bfa6;
+  --lamp-flare-text: #e49282;
+}
+
+/* §18 (DESIGN_NOTES.md): opaque purple gradient, not translucent glass - a
+   second reversal of this class's own background, and worth being explicit
+   about which "opaque vs translucent" era this is. `.dark-canvas`'s exact
+   gradient formula (`color-mix(in oklab, var(--dark-bg-glow) 26%, ...)`),
+   same reasoning as `.dark-overlay` (§17): the user asked directly for the
+   sidebar/tab-bar/topbar - "the taskbar" - to read as the same purple,
+   gradient-lit product as the content column and the popovers, not a
+   neutral black next to it. `backdrop-filter` and its two fallback blocks
+   (`@supports not (backdrop-filter)`, `prefers-reduced-transparency`) are
+   gone with the translucency they existed to manage - an opaque background
+   has nothing left to blur, and a feature-detection fallback for a feature
+   no longer in use is dead code, not defensive code. */
+.dark-chrome {
+  background: radial-gradient(
+    170% 150% at 50% -10%,
+    color-mix(in oklab, var(--dark-bg-glow) 26%, var(--dark-bg)),
+    var(--dark-bg) 90%
+  );
+  border-color: var(--dark-glass-border);
+
+  --text: var(--dark-text);
+  --text-dim: var(--dark-text-dim);
+  --text-mute: var(--dark-text-mute);
+  --rule: var(--dark-rule);
+  --rule-strong: var(--dark-rule-strong);
+  --surface-raised: var(--dark-surface);
+  --surface-hover: var(--dark-surface-hover);
+  --surface-sunken: var(--dark-surface-sunken);
+
+  /* Same `.dark-panel-glass`-gap fix, for chrome children - see that class's
+     own comment for the D3/D4 finding this closes. A `Button` rendered
+     inside the sidebar/tab bar (`.dark-chrome`) needs this exactly as much
+     as one rendered inside a card. */
+  --glass-surface: var(--dark-glass-surface);
+  --glass-border: var(--dark-glass-border);
+  --glass-blur: var(--dark-glass-blur);
+
+  /* Same `--accent` gap-close as `.dark-canvas` (see its own comment for the
+     live "Run" button bug this fixes) - a primary button rendered in the
+     sidebar/chrome or inside any card needs this exactly as much. */
+  --accent: var(--dark-accent);
+  --accent-text: var(--dark-text);
+  --accent-wash: var(--dark-bg-glow);
+
+  --lamp-off: var(--dark-lamp-off);
+  --lamp-ice: var(--dark-lamp-ice);
+  --lamp-brass: var(--dark-lamp-brass);
+  --lamp-jade: var(--dark-lamp-jade);
+  --lamp-flare: var(--dark-lamp-flare);
+  --lamp-off-text: var(--dark-lamp-off-text);
+  --lamp-ice-text: var(--dark-lamp-ice-text);
+  --lamp-brass-text: var(--dark-lamp-brass-text);
+  --lamp-jade-text: var(--dark-lamp-jade-text);
+  --lamp-flare-text: var(--dark-lamp-flare-text);
+}
+
+@supports not (backdrop-filter: blur(1px)) {
+  .dark-chrome {
+    background: var(--dark-surface);
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .dark-chrome {
+    background: var(--dark-surface);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
 }
 
 /* --------------------------------------------------------------------------
