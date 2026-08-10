@@ -210,7 +210,21 @@ jobs:
               --only "callflow-api$SUFFIX" --update-env
 
             cd apps/web
-            NEXT_PUBLIC_API_URL="$PUBLIC_URL" npm ci
+
+            # `npm ci` deletes node_modules and reinstalls ~600 packages, which
+            # is most of this job's runtime and pure waste on the deploys where
+            # no dependency moved. Keyed on the lockfile's hash rather than its
+            # mtime, because a fresh checkout rewrites mtimes on every deploy.
+            # ci, not install, when it does run - the lockfile stays authoritative.
+            LOCK_HASH=$(sha256sum package-lock.json | cut -d' ' -f1)
+            if [ ! -d node_modules ] || [ "$(cat .lock-hash 2>/dev/null)" != "$LOCK_HASH" ]; then
+              echo "==> dependencies changed, running npm ci"
+              npm ci
+              echo "$LOCK_HASH" > .lock-hash
+            else
+              echo "==> dependencies unchanged, skipping npm ci"
+            fi
+
             NEXT_PUBLIC_API_URL="$PUBLIC_URL" npm run build
             pm2 startOrRestart "$APP_DIR/ecosystem.config.js" \
               --only "callflow-web$SUFFIX" --update-env

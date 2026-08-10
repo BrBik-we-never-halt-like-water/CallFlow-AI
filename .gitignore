@@ -40,3 +40,6 @@ apps/web/AGENTS.md
 
 # subagent-driven-development scratch (plans, ledgers, task briefs/reports)
 .superpowers/
+
+# Deploy-side marker: the package-lock hash the VM last ran npm ci against.
+apps/web/.lock-hash
