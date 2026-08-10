@@ -87,41 +87,68 @@
   --lamp-jade-text: #1c6349;
   --lamp-flare-text: #9d2c1a;
 
-  /* ---- Forest - the Lush Forest palette (round-3 dashboard-polish) ------
-     Four raw swatches, `/app/*`-only by way of everywhere they're actually
-     consumed (below). `--accent`/`--accent-text`/`--accent-wash` are built
-     from three of the four exactly as before, just a new hue: `--forest-
-     deep` for the surface, `--forest-ink` for text/icons (the text-safe
-     variant - same job as the lamp `-text` tokens), `--forest-mint` for the
-     wash. `--forest-mid` has no solid-fill role of its own - 2.35:1 against
-     white, 2.14:1 against `--surface`, short of both the 3:1 non-text and
-     4.5:1 text bars - so it never sits under a label or icon. It appears
-     once, as the /app-only primary-button pulse ring (`.app-font-scope
-     .btn-pulse`, below), which is translucent motion with no text on it.
+  /* ---- Primary - "Signal" indigo ----------------------------------------
+     CAL-4's action colour, restored as the product's one primary. It was
+     designed on the CAL-4 branch and then lost in the merge that brought
+     `dev` onto it (`f30f5b9`), which kept this file's older monochrome token
+     layer and appended only CAL-4's marketing surfaces - leaving a bare
+     `--primary` at the bottom of the file with no siblings, no `@theme`
+     registration, and only two `.card-feature` lines consuming it. The rest
+     of the product fell back to a near-black CTA on marketing and the Lush
+     Forest green here. This block is that family put back properly.
 
-     Worth flagging for whoever picks this up next: `--forest-deep`/`--forest-
-     mid` sit only ~21° of hue away from `--lamp-jade` (both read as "green"
-     at a glance) - closer than the indigo this replaces, which was chosen
-     specifically to sit far from every lamp hue. `--accent` is never used
-     inside `Lamp`/`LampBadge`/`DonutChart`/`OutcomeCount` (verified - the
-     letter of the rule below holds), but the family resemblance to jade is a
-     real one, not just a hue-wheel technicality, and is worth a second look
-     before this palette extends any further. */
-  --forest-deep: #2e6f40;
-  --forest-mint: #cfffdc;
-  --forest-mid: #68ba7f;
-  --forest-ink: #253d2c;
+     Every ratio below is computed (WCAG relative luminance / OKLab), not
+     eyeballed - same bar as `--text-mute` and the dark scope's own citations:
+
+       --primary        #3b2fd9  white on it  8.09:1   OKLCH L0.46 C0.242 H274
+       --primary-hover  #3226b8  white on it  9.98:1
+       --primary-active #2a1f9e  white on it 11.74:1
+       --primary-ink    #221a6b  13.36:1 on --surface (the text/icon tier)
+
+     Hue distance from every lamp, which is the actual constraint (CLAUDE.md
+     §4 #10 - lamps are the only colour that means something): jade 110°,
+     brass 162°, flare 117°, ice 20°. The forest green it replaces sat 14°
+     from jade, which the previous round's own comment flagged as "a real
+     family resemblance, worth a second look before this palette extends any
+     further" - this resolves that. Ice is the near neighbour at 20°, but ice
+     is a lamp *dot* on a monochrome panel, never a filled button, so the two
+     never appear as the same kind of mark.
+
+     `--primary-mid` is the pulse-ring colour only (`.app-font-scope
+     .btn-pulse`, below): 3.92:1 on white, short of the 4.5:1 text bar, so it
+     never sits under a label or icon - a translucent, text-free ring is the
+     one place that doesn't matter. It replaces `--forest-mid`, which had the
+     same single role at 2.35:1. */
+  --primary: #3b2fd9;
+  --primary-hover: #3226b8;
+  --primary-active: #2a1f9e;
+  --primary-on: #ffffff;
+  --primary-ink: #221a6b;
+  --primary-mid: #7a6ff0;
+  /* The tinted-canvas colour. Paler than the mint it replaces (`#cfffdc`)
+     because indigo is a low-luminance hue - a tint of it darkens far faster
+     than a tint of mint, and `.canvas-tint` renders this undiluted at the
+     gradient's 0% stop, where `--text-mute` can land directly on it with no
+     glass in between. At `#f0effd` that worst case is 4.57:1, clearing the
+     4.5:1 AA floor (mint managed 4.70:1); through the usual glass composite
+     it is 4.92:1. Going any deeper is what would break it - `#eceafc` is
+     already 4.39:1, under the bar. */
+  --primary-wash: #f0effd;
+  --primary-edge: color-mix(in oklab, var(--primary) 28%, transparent);
 
   /* ---- Accent - decorative only, never state ----------------------------
-     This is the product's only other colour: dashboard chart accents, one
-     CTA card, the dashboard's primary-button family (`.app-font-scope
-     .btn-glass-primary`, below), quiet visual warmth - never a `Lamp`,
-     `LampBadge`, `DonutChart` segment, or anything else that represents
-     call/run/escalation state. If a component means something about a call,
-     it uses a lamp colour or none at all; if it doesn't, it may use this one. */
-  --accent: var(--forest-deep);
-  --accent-text: var(--forest-ink); /* ~10.7:1 on --surface, for text/icons */
-  --accent-wash: var(--forest-mint); /* the tinted-canvas colour */
+     Now an alias of the primary rather than a second hue. One action colour
+     and one decorative colour being the same thing is the point: dashboard
+     chart accents, one CTA card, the tinted page canvas (`.canvas-tint`),
+     the header frost (`.header-glass`), quiet visual warmth - never a
+     `Lamp`, `LampBadge`, `DonutChart` segment, or anything else that
+     represents call/run/escalation state. If a component means something
+     about a call, it uses a lamp colour or none at all; if it doesn't, it
+     may use this one. Kept as its own token names so every existing
+     `--accent*` consumer keeps resolving unchanged. */
+  --accent: var(--primary);
+  --accent-text: var(--primary-ink); /* 13.36:1 on --surface, for text/icons */
+  --accent-wash: var(--primary-wash); /* the tinted-canvas colour */
 
   /* ---- Type scale (fluid) ------------------------------------------------ */
   --t-display-xl: clamp(2.5rem, 5.6vw, 4.5rem);
@@ -214,10 +241,19 @@
   --color-lamp-jade-text: var(--lamp-jade-text);
   --color-lamp-flare-text: var(--lamp-flare-text);
 
-  --color-forest-deep: var(--forest-deep);
-  --color-forest-mint: var(--forest-mint);
-  --color-forest-mid: var(--forest-mid);
-  --color-forest-ink: var(--forest-ink);
+  /* The primary family, registered so `bg-primary`, `text-primary-on`,
+     `hover:bg-primary-hover` etc. exist as utilities again. This bridge is
+     what the CAL-4 merge dropped: the components on that branch were written
+     against these utility names, and without the registration they compiled
+     to nothing at all rather than to a wrong colour. */
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-active: var(--primary-active);
+  --color-primary-on: var(--primary-on);
+  --color-primary-ink: var(--primary-ink);
+  --color-primary-mid: var(--primary-mid);
+  --color-primary-wash: var(--primary-wash);
+  --color-primary-edge: var(--primary-edge);
 
   --color-accent: var(--accent);
   --color-accent-text: var(--accent-text);
@@ -373,6 +409,17 @@ body {
      into unambiguous purple/violet territory) - both computed, not
      eyeballed, so "still kind of blue" isn't a guess either way.
 
+     CAL-4 restore: both `--dark-bg-glow` and `--dark-accent` are back on
+     indigo (`#4f46e5`, hue ~277deg), which deliberately reverses the move
+     to purple described in the paragraph above. That move was made when the
+     brief was "not blue"; the brief is now the opposite - the product has
+     one primary again and it is CAL-4's Signal indigo, so a purple dark
+     pivot would be the only surface in the app not speaking it. The
+     "unified glow and accent to a single hue" decision below is kept
+     exactly as it was, just at a different hue: they are still one colour,
+     not two. Contrast is re-verified for the new value rather than assumed
+     from the old one - see the recomputed numbers at the end of this note.
+
      `--dark-accent` started as a cyan chosen to sit deliberately far from
      every lamp hue (CLAUDE.md §4 #10) - correct in principle, but a real
      rendered screenshot showed it reading as green in practice (small
@@ -428,9 +475,32 @@ body {
      the wrong pairing) and had to be compensated for with dark text
      instead (see `apps/web/app/(app)/app/page.tsx`'s `PRIMARY_CTA_STYLE`,
      now corrected to match - purple is low-luminance, so the correct
-     pairing inverted along with the color). */
+     pairing inverted along with the color).
+
+     Recomputed for the indigo restore, same method, same worst cases:
+
+     `--dark-accent` `#4f46e5` is a *lighter* indigo than the light theme's
+     `--primary` `#3b2fd9`, and that gap is load-bearing, not drift. A solid
+     button has to clear two bars at once, and they pull in opposite
+     directions: white label text on the fill (>=4.5:1) and the fill itself
+     against the near-black page (>=3:1, the non-text bar - a button nobody
+     can find is not a button). `#3b2fd9` dropped straight in would be
+     8.09:1 for the label but only 2.52:1 against `--dark-bg`, i.e. it would
+     sink into the page. `#4f46e5` is 6.29:1 and 3.24:1 - both clear, which
+     is the whole reason the dark scope keeps its own token instead of
+     aliasing `--primary` the way `--accent` now does.
+
+     `--dark-bg-glow` `#4f46e5` re-run through the same chain as the purple
+     above: `.dark-canvas`'s peak `color-mix(in oklab, --dark-bg-glow 26%,
+     --dark-bg)` renders `#141635` (was `#231436`), and the chrome composite
+     over it `#0f1122` (was `#191024`). Against that composite `--dark-text`
+     is 17.06:1, `--dark-text-dim` 12.6:1, `--dark-text-mute` 7.29:1, and
+     the escalation dot `--dark-lamp-flare` 4.46:1 - every one a shade
+     *better* than the purple it replaces (16.86 / 12.4 / 7.20 / 4.41),
+     because indigo is marginally darker than violet at the same mix ratio.
+     Nothing that cleared a bar before stops clearing it now. */
   --dark-bg: #050505;
-  --dark-bg-glow: #9333ea;
+  --dark-bg-glow: #4f46e5;
   --dark-surface: #0a0a0a;
   --dark-glass-surface: color-mix(in oklab, var(--dark-surface) 42%, transparent);
   --dark-glass-border: color-mix(in oklab, #ffffff 14%, transparent);
@@ -452,7 +522,11 @@ body {
   --dark-text-dim: #cbd5e1;
   --dark-text-mute: #94a3b8;
 
-  --dark-accent: #9333ea;
+  /* Same value as `--dark-bg-glow` above - one hue for the interactive accent
+     and the ambient decoration, deliberately. Lighter than the light theme's
+     `--primary` so it holds both the label bar and the against-the-page bar
+     at once; see the recomputed citation above. */
+  --dark-accent: #4f46e5;
 
   /* Desaturated/lightened for a dark surface - not the light `--lamp-*`
      hexes as-is. Same job as `--lamp-*-text` above: the dot stays the muted
@@ -530,8 +604,14 @@ pre {
    Focus. Visible focus is a hard requirement.
    -------------------------------------------------------------------------- */
 
+/* The focus ring is the primary, not ink. A 2px indigo outline against
+   `--surface` is 7.35:1 (8.09:1 on `--surface-raised`) - well past the 3:1
+   the WCAG focus-indicator
+   guideline asks of a non-text mark - and being a colour the page uses for
+   nothing else, it never gets mistaken for a border that was already there,
+   which a `--text`-coloured ring on a dark control genuinely could be. */
 :focus-visible {
-  outline: 2px solid var(--text);
+  outline: 2px solid var(--primary);
   outline-offset: 2px;
   border-radius: inherit;
 }
@@ -566,8 +646,8 @@ button[data-menu][data-state='open']:focus-visible {
 }
 
 ::selection {
-  background: var(--surface-inverse);
-  color: var(--text-inverse);
+  background: var(--primary);
+  color: var(--primary-on);
 }
 
 /* --------------------------------------------------------------------------
@@ -743,15 +823,18 @@ button[data-menu][data-state='open']:focus-visible {
    (`50% --surface-raised, 50% --accent-wash`, then the same 66%-over-
    transparent alpha every other glass surface already uses) rather than by
    raising the alpha, so the header keeps the same blur/opacity recipe as
-   `.panel-glass` - it just frosts a pale mint instead of plain white. Kept
-   deliberately pale (mixing in `--forest-mid` for a stronger green was
-   tried and rejected - it pushed `--text-mute`, used for inactive nav
-   links, down toward ~4.3–4.5:1, too close to the 4.5:1 AA floor for
-   functional nav text). Verified contrast, computed rather than eyeballed,
-   worst-case backdrop (`--surface-sunken` scrolled behind the blur):
-   `--text` ~17:1, `--text-dim` (Wordmark's "AI" suffix) ~7.2:1, `--text-mute`
-   (inactive nav links, credit balance) ~4.8:1 - all clear 4.5:1 with real
-   margin. */
+   `.panel-glass` - it just frosts a pale tint instead of plain white. Kept
+   deliberately pale (under the Lush Forest palette, mixing in `--forest-mid`
+   for a stronger green was tried and rejected - it pushed `--text-mute`,
+   used for inactive nav links, down toward ~4.3–4.5:1, too close to the
+   4.5:1 AA floor for functional nav text). Verified contrast, computed
+   rather than eyeballed, worst-case backdrop (`--surface-sunken` scrolled
+   behind the blur). Under the mint wash: `--text` ~17.2:1, `--text-dim`
+   (Wordmark's "AI" suffix) ~7.2:1, `--text-mute` (inactive nav links, credit
+   balance) ~4.8:1. Re-run for the CAL-4 indigo wash this now frosts:
+   16.92:1 / 7.12:1 / 4.73:1 - a few hundredths tighter, since `--primary-
+   wash` is a fractionally different lightness from `--forest-mint`, and all
+   three still clear 4.5:1 with real margin. */
 .header-glass {
   background: color-mix(
     in oklab,
@@ -787,22 +870,40 @@ button[data-menu][data-state='open']:focus-visible {
 
 /* Buttons get the same material as Panel, so one sitting on a glass panel
    doesn't read as a different substance. `-primary` tints toward
-   `--surface-inverse` (the monochrome CTA colour, CLAUDE.md §4 #10) rather
-   than `--glass-surface`, so the solid action still stays the darkest,
-   most committed-looking element on the page - it just now catches the
-   same blur as everything else. `-secondary` reuses `--glass-surface`
-   directly: it used to be fully transparent (`bg-transparent`), which on
-   top of an already-translucent Panel let two layers of "nothing" stack
-   into no visible button at all.
+   `--primary` (CAL-4's Signal indigo) rather than `--glass-surface`, so the
+   solid action stays the most committed-looking element on the page - it
+   just now catches the same blur as everything else. It previously tinted
+   toward `--surface-inverse`, which is what made every marketing CTA read
+   as a plain near-black slab; the indigo is the colour CAL-4 designed and
+   `--surface-inverse` goes back to being only an inverted *surface*.
+   White label text on the solid fill is 8.09:1 (computed, see `--primary`),
+   so `Button`'s own `text-text-inverse` default is the correct pairing.
+   `-secondary` reuses `--glass-surface` directly: it used to be fully
+   transparent (`bg-transparent`), which on top of an already-translucent
+   Panel let two layers of "nothing" stack into no visible button at all.
    Hover/active are written here rather than as Tailwind `hover:`/`active:`
    utilities on the component, for the same reason `.panel-glass-interactive`
    is: this file is unlayered, so a layered utility touching `background`
    would never be able to override it (see the note above `.panel-glass-
    interactive`). */
 .btn-glass-primary {
-  background: color-mix(in oklab, var(--surface-inverse) 88%, transparent);
+  background: color-mix(in oklab, var(--primary) 88%, transparent);
   backdrop-filter: var(--glass-blur);
   -webkit-backdrop-filter: var(--glass-blur);
+}
+
+/* Darkening through the `-hover`/`-active` steps rather than the opacity
+   fade the component used to carry: on a translucent fill, dropping opacity
+   washes the button toward whatever is behind it instead of deepening it,
+   which reads as the button going dim rather than being pressed. Both steps
+   raise white-label contrast (8.09:1 -> 9.98:1 -> 11.74:1), so the hover
+   state can never be the one that fails. */
+.btn-glass-primary:hover {
+  background: color-mix(in oklab, var(--primary-hover) 92%, transparent);
+}
+
+.btn-glass-primary:active {
+  background: var(--primary-active);
 }
 
 .btn-glass-secondary {
@@ -822,7 +923,7 @@ button[data-menu][data-state='open']:focus-visible {
 
 @supports not (backdrop-filter: blur(1px)) {
   .btn-glass-primary {
-    background: var(--surface-inverse);
+    background: var(--primary);
   }
 
   .btn-glass-secondary {
@@ -832,7 +933,7 @@ button[data-menu][data-state='open']:focus-visible {
 
 @media (prefers-reduced-transparency: reduce) {
   .btn-glass-primary {
-    background: var(--surface-inverse);
+    background: var(--primary);
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
   }
@@ -844,35 +945,14 @@ button[data-menu][data-state='open']:focus-visible {
   }
 }
 
-/* The dashboard's primary CTA, scoped to `/app/*` only via `.app-font-scope`
-   (the same wrapper `app/(app)/app/layout.tsx` uses to scope Ubuntu) - the
-   round-3 dashboard-polish approval to extend `--accent` into "primary
-   buttons/CTAs ... within /app/*" (DESIGN_NOTES §2). `Button` is one shared
-   component rendered on marketing and auth too (DESIGN_NOTES §13: the glass
-   treatment is product-wide), so the override lives here as a descendant
-   selector rather than in `button.tsx` - only a `.btn-glass-primary` nested
-   inside `.app-font-scope` picks it up via ordinary specificity (two classes
-   beat one); marketing and auth keep the monochrome `--surface-inverse` CTA
-   above, untouched. `92%` rather than the `88%` used above: `--accent` is
-   lighter than `--surface-inverse`, so a higher opacity is needed to hold
-   white button text at 4.5:1+ against the button's own composited colour
-   (verified ~5.1:1 against both the `--surface` and `.canvas-tint`-wash
-   backdrops an /app button actually sits on - see design-v2-report.md). */
-.app-font-scope .btn-glass-primary {
-  background: color-mix(in oklab, var(--accent) 92%, transparent);
-}
-
-@supports not (backdrop-filter: blur(1px)) {
-  .app-font-scope .btn-glass-primary {
-    background: var(--accent);
-  }
-}
-
-@media (prefers-reduced-transparency: reduce) {
-  .app-font-scope .btn-glass-primary {
-    background: var(--accent);
-  }
-}
+/* The `/app/*`-only primary-CTA override that used to live here is gone. It
+   existed to give the dashboard a different primary from marketing's - forest
+   green over near-black - by re-tinting `.btn-glass-primary` under
+   `.app-font-scope`. With `--accent` now an alias of `--primary` both sides
+   resolve to the same indigo, so the override was setting the colour it was
+   already getting, at a different opacity (92% vs 88%) for no reason other
+   than the luminance gap between the two old colours. One primary, one rule -
+   the divergence is the thing being removed, not a casualty of removing it. */
 
 /* Hairlines that fade at both ends - the flow-language replacement for a hard
    full-width / full-height divider. `seam-x` is horizontal, `seam-y` vertical;
@@ -1504,10 +1584,21 @@ button[data-menu][data-state='open']:focus-visible {
 }
 
 /* Primary CTA: a soft pulse ring echoes outward on hover, like a voice emitting
-   a pulse. Off under prefers-reduced-motion. */
+   a pulse. Off under prefers-reduced-motion.
+
+   Tinted with `--primary-mid`, so the ring leaves the button in the button's
+   own colour family rather than as a plain-ink flash. `--primary-mid` is
+   unused as a solid fill anywhere else (see the note over `--primary-mid`
+   near the top of this file - 3.92:1, under the text bar) and a low-opacity,
+   text-free ring is exactly the one place that doesn't matter.
+
+   There used to be two of these: this one tinted with `--text` for marketing,
+   and a `btn-pulse-forest` scoped to `.app-font-scope` for the dashboard's
+   green CTA. That split only existed because the two surfaces had different
+   primaries. They don't any more, so neither does the ring. */
 @keyframes btn-pulse {
   0% {
-    box-shadow: 0 0 0 0 color-mix(in oklab, var(--text) 22%, transparent);
+    box-shadow: 0 0 0 0 color-mix(in oklab, var(--primary-mid) 45%, transparent);
     opacity: 0.55;
   }
   100% {
@@ -1527,29 +1618,6 @@ button[data-menu][data-state='open']:focus-visible {
 
 .btn-pulse:hover::after {
   animation: btn-pulse 1.3s var(--ease-out) infinite;
-}
-
-/* The dashboard-only variant of the ring above: tints toward `--forest-mid`
-   instead of `--text`, so hovering the dashboard's now-green primary CTA
-   sends out a ring in the same colour family rather than a plain-ink flash.
-   `--forest-mid` is otherwise unused as a solid fill (see the note over
-   `--forest-mid` near the top of this file) - a low-opacity, text-free ring
-   is exactly the one place its weak contrast doesn't matter. Only
-   `.app-font-scope` descendants get this; marketing/auth keep `btn-pulse`
-   as-is, via the same specificity trick as `.btn-glass-primary` above. */
-@keyframes btn-pulse-forest {
-  0% {
-    box-shadow: 0 0 0 0 color-mix(in oklab, var(--forest-mid) 45%, transparent);
-    opacity: 0.55;
-  }
-  100% {
-    box-shadow: 0 0 0 12px transparent;
-    opacity: 0;
-  }
-}
-
-.app-font-scope .btn-pulse:hover::after {
-  animation-name: btn-pulse-forest;
 }
 
 /* The 1–2 bars at the waveform's leading edge get a small live flutter as the
@@ -1792,21 +1860,27 @@ button[data-menu][data-state='open']:focus-visible {
 }
 
 /* ==========================================================================
-   CAL-4 "Signal" surfaces, for the marketing site only.
+   CAL-4 "Signal" surfaces, for the marketing site.
 
-   The merge that brought the design-and-motion overhaul onto this branch kept
-   the dashboard on the existing token layer and took CAL-4 for marketing. These
-   rules are what marketing needs and the token layer above does not already
-   provide - appended rather than merged into the blocks above, so nothing the
-   dashboard resolves against changes.
+   Originally appended here by the merge that brought `dev` onto the CAL-4
+   branch, which kept the dashboard on the older token layer and took CAL-4 for
+   marketing only - so these rules stayed bolted to the end of the file rather
+   than merged into the blocks above.
 
-   --primary is decorative and belongs to this surface set. It must never reach
-   Lamp, LampBadge, DonutChart or anything else that renders call state
-   (CLAUDE.md section 4.10).
+   `--primary` is no longer one of them. It was declared in the block below with
+   none of its siblings and no `@theme` registration, which is what left the
+   product with an indigo that only two `.card-feature` lines could see. It now
+   lives with the rest of its family at the top of this file, and because that
+   declaration is *earlier*, re-declaring it here would silently shadow it - so
+   it is gone from here rather than duplicated. What remains below is genuinely
+   marketing-only surface material.
+
+   The rule the old note carried still stands and now covers the whole primary
+   family: it is decorative, and it must never reach Lamp, LampBadge,
+   DonutChart or anything else that renders call state (CLAUDE.md section 4.10).
    ========================================================================== */
 
 :root {
-  --primary: #3b2fd9;
   --secondary: #f0e9de;
   --glass: color-mix(in oklab, var(--surface-raised) 72%, transparent);
   --glass-edge: color-mix(in oklab, var(--text) 8%, transparent);

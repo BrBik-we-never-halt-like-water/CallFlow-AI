@@ -45,9 +45,11 @@ for buttons, links, headings, hovers, or decoration.
 
 Consequences that look odd until you know the rule:
 
-- The primary CTA is **monochrome** (`--surface-inverse` on `--text-inverse`) everywhere
-  except `/app/*`, not brand-coloured - see the Lush Forest note below for the one
-  scoped exception.
+- The primary CTA is **`--primary`** (CAL-4's Signal indigo) everywhere, marketing and
+  `/app/*` alike. It is brand-coloured, and the rule above is what constrains *which*
+  colour: indigo sits 110° from jade, 162° from brass and 117° from flare, so a lit lamp
+  still reads as state rather than as brand. It was monochrome
+  (`--surface-inverse` on `--text-inverse`) off `/app/*` until 2026-08-10 - see §20.
 - JSON syntax highlighting in `CodeBlock` uses **weight and dimming, not hue** - a syntax
   palette would put arbitrary colour on screen.
 - Charts and sparklines are drawn in `--rule-strong`, with no series colours.
@@ -65,6 +67,13 @@ for it in reverse: `--accent` must never appear anywhere a lamp colour would be 
 honest choice instead (never inside `Lamp`, `LampBadge`, `DonutChart`, or `OutcomeCount`
 
 - verified as of the round below).
+
+> **Superseded by the CAL-4 indigo restore (see the section at the end of this file).**
+> The Lush Forest round described immediately below is history, not current state.
+> `--forest-*` no longer exists; `--accent`/`--accent-text`/`--accent-wash` are aliases
+> of `--primary`/`--primary-ink`/`--primary-wash`. The accepted-tradeoff discussion
+> below is retained because it is the reasoning that the restore acts on, not because
+> the palette it describes is still in the product.
 
 **Lush Forest (round-3 dashboard-polish, 2026-08-08).** `--accent` was originally an
 indigo, chosen specifically to sit far from every lamp hue. This round repointed it at
@@ -721,3 +730,85 @@ already-non-interactive `NeedsPersonRow` and needed no change), and the Organisa
 logo `ImageUpload`, which had no `disabled` prop at all before this - `ImageUpload` gained
 one, wired to `!canUpdate` (`org:update`), matching the org-name field beside it that was
 already gated.
+
+---
+
+## 20. CAL-4 "Signal" indigo, restored as the product's one primary (2026-08-10)
+
+**What was actually wrong.** Not a regression in the usual sense - the colour never
+arrived. CAL-4 designed a full indigo family (`--primary` `#3b2fd9` plus `-hover`,
+`-active`, `-on`, `-wash`, `-edge`), registered it in the Tailwind `@theme inline`
+bridge, and wired `Button variant="primary"`, `:focus-visible` and `::selection` to it.
+The merge that brought `dev` onto that branch (`f30f5b9`) resolved the `globals.css`
+conflict by keeping this file's older token layer wholesale and **appending** only
+CAL-4's marketing surface rules. What survived was a bare `--primary: #3b2fd9` at the
+bottom of the file with no siblings and no `@theme` registration, consumed by exactly
+two `.card-feature` lines. Everything else fell back: marketing CTAs to near-black
+(`--surface-inverse`), the light dashboard to Lush Forest green, the dark dashboard to
+`#9333ea` violet. Three primaries, none of them blue.
+
+**Decision.** One primary across the whole product, marketing and dashboard, light and
+dark - which is what CAL-4 was designed as. This deliberately reverses two earlier,
+separately-approved rounds: the Lush Forest repointing (§2 above) and the dark pivot's
+move from indigo to unambiguous violet. Both were made under briefs that no longer hold.
+
+**What changed:**
+
+- `--primary` family restored to `:root`, ahead of the appended marketing block, and the
+  duplicate declaration removed from that block - it sat *later* in the file and would
+  have silently shadowed the canonical token.
+- `--color-primary*` re-registered in `@theme inline`. This is the piece whose absence
+  meant `bg-primary` / `text-primary-on` compiled to nothing rather than to a wrong
+  colour - worth remembering as a failure mode, because it is invisible in review.
+- `--forest-*` deleted. `--accent` / `--accent-text` / `--accent-wash` are now aliases of
+  `--primary` / `--primary-ink` / `--primary-wash`, so every existing `--accent*`
+  consumer (charts, `NextMoveCard`, `.canvas-tint`, `.header-glass`) resolves unchanged.
+- `.btn-glass-primary` tints toward `--primary` instead of `--surface-inverse`, and gains
+  real `:hover`/`:active` steps through `--primary-hover`/`--primary-active`. `Button`
+  correspondingly drops `hover:opacity-90 active:opacity-80`: on a translucent fill an
+  opacity fade washes the button toward its backdrop rather than deepening it.
+- The `.app-font-scope .btn-glass-primary` override is **gone**, not retargeted. It only
+  ever existed to give the dashboard a different primary from marketing's; with one
+  primary it was setting the colour it already had. Likewise `btn-pulse-forest` folded
+  back into `btn-pulse`, now tinted `--primary-mid`.
+- `:focus-visible` and `::selection` moved from ink to `--primary`.
+- Dark pivot: `--dark-bg-glow` and `--dark-accent` both `#4f46e5`, keeping the previous
+  round's "one hue for the ambient glow and the interactive accent" decision intact at a
+  new hue. `--dark-accent` stays a separate token from `--primary` rather than aliasing
+  it, and the lightness gap is load-bearing - see below.
+
+**Why the dark accent is a lighter indigo than the light one.** A solid button on the
+near-black `/app` page has to clear two bars pulling in opposite directions: white label
+text on the fill (≥4.5:1) and the fill against the page (≥3:1, the non-text bar - a
+button nobody can find is not a button). `--primary` `#3b2fd9` dropped straight in gives
+8.09:1 for the label but 2.52:1 against `--dark-bg`; it sinks into the page. `#4f46e5`
+gives 6.29:1 and 3.24:1. That is the entire reason the dark scope keeps its own token.
+
+**Contrast, recomputed rather than inherited.** Every number below is computed (WCAG
+relative luminance, OKLab `color-mix` for composites), and the method was validated by
+reproducing this file's own previously-published figures before being trusted for new
+ones - the `#231436` canvas peak and the ~16.9:1 / ~7.2:1 / ~4.4:1 chrome composites
+come back out exactly.
+
+| | value | check |
+|---|---|---|
+| `--primary` | `#3b2fd9` | white on it 8.09:1; 7.35:1 as a focus ring on `--surface` |
+| `--primary-hover` / `-active` | `#3226b8` / `#2a1f9e` | 9.98:1 / 11.74:1 - hover can never be the state that fails |
+| `--primary-ink` (`--accent-text`) | `#221a6b` | 13.36:1 on `--surface` (forest ink was ~10.7:1) |
+| `--primary-wash` (`--accent-wash`) | `#f0effd` | `--text-mute` 4.57:1 undiluted at `.canvas-tint`'s 0% stop |
+| `--dark-accent` / `--dark-bg-glow` | `#4f46e5` | label 6.29:1, page 3.24:1; chrome composite text 17.06:1, dim 12.59:1, mute 7.29:1, flare dot 4.46:1 - each a shade better than the violet |
+
+The wash is noticeably paler than the mint it replaces, and that is forced, not a taste
+call: indigo is a low-luminance hue, so a tint of it darkens far faster than a tint of
+mint at the same visual weight. `.canvas-tint` renders it undiluted at the gradient's 0%
+stop where `--text-mute` can land directly on it, and `#eceafc` - only slightly deeper -
+is already 4.39:1, under the AA floor. `#f0effd` is where it can sit.
+
+**The tradeoff §2 flagged is now resolved.** That section recorded, as a known and
+accepted risk, that `--forest-deep`/`--forest-mid` sat ~21° from `--lamp-jade` and read
+as the same green at a glance - closer still under deuteranopia/protanopia - and that
+this was "sailing closer to the rule than the indigo it replaced ever did". Indigo sits
+110° from jade, 162° from brass and 117° from flare (recomputed here: the forest gap to
+jade measures 14° by this file's OKLab math, tighter than the 21° originally recorded).
+Ice is the nearest lamp at 20°, but ice is a dot on a monochrome panel and never a
+filled button, so the two never appear as the same kind of mark.
