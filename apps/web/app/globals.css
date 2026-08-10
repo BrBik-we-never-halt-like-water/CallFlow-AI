@@ -1923,8 +1923,11 @@ button[data-menu][data-state='open']:focus-visible {
    ========================================================================== */
 
 :root {
+  /* `--space-band` sat here too. It was the deck sections' vertical padding,
+     sized small because those sections were a full `100svh` and the padding only
+     had to keep content off the edges. They are content-height now and pad with
+     `--space-section` instead, which left this with no consumers. */
   --secondary: #f0e9de;
-  --space-band: clamp(36px, 4.5vw, 64px);
 }
 
 /* No borders.

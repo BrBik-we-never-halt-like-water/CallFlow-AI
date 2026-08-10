@@ -77,7 +77,7 @@ function ProofLamp({ color, label }: { color: string; label: string }) {
 
 export function CapabilityGrid() {
   return (
-    <section id="capabilities" className="mx-auto max-w-(--container-marketing) px-4 sm:px-6">
+    <section className="mx-auto max-w-(--container-marketing) px-4 sm:px-6">
       <Reveal>
         <SectionHeading
           title="An operations layer, not a robocall dialler."

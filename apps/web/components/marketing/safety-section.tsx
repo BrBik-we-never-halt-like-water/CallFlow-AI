@@ -59,7 +59,7 @@ const GUARDS_EXPLAINED: { icon: Icon; name: string; behaviour: string; detail: s
 
 export function SafetySection() {
   return (
-    <section id="safety" className="mx-auto max-w-(--container-marketing) px-4 sm:px-6">
+    <section className="mx-auto max-w-(--container-marketing) px-4 sm:px-6">
       <Reveal>
         <SectionHeading
           title="The guards fail closed."

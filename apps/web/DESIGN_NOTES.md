@@ -954,3 +954,38 @@ Two knock-ons worth knowing about:
 Every `DeckSection` is `min-h-[100svh]`, and full-page capture expands the viewport, so
 `svh` resolves against the whole document and each section inflates to page height. Take
 real viewport-sized shots and scroll between them.
+
+### Deck sections: anchor targets and the emptiness (2026-08-10)
+
+Two complaints, both about the home page, both measured before being changed.
+
+**"Clicking a Product-menu link doesn't centre the section."** The anchor names
+were split across two elements. The `DeckSection` carried a short internal id
+(`how`, `guards`) while the component *inside* it carried the public one
+(`how-it-works`, `safety`) - so `/#how-it-works` scrolled to the inner element,
+which sits ~320px below the section that does the centring. Measured landing:
+content centre 226px *above* the viewport centre, section top already scrolled
+past. `#capabilities` looked fine only by accident - that id existed **twice**
+(deck section and inner section), invalid HTML, and the deck section won on
+document order.
+
+Now: one id per section, on the `DeckSection`, using the public name. All three
+land identically - section top at 92px (the `scroll-padding-top` clearing the
+sticky header), content centre within 92-99px of the viewport centre. The inner
+`<section>` elements keep their semantics and lose their ids.
+
+If you add a section, put the anchor on the `DeckSection`, not on the component.
+The component does not know how tall the screen it is centred in is.
+
+**"Every section looks too empty."** It was not a feeling - sections were
+`min-h-[100svh]` while their content ran 435-573px, so on a 1080px viewport each
+one was **47-60% empty**. Height now comes from content plus `--space-section`
+top and bottom, with `min-h-[62svh]` as a floor that nothing currently reaches.
+Empty space is 32-40% and all of it is the padding, i.e. rhythm rather than dead
+air. The page is 5791px instead of 7504px for exactly the same content.
+
+The depth effect did not need the full height: `use-scroll-depth` compares each
+section's centre to the viewport's centre and normalises by viewport height, so
+it works at any section height. The real tradeoff is that a neighbouring section
+is now more often partly visible instead of a screen of nothing - which is the
+point. `--space-band` lost its only consumer in this change.

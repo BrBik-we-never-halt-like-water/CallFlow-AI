@@ -56,7 +56,7 @@ export function Steps() {
   }, [reduced]);
 
   return (
-    <section id="how-it-works" className="mx-auto max-w-(--container-marketing) px-4 sm:px-6">
+    <section className="mx-auto max-w-(--container-marketing) px-4 sm:px-6">
       <Reveal>
         <SectionHeading
           title="Watch one contact become a triaged result."

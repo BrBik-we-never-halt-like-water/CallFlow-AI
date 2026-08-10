@@ -40,7 +40,16 @@ export default function HomePage() {
           </div>
         </DeckSection>
 
-        <DeckSection id="how">
+        {/* The ids here are the *public* anchor names — the ones the header's
+            Product menu, the footer and any external link point at. They used to
+            be split: the deck section carried a short internal name (`how`,
+            `guards`) while the component inside it carried the public one
+            (`how-it-works`, `safety`), so `/#how-it-works` scrolled to the inner
+            element and landed 226px above where the deck section centres its
+            content — while `/#capabilities` happened to land correctly, because
+            that name existed *twice* and the deck section won on document order.
+            One id per section, on the section that owns the screen. */}
+        <DeckSection id="how-it-works">
           <Steps />
         </DeckSection>
 
@@ -52,7 +61,7 @@ export default function HomePage() {
           <VerticalStrip />
         </DeckSection>
 
-        <DeckSection id="guards" ground="sand">
+        <DeckSection id="safety" ground="sand">
           <SafetySection />
         </DeckSection>
       </SectionDeck>
