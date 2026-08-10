@@ -150,14 +150,31 @@
   --accent-text: var(--primary-ink); /* 13.36:1 on --surface, for text/icons */
   --accent-wash: var(--primary-wash); /* the tinted-canvas colour */
 
-  /* ---- Type scale (fluid) ------------------------------------------------ */
-  --t-display-xl: clamp(2.5rem, 5.6vw, 4.5rem);
-  --t-display-l: clamp(2rem, 4.2vw, 3.25rem);
-  --t-h2: clamp(1.625rem, 3vw, 2.375rem);
-  --t-h3: 1.375rem;
-  --t-h4: 1.0625rem;
-  --t-body-l: 1.125rem;
-  --t-body: 1rem;
+  /* ---- Type scale - fluid at every step ---------------------------------
+     CAL-4's scale, restored. Like `--primary`, this was designed on that
+     branch and lost in the same merge, which kept the older, smaller scale
+     here - which is why the marketing sections read as undersized on a large
+     display: not one heading being wrong, the whole ramp sitting a step low.
+
+     The structural fix is that **every** step scales now. Previously `--t-h3`
+     and `--t-h4` were frozen at a single rem value while the display sizes
+     scaled with the viewport, so between tablet and laptop the display sizes
+     grew away from the headings underneath them and the hierarchy compressed:
+     an h3 next to a 4.5rem display reads as body copy. A frozen step in an
+     otherwise fluid ramp is the bug; the larger numbers are the symptom.
+
+     Body sizes go up a notch too (`--t-body` 1rem -> 1.0625rem, `--t-body-l`
+     1.125 -> 1.1875), because the headings growing without the paragraphs
+     following just moves the imbalance down a level. `--t-small` and below are
+     deliberately unchanged: those are metadata, data cells and labels, where
+     16px is already the ceiling before a table stops reading as a table. */
+  --t-display-xl: clamp(3rem, 6.4vw, 5.25rem);
+  --t-display-l: clamp(2.5rem, 4.6vw, 3.75rem);
+  --t-h2: clamp(2rem, 3.4vw, 3rem);
+  --t-h3: clamp(1.375rem, 1.9vw, 1.75rem);
+  --t-h4: clamp(1.0625rem, 1.2vw, 1.1875rem);
+  --t-body-l: 1.1875rem;
+  --t-body: 1.0625rem;
   --t-small: 0.875rem;
   --t-data: 0.8125rem;
   --t-label: 0.6875rem;
@@ -201,8 +218,16 @@
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-inout: cubic-bezier(0.4, 0, 0.2, 1);
 
-  /* ---- Layout ------------------------------------------------------------ */
-  --w-marketing: 1180px;
+  /* ---- Layout ------------------------------------------------------------
+     `--w-marketing` widened 1180 -> 1280. At 1180 on a 1920-wide display the
+     content column left ~370px of empty margin on each side, which is what
+     makes a section read as small even once the type inside it is right - the
+     eye judges the block, not the font. 1280 keeps the measure honest: body
+     copy on these pages is already constrained to its own `max-w-*` rather
+     than running the full width, so widening the container spreads the
+     *layout* (grids, card rows, the hero's two columns) without pushing any
+     paragraph past a readable line length. */
+  --w-marketing: 1280px;
   --w-app: 1440px;
   --w-app-sidebar: 240px;
   --w-app-sidebar-collapsed: 68px;
@@ -1882,8 +1907,6 @@ button[data-menu][data-state='open']:focus-visible {
 
 :root {
   --secondary: #f0e9de;
-  --glass: color-mix(in oklab, var(--surface-raised) 72%, transparent);
-  --glass-edge: color-mix(in oklab, var(--text) 8%, transparent);
   --space-band: clamp(36px, 4.5vw, 64px);
 }
 
@@ -1948,23 +1971,25 @@ button[data-menu][data-state='open']:focus-visible {
   border-radius: var(--r-xl);
 }
 
-/* Glass, used sparingly — the header and the one featured card. Falls back to
-   a solid surface where backdrop-filter is unavailable, so text never lands on
-   a half-transparent panel with nothing behind it. */
-.glass {
-  background: var(--surface-raised);
-  border: 1px solid var(--rule);
-  border-radius: var(--r-lg);
-}
+/* `.glass` used to live here, and it was broken in a way worth recording.
 
-@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
-  .glass {
-    background: var(--glass);
-    border-color: var(--glass-edge);
-    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(1.4);
-    backdrop-filter: blur(var(--glass-blur)) saturate(1.4);
-  }
-}
+   It wrote `backdrop-filter: blur(var(--glass-blur)) saturate(1.4)`. On the
+   CAL-4 branch `--glass-blur` was a bare length (`16px`), so that composed
+   correctly. On this side of the merge `--glass-blur` is a complete filter
+   value (`blur(24px) saturate(150%)`, near the top of this file), so the
+   declaration expanded to `blur(blur(24px) saturate(150%))` - invalid, and
+   dropped whole by the parser. What survived was `background: var(--glass)`,
+   which is only 72% opaque. The result was the site header rendering as a
+   see-through bar with none of the blur that was supposed to make text on it
+   legible - page content read straight through the nav.
+
+   The header is solid now (`site-header.tsx`), which was the explicit ask, so
+   the class has no consumers left and is deleted rather than repaired - along
+   with `--glass`/`--glass-edge`, which nothing else read. Note that this is a
+   *different* token family from `--glass-surface`/`--glass-border`/
+   `--glass-blur`, which the dashboard's panel and button materials use and
+   which are untouched. Two families with nearly the same name is what let the
+   collision through the merge unnoticed in the first place. */
 
 /* --------------------------------------------------------------------------
    The deck.
