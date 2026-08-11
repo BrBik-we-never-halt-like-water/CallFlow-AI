@@ -345,7 +345,7 @@ export default function OverviewPage() {
                 />
               ) : (
                 <ul className="flex flex-col divide-y divide-rule">
-                  {escalations.slice(0, 2).map((outcome, i) => (
+                  {escalations.slice(0, 5).map((outcome, i) => (
                     <li key={`${outcome.contact_name}-${i}`}>
                       <NeedsPersonRow outcome={outcome} />
                     </li>
@@ -647,7 +647,7 @@ function NeedsPersonRow({ outcome }: { outcome: Outcome }) {
       : outcome.disposition_reason;
 
   return (
-    <div className="flex flex-col gap-2.5 py-3 first:pt-0 last:pb-0 my-4">
+    <div className="flex flex-col gap-2.5 py-3 first:pt-0 last:pb-0">
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2.5">
           <span

@@ -16,7 +16,6 @@ import { useState } from 'react';
 import { cn } from '@/lib/cn';
 import { BrandLockup } from '@/components/brand/wordmark';
 import { Mark } from '@/components/brand/mark';
-import { AnimatedNavIcon } from '@/components/ui/animated-nav-icon';
 import { Tag } from '@/components/ui/badge';
 import {
   DropdownMenu,
@@ -293,17 +292,17 @@ function AppSidebar({
               href={item.href}
               aria-current={active ? 'page' : undefined}
               className={cn(
-                'group relative flex items-center gap-2.5 rounded-md text-small transition-colors duration-(--dur-micro) hover:bg-surface-hover',
+                'relative flex items-center gap-2.5 rounded-md text-small transition-colors duration-(--dur-micro) hover:bg-surface-hover',
                 collapsed ? 'size-10 justify-center' : 'px-2.5 py-2',
                 active
                   ? 'font-medium text-text'
                   : 'text-text-mute hover:text-text',
               )}
             >
-              <AnimatedNavIcon
-                icon={item.icon}
-                active={active}
-                className="size-4.5"
+              <item.icon
+                aria-hidden
+                weight={active ? 'fill' : 'regular'}
+                className="size-4.5 shrink-0"
               />
               {!collapsed && (
                 <span className="min-w-0 flex-1 truncate">{item.label}</span>
@@ -365,17 +364,17 @@ function AppSidebar({
               href={item.href}
               aria-current={active ? 'page' : undefined}
               className={cn(
-                'group flex items-center gap-2.5 rounded-md text-small transition-colors duration-(--dur-micro) hover:bg-surface-hover',
+                'flex items-center gap-2.5 rounded-md text-small transition-colors duration-(--dur-micro) hover:bg-surface-hover',
                 collapsed ? 'size-10 justify-center' : 'px-2.5 py-2',
                 active
                   ? 'font-medium text-text'
                   : 'text-text-mute hover:text-text',
               )}
             >
-              <AnimatedNavIcon
-                icon={item.icon}
-                active={active}
-                className="size-4.5"
+              <item.icon
+                aria-hidden
+                weight={active ? 'fill' : 'regular'}
+                className="size-4.5 shrink-0"
               />
               {!collapsed && (
                 <span className="min-w-0 flex-1 truncate">{item.label}</span>

@@ -70,10 +70,7 @@ export function useRunPoll(
             ? { ...current, run: latest, error: null }
             : current,
         );
-        // 'canceling' is still going - the background loop hasn't necessarily
-        // stopped yet, it only checks between contacts - so polling has to
-        // keep running until the run actually reaches a terminal status.
-        if (latest.status !== 'running' && latest.status !== 'canceling') {
+        if (latest.status !== 'running') {
           if (timer.current) {
             clearInterval(timer.current);
             timer.current = null;
@@ -106,7 +103,7 @@ export function useRunPoll(
   return {
     run: state.run,
     error: state.error,
-    live: state.run?.status === 'running' || state.run?.status === 'canceling',
+    live: state.run?.status === 'running',
     elapsed: state.elapsed,
   };
 }
