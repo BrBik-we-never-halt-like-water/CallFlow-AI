@@ -1,13 +1,20 @@
 'use client';
 
+import { useState } from 'react';
 import { cn } from '@/lib/cn';
 import { Lamp } from '@/components/brand/lamp';
 import { Button } from '@/components/ui/button';
 import { Tag } from '@/components/ui/badge';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Panel } from '@/components/ui/panel';
 import { useToast } from '@/components/ui/toast';
 import { MaskedPhone } from './masked-phone';
-import type { Outcome } from '@/lib/api';
+import { api, type Escalation, type Member } from '@/lib/api';
 import { useAppStore } from '@/lib/app-store';
 import { formatAge, formatDuration } from '@/lib/format';
 import { useSession } from '@/lib/hooks/use-session';
@@ -21,22 +28,70 @@ import { useSession } from '@/lib/hooks/use-session';
  * with it is a two-second check rather than an argument.
  */
 export function EscalationCard({
-  outcome,
+  escalation,
+  members,
   compact = false,
   onOpen,
 }: {
-  outcome: Outcome;
+  escalation: Escalation;
+  /** The org's team, for the "Reassign" picker - fetched once by the page,
+   *  not per card, since every card on `/app/escalations` would otherwise
+   *  duplicate the same `GET /api/v1/organisations/me/members` call. */
+  members?: Member[];
   compact?: boolean;
   onOpen?: () => void;
 }) {
   const toast = useToast();
-  const { resolveEscalation } = useAppStore();
+  const { refreshEscalations } = useAppStore();
   const session = useSession();
   const canResolve =
     session.status === 'signed-in' &&
     session.profile.permissions.includes('escalations:resolve');
+  const canAssign =
+    session.status === 'signed-in' &&
+    session.profile.permissions.includes('escalations:assign');
+  const [resolving, setResolving] = useState(false);
+  const [assigning, setAssigning] = useState(false);
 
-  const chain = buildChain(outcome);
+  const chain = buildChain(escalation);
+  const isOpen = escalation.escalation_status === 'open';
+
+  async function resolve() {
+    setResolving(true);
+    try {
+      await api.resolveEscalation(escalation.id);
+      refreshEscalations();
+    } catch (error) {
+      toast({
+        tone: 'error',
+        title: "That escalation wasn't resolved",
+        body: error instanceof Error ? error.message : undefined,
+      });
+    } finally {
+      setResolving(false);
+    }
+  }
+
+  async function assignTo(member: Member) {
+    setAssigning(true);
+    try {
+      await api.assignEscalation(escalation.id, member.user_id);
+      refreshEscalations();
+      toast({
+        tone: 'success',
+        title: 'Assigned',
+        body: `${member.name?.trim() || member.email} will follow up.`,
+      });
+    } catch (error) {
+      toast({
+        tone: 'error',
+        title: "That escalation wasn't assigned",
+        body: error instanceof Error ? error.message : undefined,
+      });
+    } finally {
+      setAssigning(false);
+    }
+  }
 
   // The dashboard's condensed preview reads as a list - hairline dividers
   // between rows, like the rest of that column - not a stack of boxed cards.
@@ -54,22 +109,34 @@ export function EscalationCard({
     <Wrapper className={wrapperClassName}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2">
-          <Lamp state="flare" size="md" label="Needs a person" />
+          {/* `escalations/page.tsx` only ever passes an open escalation
+              (resolved ones stay out of the worklist by design), so the
+              `jade` branch is currently unreached - kept for whichever
+              future view lists resolved items too, rather than assuming
+              this card will only ever see one status. */}
+          <Lamp
+            state={isOpen ? 'flare' : 'jade'}
+            size="md"
+            label={isOpen ? 'Needs a person' : 'Resolved'}
+          />
           <div className="flex min-w-0 flex-col">
             <p className="truncate text-small font-medium text-text">
-              {outcome.contact_name}
+              {escalation.contact_name}
             </p>
-            <MaskedPhone phone={outcome.phone_masked} />
+            <MaskedPhone phone={escalation.phone_masked} />
           </div>
         </div>
 
         <div className="flex shrink-0 items-center gap-2">
+          {escalation.assigned_to_name ? (
+            <Tag>Assigned · {escalation.assigned_to_name}</Tag>
+          ) : null}
           <span className="font-mono text-data text-text-mute">
-            {formatAge(outcome.created_at)}
+            {formatAge(escalation.created_at)}
           </span>
-          {outcome.duration_seconds != null ? (
+          {escalation.duration_seconds != null ? (
             <span className="font-mono text-data tabular-nums text-text-mute">
-              {formatDuration(outcome.duration_seconds)}
+              {formatDuration(escalation.duration_seconds)}
             </span>
           ) : null}
         </div>
@@ -103,74 +170,75 @@ export function EscalationCard({
         ))}
       </ol>
 
-      {!compact && outcome.transcript ? (
+      {!compact && escalation.transcript ? (
         <blockquote className="border-l-2 border-rule pl-3 text-small text-text-dim">
-          {excerpt(outcome.transcript)}
+          {excerpt(escalation.transcript)}
         </blockquote>
       ) : null}
 
-      {!compact && outcome.summary ? (
-        <p className="text-small text-text-dim">{outcome.summary}</p>
+      {!compact && escalation.summary ? (
+        <p className="text-small text-text-dim">{escalation.summary}</p>
       ) : null}
 
-      <div className="flex flex-wrap items-center gap-2">
-        {onOpen ? (
+      {isOpen ? (
+        <div className="flex flex-wrap items-center gap-2">
+          {onOpen ? (
+            <Button variant="secondary" size="sm" onClick={onOpen}>
+              Open transcript
+            </Button>
+          ) : null}
+          {canResolve ? (
+            <>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() =>
+                  toast({
+                    tone: 'info',
+                    title: "Calling back isn't wired up yet",
+                    body: `Dial ${escalation.contact_name} from your own phone - the number is on this card.`,
+                  })
+                }
+              >
+                Call back myself
+              </Button>
+              {canAssign && members && members.length > 0 ? (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="sm" loading={assigning}>
+                      Reassign
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent>
+                    {members.map((member) => (
+                      <DropdownMenuItem
+                        key={member.user_id}
+                        onSelect={() => void assignTo(member)}
+                      >
+                        {member.name?.trim() || member.email}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              ) : null}
+              <Button
+                variant="ghost"
+                size="sm"
+                loading={resolving}
+                onClick={() => void resolve()}
+              >
+                Mark resolved
+              </Button>
+            </>
+          ) : null}
+        </div>
+      ) : onOpen ? (
+        <div className="flex flex-wrap items-center gap-2">
           <Button variant="secondary" size="sm" onClick={onOpen}>
             Open transcript
           </Button>
-        ) : null}
-        {canResolve ? (
-          <>
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() =>
-                toast({
-                  tone: 'info',
-                  title: "Calling back isn't wired up yet",
-                  body: `Dial ${outcome.contact_name} from your own phone - the number is on this card.`,
-                })
-              }
-            >
-              Call back myself
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() =>
-                toast({
-                  tone: 'info',
-                  title: "Assignment isn't wired up yet",
-                  body: 'Team assignment arrives with multi-seat accounts.',
-                })
-              }
-            >
-              Reassign
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                // Resolution isn't persisted anywhere yet (ISSUES.md #7) - `resolveEscalation`
-                // only drops this outcome from the shared `escalations` list for the rest of
-                // this session, which is what actually makes the worklist, the dashboard
-                // panel, and the nav badge update immediately. The toast says exactly that
-                // instead of implying it was saved, matching "Call back myself"/"Reassign"
-                // above - and there is no "Resolved" state to show here afterward, since this
-                // card unmounts the moment its outcome drops out of that list.
-                resolveEscalation(outcome);
-                toast({
-                  tone: 'info',
-                  title: 'Hidden for now, not saved',
-                  body: "This comes back if you reload - resolution tracking isn't wired up yet.",
-                });
-              }}
-            >
-              Mark resolved
-            </Button>
-          </>
-        ) : null}
-      </div>
+        </div>
+      ) : null}
     </Wrapper>
   );
 }
@@ -181,22 +249,24 @@ export function EscalationCard({
  * Deliberately never parses `summary` prose. If the fields do not explain the
  * decision, the chain says the disposition and stops rather than inventing a reason.
  */
-function buildChain(outcome: Outcome): string[] {
+function buildChain(escalation: Escalation): string[] {
   const chain: string[] = [];
 
-  if (outcome.sentiment && outcome.sentiment !== 'unknown') {
-    chain.push(`Sentiment: ${outcome.sentiment}`);
+  if (escalation.sentiment && escalation.sentiment !== 'unknown') {
+    chain.push(`Sentiment: ${escalation.sentiment}`);
   }
-  if (outcome.disposition_reason) {
-    chain.push(outcome.disposition_reason);
+  if (escalation.disposition_reason) {
+    chain.push(escalation.disposition_reason);
   }
   if (
-    outcome.sentiment_reason &&
-    outcome.sentiment_reason !== outcome.disposition_reason
+    escalation.sentiment_reason &&
+    escalation.sentiment_reason !== escalation.disposition_reason
   ) {
-    chain.push(outcome.sentiment_reason);
+    chain.push(escalation.sentiment_reason);
   }
-  chain.push('Needs a person');
+  chain.push(
+    escalation.escalation_status === 'open' ? 'Needs a person' : 'Resolved',
+  );
 
   return chain;
 }

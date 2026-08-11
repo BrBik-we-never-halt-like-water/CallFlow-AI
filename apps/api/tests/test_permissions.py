@@ -58,3 +58,37 @@ def test_operator_cannot_read_the_team_breakdown() -> None:
     the org-wide chart RLS (`runs_select`, migration 202608092000) would
     otherwise silently return nothing for anyway."""
     assert role_has(OrgRole.OPERATOR, Permission.RUNS_READ_TEAM) is False
+
+
+@pytest.mark.parametrize("role", [OrgRole.OWNER, OrgRole.ADMIN])
+def test_owner_and_admin_can_assign_escalations(role: OrgRole) -> None:
+    assert role_has(role, Permission.ESCALATIONS_ASSIGN) is True
+
+
+@pytest.mark.parametrize("role", [OrgRole.OPERATOR, OrgRole.VIEWER])
+def test_operator_and_viewer_cannot_assign_escalations(role: OrgRole) -> None:
+    """Assigning who's responsible for something is heavier than resolving
+    your own - operator keeps escalations:resolve (its own runs) without
+    gaining the power to hand escalations to other teammates."""
+    assert role_has(role, Permission.ESCALATIONS_ASSIGN) is False
+
+
+@pytest.mark.parametrize("role", [OrgRole.OWNER, OrgRole.ADMIN])
+def test_owner_and_admin_can_write_teammate_credits(role: OrgRole) -> None:
+    assert role_has(role, Permission.CREDITS_WRITE) is True
+
+
+@pytest.mark.parametrize("role", [OrgRole.OPERATOR, OrgRole.VIEWER])
+def test_operator_and_viewer_cannot_write_teammate_credits(role: OrgRole) -> None:
+    assert role_has(role, Permission.CREDITS_WRITE) is False
+
+
+@pytest.mark.parametrize("role", [OrgRole.OWNER, OrgRole.ADMIN, OrgRole.OPERATOR])
+def test_owner_admin_and_operator_can_request_sharing(role: OrgRole) -> None:
+    assert role_has(role, Permission.SHARING_REQUEST) is True
+
+
+def test_viewer_cannot_request_sharing() -> None:
+    """A read-only role has nothing to do with asking for someone else's
+    resource - the same reasoning as every other viewer restriction."""
+    assert role_has(OrgRole.VIEWER, Permission.SHARING_REQUEST) is False

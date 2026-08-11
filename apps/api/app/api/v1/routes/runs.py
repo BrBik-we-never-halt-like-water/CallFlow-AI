@@ -28,10 +28,12 @@ from app.core.config import config
 from app.core.logging import CallContext
 from app.core.rate_limit import limiter
 from app.database import database
+from app.database.repositories import credits as credits_repo
+from app.database.repositories import escalations as escalations_repo
 from app.database.repositories import runs as runs_repo
 from app.database.repositories import safety_settings as safety_settings_repo
 from app.database.repositories import suppressions as suppressions_repo
-from app.domain.entities import CallOutcome, Contact
+from app.domain.entities import NEEDS_A_PERSON_DISPOSITIONS, CallOutcome, Contact
 from app.domain.safety import phone_hash, resolve_safety_settings
 from app.integrations.voice.engine import (
     EngineAPIError,
@@ -98,6 +100,8 @@ async def _run_and_persist(
     suppressed_hashes: frozenset[str],
     max_calls_per_run: int | None,
     allowlist: frozenset[str] | None,
+    credit_ceiling: int | None,
+    credits_used_before_run: int,
 ) -> None:
     # Empty when either half is unconfigured - falls back to polling only,
     # today's behaviour, unchanged. See `config.webhook_secret`'s own comment
@@ -115,13 +119,21 @@ async def _run_and_persist(
         max_calls_per_run=max_calls_per_run,
         allowlist=allowlist,
         run_id=run_id,
+        credit_ceiling=credit_ceiling,
+        credits_used_before_run=credits_used_before_run,
     )
 
     async def on_progress(outcome: CallOutcome) -> None:
         record = outcome.model_dump(mode="json")
         record["provider_call_id"] = record.pop("run_id", None)
         async with database.as_user(auth_user_id) as conn:
-            await runs_repo.append_outcome(conn, run_id=run_id, org_id=org_id, outcome=record)
+            call_outcome_id = await runs_repo.append_outcome(
+                conn, run_id=run_id, org_id=org_id, outcome=record
+            )
+            if outcome.disposition in NEEDS_A_PERSON_DISPOSITIONS:
+                await escalations_repo.create_for_outcome(
+                    conn, org_id=org_id, run_id=run_id, call_outcome_id=call_outcome_id
+                )
 
     # Every log line this run produces - in this module, `CampaignRunner`, and
     # `engine.py` - carries `run_id`/`org_id` for the run's whole lifetime, so
@@ -201,6 +213,17 @@ async def start_run(
             if await suppressions_repo.is_suppressed(conn, user.org_id, digest):
                 suppressed.add(digest)
 
+        # `None` when nobody has ever set this caller's own allocation - the
+        # per-teammate gate then never applies for them, only the org-wide
+        # daily budget above does. Resolved once here, not once per contact,
+        # the same way suppression/allowlist already are.
+        credit_ceiling = await credits_repo.get_enforced_ceiling(conn, user.org_id, user.id)
+        credits_used_before_run = (
+            await credits_repo.used_today(conn, user.org_id, user.id)
+            if credit_ceiling is not None
+            else 0
+        )
+
         await runs_repo.create_run(
             conn,
             run_id=run_id,
@@ -221,6 +244,8 @@ async def start_run(
         suppressed_hashes=frozenset(suppressed),
         max_calls_per_run=effective.max_calls_per_run,
         allowlist=effective.allowlist,
+        credit_ceiling=credit_ceiling,
+        credits_used_before_run=credits_used_before_run,
     )
     return {"run_id": run_id, "total": len(contacts)}
 

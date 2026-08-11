@@ -93,6 +93,8 @@ class CampaignRunner:
         allowlist: frozenset[str] | None = None,
         run_id: str | None = None,
         max_concurrent_calls: int | None = None,
+        credit_ceiling: int | None = None,
+        credits_used_before_run: int = 0,
     ) -> None:
         self.result_schema = result_schema
         self.webhook_url = webhook_url
@@ -108,6 +110,20 @@ class CampaignRunner:
         # to the deployment's env-var defaults inside check_dial_allowed itself.
         self._max_calls_per_run = max_calls_per_run
         self._allowlist = allowlist
+        # `None` when the caller (the run's own starter) has no per-teammate
+        # allocation set at all - the per-teammate gate then never applies,
+        # only the org-wide daily budget does. `credits_used_before_run` is a
+        # live count of *today's already-connected* calls, resolved once at
+        # run start the same way suppression/allowlist already are.
+        # `_credits_reserved` is this run's own in-flight bookkeeping: a
+        # contact reserves one credit before dialling (so two contacts
+        # dialled concurrently can't both slip under the same last slot) and
+        # gives it back if that particular call never connects - see
+        # `run_one()`'s own comment for why a credit is only ever actually
+        # spent by a connected call, never a mere attempt.
+        self._credit_ceiling = credit_ceiling
+        self._credits_used_before_run = credits_used_before_run
+        self._credits_reserved = 0
         # The persisted run this instance belongs to, if any - gives each
         # contact's idempotency key a stable scope (see `run_one()`). `None`
         # for a caller with no real run (ad hoc use, tests).
@@ -302,15 +318,24 @@ class CampaignRunner:
         # lost-response attempt still spent a real slot at CALL-E and must
         # still count, per CLAUDE.md's fail-closed rule (`ISSUES.md` #54).
         async with self._calls_made_lock:
+            credits_remaining = (
+                None
+                if self._credit_ceiling is None
+                else self._credit_ceiling - self._credits_used_before_run - self._credits_reserved
+            )
             gate = check_dial_allowed(
                 contact.phone,
                 self._calls_made,
                 is_suppressed=phone_hash(contact.phone) in self._suppressed_hashes,
                 max_calls_per_run=self._max_calls_per_run,
                 allowlist=self._allowlist,
+                credits_remaining=credits_remaining,
             )
+            reserved_credit = gate.allowed and self._credit_ceiling is not None
             if gate.allowed:
                 self._calls_made += 1
+                if reserved_credit:
+                    self._credits_reserved += 1
 
         if not gate.allowed:
             return base.model_copy(
@@ -384,7 +409,7 @@ class CampaignRunner:
             failure = classify_error(exc)
             log.exception("call failed for %s: %s", mask(contact.phone), failure.value)
             retryable = failure in _RETRYABLE_FAILURES
-            return base.model_copy(
+            outcome = base.model_copy(
                 update={
                     "status": "FAILED",
                     "error": failure.value,
@@ -402,7 +427,7 @@ class CampaignRunner:
             # through classify_error(), but it's the same "transient, worth
             # trying again" shape as PROVIDER_UNAVAILABLE/RATE_LIMITED.
             log.exception("poll timed out for %s", mask(contact.phone))
-            return base.model_copy(
+            outcome = base.model_copy(
                 update={
                     "status": "FAILED",
                     "error": DialFailure.TIMED_OUT.value,
@@ -417,7 +442,7 @@ class CampaignRunner:
             # untrusted content that can carry hostnames, URLs, or other
             # internal detail through to whoever views this run or escalation.
             log.exception("call failed for %s", mask(contact.phone))
-            return base.model_copy(
+            outcome = base.model_copy(
                 update={
                     "status": "FAILED",
                     "error": DialFailure.INTERNAL.value,
@@ -425,5 +450,17 @@ class CampaignRunner:
                     "disposition_reason": "Call could not be completed due to an internal error.",
                 }
             )
+        else:
+            outcome = _resolve_outcome(base, final, escalate_on_negative=campaign.escalate_on_negative)
 
-        return _resolve_outcome(base, final, escalate_on_negative=campaign.escalate_on_negative)
+        # A credit is only ever actually spent by a connected call (CLAUDE.md
+        # money/credit non-negotiable, applied here even though credits
+        # aren't currency: fail closed, but never charge for something that
+        # didn't happen). Every non-connected path above reserved a slot
+        # before knowing that - hand it back now so a later contact in this
+        # same run can use it.
+        if reserved_credit and not outcome.answered:
+            async with self._calls_made_lock:
+                self._credits_reserved -= 1
+
+        return outcome

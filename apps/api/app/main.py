@@ -12,12 +12,14 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.routes.api_keys import router as api_keys_router
 from app.api.v1.routes.campaigns import router as campaigns_router
+from app.api.v1.routes.escalations import router as escalations_router
 from app.api.v1.routes.integrations import router as integrations_router
 from app.api.v1.routes.invitations import router as invitations_router
 from app.api.v1.routes.organisations import router as organisations_router
 from app.api.v1.routes.profile import router as profile_router
 from app.api.v1.routes.runs import router as runs_router
 from app.api.v1.routes.safety import router as safety_router
+from app.api.v1.routes.sharing import router as sharing_router
 from app.api.v1.routes.suppressions import router as suppressions_router
 from app.api.v1.routes.webhooks import router as webhooks_router
 from app.core.config import config
@@ -69,8 +71,10 @@ app.include_router(profile_router)
 app.include_router(organisations_router)
 app.include_router(invitations_router)
 app.include_router(campaigns_router)
+app.include_router(escalations_router)
 app.include_router(runs_router)
 app.include_router(safety_router)
+app.include_router(sharing_router)
 app.include_router(suppressions_router)
 app.include_router(api_keys_router)
 app.include_router(integrations_router)

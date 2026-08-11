@@ -34,7 +34,7 @@ exist in this repo**; `SYSTEM.md` §12 is the closest real gap map until it's wr
 | [#4](#4--calloutcomerun_id-holds-the-provider-call-id)                                                                            | S1  | `CallOutcome.run_id` holds the provider call id                                                                       | backend        | it-1  | **FIXED**        |
 | [#5](#5--rate-limits-and-daily-budget-are-per-process-and-reset-on-restart)                                                       | S2  | Rate limits reset on restart, not shared                                                                              | backend        | it-1  | **PARTLY FIXED** |
 | [#6](#6--three-high-severity-npm-advisories)                                                                                      | S2  | Three high-severity npm advisories                                                                                    | web            | it-1  | OPEN             |
-| [#7](#7--escalation-resolution-is-component-state)                                                                                | S3  | Escalation resolution is component state                                                                              | web            | it-1  | **PARTLY FIXED** |
+| [#7](#7--escalation-resolution-is-component-state)                                                                                | S3  | Escalation resolution is component state                                                                              | web            | it-1  | **FIXED**        |
 | [#8](#8--stats-mixes-denominators)                                                                                                | S3  | `stats` mixes denominators                                                                                            | backend        | it-1  | OPEN             |
 | [#9](#9--renderyaml-contradicts-the-real-deployment)                                                                              | S3  | `render.yaml` contradicts the real deployment                                                                         | infra          | it-1  | **FIXED**        |
 | [#10](#10--no-frontend-tests)                                                                                                     | S3  | No frontend tests                                                                                                     | web            | it-1  | OPEN             |
@@ -101,6 +101,10 @@ exist in this repo**; `SYSTEM.md` §12 is the closest real gap map until it's wr
 | [#71](#71--viewer-role-had-a-correct-backend-and-a-completely-unenforced-frontend)                                                | S2  | Viewer role had a correct backend and a completely unenforced frontend                                               | web            | it-22 | **FIXED**        |
 | [#72](#72--pending-invitations-showed-no-pending-status-in-the-team-list)                                                          | S3  | Pending invitations showed no pending status in the Team list                                                        | web            | it-22 | **FIXED**        |
 | [#73](#73--toasts-18-fix-depended-on-an-element-that-doesnt-exist-on-every-page)                                                  | S3  | Toast's §18 fix depended on an element that doesn't exist on every page                                              | web            | it-22 | **FIXED**        |
+| [#74](#74--appsettingsbillingpagetsx-had-no-permission-check-and-the-settings-tab-bar-showed-every-tab-to-every-role)             | S2  | `settings/billing/page.tsx` had no permission check; the settings tab bar showed every tab to every role             | web            | it-22 | **FIXED**        |
+| [#75](#75--runs_select-and-escalations_select-recursed-infinitely-once-each-queried-the-other)                                    | S1  | `runs_select` and `escalations_select` recursed infinitely once each queried the other                              | backend        | it-23 | **FIXED**        |
+| [#76](#76--cloning-a-teammates-campaign-on-share-approval-failed-under-rls-for-every-non-adminowner-approver)                     | S1  | Cloning a teammate's campaign on share approval failed under RLS for every non-admin/owner approver                 | backend        | it-24 | **FIXED**        |
+| [#77](#77--the-share-request-approval-flow-performed-the-grant-before-the-atomic-decision-a-double-clone-race)                    | S2  | The share-request approval flow performed the grant before the atomic decision - a double-clone race                | backend        | it-24 | **FIXED**        |
 
 ---
 
@@ -263,23 +267,30 @@ the UI rebuild to avoid mixing a framework bump into a large diff.
 
 ### #7 - Escalation resolution is component state
 
-**S3 · PARTLY FIXED · web · `apps/web/components/app/escalation-card.tsx`**
+**S3 · FIXED (it-23) · backend + web · `app/database/repositories/escalations.py`, `app/api/v1/routes/escalations.py`, `components/app/escalation-card.tsx`, `lib/app-store.tsx`**
 
-`Mark resolved` sets local `useState`. Navigating away loses it.
+`Mark resolved` used to set local `useState`. Navigating away, reloading, or a second
+person looking at the same item all lost it.
 
-**Partly fixed in it-10 (see #46):** resolving now drops the item from the shared
-`useAppStore().escalations` list itself, so the worklist, the dashboard panel, and the
-nav badge all update in the same render - the within-session "nothing visibly updates"
-symptom is gone. **Still open:** nothing is written to a database. A reload, a second
-tab, or a second person still sees the item as unresolved - the fix below is unchanged.
+**Partly fixed in it-10 (see #46):** resolving dropped the item from the shared
+`useAppStore().escalations` list, so the worklist/dashboard/nav badge updated together
+within a session - the "nothing visibly updates" symptom went away, but nothing was
+persisted.
 
-**Impact.** An operator marks five escalations resolved, changes page, and they are all
-back. Actively worse than no button, because it implies work was saved.
+**Actually fixed in it-23**, as part of the role-based UI roadmap's Phase 2
+(`TEAM_COLLABORATION_ROADMAP.md`): a real `public.escalations` table (`status`,
+`assigned_to`, `assigned_by`, `resolved_by`, `resolved_at`), one row per escalating call
+outcome, inserted by application code the moment `campaign_runner.py`'s (or the webhook
+path's) outcome resolution lands on `Disposition.ESCALATED`/`UNREACHABLE`. `POST
+/api/v1/escalations/{id}/resolve` writes it for real; RLS (not just the app's permission
+check) is what stops a second person from resolving someone else's escalation, and a
+reload or a different signed-in teammate now sees the same, correct state - reached
+live, via Supabase Realtime, not just on next page load.
 
-**Fix.** `escalations` table with `status`, `assigned_to`, `resolved_by`, `resolved_at`
-(`FEATURES.md` F23), plus claim-on-open so two people cannot resolve the same item.
+**Impact (historical).** An operator marking five escalations resolved and changing
+page used to see them all come back. That's fixed - see above.
 
-**Depends on:** #1.
+**Depends on:** #1 (fixed, it-1).
 
 ---
 
@@ -2662,6 +2673,350 @@ fixed` doesn't care about DOM nesting).
 
 **Depends on:** `#70` (this issue corrects that fix's Toast half; the `/app/profile`
 `.dark-canvas` half of `#70` is unaffected and unchanged).
+
+### #74 - `settings/billing/page.tsx` had no permission check, and the settings tab bar showed every tab to every role
+
+**S2 · FIXED · web · `app/(app)/app/settings/billing/page.tsx`, `app/(app)/app/settings/layout.tsx`, `app/(app)/app/page.tsx`, `lib/api.ts`**
+
+Found while closing out the Phase 0/Phase 1 gaps from the role-based UI roadmap
+(`.superpowers` plan `moonlit-orbiting-blum.md`). Two related gaps, same root cause -
+nothing in Settings ever checked a permission before this session's viewer-lockdown pass:
+
+1. `billing/page.tsx` had no permission check of any kind - `SessionGate` only confirms
+   *someone* is signed in. Any role, including operator/viewer, saw the organisation's
+   real plan name and real live daily-usage numbers. `user-menu.tsx` already links
+   operator/viewer to this exact route under a "My credits" label, implying a
+   per-teammate view that didn't exist - they landed on the full org view instead.
+2. `settings/layout.tsx`'s tab bar rendered all 4 tabs (Safety, API keys, Integrations,
+   Billing) unconditionally, regardless of role - so anyone reaching any one settings
+   page (via the "My credits" link, or by typing the URL - no route in this app has
+   server-level redirects, confirmed during the viewer-lockdown audit) saw a tab bar
+   implying access to all four, even though each page's own content was separately
+   gated.
+
+**Fix.** `billing/page.tsx` now branches on `billing:read` (admin/owner only,
+`app/auth/permissions.py`): with it, the real plan + usage render as before; without it,
+an honest `NotWiredNotice` placeholder explains that per-teammate credit allocation
+(`Phase 5` of the roadmap) isn't built yet and that everyone currently draws from the
+same organisation-wide daily budget - not a fabricated number, per CLAUDE.md §4 #9.
+`settings/layout.tsx`'s tab bar now filters each tab by that tab's own read permission,
+falling back to showing all 4 while the session is still resolving (avoids a
+narrow-then-widen flash) - Billing itself always shows, since the placeholder above is
+what actually renders there for anyone without `billing:read`.
+
+**Also shipped in the same pass:** `GET /api/v1/runs/team-summary` (added in `Iteration
+21`'s per-creator visibility silo work) had zero frontend consumers until now. New
+`TeamVolumeBreakdown` on the dashboard (`app/(app)/app/page.tsx`), gated on
+`runs:read_team`, calls a newly-added `api.teamSummary()` client method
+(`lib/api.ts`) and renders a ranked "by teammate" list under the Volume chart. Built as a
+ranked list rather than the roadmap's originally-imagined stacked chart series, because
+the endpoint returns lifetime totals per member, not a daily breakdown - there is no
+per-day series to stack.
+
+**Depends on / Blocks:** closes the two remaining Phase 0 gaps and the one incomplete
+piece of Phase 1 from the role-based UI roadmap. Phases 2-6 (persisted escalations,
+notifications, peer sharing, per-teammate credits, edit notifications) remain
+not-started.
+
+## Iteration 23 - 2026-08-10 · role-based UI roadmap, Phase 2 (real escalations) + Phase 5 slice (per-teammate credits)
+
+### #75 - `runs_select` and `escalations_select` recursed infinitely once each queried the other
+
+**S1 · FIXED · backend · migration `3ea00413701c`**
+
+Building Phase 2's "an escalation's assignee can see it even if they didn't start the
+underlying run" requirement, the natural first attempt added a branch to `runs_select`/
+`call_outcomes_select` that queried `public.escalations` directly. `escalations_select`
+already queried `public.runs` right back (its own "or the run's starter" branch, added
+in the same migration). Evaluating either policy now required evaluating the other,
+which required evaluating the first again - `asyncpg.exceptions.InvalidObjectDefinitionError:
+infinite recursion detected in policy for relation "runs"` on every second read.
+
+**Impact.** Would have broken every run/call-outcome read in the product the moment the
+migration reached a real database - caught immediately by running the full test suite
+before moving on to the frontend, not by inspecting the SQL and reasoning it through.
+14 tests failed on the first run, cleanly reproducing the bug.
+
+**Fix.** The exact lesson `initial_schema`'s own migration already documented for
+`has_org_role`/`is_org_member` ("a policy on memberships that queried memberships
+directly would recurse infinitely... running inside a [`SECURITY DEFINER`] function
+bypasses RLS and breaks the cycle") applies identically across two tables, not just one.
+Two new `SECURITY DEFINER` helper functions (`is_assigned_to_run_escalation`,
+`is_assigned_to_call_outcome_escalation`) replace the plain correlated subqueries in
+`runs_select`/`call_outcomes_select` - evaluating them never re-triggers the calling
+policy, since they bypass RLS internally the same way the existing helpers do.
+
+**Depends on:** none - self-contained within the same iteration's own new tables.
+
+---
+
+### Real, persisted, assignable escalations + a per-teammate credits/performance view, shipped
+
+Not itself a bug fix - the role-based UI roadmap's Phase 2 (escalations) and a working
+slice of Phase 5 (per-teammate credits), landed together because the dashboard's "needs
+a person status per teammate" ask needed Phase 2's real data to be accurate. Full design
+and phase-by-phase status lives in the new, checked-in
+[`TEAM_COLLABORATION_ROADMAP.md`](TEAM_COLLABORATION_ROADMAP.md) - not duplicated here.
+Summary:
+
+- **Escalations are real rows now** (`public.escalations`), not a computed label -
+  closes `#7` above. Assignable (admin/owner, new `Permission.ESCALATIONS_ASSIGN`) and
+  resolvable for real, with RLS - not just the app's permission check - enforcing who
+  can touch which row.
+- **Live sync.** `escalations` is the first table in this product wired to Supabase
+  Realtime (`SYSTEM.md` F27 was previously "2.5s polling only, no Realtime anywhere") -
+  an assignment or resolution reaches every other signed-in teammate immediately.
+- **Per-teammate credits** (`public.member_credit_allocations`) - a subdivision of the
+  org's existing daily budget, not a second enforced limit (that enforcement is
+  explicitly not built - see the roadmap doc's own caveat). Admin/owner set a daily
+  number per teammate from the Team pane; a teammate's own "My credits" view (Settings →
+  Billing, previously an honest placeholder) now shows it for real.
+- **New dashboard panel**, "Team performance": one row per teammate - calls made, calls
+  closed, run status breakdown, open "needs a person" count, credits used/allocated -
+  visible to admin/owner/viewer (`runs:read_team`), placed as its own full-width section
+  below the existing grid rather than crowding the Volume card.
+
+**Tests.** 255 backend tests passing (13 new: 8 permission-matrix, 5 cross-member RLS -
+unassigned operator can't see a teammate's escalation; an assignee can regardless of who
+started the run; an operator can't assign/resolve/allocate-credits for a teammate
+directly, RLS-enforced not just permission-checked). `npm run lint && type-check &&
+build` clean.
+
+## Iteration 24 - 2026-08-10 · role-based UI roadmap, Phase 4 (peer-to-peer campaign/escalation sharing)
+
+### #76 - Cloning a teammate's campaign on share approval failed under RLS for every non-admin/owner approver
+
+**S1 · FIXED · backend · migration `b938fa82e54d`, `app/database/repositories/campaigns.py`, `app/api/v1/routes/sharing.py`**
+
+Found by manually walking the approve-a-share-request flow end to end in a
+real browser (two real signed-up test accounts, a real invite, a real
+request) - not by static review, and not caught by the automated test suite
+either, which is its own finding (see the "shipped" note below). Every
+automated RLS test for sharing exercised `sharing_repo.decide()` or
+read-only checks; none exercised the actual campaign-clone `INSERT`.
+
+Approving a campaign share request as an **operator** (the ordinary case -
+admin/owner rarely need to request anything, since they already see
+everything) failed with:
+
+```
+asyncpg.exceptions.InsufficientPrivilegeError: new row violates row-level
+security policy for table "campaigns"
+```
+
+**Root cause.** `campaigns_insert`'s `WITH CHECK` is role-only
+(`has_org_role(org_id, [owner,admin,operator])`) and correctly allows an
+operator to insert the cloned row. But the insert used `RETURNING`, and
+Postgres also evaluates the table's `SELECT` policy against any row
+returned via `RETURNING` - raising the identical "violates row-level
+security policy" error if that check fails, indistinguishable from a
+`WITH CHECK` failure without reading the actual policy definitions.
+`campaigns_select` for an operator is `created_by = self`, with no broader
+role branch (Phase 1's own design - `ISSUES.md` iteration 21) - and the
+clone's `created_by` is the *requester*, not the operator running the
+insert. An operator can insert a row on a teammate's behalf but can never
+legally see it back, and `RETURNING` demands both.
+
+**Impact.** The single most common path through the entire sharing feature
+- operator approves operator - was completely broken. Admin/owner approving
+would have worked by coincidence (their `campaigns_select` branch is
+role-based, not `created_by`-based), which is exactly why this could have
+shipped without anyone noticing in an admin-only smoke test.
+
+**Fix.** Same shape as `create_organisation()`/`remove_member_and_
+reassign_data()` (migrations `a7c2e5f9b184`, `202608092600`): a narrowly-
+scoped `SECURITY DEFINER` function, `clone_campaign_for_share()`, performs
+the actual privileged insert, bypassing RLS for this one operation the way
+every other "write a row on someone else's behalf" case in this codebase
+already does. The unique-slug dedup logic stays in Python
+(`sharing.py::_clone_campaign`) - only the write itself moved.
+
+**Verified.** Reproduced the failure directly (a Python script calling the
+real route function with a real `CurrentUser`, not just curl - curl alone
+surfaced a *different*, correct 404 first, from missing the `X-Org-Id`
+header the real frontend always sends), confirmed the fix with the same
+script, then confirmed again through the actual browser UI: the clone now
+lands, with the correct new owner, as an independent campaign. New
+regression test `test_operator_can_clone_a_teammates_campaign_via_share_
+approval` (`test_rls_isolation.py`) pins the previously-broken case
+directly - not just the security boundary around it.
+
+**Depends on:** Phase 1 (`created_by = self` for operators is exactly the
+policy this collided with, and is correct - the fix is in how the clone is
+written, not in loosening that policy).
+
+### #77 - The share-request approval flow performed the grant before the atomic decision - a double-clone race
+
+**S2 · FIXED · backend · `app/api/v1/routes/sharing.py`**
+
+Caught by independent code review (`superpowers:requesting-code-review`),
+not manual testing. `_decide()`'s original order: check the request is
+still `pending` (a plain read), perform the grant (clone the campaign /
+reassign the escalation), *then* atomically transition the row to
+`approved`/`rejected` (`UPDATE ... WHERE status = 'pending'`). Two
+concurrent `POST /approve` calls (two browser tabs, a client retry after a
+slow response) could both pass the initial read-only pending check and both
+perform the grant - producing two independent cloned campaigns - before the
+atomic transition correctly let only one of the two calls "win" and 409'd
+the other. The loser's transaction still committed its already-completed
+clone; only the *decision* lost the race, not the side effect that should
+have been gated by it.
+
+**Impact.** Violates CLAUDE.md §4 non-negotiable #6 ("every mutating
+endpoint... is safe to run twice"). Low likelihood in practice (both calls
+need to be genuinely concurrent, not just close in time), but the failure
+mode - a silent duplicate campaign with no error surfaced to either caller
+- is the kind of bug that's expensive precisely because nothing looks
+wrong when it happens.
+
+**Fix.** Reordered: the atomic `decide()` transition (the actual
+concurrency-safe linearisation point, backed by `WHERE status = 'pending'`
+and Postgres's row-level locking) now runs *before* the grant, and the
+grant is skipped entirely if `decide()` didn't return a row. Both live in
+the same `database.as_user()` transaction, so if the grant step still fails
+afterward (e.g. the campaign was deleted in between), the whole transaction
+- including the `decide()` - rolls back, leaving the request genuinely
+still pending rather than "approved" with nothing behind it. Also added:
+re-resolving the resource's *current* owner at decide-time (not just
+trusting the value stamped in at request-creation time) - if ownership
+moved in between (a different admin reassigned the escalation elsewhere),
+the stale request is auto-closed with a clear reason rather than silently
+overriding the more recent change.
+
+**Depends on:** none.
+
+### Peer-to-peer campaign/escalation sharing, shipped
+
+Not itself a bug fix - the role-based UI roadmap's Phase 4, the last of the
+three phases planned this round (Phase 2 and a Phase 5 slice shipped in
+`Iteration 23`). Full design lives in
+[`TEAM_COLLABORATION_ROADMAP.md`](TEAM_COLLABORATION_ROADMAP.md), updated
+in place rather than duplicated here. Summary:
+
+- **`public.share_requests`** - a request/decision record: who asked, who
+  owns it, pending/approved/rejected, an optional message. RLS: visible to
+  the requester, the owner, or admin/owner; only the owner can decide.
+- **Directory endpoints** (`GET /api/v1/campaigns/directory`, `GET
+  /api/v1/escalations/directory`) - name/contact + owner only, via two new
+  `SECURITY DEFINER` functions, so an operator can see *what exists* to
+  request without the content their own Phase 1 RLS narrowing correctly
+  hides.
+- **`resolve_resource_owner()`** - a third `SECURITY DEFINER` function that
+  resolves who really owns a campaign or escalation, called server-side
+  and never trusted from the client - the whole reason it exists is that
+  the requester's own RLS scope can't see the resource (or its owner) to
+  begin with.
+- **Approving** a campaign request clones it (new id, `created_by` =
+  requester, independent from that point on); approving an escalation
+  request reassigns it (`assigned_to` = requester) - a hand-off, not a
+  fork, since there's only one real underlying event.
+- **New "Sharing" tab** (Organisation page) - requests waiting on you
+  (Approve/Reject), and requests you've sent, both live via the same
+  Supabase Realtime mechanism Phase 2 introduced (`share_requests` is now
+  the second table in the publication).
+- **New permission**: `Permission.SHARING_REQUEST` (operator, admin, owner
+  - not viewer). Deciding needs no separate permission - it's gated by
+  actually owning the resource (RLS + an explicit check), available to
+  whichever role that happens to be.
+
+**Tests.** 268 backend tests passing (10 new since `Iteration 23`: 2
+permission-matrix, 8 cross-member/security RLS - directory functions and
+`resolve_resource_owner()` correctly bypass Phase 1's narrowing while still
+refusing non-members; a forged `owner_user_id` can update the request row
+but still can't read the real resource to grant it; only the named owner
+can decide; deciding twice is a no-op; the actual operator-clones-operator
+case, `#76`'s regression test). `ruff check`, `npm run lint`, `type-check`,
+and `build` all clean.
+
+**Verification method, worth naming explicitly:** this phase is the first
+one this round verified through a real browser against the real running
+app - two genuine signed-up test accounts (via Resend's own test recipient
+address, not fabricated), a real invite accepted, a real campaign created,
+a real share request sent and approved - rather than trusting automated
+tests alone. It is also the phase where a real, ship-blocking bug (`#76`)
+existed *despite* a clean automated test run - the tests proved the
+security boundary (an unauthorized party can't grant access) but never
+exercised the authorized happy path's own write. Both kinds of coverage
+matter; neither substitutes for the other.
+
+## Iteration 25 - 2026-08-10 · role-based UI roadmap, Phase 5 completed (per-teammate credit enforcement)
+
+### Per-teammate daily credits, now actually enforced at dial time
+
+Not a bug fix - Phase 5 shipped in `Iteration 23` as a deliberate **minimal
+slice**: a real, live-derived `used_today`/`daily_allocation` display, with
+an explicit, documented caveat that nothing stopped a teammate from dialing
+past their number (`TEAM_COLLABORATION_ROADMAP.md`'s own Phase 5 note). This
+closes that gap: **1 credit = 1 connected call**, enforced the same way
+every other safety guard is - fail closed, checked per contact, immediately
+before the dial.
+
+- **`used_today()`/`used_today_by_member()` redefined.** Previously counted
+  every *resolved call attempt* (`disposition <> 'in_flight'`) - a busy
+  signal or an invalid number spent a credit exactly like a real
+  conversation did. Now counts only calls where the callee actually
+  answered (`upper(status) = 'COMPLETED'` - the same predicate as
+  `CallOutcome.answered`). This is the same number both displayed (Settings
+  → Billing's "My credits", the Team-performance panel) and now enforced -
+  deliberately, so what a teammate sees can never disagree with what
+  actually blocked them.
+- **New `credits_repo.get_enforced_ceiling()`.** `get_allocation()` (used
+  for display) returns `0` for both "explicitly set to zero" and "never
+  set" - the existing, correct UI convention (Settings → Billing's "hasn't
+  been set yet" placeholder). Enforcement cannot conflate those two: a row
+  that doesn't exist must never restrict anyone, while a row explicitly
+  zeroed by an admin must actually block. The new function returns `None`
+  for "no row" and the real int (including `0`) otherwise.
+- **`domain/safety.py::check_dial_allowed()`** gained a `credits_remaining:
+  int | None` parameter - `None` skips the check entirely (no per-teammate
+  ceiling set, only the org-wide daily budget governs); otherwise denies
+  once it reaches `0`. Stays pure and I/O-free, consistent with every other
+  parameter this function already takes.
+- **`CampaignRunner` reserves before dialling, releases if the call doesn't
+  connect.** A per-run in-process counter (`_credits_reserved`, guarded by
+  the same lock the per-run ceiling's own check-and-reserve already uses)
+  is incremented before a contact is dialled and decremented back if that
+  particular call resolves without connecting - mirroring the org-wide rate
+  limiter's own established "reserve at check time, `release()` on
+  no-dial" pattern (`core/rate_limit.py`). Without this, two contacts
+  dialled concurrently near the last credit could both pass the check
+  before either resolved, overshooting the ceiling; without the *release*
+  half, a dial that never connects would burn a credit it never actually
+  spent, contradicting "1 credit = 1 connected call."
+- **`/api/v1/runs`** resolves the caller's own ceiling and today's
+  already-connected count once per run (same place suppression/allowlist
+  already resolve once, not once per contact) and threads both into the
+  `CampaignRunner`.
+- **Found while writing the test fixtures, not a bug in the shipped code:**
+  a fake gateway simulating "nobody answered" via `status: "no_answer"`
+  made `_poll_until_done` spin for the full 900-second poll timeout before
+  giving up - because CALL-E's real, documented task-level `CallStatus`
+  enum (`CALLE.md`) is only `queued/in_progress/completed/failed/canceled`;
+  there is no `no_answer` at that level, so `engine.py`'s `TERMINAL` set
+  correctly doesn't recognise it, and a fixture using it isn't a realistic
+  payload. `triage.py`'s own `RETRYABLE_STATUSES = {"busy", "no_answer",
+  "voicemail"}` branch is consequently unreachable for CALL-E today - not
+  dead code to delete, since Twilio/Plivo (CLAUDE.md's Substitutability
+  section, `FEATURES.md` F17, not yet built) do use exactly these terms,
+  but worth knowing before assuming a "no answer" call takes that branch
+  under the current, sole voice provider. A real unanswered call resolves
+  `status: "failed"` and falls through to the `UNREACHABLE` branch instead.
+  Fixed in the test fixtures (`test_orchestrator.py`); nothing in
+  application code changed.
+- **Tests:** 10 new - 3 pure `check_dial_allowed` cases (`test_safety.py`),
+  6 `CampaignRunner` cases covering ceiling-blocks-after-connect,
+  already-used-today counts toward it, a non-connected call's reservation
+  is released and reusable by the next contact, an unanswered call isn't
+  credited, and the reserve/release holds under real concurrency
+  (`test_orchestrator.py`), 1 cross-member RLS/repo test proving
+  `used_today` ignores non-connected calls and `get_enforced_ceiling`
+  correctly tells "unset" apart from "explicitly zero"
+  (`test_rls_isolation.py`). 278 backend tests passing, `ruff check` clean.
+
+**Depends on:** Phase 5's minimal slice (`Iteration 23`) for the schema and
+display; the org-wide daily budget (`domain/safety.py`, unchanged) remains
+the hard outer bound regardless of what any individual teammate's
+allocation says.
 
 ## Template for the next iteration
 

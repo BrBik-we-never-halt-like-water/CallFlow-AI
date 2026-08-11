@@ -25,7 +25,12 @@ import { Panel } from '@/components/ui/panel';
 import { Skeleton } from '@/components/ui/skeleton';
 import { formatAge, formatDuration } from '@/lib/format';
 import { countLamps, lampForOutcome, type LampState } from '@/lib/lamp';
-import { api, type Outcome, type Team } from '@/lib/api';
+import {
+  api,
+  type Outcome,
+  type Team,
+  type TeamPerformance,
+} from '@/lib/api';
 import { useAppStore } from '@/lib/app-store';
 import { useOrgScopedEffect } from '@/lib/hooks/use-org-scoped-effect';
 import { useSession } from '@/lib/hooks/use-session';
@@ -122,6 +127,9 @@ export default function OverviewPage() {
   const canStart =
     session.status === 'signed-in' &&
     session.profile.permissions.includes('runs:start');
+  const canReadTeam =
+    session.status === 'signed-in' &&
+    session.profile.permissions.includes('runs:read_team');
 
   const settled = useMemo(
     () => outcomes.filter((o) => o.disposition !== 'in_flight'),
@@ -571,6 +579,8 @@ export default function OverviewPage() {
             </ul>
           </Panel>
         ) : null}
+
+        {canReadTeam ? <TeamPerformancePanel /> : null}
       </div>
     </div>
   );
@@ -692,6 +702,122 @@ function NeedsPersonRow({ outcome }: { outcome: Outcome }) {
         Review &rarr;
       </Link>
     </div>
+  );
+}
+
+/**
+ * Everything an admin/owner/viewer needs to see about a teammate at a
+ * glance - calls made, run status, open "needs a person" items, and their
+ * slice of the daily budget - gated the same way as the Volume chart's own
+ * team breadth (`runs:read_team`; an operator's own numbers are already
+ * everywhere else on this page, and the org-wide RLS narrowing would return
+ * nothing for them here anyway). Deliberately its own full-width section
+ * below the main grid, not squeezed into the Volume card - this many
+ * columns needs the width, and the existing 2-column layout above stays
+ * exactly as it was rather than getting more crowded.
+ */
+function TeamPerformancePanel() {
+  const [rows, setRows] = useState<TeamPerformance[] | null>(null);
+
+  useOrgScopedEffect(() => {
+    api
+      .teamPerformance()
+      .then((data) =>
+        setRows([...data].sort((a, b) => b.total_calls - a.total_calls)),
+      )
+      .catch(() => setRows([]));
+  });
+
+  if (rows !== null && rows.length === 0) return null;
+
+  return (
+    <Panel className="dark-panel-glass flex flex-col gap-4 p-5 sm:p-6">
+      <p className="text-small font-bold text-text-mute">Team performance</p>
+
+      {rows === null ? (
+        <div className="flex flex-col gap-2">
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-10 w-full" />
+        </div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-max text-small">
+            <thead>
+              <tr className="border-b border-rule text-left text-text-mute">
+                <th className="py-2 pr-4 font-bold">Teammate</th>
+                <th className="py-2 pr-4 text-right font-bold">Calls</th>
+                <th className="py-2 pr-4 text-right font-bold">Closed</th>
+                <th className="py-2 pr-4 text-right font-bold">
+                  Runs active
+                </th>
+                <th className="py-2 pr-4 text-right font-bold">
+                  Runs completed
+                </th>
+                <th className="py-2 pr-4 text-right font-bold">
+                  Runs failed
+                </th>
+                <th className="py-2 pr-4 text-right font-bold">
+                  Needs a person
+                </th>
+                <th className="py-2 text-right font-bold">Credits today</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr
+                  key={row.user_id ?? row.name ?? 'unknown'}
+                  className="border-b border-rule last:border-0"
+                >
+                  <td className="py-2.5 pr-4">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <span className="flex size-6 shrink-0 items-center justify-center rounded-full border border-rule bg-surface-sunken text-[0.65rem] font-medium text-text">
+                        {(row.name?.trim() || '?').charAt(0).toUpperCase()}
+                      </span>
+                      <span className="min-w-0 truncate text-text">
+                        {row.name?.trim() || 'Removed teammate'}
+                      </span>
+                    </div>
+                  </td>
+                  <td className="py-2.5 pr-4 text-right font-mono text-data tabular-nums text-text">
+                    {row.total_calls}
+                  </td>
+                  <td className="py-2.5 pr-4 text-right font-mono text-data tabular-nums text-text-mute">
+                    {row.calls_closed}
+                  </td>
+                  <td className="py-2.5 pr-4 text-right font-mono text-data tabular-nums text-text-mute">
+                    {row.runs_active}
+                  </td>
+                  <td className="py-2.5 pr-4 text-right font-mono text-data tabular-nums text-text-mute">
+                    {row.runs_completed}
+                  </td>
+                  <td className="py-2.5 pr-4 text-right font-mono text-data tabular-nums text-text-mute">
+                    {row.runs_failed}
+                  </td>
+                  <td className="py-2.5 pr-4 text-right">
+                    {row.open_escalations > 0 ? (
+                      <span className="inline-flex items-center gap-1.5 font-mono text-data tabular-nums text-lamp-flare-text">
+                        <Lamp state="flare" size="sm" />
+                        {row.open_escalations}
+                      </span>
+                    ) : (
+                      <span className="font-mono text-data tabular-nums text-text-mute">
+                        0
+                      </span>
+                    )}
+                  </td>
+                  <td className="py-2.5 text-right font-mono text-data tabular-nums text-text-mute">
+                    {row.daily_allocation > 0
+                      ? `${row.credits_used_today} / ${row.daily_allocation}`
+                      : 'unallocated'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Panel>
   );
 }
 

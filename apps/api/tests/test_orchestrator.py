@@ -82,6 +82,35 @@ class ConcurrencyTrackingGateway(FakeGateway):
         return {"id": "call_test", "status": "completed"}
 
 
+class NoAnswerGateway(FakeGateway):
+    """Completes a call that never connected. `"failed"` - not a literal
+    "no_answer" - is the realistic payload: CALL-E's documented task-level
+    `CallStatus` enum (CALLE.md) is only `queued/in_progress/completed/
+    failed/canceled`, no finer "why" at this level (that detail lives in
+    `failure_code`/`failure_message`, unused by a clean poll like this)."""
+
+    def get_call(self, call_id: str) -> dict[str, Any]:
+        return {"id": call_id, "status": "failed"}
+
+
+class FlakyThenConnectsGateway(FakeGateway):
+    """The first call placed never connects; every call after that does -
+    for proving a released credit reservation is actually usable again by a
+    later contact in the same run."""
+
+    def __init__(self) -> None:
+        self._calls = 0
+
+    def start_call(self, **kwargs: Any) -> dict[str, Any]:
+        self._calls += 1
+        return {"id": f"call_{self._calls}", "status": "queued"}
+
+    def get_call(self, call_id: str) -> dict[str, Any]:
+        if call_id == "call_1":
+            return {"id": call_id, "status": "failed"}
+        return super().get_call(call_id)
+
+
 @pytest.fixture(autouse=True)
 def _no_real_sleep(monkeypatch: pytest.MonkeyPatch) -> None:
     async def _instant(_seconds: float) -> None:
@@ -351,6 +380,79 @@ async def test_ceiling_holds_under_concurrent_dialing(monkeypatch: pytest.Monkey
     blocked = [o for o in outcomes if o.disposition is Disposition.SKIPPED]
     admitted = [o for o in outcomes if o.disposition is not Disposition.SKIPPED]
     assert len(admitted) == 2
+    assert len(blocked) == 3
+
+
+async def test_no_credit_ceiling_means_only_the_org_wide_budget_applies() -> None:
+    # `credit_ceiling` defaults to `None` - nobody has set this teammate's
+    # allocation, so nothing about credits should block them here.
+    runner = CampaignRunner(gateway=FakeGateway())  # type: ignore[arg-type]
+    contacts = [Contact(name=f"C{i}", phone=f"+155555501{i:02d}") for i in range(3)]
+    outcomes = await runner.run(TRAVEL_DISCOVERY, contacts)
+    assert all(o.answered for o in outcomes)
+
+
+async def test_credit_ceiling_blocks_the_next_contact_once_a_call_connects() -> None:
+    runner = CampaignRunner(  # type: ignore[arg-type]
+        gateway=FakeGateway(), credit_ceiling=1, credits_used_before_run=0
+    )
+
+    first = await runner.run_one(TRAVEL_DISCOVERY, Contact(name="A", phone="+15555550100"))
+    second = await runner.run_one(TRAVEL_DISCOVERY, Contact(name="B", phone="+15555550101"))
+
+    assert first.answered
+    assert second.status == "BLOCKED"
+    assert second.disposition is Disposition.SKIPPED
+    assert "credit" in (second.disposition_reason or "")
+
+
+async def test_credits_already_used_before_this_run_count_toward_the_ceiling() -> None:
+    runner = CampaignRunner(  # type: ignore[arg-type]
+        gateway=ExplodingGateway(), credit_ceiling=1, credits_used_before_run=1
+    )
+    result = await runner.run_one(TRAVEL_DISCOVERY, Contact(name="A", phone="+15555550100"))
+    assert result.status == "BLOCKED"
+    assert result.disposition is Disposition.SKIPPED
+    assert "credit" in (result.disposition_reason or "")
+
+
+async def test_a_call_that_never_connects_does_not_spend_a_credit() -> None:
+    # A credit is only ever actually spent by a connected call - a dial that
+    # never rings through must give its reservation back so a later contact
+    # in the same run can still use it.
+    runner = CampaignRunner(  # type: ignore[arg-type]
+        gateway=FlakyThenConnectsGateway(), credit_ceiling=1, credits_used_before_run=0
+    )
+
+    first = await runner.run_one(TRAVEL_DISCOVERY, Contact(name="A", phone="+15555550100"))
+    second = await runner.run_one(TRAVEL_DISCOVERY, Contact(name="B", phone="+15555550101"))
+
+    assert not first.answered
+    assert first.disposition is not Disposition.SKIPPED, "the call itself was never blocked"
+    assert second.disposition is not Disposition.SKIPPED, "the released credit was not reusable"
+    assert second.answered
+
+
+async def test_an_unanswered_call_is_not_credited_as_connected() -> None:
+    runner = CampaignRunner(gateway=NoAnswerGateway())  # type: ignore[arg-type]
+    result = await runner.run_one(TRAVEL_DISCOVERY, Contact(name="A", phone="+15555550100"))
+    assert result.answered is False
+
+
+async def test_credit_ceiling_holds_under_concurrent_dialing() -> None:
+    # Same shape as test_ceiling_holds_under_concurrent_dialing - the
+    # check-and-reserve race only shows up under real concurrency, and
+    # FakeGateway always connects, so every reservation here is a real spend.
+    runner = CampaignRunner(  # type: ignore[arg-type]
+        gateway=FakeGateway(), max_concurrent_calls=5, credit_ceiling=2, credits_used_before_run=0
+    )
+    contacts = [Contact(name=f"C{i}", phone=f"+155555501{i:02d}") for i in range(5)]
+
+    outcomes = await runner.run(TRAVEL_DISCOVERY, contacts)
+
+    connected = [o for o in outcomes if o.answered]
+    blocked = [o for o in outcomes if o.disposition is Disposition.SKIPPED]
+    assert len(connected) == 2
     assert len(blocked) == 3
 
 

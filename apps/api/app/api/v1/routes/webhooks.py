@@ -25,7 +25,9 @@ from pydantic import BaseModel
 from app.api.v1.routes.campaigns import resolve_campaign
 from app.core.config import config
 from app.database import database
+from app.database.repositories import escalations as escalations_repo
 from app.database.repositories import runs as runs_repo
+from app.domain.entities import NEEDS_A_PERSON_DISPOSITIONS
 from app.domain.outcome_extraction import (
     _resolve_outcome,
     base_outcome_from_webhook_payload,
@@ -100,8 +102,12 @@ async def calle_webhook(
         outcome = _resolve_outcome(base, call, escalate_on_negative=campaign.escalate_on_negative)
         record = outcome.model_dump(mode="json")
         record["provider_call_id"] = record.pop("run_id", None)
-        await runs_repo.append_outcome(
+        call_outcome_id = await runs_repo.append_outcome(
             conn, run_id=run_id, org_id=owner["org_id"], outcome=record
         )
+        if outcome.disposition in NEEDS_A_PERSON_DISPOSITIONS:
+            await escalations_repo.create_for_outcome(
+                conn, org_id=owner["org_id"], run_id=run_id, call_outcome_id=call_outcome_id
+            )
 
     return {"ok": True}

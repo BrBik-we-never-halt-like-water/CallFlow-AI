@@ -11,6 +11,7 @@ import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
 import { CampaignCard } from '@/components/app/campaign-card';
 import { ConnectionBanner } from '@/components/app/connection-banner';
+import { ShareRequestDialog } from '@/components/app/share-request-dialog';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -27,9 +28,15 @@ import { SearchInput } from '@/components/ui/input';
 import { Panel } from '@/components/ui/panel';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/components/ui/toast';
-import { api, type Campaign } from '@/lib/api';
+import {
+  api,
+  type Campaign,
+  type CampaignDirectoryEntry,
+  type ShareRequest,
+} from '@/lib/api';
 import { useAppStore } from '@/lib/app-store';
 import { CAMPAIGN_DRAFT_KEY } from '@/lib/campaign-draft';
+import { useOrgScopedEffect } from '@/lib/hooks/use-org-scoped-effect';
 import { useSession } from '@/lib/hooks/use-session';
 import type { RunStatus } from '@/lib/lamp';
 
@@ -53,6 +60,11 @@ export default function CampaignsPage() {
   const canWrite = permissions.includes('campaigns:write');
   const canDelete = permissions.includes('campaigns:delete');
   const canStart = permissions.includes('runs:start');
+  // Only an operator's own list is narrowed by Phase 1's RLS - admin/owner/
+  // viewer already see every campaign above, so the directory would just
+  // be a confusing, redundant second list for them.
+  const showDirectory =
+    session.status === 'signed-in' && session.profile.active.role === 'operator';
   const { campaigns, hydratedRuns, phase, refresh } = useAppStore();
   const [search, setSearch] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
@@ -314,6 +326,10 @@ export default function CampaignsPage() {
             ))}
           </ul>
         )}
+
+        {showDirectory ? (
+          <TeamCampaignsDirectory ownedIds={new Set(campaigns.map((c) => c.id))} />
+        ) : null}
       </div>
 
       <DialogRoot
@@ -347,6 +363,107 @@ export default function CampaignsPage() {
           }
         />
       </DialogRoot>
+    </>
+  );
+}
+
+/**
+ * What else exists to ask for - name and owner only, never a teammate's
+ * goal template or fields (role-based UI roadmap, Phase 4). Only rendered
+ * for operators; RLS already narrows the main list above to their own, so
+ * this is the one place they can see - and request - the rest.
+ */
+function TeamCampaignsDirectory({ ownedIds }: { ownedIds: Set<string> }) {
+  const toast = useToast();
+  const [directory, setDirectory] = useState<CampaignDirectoryEntry[] | null>(
+    null,
+  );
+  const [myRequests, setMyRequests] = useState<ShareRequest[]>([]);
+  const [target, setTarget] = useState<CampaignDirectoryEntry | null>(null);
+
+  function load() {
+    api
+      .campaignDirectory()
+      .then(setDirectory)
+      .catch(() => setDirectory([]));
+    api
+      .listShareRequests()
+      .then(setMyRequests)
+      .catch(() => toast({ tone: 'error', title: "Couldn't load your requests" }));
+  }
+
+  useOrgScopedEffect(() => {
+    load();
+  });
+
+  const notMine = (directory ?? []).filter((c) => !ownedIds.has(c.id));
+  const pendingFor = new Set(
+    myRequests
+      .filter((r) => r.resource_type === 'campaign' && r.status === 'pending')
+      .map((r) => r.resource_id),
+  );
+
+  if (directory !== null && notMine.length === 0) return null;
+
+  return (
+    <>
+      <Panel className="dark-panel-glass flex flex-col gap-3 p-5 sm:p-6">
+        <div className="flex flex-col gap-1">
+          <p className="text-small font-bold text-text-mute">
+            Team campaigns
+          </p>
+          <p className="text-small text-text-dim">
+            Campaigns your teammates made. Ask to use one - they decide.
+          </p>
+        </div>
+
+        {directory === null ? (
+          <div className="flex flex-col gap-2">
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-10 w-full" />
+          </div>
+        ) : (
+          <ul className="flex flex-col divide-y divide-rule">
+            {notMine.map((entry) => (
+              <li
+                key={entry.id}
+                className="flex flex-wrap items-center justify-between gap-3 py-2.5"
+              >
+                <div className="flex min-w-0 flex-col">
+                  <span className="truncate text-small font-medium text-text">
+                    {entry.name}
+                  </span>
+                  <span className="text-small text-text-dim">
+                    {entry.owner_name || 'Unowned'}
+                  </span>
+                </div>
+                {pendingFor.has(entry.id) ? (
+                  <Button variant="secondary" size="sm" disabled>
+                    Requested
+                  </Button>
+                ) : (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => setTarget(entry)}
+                  >
+                    Request access
+                  </Button>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </Panel>
+
+      <ShareRequestDialog
+        open={target !== null}
+        onOpenChange={(open) => !open && setTarget(null)}
+        resourceType="campaign"
+        resourceId={target?.id ?? null}
+        resourceLabel={target?.name ?? ''}
+        onRequested={load}
+      />
     </>
   );
 }
