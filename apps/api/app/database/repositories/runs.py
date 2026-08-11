@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
 from typing import Any
 from uuid import UUID
 
@@ -17,61 +16,17 @@ async def create_run(
     campaign_id: str,
     total: int,
     started_by: UUID,
-    max_calls_per_run: int,
-    allowlist: Iterable[str],
-    calls_per_window: int,
-    window_minutes: int,
-    daily_budget: int,
-    idempotency_key: str | None = None,
-) -> bool:
-    """Insert a new run row. Returns False, without inserting, if a run with
-    the same (org_id, idempotency_key) already exists - the caller is then
-    expected to fetch and return that run instead of starting a second one.
-
-    The partial unique index only covers non-null keys, so a caller that
-    never sends one (nothing requires it) always inserts normally.
-
-    The five safety fields are a permanent snapshot of the *effective*
-    guards this run was actually governed by - not a live reference to
-    `org_safety_settings`, which can change after the fact and would then
-    silently rewrite this run's own history. The caller passes the exact
-    `EffectiveSafety` values used for this run's own dial gate and
-    rate-limit check, so what's recorded here can never drift from what was
-    actually enforced (`ISSUES.md` it-16).
-    """
-    row = await conn.fetchrow(
+) -> None:
+    await conn.execute(
         """
-        insert into public.runs
-            (id, org_id, campaign_id, total, started_by, idempotency_key,
-             max_calls_per_run, allowlist, calls_per_window, window_minutes, daily_budget)
-        values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-        on conflict (org_id, idempotency_key) where idempotency_key is not null do nothing
-        returning id
+        insert into public.runs (id, org_id, campaign_id, total, started_by)
+        values ($1, $2, $3, $4, $5)
         """,
         run_id,
         org_id,
         campaign_id,
         total,
         started_by,
-        idempotency_key,
-        max_calls_per_run,
-        list(allowlist),
-        calls_per_window,
-        window_minutes,
-        daily_budget,
-    )
-    return row is not None
-
-
-async def get_run_by_idempotency_key(
-    conn: asyncpg.Connection, org_id: UUID, idempotency_key: str
-) -> asyncpg.Record | None:
-    return await conn.fetchrow(
-        """
-        select id, total from public.runs where org_id = $1 and idempotency_key = $2
-        """,
-        org_id,
-        idempotency_key,
     )
 
 
@@ -135,83 +90,18 @@ async def append_outcome(
     )
 
 
-async def finish_run(
-    conn: asyncpg.Connection,
-    run_id: str,
-    error: str | None = None,
-    *,
-    status: str | None = None,
-) -> None:
-    """Mark a run terminal. `status` overrides the error-based default (used
-    for `canceled`, since stopping a run early is neither a completion nor a
-    failure)."""
-    resolved_status = status if status is not None else ("failed" if error is not None else "completed")
+async def finish_run(conn: asyncpg.Connection, run_id: str, error: str | None = None) -> None:
     await conn.execute(
         """
         update public.runs
-           set status = $2,
+           set status = case when $2::text is null then 'completed' else 'failed' end,
                finished_at = now(),
-               error = $3
+               error = $2
          where id = $1
         """,
         run_id,
-        resolved_status,
         error,
     )
-
-
-async def request_cancel(conn: asyncpg.Connection, org_id: UUID, run_id: str) -> str | None:
-    """Marks a run as canceling. Returns the resulting status, or None if the
-    run doesn't exist for this org, or isn't in a cancellable state.
-
-    Idempotent: calling this twice on an already-canceling run just re-confirms
-    the same state (`coalesce` keeps the original request time) rather than
-    erroring on a second click.
-    """
-    row = await conn.fetchrow(
-        """
-        update public.runs
-           set status = 'canceling',
-               cancel_requested_at = coalesce(cancel_requested_at, now())
-         where org_id = $1 and id = $2 and status in ('running', 'canceling')
-        returning status
-        """,
-        org_id,
-        run_id,
-    )
-    return row["status"] if row else None
-
-
-async def is_cancel_requested(conn: asyncpg.Connection, run_id: str) -> bool:
-    row = await conn.fetchrow(
-        "select cancel_requested_at is not null as requested from public.runs where id = $1",
-        run_id,
-    )
-    return bool(row and row["requested"])
-
-
-async def reap_orphaned_runs(conn: asyncpg.Connection) -> int:
-    """Fail every run still 'running'/'canceling' at process boot.
-
-    A run's dial loop lives entirely inside one `BackgroundTasks` coroutine in
-    one process (F18) - there is no queue, no worker, nothing that could have
-    kept it going across a restart. If this process is only just starting,
-    any row still marked running was being driven by the *previous* process,
-    which is now gone: it is orphaned by definition, not by a timeout guess.
-    Called once, cross-org, before the app accepts any new run - the reason
-    this needs `privileged.acquire()` rather than `as_user()`.
-    """
-    result = await conn.execute(
-        """
-        update public.runs
-           set status = 'failed',
-               finished_at = now(),
-               error = 'The service restarted before this run finished.'
-         where status in ('running', 'canceling')
-        """
-    )
-    # asyncpg's Connection.execute() returns a tag string like "UPDATE 3".
-    return int(result.rsplit(" ", 1)[-1]) if result else 0
 
 
 async def lookup_owner_for_webhook(conn: asyncpg.Connection, run_id: str) -> asyncpg.Record | None:
@@ -238,9 +128,7 @@ async def get_run(conn: asyncpg.Connection, org_id: UUID, run_id: str) -> asyncp
         """
         select r.id, r.org_id, r.campaign_id, r.total, r.status, r.started_at, r.finished_at,
                r.error, r.started_by, u.name as started_by_name,
-               u.avatar_url as started_by_avatar_url,
-               r.max_calls_per_run, r.allowlist, r.calls_per_window, r.window_minutes,
-               r.daily_budget
+               u.avatar_url as started_by_avatar_url
         from public.runs r
         left join public.users u on u.id = r.started_by
         where r.org_id = $1 and r.id = $2

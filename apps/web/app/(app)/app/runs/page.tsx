@@ -1,10 +1,6 @@
 'use client';
 
-import {
-  BroadcastIcon,
-  FunnelIcon,
-  MagnifyingGlassIcon,
-} from '@phosphor-icons/react/dist/ssr';
+import { BroadcastIcon, FunnelIcon } from '@phosphor-icons/react/dist/ssr';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
@@ -79,9 +75,9 @@ const DARK_SCOPE_VARS: React.CSSProperties = {
   '--lamp-flare-text': 'var(--dark-lamp-flare-text)',
 } as React.CSSProperties;
 
-const STATUS_FILTERS = (
-  ['running', 'canceling', 'canceled', 'completed', 'failed'] as RunStatus[]
-).map((value) => ({ value, label: lampForRunStatus(value).label }));
+const STATUS_FILTERS = (['running', 'completed', 'failed'] as RunStatus[]).map(
+  (value) => ({ value, label: lampForRunStatus(value).label }),
+);
 
 export default function RunsPage() {
   const router = useRouter();
@@ -97,7 +93,6 @@ export default function RunsPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
   const [query, setQuery] = useState('');
-  const [searchOpen, setSearchOpen] = useState(false);
   const [statusFilter, setStatusFilter] = useState<Set<RunStatus>>(new Set());
 
   const campaignName = (id: string) =>
@@ -233,32 +228,14 @@ export default function RunsPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {searchOpen || query ? (
-            <SearchInput
-              autoFocus={searchOpen}
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              onClear={() => {
-                setQuery('');
-                setSearchOpen(false);
-              }}
-              onBlur={() => {
-                if (!query) setSearchOpen(false);
-              }}
-              placeholder="Search runs"
-              aria-label="Search runs"
-              className="h-10 w-48 rounded-full sm:w-64"
-            />
-          ) : (
-            <button
-              type="button"
-              aria-label="Search runs"
-              onClick={() => setSearchOpen(true)}
-              className="flex size-10 shrink-0 cursor-pointer items-center justify-center rounded-full border border-rule text-text-dim transition-colors hover:bg-surface-hover hover:text-text"
-            >
-              <MagnifyingGlassIcon aria-hidden weight="bold" className="size-4" />
-            </button>
-          )}
+          <SearchInput
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onClear={() => setQuery('')}
+            placeholder="Search runs"
+            aria-label="Search runs"
+            className="h-10 w-full rounded-full sm:w-64"
+          />
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
