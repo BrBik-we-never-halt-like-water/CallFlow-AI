@@ -27,7 +27,7 @@ export function FinalCta() {
   return (
     <section className="mt-(--space-section) px-4 sm:px-6">
       <Reveal>
-        <div className="card-flow relative mx-auto max-w-(--container-marketing) overflow-hidden">
+        <div className="card-feature relative mx-auto max-w-(--container-marketing) overflow-hidden">
           {/* Bold waves at the top, fading away downward. */}
           <div
             aria-hidden

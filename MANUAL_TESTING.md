@@ -204,7 +204,7 @@ Request Headers on the failing call if you belong to more than one organisation.
 2. As **Operator A**, go to **Settings → Billing**. You should see **"My credits"**
    showing `0 of 3 calls used` (or whatever you set), with a progress bar - not the org's
    overall plan/usage, which stays hidden for this role.
-3. **1 credit = 1 *connected* call, not 1 attempt** (`ISSUES.md` iteration 25) - `used`
+3. **1 credit = 1 *connected* call, not 1 attempt** (`ISSUES.md` iteration 30) - `used`
    only goes up once the callee actually answers. Start a run as Operator A against 1–2
    numbers from the reserved range (`+1 555 0100`–`0199`, see the warning at the top) -
    these never connect to a real phone, by design. After the run finishes, refresh

@@ -1,0 +1,14 @@
+# HTTP-only server block. Used when no TLS material is available - either a first
+# bring-up before certificates are configured, or a host that sits behind
+# something else terminating TLS.
+#
+# Rendered by scripts/bootstrap.sh into /etc/nginx/sites-available/callflow-<env>,
+# and only when that file does not already exist: certbot rewrites it in place to
+# add its own TLS block, and re-rendering every deploy would strip that back out.
+
+server {
+    listen 80;
+    server_name @HOST@;
+
+    include /etc/nginx/snippets/callflow-@ENV@.conf;
+}

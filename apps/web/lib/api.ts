@@ -171,18 +171,39 @@ export interface RunStats {
   escalated: number;
   auto_closed: number;
   needs_human_pct: number;
+  in_flight: number;
+}
+
+export type RunStatus =
+  | 'running'
+  | 'canceling'
+  | 'canceled'
+  | 'completed'
+  | 'failed';
+
+/** A permanent record of the guards this run was actually governed by -
+ * never a live read of the organisation's current settings, which can
+ * change after the fact. `null` only for a run created before this field
+ * existed; every run since always has one. */
+export interface RunSafetySnapshot {
+  max_calls_per_run: number;
+  allowlist: string[];
+  calls_per_window: number;
+  window_minutes: number;
+  daily_budget: number;
 }
 
 export interface Run {
   id: string;
   campaign_id: string;
   total: number;
-  status: 'running' | 'completed' | 'failed';
+  status: RunStatus;
   started_at: string;
   finished_at: string | null;
   outcomes: Outcome[];
   error: string | null;
   stats: RunStats;
+  safety_snapshot: RunSafetySnapshot | null;
 }
 
 /**
@@ -193,7 +214,7 @@ export interface RunSummary {
   id: string;
   campaign_id: string;
   total: number;
-  status: 'running' | 'completed' | 'failed';
+  status: RunStatus;
   started_at: string;
   finished_at: string | null;
   error: string | null;
@@ -225,6 +246,13 @@ export interface SafetySettings {
   window_minutes: number;
   daily_budget: number;
   used_today: number;
+}
+
+/** A per-run tightening of this organisation's own safety settings - see
+ * `api.startRun`'s own doc comment for what "tighten-only" means here. */
+export interface RunSafetyOverride {
+  max_calls_per_run?: number;
+  allowlist?: string[];
 }
 
 export interface ContactInput {
@@ -439,13 +467,37 @@ export const api = {
       '/api/v1/campaigns/preview',
       { method: 'POST', body: JSON.stringify({ campaign_id, contacts }) },
     ),
-  startRun: (campaign_id: string, contacts: ContactInput[]) =>
+  /**
+   * `override` tightens this organisation's own safety settings for this one
+   * run - never loosens them. The API silently caps a too-high ceiling and
+   * intersects a wider allowlist rather than rejecting the request; the
+   * composer clamps client-side first (`clampRunOverride`, lib/lamp.ts) so
+   * that's a backstop for a race, not the normal path.
+   */
+  startRun: (
+    campaign_id: string,
+    contacts: ContactInput[],
+    idempotencyKey?: string,
+    override?: RunSafetyOverride,
+  ) =>
     authReq<{ run_id: string; total: number }>('/api/v1/runs', {
       method: 'POST',
-      body: JSON.stringify({ campaign_id, contacts }),
+      headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {},
+      body: JSON.stringify({
+        campaign_id,
+        contacts,
+        max_calls_per_run: override?.max_calls_per_run ?? null,
+        allowlist: override?.allowlist ?? null,
+      }),
     }),
   listRuns: () => authReq<RunSummary[]>('/api/v1/runs'),
   getRun: (id: string) => authReq<Run>(`/api/v1/runs/${id}`),
+  /** Stops a run from dialling further contacts. Can't interrupt a call
+   *  already in progress - see the endpoint's own docstring. */
+  cancelRun: (id: string) =>
+    authReq<{ status: string }>(`/api/v1/runs/${id}/cancel`, {
+      method: 'POST',
+    }),
   teamSummary: () =>
     authReq<TeamMemberSummary[]>('/api/v1/runs/team-summary'),
 

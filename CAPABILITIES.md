@@ -294,7 +294,7 @@ that specifically is what's not working.
 **What it is.** An operator can ask for a teammate's campaign, or ask to take over their
 open escalation; only the resource's real owner (or an admin/owner, for viewing) can
 grant it. Built in this round - see `TEAM_COLLABORATION_ROADMAP.md`'s Phase 4 writeup and
-`ISSUES.md` iteration 24 for the two real bugs found and fixed while building it.
+`ISSUES.md` iteration 29 for the two real bugs found and fixed while building it.
 
 **Frontend.** `/app/campaigns`'s "Team campaigns" panel and `/app/escalations`'s "Team
 escalations" panel (both operator-facing, "Request access"/"Request to help"); `/app/
@@ -362,7 +362,7 @@ editable by admin/owner only.
 | `GET /api/v1/organisations/me/team-performance` | `runs:read_team` | Every teammate's allocation + usage in one call - the admin/owner dashboard view. |
 
 **What to expect - the one thing worth stating explicitly:** **1 credit = 1 connected
-call, and it's enforced** (`ISSUES.md` iteration 25) - layered on top of, never instead
+call, and it's enforced** (`ISSUES.md` iteration 30) - layered on top of, never instead
 of, the org-wide daily budget ([§9](#9-safety-guards--suppression-list)), which still
 applies regardless of any individual allocation. Two things trip people up:
 

@@ -1600,6 +1600,23 @@ button[data-menu][data-state='open']:focus-visible {
   transform: none;
 }
 
+/* Sidebar/nav-bar icon bounce - triggered by hovering the whole nav row
+   (`.group`), not just the icon glyph itself. See `AnimatedNavIcon`. */
+@keyframes nav-icon-bounce {
+  0% {
+    transform: scale(1) rotate(0deg);
+  }
+  40% {
+    transform: scale(1.35) rotate(-14deg);
+  }
+  70% {
+    transform: scale(1.05) rotate(6deg);
+  }
+  100% {
+    transform: scale(1.18) rotate(-6deg);
+  }
+}
+
 @keyframes row-enter {
   from {
     opacity: 0;
@@ -1788,5 +1805,190 @@ button[data-menu][data-state='open']:focus-visible {
   * {
     scrollbar-color: var(--rule-strong) transparent;
     scrollbar-width: thin;
+  }
+}
+
+/* ==========================================================================
+   CAL-4 "Signal" surfaces, for the marketing site only.
+
+   The merge that brought the design-and-motion overhaul onto this branch kept
+   the dashboard on the existing token layer and took CAL-4 for marketing. These
+   rules are what marketing needs and the token layer above does not already
+   provide - appended rather than merged into the blocks above, so nothing the
+   dashboard resolves against changes.
+
+   --primary is decorative and belongs to this surface set. It must never reach
+   Lamp, LampBadge, DonutChart or anything else that renders call state
+   (CLAUDE.md section 4.10).
+   ========================================================================== */
+
+:root {
+  --primary: #3b2fd9;
+  --secondary: #f0e9de;
+  --glass: color-mix(in oklab, var(--surface-raised) 72%, transparent);
+  --glass-edge: color-mix(in oklab, var(--text) 8%, transparent);
+  --space-band: clamp(36px, 4.5vw, 64px);
+}
+
+/* No borders.
+   A card is a pool of lighter surface, not a box with an edge drawn round it.
+   Separation comes from the wash and from space; the moment every group of
+   content gets a rectangle, a page reads as a form rather than a composition.
+   The radius is large enough that the corner never reads as a frame. */
+.card {
+  background: linear-gradient(170deg, var(--surface-raised) 0%, var(--surface-sunken) 100%);
+  border: 0;
+  border-radius: var(--r-xl);
+}
+
+.card-raised {
+  background: linear-gradient(
+    170deg,
+    var(--surface-raised) 0%,
+    color-mix(in oklab, var(--surface-sunken) 55%, var(--surface-raised)) 100%
+  );
+  border: 0;
+  border-radius: var(--r-xl);
+  box-shadow: 0 1px 2px rgba(14, 17, 20, 0.03), 0 14px 30px -18px rgba(14, 17, 20, 0.16);
+}
+
+/* Earns attention by light, not by an outline: a warmer fill and a soft halo
+   in the primary, with no edge to draw. */
+.card-feature {
+  background: linear-gradient(
+    170deg,
+    var(--surface-raised) 0%,
+    color-mix(in oklab, var(--primary) 5%, var(--surface-raised)) 100%
+  );
+  border: 0;
+  border-radius: var(--r-xl);
+  box-shadow:
+    0 1px 2px rgba(14, 17, 20, 0.04),
+    0 20px 44px -22px color-mix(in oklab, var(--primary) 42%, transparent);
+}
+
+/* Interactive cards lift on hover. Transform and shadow only — never a
+   border-colour change, which reflows nothing but reads as a flicker. */
+.card-interactive {
+  transition:
+    box-shadow var(--dur-base) var(--ease-out),
+    transform var(--dur-base) var(--ease-out);
+}
+
+.card-interactive:hover {
+  box-shadow: var(--shadow-md);
+  transform: translateY(-3px);
+}
+
+/* A sunken basin: content sits in a shallow well. Also borderless. */
+.card-sunken {
+  background: linear-gradient(
+    170deg,
+    var(--surface-sunken) 0%,
+    color-mix(in oklab, var(--surface-sunken) 70%, var(--surface-raised)) 100%
+  );
+  border: 0;
+  border-radius: var(--r-xl);
+}
+
+/* Glass, used sparingly — the header and the one featured card. Falls back to
+   a solid surface where backdrop-filter is unavailable, so text never lands on
+   a half-transparent panel with nothing behind it. */
+.glass {
+  background: var(--surface-raised);
+  border: 1px solid var(--rule);
+  border-radius: var(--r-lg);
+}
+
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+  .glass {
+    background: var(--glass);
+    border-color: var(--glass-edge);
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(1.4);
+    backdrop-filter: blur(var(--glass-blur)) saturate(1.4);
+  }
+}
+
+/* --------------------------------------------------------------------------
+   The deck.
+
+   One section fills the screen; depth carries the transition. `--d` is written
+   per section by use-scroll-depth (1 = centred), and defaults to 1 so the page
+   is fully legible before hydration and under reduced motion.
+
+   Snap is `proximity`, never `mandatory`: mandatory snapping fights anyone who
+   wants to stop halfway, and traps keyboard and screen-reader users mid-section.
+   -------------------------------------------------------------------------- */
+
+.deck {
+  scroll-snap-type: y proximity;
+}
+
+/* The default lives here, on the element the hook writes to — putting it on
+   .deck-inner would shadow the inherited value and depth would never apply. */
+.deck-section {
+  --d: 1;
+  scroll-snap-align: start;
+  scroll-snap-stop: normal;
+}
+
+.deck-inner {
+  transform: scale(calc(0.955 + 0.045 * var(--d)));
+  opacity: calc(0.45 + 0.55 * var(--d));
+  transition:
+    transform 120ms linear,
+    opacity 120ms linear;
+  will-change: transform, opacity;
+}
+
+/* The receding veil. Cheaper than blurring a full-viewport section, which
+   forces a compositor layer per section and is where this pattern usually
+   starts dropping frames. */
+.deck-section::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: var(--surface);
+  opacity: calc((1 - var(--d, 1)) * 0.35);
+  transition: opacity 120ms linear;
+}
+
+/* --------------------------------------------------------------------------
+   Section grounds.
+
+   Rhythm comes from alternating ground rather than from a rule between every
+   block. `sand` is the warm secondary surface; it appears on marketing only.
+   -------------------------------------------------------------------------- */
+
+.ground-sand {
+  background: var(--secondary);
+}
+
+.ground-sunken {
+  background: var(--surface-sunken);
+}
+
+.ground-inverse {
+  background: var(--surface-inverse);
+  color: var(--text-inverse);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card-interactive:hover {
+    transform: none;
+  }
+
+  .deck {
+    scroll-snap-type: none;
+  }
+
+  .deck-inner {
+    transform: none;
+    opacity: 1;
+  }
+
+  .deck-section::after {
+    opacity: 0;
   }
 }

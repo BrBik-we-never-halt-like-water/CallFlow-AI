@@ -35,7 +35,7 @@ exist in this repo**; `SYSTEM.md` §12 is the closest real gap map until it's wr
 | [#5](#5--rate-limits-and-daily-budget-are-per-process-and-reset-on-restart)                                                       | S2  | Rate limits reset on restart, not shared                                                                              | backend        | it-1  | **PARTLY FIXED** |
 | [#6](#6--three-high-severity-npm-advisories)                                                                                      | S2  | Three high-severity npm advisories                                                                                    | web            | it-1  | OPEN             |
 | [#7](#7--escalation-resolution-is-component-state)                                                                                | S3  | Escalation resolution is component state                                                                              | web            | it-1  | **FIXED**        |
-| [#8](#8--stats-mixes-denominators)                                                                                                | S3  | `stats` mixes denominators                                                                                            | backend        | it-1  | OPEN             |
+| [#8](#8--stats-mixes-denominators)                                                                                                | S3  | `stats` mixes denominators                                                                                            | backend        | it-1  | **FIXED**        |
 | [#9](#9--renderyaml-contradicts-the-real-deployment)                                                                              | S3  | `render.yaml` contradicts the real deployment                                                                         | infra          | it-1  | **FIXED**        |
 | [#10](#10--no-frontend-tests)                                                                                                     | S3  | No frontend tests                                                                                                     | web            | it-1  | OPEN             |
 | [#11](#11--escalate_on_negative-is-misnamed)                                                                                      | S4  | `escalate_on_negative` is misnamed                                                                                    | backend        | it-1  | OPEN             |
@@ -101,10 +101,19 @@ exist in this repo**; `SYSTEM.md` §12 is the closest real gap map until it's wr
 | [#71](#71--viewer-role-had-a-correct-backend-and-a-completely-unenforced-frontend)                                                | S2  | Viewer role had a correct backend and a completely unenforced frontend                                               | web            | it-22 | **FIXED**        |
 | [#72](#72--pending-invitations-showed-no-pending-status-in-the-team-list)                                                          | S3  | Pending invitations showed no pending status in the Team list                                                        | web            | it-22 | **FIXED**        |
 | [#73](#73--toasts-18-fix-depended-on-an-element-that-doesnt-exist-on-every-page)                                                  | S3  | Toast's §18 fix depended on an element that doesn't exist on every page                                              | web            | it-22 | **FIXED**        |
-| [#74](#74--appsettingsbillingpagetsx-had-no-permission-check-and-the-settings-tab-bar-showed-every-tab-to-every-role)             | S2  | `settings/billing/page.tsx` had no permission check; the settings tab bar showed every tab to every role             | web            | it-22 | **FIXED**        |
-| [#75](#75--runs_select-and-escalations_select-recursed-infinitely-once-each-queried-the-other)                                    | S1  | `runs_select` and `escalations_select` recursed infinitely once each queried the other                              | backend        | it-23 | **FIXED**        |
-| [#76](#76--cloning-a-teammates-campaign-on-share-approval-failed-under-rls-for-every-non-adminowner-approver)                     | S1  | Cloning a teammate's campaign on share approval failed under RLS for every non-admin/owner approver                 | backend        | it-24 | **FIXED**        |
-| [#77](#77--the-share-request-approval-flow-performed-the-grant-before-the-atomic-decision-a-double-clone-race)                    | S2  | The share-request approval flow performed the grant before the atomic decision - a double-clone race                | backend        | it-24 | **FIXED**        |
+| [#74](#74--postruns-had-no-idempotency-key-a-retried-request-could-start-a-second-real-run)                                       | S2  | `POST /runs` had no idempotency key - a retried request could start a second real run                                 | backend + web  | it-23 | **FIXED**        |
+| [#75](#75--a-run-in-progress-when-the-api-restarted-stayed-running-forever)                                                       | S2  | A run in progress when the API restarted stayed "running" forever                                                     | backend        | it-23 | **FIXED**        |
+| [#76](#76--there-was-no-way-to-actually-stop-a-run-once-started)                                                                  | S2  | There was no way to actually stop a run once started                                                                  | backend + web  | it-23 | **FIXED**        |
+| [#77](#77--a-suppressed-contact-still-reserved-rate-limit-and-daily-budget-it-would-never-use)                                    | S3  | A suppressed contact still reserved rate-limit and daily-budget it would never use                                    | backend        | it-23 | **FIXED**        |
+| [#78](#78--a-hand-typed-phone-number-could-show-valid-in-the-grid-while-failing-e164-at-submission)                               | S2  | A hand-typed phone number could show valid in the grid while failing E.164 at submission                              | web            | it-24 | **FIXED**        |
+| [#79](#79--a-runs-actual-guards-were-never-recorded-so-past-runs-became-unauditable-once-settings-changed)                        | S2  | A run's actual guards were never recorded, so past runs became unauditable once settings changed                      | backend + web  | it-25 | **FIXED**        |
+| [#80](#80--call-duration-was-never-visible-anywhere-because-the-field-it-was-read-from-doesnt-exist-in-call-es-response)          | S2  | Call duration was never visible anywhere, because the field it was read from doesn't exist in CALL-E's response       | backend        | it-26 | **FIXED**        |
+| [#81](#81--a-long-filter-value-overflowed-the-select-trigger-and-broke-the-escalations-filter-row-layout)                         | S2  | A long filter value overflowed the Select trigger and broke the escalations filter-row layout                        | web            | it-26 | **FIXED** (it-27) |
+| [#82](#82--a-calls-own-top-level-status-can-go-terminal-before-its-nested-attempts-completed_at-does-permanently-freezing-duration_seconds-at-none)  | S2  | A call's own top-level `status` can go terminal before its nested attempt's `completed_at` does, freezing duration at `None` | backend        | it-27 | **FIXED**        |
+| [#83](#83--settingsbillingpagetsx-had-no-permission-check-and-the-settings-tab-bar-showed-every-tab-to-every-role)             | S2  | `settings/billing/page.tsx` had no permission check; the settings tab bar showed every tab to every role (renumbered from #74 on merge) | web            | it-22 | **FIXED**        |
+| [#84](#84--runs_select-and-escalations_select-recursed-infinitely-once-each-queried-the-other)                                    | S1  | `runs_select` and `escalations_select` recursed infinitely once each queried the other (renumbered from #75 on merge) | backend        | it-28 | **FIXED**        |
+| [#85](#85--cloning-a-teammates-campaign-on-share-approval-failed-under-rls-for-every-non-adminowner-approver)                     | S1  | Cloning a teammate's campaign on share approval failed under RLS for every non-admin/owner approver (renumbered from #76 on merge) | backend        | it-29 | **FIXED**        |
+| [#86](#86--the-share-request-approval-flow-performed-the-grant-before-the-atomic-decision-a-double-clone-race)                    | S2  | The share-request approval flow performed the grant before the atomic decision - a double-clone race (renumbered from #77 on merge) | backend        | it-29 | **FIXED**        |
 
 ---
 
@@ -296,7 +305,7 @@ page used to see them all come back. That's fixed - see above.
 
 ### #8 - `stats` mixes denominators
 
-**S3 · OPEN · backend · `callflow/api.py`**
+**S3 · FIXED in it-14 · backend · `app/api/v1/routes/runs.py`**
 
 In `get_run`, `escalated` is counted over `resolved` outcomes, but `auto_closed` and
 `needs_human_pct` are counted over **all** outcomes including `in_flight`.
@@ -305,6 +314,12 @@ In `get_run`, `escalated` is counted over `resolved` outcomes, but `auto_closed`
 reads lower than it is while a run is live. Settles correctly once the run finishes.
 
 **Fix.** Compute every stat over `resolved`, and expose `in_flight` as its own count.
+
+**Fixed in it-14.** Extracted into a pure `_compute_stats(outcomes, total)` helper -
+`completed`, `escalated`, `auto_closed`, and `needs_human_pct` are all now computed over
+`resolved` only, and `in_flight` is its own field in the response rather than folded into
+either side of a percentage. Split out as a pure function specifically so the fix is
+testable with plain dicts (`tests/test_run_stats.py`), no database required.
 
 ---
 
@@ -1908,7 +1923,7 @@ addition. `pytest -q` and `ruff check app tests` pass.
 
 ### #54 - A retried call after a connection-error classification could double-dial without counting against the per-run ceiling
 
-**S3 · OPEN · backend · `apps/api/app/services/campaign_runner.py`**
+**S3 · FIXED in it-14 · backend · `apps/api/app/services/campaign_runner.py`**
 
 Flagged by the same review pass that found the gaps in `#53`, as a narrow follow-up risk
 rather than an active bug - no code change accompanies this entry. Since `#53`'s fix, a
@@ -1946,6 +1961,13 @@ issue as a direct side effect of making the ceiling check race-safe under concur
 **Depends on / Blocks:** related to `CALLE_INTEGRATION_STATUS.md` §3.5 (idempotency key
 regenerated per attempt) and `#53` (introduced the reclassification that makes this
 reachable).
+
+**Also landed independently on a parallel branch (it-26)**, before the two merged: same
+idempotency-key formula, `f"{run_id}-{contact.phone}"`, and `_calls_made` incremented right
+after the safety gate passes rather than after `start_call()` returns. See the merge note
+at the top of it-26 for which implementation the merged codebase actually runs.
+
+---
 
 ## Iteration 14 - 2026-08-09 · CALL-E integration rebuild, module 1: error taxonomy completeness
 
@@ -2674,7 +2696,18 @@ fixed` doesn't care about DOM nesting).
 **Depends on:** `#70` (this issue corrects that fix's Toast half; the `/app/profile`
 `.dark-canvas` half of `#70` is unaffected and unchanged).
 
-### #74 - `settings/billing/page.tsx` had no permission check, and the settings tab bar showed every tab to every role
+**Merge note (arbaaz/role-handling ⨯ dev/jatin-config-resend, 2026-08-11):** the two
+branches independently used issue numbers `#74`-`#77` for entirely different findings.
+Dev's numbering (below) is kept as-is since it's the larger set; the three colliding
+entries from `arbaaz/role-handling` are renumbered `#83`-`#86` and ordered by their
+original iteration's date, not by their new number - so `#83` (from `it-22`,
+2026-08-09) appears before `#74` (from `it-23`, also 2026-08-09) is not guaranteed here,
+but every renumbered entry is annotated inline. Nothing was deleted or rewritten beyond
+the number itself and the cross-references to it.
+
+### #83 - `settings/billing/page.tsx` had no permission check, and the settings tab bar showed every tab to every role
+
+*(renumbered from `#74` on merge - collided with the idempotency-key finding below)*
 
 **S2 · FIXED · web · `app/(app)/app/settings/billing/page.tsx`, `app/(app)/app/settings/layout.tsx`, `app/(app)/app/page.tsx`, `lib/api.ts`**
 
@@ -2716,11 +2749,495 @@ per-day series to stack.
 **Depends on / Blocks:** closes the two remaining Phase 0 gaps and the one incomplete
 piece of Phase 1 from the role-based UI roadmap. Phases 2-6 (persisted escalations,
 notifications, peer sharing, per-teammate credits, edit notifications) remain
-not-started.
+not-started as of this entry - since fixed, see `it-28`/`it-29`/`it-30` below.
 
-## Iteration 23 - 2026-08-10 · role-based UI roadmap, Phase 2 (real escalations) + Phase 5 slice (per-teammate credits)
+---
 
-### #75 - `runs_select` and `escalations_select` recursed infinitely once each queried the other
+## Iteration 23 - 2026-08-09 · runs-feature audit follow-through: idempotency, cancel, crash recovery
+
+Implementing the P0/P1 findings from a systematic audit of the Runs feature (backend
+orchestration, safety gate, and frontend run pages), requested and implemented in the
+same session. Closes #8 and #54 above; four new findings from the same audit follow.
+
+**Merge note (arbaaz/role-handling → jatin/config-resend):** this iteration's #74 fixed
+the same idempotency/`_calls_made` gap as #54 independently of it-16/it-17's module 3/4
+work above, with the same key formula. See `campaign_runner.py`'s own merge commentary for
+which implementation the merged code actually keeps.
+
+### #74 - `POST /runs` had no idempotency key - a retried request could start a second real run
+
+**S2 · FIXED · backend + web · `app/api/v1/routes/runs.py`, `app/database/repositories/runs.py`, `apps/web/lib/api.ts`, `apps/web/app/(app)/app/runs/new/page.tsx`**
+
+`POST /api/v1/runs` is a mutating endpoint that dials real phones, with no
+`Idempotency-Key` support - a network-level retry, a double-submit, or a programmatic
+`cfk_…` caller retrying after a timeout had no way to avoid starting a second, independent
+batch of real calls against the same contacts. Direct violation of `CLAUDE.md`
+non-negotiable #6 ("every mutating endpoint... safe to run twice").
+
+**Impact.** Low-probability from the web client (the Start button disables itself while
+the request is in flight, and the fetch client makes no automatic retries) but real for
+any programmatic caller, and the consequence of it firing is a second real phone call to
+a real person, not just a duplicate row.
+
+**Fix.** `public.runs` gained a nullable `idempotency_key` column and a partial unique
+index on `(org_id, idempotency_key) where idempotency_key is not null` (migration
+`f2a8c6e1d9b4`). `start_run()` checks for an existing run under the caller's
+`Idempotency-Key` header before doing anything else - a replay returns the original run
+untouched, with no new dial, no rate-limit charge, no second row. A race between two
+identically-keyed concurrent requests is resolved by `create_run()`'s `on conflict ...
+do nothing returning id`: the loser detects `created = False`, releases the rate-limit
+slots it had reserved, and returns the winner's run instead. The web client now generates
+a UUID once per submit attempt and keeps it across a failed retry, clearing it only on
+success.
+
+**Verified.** `tests/test_run_stats.py` n/a here; verified directly against the real
+database with a standalone script exercising `create_run`/`get_run_by_idempotency_key`
+under a repeated key, a fresh key, and a `None` key - see #75-#77 for the same
+verification pass. `npm run type-check`/lint/build clean.
+
+### #75 - A run in progress when the API restarted stayed "running" forever
+
+**S2 · FIXED · backend · `app/database/repositories/runs.py`, `app/main.py`**
+
+A run's dial loop lives entirely inside one `BackgroundTasks` coroutine in one process
+(`SYSTEM.md` F18) - there is no queue or worker that could keep it going across a
+restart, and CI deploys on every push to `main`. A run interrupted by a routine deploy
+had no path to ever leave `running`.
+
+**Impact.** A run stuck on `running` indefinitely looks identical, from the dashboard's
+point of view, to one that's still genuinely in progress - nothing ever tells the
+operator it died.
+
+**Fix.** `reap_orphaned_runs()` runs once, cross-org, in `main.py`'s startup `lifespan`
+hook via `privileged.acquire()` (the whole point of this call needing to run before any
+request lands and across every organisation, not one). The reasoning is structural, not
+a timeout guess: any row still `running`/`canceling` the moment this process boots was
+being driven by the *previous* process, which is now gone - it is orphaned by definition.
+Failed with an honest message: "The service restarted before this run finished."
+
+**Verified.** Ran the real `lifespan()` context manager directly against a stale
+`running` row inserted by hand (not via a real dial - no calling budget spent): confirmed
+the log line `"reaped 1 run(s) left running by a previous process"` and the row landing on
+`status='failed'` with the expected error text.
+
+### #76 - There was no way to actually stop a run once started
+
+**S2 · FIXED · backend + web · `app/api/v1/routes/runs.py`, `app/services/campaign_runner.py`, `apps/web/app/(app)/app/runs/[id]/page.tsx`**
+
+"Pause run" (the only control on the live run page) only stopped the browser from
+polling for updates - it never stopped a call, and there was no cancel endpoint anywhere
+in the backend (this gap was already known and honestly labelled after `#39`, but never
+closed).
+
+**Impact.** Starting a run against the wrong contact list had no way to be stopped once
+under way.
+
+**Fix.** New `POST /api/v1/runs/{run_id}/cancel` (reuses `Permission.RUNS_START` -
+whoever may spend the organisation's money starting a run may stop one early). Sets
+`runs.status = 'canceling'` and `cancel_requested_at` immediately, visible right away.
+`CampaignRunner.run()` takes an optional `should_cancel` hook, checked **between**
+contacts only - there is no way to interrupt a call already in conversation (the voice
+engine has no cancel operation, confirmed in `VOICE_AGENT_PLATFORM.md`), so the honest
+guarantee is "no further contacts are dialled," not "stops instantly." The run then lands
+on a new terminal `canceled` status, distinct from `completed`/`failed`. Frontend: a real
+"Cancel run" button with a confirm dialog next to "Pause run," `canceling`/`canceled`
+added to `RunStatus` and `lampForRunStatus` (rendered in the neutral `off` lamp colour,
+not a new one - the five lamp colours stay reserved for call-state meaning), and the
+run-detail/dashboard poll loops extended to keep polling through `canceling` instead of
+stopping the instant status leaves `running`.
+
+**Verified.** `tests/test_orchestrator.py`: `run()` stops after the contact in progress
+when `should_cancel` flips, contacts already dialled keep their outcomes, contacts never
+reached get no outcome row at all. Verified `request_cancel`/`is_cancel_requested`
+directly against the real database: idempotent on a second call, rejects a different
+org, rejects a run that's already finished. `npm run type-check`/lint/build clean.
+
+### #77 - A suppressed contact still reserved rate-limit and daily-budget it would never use
+
+**S3 · FIXED · backend · `app/api/v1/routes/runs.py`**
+
+`start_run()` called `limiter.check(calls=len(contacts), ...)` before resolving which
+contacts were suppressed - `check_dial_allowed()` skips a suppressed contact regardless,
+so a run half full of suppressed numbers still burned that many slots from the daily
+budget and rate window for calls that were never going to be placed.
+
+**Impact.** Wasted a safety-critical, finite resource (the daily call budget) on
+contacts guaranteed not to be dialled - in the worst case, an organisation's own
+suppression list could exhaust its budget for the day without a single real call going
+out.
+
+**Fix.** Suppression is now resolved before the rate-limit check, and `limiter.check()`
+is called with `calls = len(contacts) - len(suppressed)` instead of the raw contact
+count.
+
+**Verified.** Existing suppression-gating coverage in `tests/test_orchestrator.py`
+(`test_suppressed_number_is_blocked`) already proves a suppressed contact never reaches
+the gateway; this fix is the route-layer arithmetic feeding the rate limiter the right
+count, confirmed by reading and by `test_ratelimit.py`'s existing coverage of the `calls`
+parameter's behaviour.
+
+---
+
+## Iteration 24 - 2026-08-09 · run composer rebuild: contacts UX, phone validation, per-run guards
+
+Requested directly: replace the contact grid's Paste/Use-sample buttons with a downloadable
+sample CSV, add real input-level phone validation, audit the "Remove all invalid" button's
+underlying logic, redesign the whole run-composer page, and add per-run safety overrides on top
+of the organisation's own settings.
+
+### #78 - A hand-typed phone number could show valid in the grid while failing E.164 at submission
+
+**S2 · FIXED · web · `apps/web/components/app/contact-grid.tsx`, `apps/web/lib/contacts.ts`**
+
+Found while auditing "Remove all invalid" per a user report - the button's own filter logic
+(`rows.filter(r => r.valid)`) was correct; the bug was upstream, in what `valid` actually meant.
+`ContactGrid`'s `updateCell` computed a normalised phone (`normalisePhone(merged.phone)`) purely
+to check validity, then returned `{...merged, ...validateRow(...)}` - `validateRow` returns only
+`{valid, error, errorField}`, never `phone`, so the row's stored `phone` stayed whatever the
+person had typed. A bare 10-digit number (`9876543210`) normalises to a valid E.164 number
+(`+919876543210`) for the check, so the row showed green/ready - but `toContactInputs` sent
+`r.phone`, the un-normalised original, to the API. The backend's `Contact` model validates E.164
+strictly with no normalisation, and `POST /api/v1/runs` fails the *entire* request - not just
+that one row - the moment any contact fails Pydantic validation.
+
+**Impact.** A single hand-typed row using a bare national number (an extremely ordinary way to
+type a phone number) could make "Start run" fail outright with an opaque 400, for a request the
+composer had just shown as fully ready - and would have blocked every other, genuinely valid
+contact in the same batch along with it. CSV import was unaffected: `parseSheet` already stored
+the normalised value correctly, so this only reached hand-edited or hand-added rows.
+
+**Fix.** Two layers: `ContactGrid`'s phone cell now normalises on blur (`normaliseCellOnBlur`),
+matching `ui/input.tsx`'s existing phone-variant "normalise on blur, not on every keystroke"
+convention elsewhere in the app - so the grid's own displayed/stored value is honest, not just
+the validity flag. `toContactInputs` (`lib/contacts.ts`) also normalises again at the point it
+builds the API payload, regardless of what the grid's state holds - a defensive boundary fix, so
+this is correct even if the UI-side fix is ever bypassed.
+
+**Verified.** Traced by reading, since this repo has no frontend test suite (`ISSUES.md` #10) -
+confirmed `updateCell`'s original return shape never included `phone`, confirmed `parseSheet`'s
+did, confirmed `toContactInputs` used `r.phone` directly pre-fix. `npm run type-check`/lint/build
+all clean after the fix.
+
+### Contact grid: Paste and Use-sample replaced with a downloadable sample CSV
+
+Not a bug - a requested UX change. `navigator.clipboard.readText()` ("Paste") and the
+instant-populate three-row demo list ("Use sample") are both removed; `SAMPLE_CSV`
+(`lib/contacts.ts`) is trimmed to one header row plus one example row and downloaded as a real
+`.csv` file via a `Blob`/`<a download>` - no new dependency. A single grid cell still accepts a
+normal OS paste (it's a plain `<input>`); what's gone is the bulk clipboard-read shortcut.
+
+### Phone input: keystroke filtering plus a stricter national-length rule, scoped to the run composer
+
+Not a bug - a requested tightening. `sanitizePhoneInput` restricts typed input to a leading `+`
+and digits only; `hasValidNationalLength` additionally requires a 1-3 digit country code plus an
+exactly-10-digit national number. Both new, both in `lib/format/phone.ts`, and deliberately
+**not** folded into `isE164` - that stays the general check used for allowlist/suppression
+entries elsewhere, where a 10-digit national number isn't a safe assumption for every country.
+The stricter rule only applies inside `lib/contacts.ts`'s `validateRow`, matching this product's
+two default regions (+91, +1) without a full number-metadata library.
+
+### Run composer redesign: single-section layout, per-run guard overrides
+
+Not a bug - a requested redesign plus a new capability. `runs/new/page.tsx`'s three numbered
+`Step` panels (01 Contacts, 02 Campaign, 03 Run) are replaced with two plainly-titled panels
+(Campaign, Contacts) in a main column and a `lg:sticky` right-hand rail holding the guard bar,
+this run's own overrides, the contact-count readout, and Start/Cancel - dropping the numbering
+that made a single continuous page read as a wizard.
+
+New: a per-run override of `max_calls_per_run` and `allowlist`, **tighten-only** - a run may ask
+for less than the organisation's Settings → Safety configuration, never more.
+`apply_run_override()` (`app/domain/safety.py`) is a pure function: a requested ceiling above the
+organisation's own is silently capped, not honoured; a requested allowlist intersects with a
+non-empty organisation allowlist (can only narrow it) and stands alone only when the organisation
+has none set. `calls_per_window`/`window_minutes`/`daily_budget` are deliberately not
+per-run-overridable - those are whole-organisation resources shared across every run today, not
+one run's own limit, unlike `max_calls_per_run` (already named as exactly that).
+
+This is a considered reading of an ambiguous request ("apply settings run-wise"), made without
+asking, against `CLAUDE.md`'s fail-closed non-negotiable: `Permission.RUNS_START` (operator and
+above) must never be able to use a per-run control to reach a guard value that
+`Permission.SAFETY_WRITE` (admin/owner) hasn't already permitted - the entire point of an
+org-configured ceiling is that starting the next run can't quietly raise it. `POST /api/v1/runs`
+accepts optional `max_calls_per_run`/`allowlist` fields; the frontend clamps to the organisation's
+own ceiling client-side before ever submitting, so the backend's cap is a correctness backstop
+for a race (the organisation's settings changing between page load and submit), not the normal
+path.
+
+**Verified.** New tests in `tests/test_safety.py`: a lower per-run ceiling wins, a higher one is
+capped at the organisation's own, omitting the override keeps the organisation's value, a
+non-empty organisation allowlist only ever narrows via intersection, an empty one lets the
+run-level list stand alone, and `calls_per_window`/`window_minutes`/`daily_budget` pass through
+untouched regardless of what's overridden. 189 backend tests pass (7 new), `ruff` clean, frontend
+`type-check`/lint/build all clean.
+
+---
+
+## Iteration 25 - 2026-08-09 · per-run guard audit trail
+
+Raised directly, following on from it-23's per-run overrides: nothing recorded what guards
+actually governed a given run, so once an organisation's Settings → Safety changed, no past
+run's real ceiling/allowlist/rate/budget could be reconstructed - not even for a run that
+never used a per-run override at all.
+
+### #79 - A run's actual guards were never recorded, so past runs became unauditable once settings changed
+
+**S2 · FIXED · backend + web · `app/database/repositories/runs.py`, `app/api/v1/routes/runs.py`, `apps/web/components/app/safety-bar.tsx`, `apps/web/app/(app)/app/runs/[id]/page.tsx`**
+
+`resolve_safety_settings()` merges an organisation's `org_safety_settings` row onto the
+deployment defaults fresh on every read - there was never a point where the *result* of
+that merge, for a specific run, was written down anywhere. For a product whose whole
+premise is that the guards are real and enforced, that is a genuine audit gap: nothing
+could answer "what ceiling actually governed this run" after the fact, for any run, not
+just ones with a per-run override (it-23, #74-#77).
+
+**Impact.** If a run's behaviour was ever questioned - "why did this only dial 3 people,"
+"prove it respected the allowlist you'd set" - there was no way to answer from the data
+itself, only from memory or a support ticket, and that answer became permanently
+unavailable the moment the organisation's Settings → Safety changed again.
+
+**Fix.** Five nullable columns on `public.runs` - `max_calls_per_run`, `allowlist`,
+`calls_per_window`, `window_minutes`, `daily_budget` (migration `a3f7c9e2b6d8`, same names
+and types as `org_safety_settings`'s own columns). `create_run()` now takes and stores the
+exact `EffectiveSafety` object `start_run()` already resolved for that run's own dial gate
+and rate-limit check - not a fresh read of current settings, so what's recorded can never
+drift from what was actually enforced. Nullable, not backfilled: a run created before this
+migration has no snapshot and reports one honestly (`null`), rather than a fabricated
+default computed from today's settings. `GET /api/v1/runs/{id}` returns it as
+`safety_snapshot`; the run-detail page renders it through the existing `SafetyBar`
+component via a new `guardsFromSnapshot()` builder (`components/app/safety-bar.tsx`) -
+same chip rendering a live guard bar uses, sourced from the run's own permanent record
+instead of the organisation's current settings.
+
+**Verified.** Direct database round-trip (no real call placed): a snapshot with values
+round-trips exactly; an empty ("unrestricted") allowlist round-trips as `[]`, distinct from
+`null` ("not captured"); a row inserted the old way (no snapshot columns) reads back with
+every snapshot field `null`, not a fabricated default. 189 backend tests pass, `ruff`
+clean, frontend `type-check`/lint/build all clean.
+
+**Depends on / Blocks:** builds on #74-#77 (it-23, the per-run override this now makes
+permanently auditable).
+
+---
+
+## Iteration 26 - 2026-08-09 · dashboard/runs/contacts/escalations UI pass, call-duration bug
+
+Nine UI/UX changes requested directly against the dashboard, run detail page, contacts
+page, and the "Needs a person" (escalations) worklist. Two of the nine surfaced real bugs
+in the course of implementation rather than being pure preference; both are numbered below.
+The rest were requested UX changes, not bugs, and are logged as a narrative batch afterward
+per the existing pattern (`## Visual and architecture work landed this round`, it-11).
+
+### #80 - Call duration was never visible anywhere, because the field it was read from doesn't exist in CALL-E's response
+
+**S2 · FIXED · backend · `app/services/campaign_runner.py`, `apps/api/tests/test_orchestrator.py`**
+
+Reported as "duration of call data is not visible." The resolved outcome read
+`final.get("duration_seconds")` - a key that has never existed anywhere in CALL-E's real
+API response. Confirmed by reading the installed SDK's `CallTaskAttempt` model directly:
+its fields are `id, phone, status, started_at, completed_at, summary, transcript_turns,
+provider_call_id, failure_code, failure_message` - no duration field at all, only the two
+timestamps. Every call's `duration_seconds` has been `None` since the column existed, on
+every page that shows it (dashboard, run detail, contacts). Same bug class as #52
+(transcript read from a top-level key that doesn't exist), just never cross-checked for
+this sibling field.
+
+**Impact.** Nobody could tell from any table in the product how long a call actually
+lasted - not a display bug, a data bug: the value was never computed, so no amount of
+frontend formatting would have shown it.
+
+**Fix.** New `_extract_duration()` computes `(completed_at - started_at)` in seconds from
+the same "final" attempt `_extract_transcript()` already selects (the most representative
+attempt among possibly-multiple redial attempts) - reusing that selection keeps duration
+and transcript consistent about which attempt they describe. Returns `None`, not `0`, when
+either timestamp is missing, since a rendered "0s" reads as an instant call rather than an
+unmeasured one. Surfaced with a new "Call time" column (absolute timestamp, alongside the
+now-working "Duration" column) on both the run detail page and the contacts page, per the
+same request.
+
+**Verified.** 3 new tests (5 cases) in `test_orchestrator.py`: computed from real
+timestamps, uses the same attempt as the transcript, returns `None` when timestamps are
+unavailable. 49/49 orchestrator tests pass; full backend suite 193 passed, `ruff` clean.
+Three unrelated failures in `test_rls_isolation.py` (`create_or_refresh_invitation`
+missing on the shared dev database) are pre-existing migration drift on that database, not
+touched by anything in this iteration.
+
+**Depends on / Blocks:** same bug class as #52 (it-13).
+
+---
+
+### #81 - A long filter value overflowed the Select trigger and broke the escalations filter-row layout
+
+**S2 · FIXED · web · `components/ui/select.tsx`, `app/(app)/app/escalations/page.tsx`**
+
+Reported as "filter UI is breaking when I select the value from filter dropdown." Root
+cause: `RadixSelect.Value` had no `className` at all, so a long selected label - the
+escalations "Reason" filter's options are full sentences from `disposition_reason`, not
+short tags - overflowed the trigger's fixed width instead of clipping, visibly breaking
+the row instead of just showing a wide box. A second, compounding cause in the same row:
+the "Clear filters" button was only mounted once a filter was active, so picking a filter
+value also reflowed every other control next to it via `flex-wrap` - which reads as the
+row "breaking" a second time, immediately after the first.
+
+**Impact.** The one interaction the page exists for - filtering the escalation queue - was
+the one thing visibly broken by using it.
+
+**Fix, attempt 1 (incomplete).** `min-w-0 flex-1 truncate` on `RadixSelect.Value` -
+`min-w-0` is required for `truncate` to take effect at all on a flex child. This alone
+turned out not to be enough: the user reproduced the identical wrapping/overflow a second
+time after this landed. "Clear filters" was also switched to always-mounted with
+`invisible`/`aria-hidden`/`tabIndex={-1}` when there's nothing to clear, reserving its
+layout space either way instead of popping in and shifting its neighbours - this part of
+the fix held.
+
+**Fix, attempt 2 (the actual root cause).** Reading the installed `@radix-ui/react-select`
+source directly (`node_modules/@radix-ui/react-select/dist/index.mjs`) explains why attempt
+1 didn't hold: left without explicit children, `Select.Value` doesn't just display a copy
+of the selected label - it mirrors the selected `Select.Item`'s own `ItemText` span into
+itself via `ReactDOM.createPortal`, and that `ItemText` span (rendered a second time,
+unstyled, because it's also what the dropdown *row* itself renders) has no `nowrap` of its
+own. `min-w-0 truncate` on `Select.Value` was landing on the right outer node the whole
+time; it just wasn't the node holding the actual text. Fix: pass the label directly as
+`Select.Value`'s own children (`{options.find((o) => o.value === value)?.label}`), which
+bypasses the mirroring entirely so `truncate` lands on a plain text node instead of a
+second unstyled span. `overflow-hidden` was also added to the trigger itself as a backstop,
+so any future case that still slips past `truncate` clips instead of visibly growing the
+box into the content below it.
+
+**Verified.** `type-check`/`lint`/`build` all clean (it-27).
+
+**Depends on / Blocks:** none. Superseded its own first fix - see attempt 2 above.
+
+---
+
+## Also landed this round (not bugs)
+
+The remaining seven requested changes, none of which were bugs:
+
+- **Dashboard "Needs a person" preview capped at 3.** Was showing 5; now shows the 3
+  oldest-first, with the existing "See all N" link to the full `/app/escalations` worklist
+  doing the rest - no new component needed.
+- **Run ID no longer shown anywhere on the run detail page.** It's still the URL segment
+  (functional, unavoidable) and still round-trips through the API; only the visible
+  `font-mono` display in the page header was removed.
+- **"Guards for this run" panel removed from the run detail page**, per explicit request.
+  This reverses only the *display* added in it-25 (#79) - the underlying
+  `safety_snapshot` columns are untouched, still written by `create_run()`, and still
+  returned by `GET /api/v1/runs/{id}`; the data just isn't rendered on this page anymore.
+  Nothing about dial-time enforcement changed: the allowlist, per-run ceiling, rate limit,
+  daily budget, E.164 validation, and suppression-list checks in `check_dial_allowed()`
+  are exactly as they were. The "Live · Real calls" progress panel was restructured
+  alongside this removal - a large settled-count stat leads, with the lamp strip (still
+  the only progress indicator, per this page's own standing design note) in its own
+  labelled sub-section below, rather than competing with the header for space.
+- **Contacts page converted from a `<Panel>` list to a real table**, via the existing
+  (previously unused anywhere) `DataTable` component - same sortable/paginated/CSV-export
+  component now backing `/app/runs`. Picked up a real, if minor, correctness fix in
+  passing: each contact's `calls` array is now sorted newest-first before use, since the
+  status badge, duration, and new call-time columns all read `calls[0]` as "the latest
+  call" and it was previously just whatever arrival order the outcomes list happened to be
+  in.
+- **Infinite scroll on the escalations worklist.** All escalations are already loaded into
+  memory (`useAppStore`'s hydrated runs - there's no server-side pagination API for this
+  list), so this bounds rendered DOM node count via a native `IntersectionObserver`
+  sentinel rather than reducing network calls. Fixed a related `react-hooks/set-state-in-
+  effect` lint error along the way: resetting the visible-count window on a filter change
+  is now done during render (React's documented pattern for adjusting state from a
+  prop-like change) instead of inside a `useEffect`, which would have committed one stale
+  frame before a second render corrected it - CLAUDE.md already calls this pattern out as
+  a hard lint error, not a style preference.
+- **Transcript viewer changed from a right-side sliding sheet to a centered dialog**, on
+  both the run detail page and the escalations page. The shared `Dialog` component gained
+  an `xl` size and a `contentClassName` prop (default unchanged) so `TranscriptView`, which
+  manages its own internal padding, isn't padded twice.
+- **Escalation detail card redesigned for readability**: the reasoning chain now sits in
+  its own labelled "Why it's here" block instead of floating loose under the header; the
+  transcript excerpt and summary each got an explicit label ("Last thing they said,"
+  "Summary") instead of relying on formatting alone to distinguish them; the campaign name
+  now shows as a tag next to the contact's name; the age/duration figures in the header
+  gained explicit units ("Waiting Xh," "Xm call") instead of two bare numbers.
+
+**Verification for the whole batch:** frontend `type-check`/`lint`/`build` all clean (the
+`set-state-in-effect` error above and one unescaped-apostrophe lint error were both
+introduced and fixed within this same round, not pre-existing). Backend: 193 passed, 3
+pre-existing/unrelated failures (see #80), `ruff` clean.
+
+---
+
+## Iteration 27 - 2026-08-09 · duration still missing after #80, filter dropdown still breaking after #81
+
+User-reported follow-up, same day as it-26: duration was still showing "-" in the contacts
+table after #80 shipped, and the escalations filter dropdown was still visibly breaking
+after #81 shipped. Both turned out to be real, distinct problems the first fix didn't
+reach - not the same bug recurring, and not user error. Investigated by querying the
+production database directly (read-only) for the actual stored rows, then re-fetching each
+call's real, current state straight from CALL-E using its own `provider_call_id` (a status
+re-read, not a new call) to compare against what got persisted at the time.
+
+### #82 - A call's own top-level `status` can go terminal before its nested attempt's `completed_at` does, permanently freezing `duration_seconds` at `None`
+
+**S2 · FIXED · backend · `app/services/campaign_runner.py`, `apps/api/tests/test_orchestrator.py`**
+
+#80 fixed the extraction *formula* - and it is correct: re-running `_extract_duration()`
+by hand against a real, freshly-re-fetched call (`call_rNS2f5FQn-Py0ElQx0UxeQ`, processed
+*after* #80's fix was already live) returned `0.0`, the right answer for that call's
+same-second decline. The database, though, still had `duration_seconds = None` for that
+exact row. The only place a snapshot of the same call could disagree with itself is the
+moment `_poll_until_done()` first accepted a terminal response: it returns the instant the
+top-level `status` reaches `completed`/`failed`/`canceled`, with no check that the same
+response's `recipients[0].attempts[].completed_at` has actually been written yet. CALL-E
+does not write the two fields atomically, so the exact response that ends the poll can have
+a terminal `status` and a still-null nested `completed_at` at the same time - the same
+class of eventual-consistency gap already fixed for `status` itself in #53, just on a
+different field.
+
+**Impact.** Any call whose terminal poll happened to land in that gap has its
+`duration_seconds` permanently frozen at `None` - nothing re-polls after the loop exits, so
+there is no second chance to pick up the real value once CALL-E finishes writing it.
+
+**Fix.** New `_await_settled_duration()`: once `_poll_until_done` sees a terminal `status`,
+it checks whether `_extract_duration()` can already compute a value from that response: if
+not, it waits 1.5s and re-fetches, up to 3 times, before giving up and returning whatever
+it has. Bounded, not unconditional - a call that genuinely never gets a duration (cancelled
+before dialing) costs a few extra seconds once, not a hang.
+
+**Verified.** 2 new tests: one fake gateway whose first terminal response has a null
+`completed_at` and whose second has the real one, confirming `run_one` waits for the
+settled value; one whose duration never settles at all, confirming the call still resolves
+(with `duration_seconds` left `None`) rather than hanging. 51/51 orchestrator tests pass;
+full suite 195 passed, `ruff` clean. Same 3 pre-existing `test_rls_isolation.py` failures
+as it-26 (`create_or_refresh_invitation` missing on the shared dev database) - unrelated,
+not touched here.
+
+**Depends on / Blocks:** follow-up to #80 (it-26); same underlying eventual-consistency
+class as #53 (it-13).
+
+---
+
+## Also landed this round (not bugs)
+
+- **Escalation card's "Why it's here" section un-boxed.** The `bg-surface-sunken` panel
+  background added around the reasoning chain in it-26 read as heavier chrome than the
+  "Last thing they said"/"Summary" sections next to it, rather than a matching third
+  section - removed so all three share the same plain label-then-content rhythm.
+- **Runs page search bar collapsed to match `/app/campaigns`.** `/app/runs` rendered its
+  search input fully expanded at all times (`w-full sm:w-64`); `/app/campaigns` instead
+  shows a compact icon-only button that expands into the same input on click (or whenever
+  there's already a query). `/app/runs` now follows the same pattern for consistency across
+  the two list pages.
+
+**Verification for the whole batch:** frontend `type-check`/`lint`/`build` all clean.
+
+---
+
+## Iteration 28 - 2026-08-10 · role-based UI roadmap, Phase 2 (real escalations) + Phase 5 slice (per-teammate credits)
+
+*(this iteration was originally numbered "Iteration 23" on `arbaaz/role-handling`;
+renamed on merge to avoid colliding with dev's own Iteration 23 above - the finding
+inside is renumbered `#84`, see its own note)*
+
+### #84 - `runs_select` and `escalations_select` recursed infinitely once each queried the other
+
+*(renumbered from `#75` on merge - collided with the run-restart finding above)*
 
 **S1 · FIXED · backend · migration `3ea00413701c`**
 
@@ -2767,8 +3284,8 @@ Summary:
   Realtime (`SYSTEM.md` F27 was previously "2.5s polling only, no Realtime anywhere") -
   an assignment or resolution reaches every other signed-in teammate immediately.
 - **Per-teammate credits** (`public.member_credit_allocations`) - a subdivision of the
-  org's existing daily budget, not a second enforced limit (that enforcement is
-  explicitly not built - see the roadmap doc's own caveat). Admin/owner set a daily
+  org's existing daily budget, not a second enforced limit at first (enforcement landed
+  later - see `it-30`/the credit-enforcement entry below). Admin/owner set a daily
   number per teammate from the Team pane; a teammate's own "My credits" view (Settings →
   Billing, previously an honest placeholder) now shows it for real.
 - **New dashboard panel**, "Team performance": one row per teammate - calls made, calls
@@ -2782,9 +3299,14 @@ started the run; an operator can't assign/resolve/allocate-credits for a teammat
 directly, RLS-enforced not just permission-checked). `npm run lint && type-check &&
 build` clean.
 
-## Iteration 24 - 2026-08-10 · role-based UI roadmap, Phase 4 (peer-to-peer campaign/escalation sharing)
+## Iteration 29 - 2026-08-10 · role-based UI roadmap, Phase 4 (peer-to-peer campaign/escalation sharing)
 
-### #76 - Cloning a teammate's campaign on share approval failed under RLS for every non-admin/owner approver
+*(originally "Iteration 24" on `arbaaz/role-handling`; renamed on merge - see `it-28`'s
+own note. Both findings inside are renumbered, `#85` and `#86`)*
+
+### #85 - Cloning a teammate's campaign on share approval failed under RLS for every non-admin/owner approver
+
+*(renumbered from `#76` on merge - collided with the "stop a run" finding above)*
 
 **S1 · FIXED · backend · migration `b938fa82e54d`, `app/database/repositories/campaigns.py`, `app/api/v1/routes/sharing.py`**
 
@@ -2845,7 +3367,9 @@ directly - not just the security boundary around it.
 policy this collided with, and is correct - the fix is in how the clone is
 written, not in loosening that policy).
 
-### #77 - The share-request approval flow performed the grant before the atomic decision - a double-clone race
+### #86 - The share-request approval flow performed the grant before the atomic decision - a double-clone race
+
+*(renumbered from `#77` on merge - collided with the suppression/rate-limit finding above)*
 
 **S2 · FIXED · backend · `app/api/v1/routes/sharing.py`**
 
@@ -2889,7 +3413,7 @@ overriding the more recent change.
 
 Not itself a bug fix - the role-based UI roadmap's Phase 4, the last of the
 three phases planned this round (Phase 2 and a Phase 5 slice shipped in
-`Iteration 23`). Full design lives in
+`Iteration 28`). Full design lives in
 [`TEAM_COLLABORATION_ROADMAP.md`](TEAM_COLLABORATION_ROADMAP.md), updated
 in place rather than duplicated here. Summary:
 
@@ -2919,13 +3443,13 @@ in place rather than duplicated here. Summary:
   actually owning the resource (RLS + an explicit check), available to
   whichever role that happens to be.
 
-**Tests.** 268 backend tests passing (10 new since `Iteration 23`: 2
+**Tests.** 268 backend tests passing (10 new since `Iteration 28`: 2
 permission-matrix, 8 cross-member/security RLS - directory functions and
 `resolve_resource_owner()` correctly bypass Phase 1's narrowing while still
 refusing non-members; a forged `owner_user_id` can update the request row
 but still can't read the real resource to grant it; only the named owner
 can decide; deciding twice is a no-op; the actual operator-clones-operator
-case, `#76`'s regression test). `ruff check`, `npm run lint`, `type-check`,
+case, `#85`'s regression test). `ruff check`, `npm run lint`, `type-check`,
 and `build` all clean.
 
 **Verification method, worth naming explicitly:** this phase is the first
@@ -2933,17 +3457,20 @@ one this round verified through a real browser against the real running
 app - two genuine signed-up test accounts (via Resend's own test recipient
 address, not fabricated), a real invite accepted, a real campaign created,
 a real share request sent and approved - rather than trusting automated
-tests alone. It is also the phase where a real, ship-blocking bug (`#76`)
+tests alone. It is also the phase where a real, ship-blocking bug (`#85`)
 existed *despite* a clean automated test run - the tests proved the
 security boundary (an unauthorized party can't grant access) but never
 exercised the authorized happy path's own write. Both kinds of coverage
 matter; neither substitutes for the other.
 
-## Iteration 25 - 2026-08-10 · role-based UI roadmap, Phase 5 completed (per-teammate credit enforcement)
+## Iteration 30 - 2026-08-10 · role-based UI roadmap, Phase 5 completed (per-teammate credit enforcement)
+
+*(originally "Iteration 25" on `arbaaz/role-handling`; renamed on merge - see `it-28`'s
+own note)*
 
 ### Per-teammate daily credits, now actually enforced at dial time
 
-Not a bug fix - Phase 5 shipped in `Iteration 23` as a deliberate **minimal
+Not a bug fix - Phase 5 shipped in `Iteration 28` as a deliberate **minimal
 slice**: a real, live-derived `used_today`/`daily_allocation` display, with
 an explicit, documented caveat that nothing stopped a teammate from dialing
 past their number (`TEAM_COLLABORATION_ROADMAP.md`'s own Phase 5 note). This
@@ -3013,7 +3540,7 @@ before the dial.
   correctly tells "unset" apart from "explicitly zero"
   (`test_rls_isolation.py`). 278 backend tests passing, `ruff check` clean.
 
-**Depends on:** Phase 5's minimal slice (`Iteration 23`) for the schema and
+**Depends on:** Phase 5's minimal slice (`Iteration 28`) for the schema and
 display; the org-wide daily budget (`domain/safety.py`, unchanged) remains
 the hard outer bound regardless of what any individual teammate's
 allocation says.

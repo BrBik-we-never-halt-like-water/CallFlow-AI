@@ -15,8 +15,10 @@ of the working plan - it replaces re-deriving "what's next" from scratch each se
 **Related:** [`CLAUDE.md`](CLAUDE.md) (conventions this roadmap follows - RLS shape, repo
 layout, permission matrix) · [`SYSTEM.md`](SYSTEM.md) (as-built reference, §5/§8 for the
 routes and pages this roadmap added) · [`ISSUES.md`](ISSUES.md) (iteration 21 for Phase 1,
-iteration 22+ for Phase 2/5, iteration 24 for Phase 4, iteration 25 for Phase 5's
-enforcement - the actual bug-and-fix narrative lives there, not duplicated here)
+iteration 22 for the Phase 0 follow-through, iteration 28 for Phase 2/5's initial slice,
+iteration 29 for Phase 4, iteration 30 for Phase 5's enforcement - the actual bug-and-fix
+narrative lives there, not duplicated here. Renumbered on merge with `dev` - iterations
+23-27 there belong to unrelated work done independently on that branch)
 
 ---
 
@@ -107,11 +109,11 @@ immediately, not on their next poll.
 
 ## Phase 5 — Per-teammate credits + team-performance dashboard — ✅ shipped, including enforcement
 
-**Goal met in full as of `ISSUES.md` iteration 25.** Shipped in two passes: a minimal
-slice first (`Iteration 23`) - admin/owner can allocate a slice of the org's existing
+**Goal met in full as of `ISSUES.md` iteration 30.** Shipped in two passes: a minimal
+slice first (`Iteration 28`) - admin/owner can allocate a slice of the org's existing
 daily budget per teammate, and see calls/run-status/open-escalations/credits for the
 whole team in one dashboard panel, display-only, honestly labelled as such - then
-enforcement (`Iteration 25`): **1 credit = 1 connected call**, checked per dial the same
+enforcement (`Iteration 30`): **1 credit = 1 connected call**, checked per dial the same
 way every other safety guard is, layered on top of (never instead of) the org-wide daily
 budget. `used_today` was redefined from "resolved call attempts" to "calls the callee
 actually answered" for both passes at once, since enforcement and display must never be
@@ -136,7 +138,7 @@ able to disagree about what "used" means.
   (admin/owner only, hidden for owner rows). Settings → Billing's "My credits" view
   (previously an honest placeholder) now shows real numbers once an admin has set an
   allocation.
-- **Enforcement (`Iteration 25`):** `credits_repo.get_enforced_ceiling()` - `None` when
+- **Enforcement (`Iteration 30`):** `credits_repo.get_enforced_ceiling()` - `None` when
   no row exists at all (only the org-wide budget applies), the real int otherwise
   (including `0`, distinct from "unset" - `get_allocation()`'s display convention
   can't be reused here). `domain/safety.py::check_dial_allowed()` gained a
@@ -183,13 +185,13 @@ notification on top; it isn't required for this to work end to end.
   DEFINER` function, `clone_campaign_for_share()` (migration `202608101200`) - a plain
   `INSERT ... RETURNING` fails under RLS for any non-admin/owner approver, since
   Postgres also checks the table's `SELECT` policy against a `RETURNING` row and an
-  operator's own select policy is `created_by = self` (`ISSUES.md` #76, S1, found by
+  operator's own select policy is `created_by = self` (`ISSUES.md` #85, S1, found by
   manual testing, not static review).
 - **Approving an escalation reassigns it** (`assigned_to = requester`, via the existing
   `escalations_repo.assign()`) - one real event, not a fork, unlike a campaign template.
 - The atomic pending→approved/rejected transition runs **before** the grant, not after,
   closing a double-grant race two concurrent approvals could otherwise hit (`ISSUES.md`
-  #77, S2, found by code review). Ownership is re-resolved at decide-time and a stale
+  #86, S2, found by code review). Ownership is re-resolved at decide-time and a stale
   request (owner changed since it was made) auto-rejects instead of overriding whoever
   holds it now.
 - Live sync: `share_requests` joined the `supabase_realtime` publication (migration
@@ -205,13 +207,13 @@ notification on top; it isn't required for this to work end to end.
   functions and `resolve_resource_owner()` correctly bypass Phase 1's narrowing while
   still refusing non-members; a forged `owner_user_id` on an insert still can't grant
   access to the real resource; only the named owner can decide; deciding twice is a
-  no-op; the operator-clones-operator case that `#76` regressed. 2 new permission-matrix
+  no-op; the operator-clones-operator case that `#85` regressed. 2 new permission-matrix
   tests for `SHARING_REQUEST`.
 - Verification: this is the first phase this round verified through a real, running
   browser session with two genuinely separate signed-up accounts and a real invite -
-  `#76` existed despite a fully green automated test run, because no automated test had
+  `#85` existed despite a fully green automated test run, because no automated test had
   ever exercised the authorized happy path's actual write, only the security boundary
-  around it. See `ISSUES.md` iteration 24 for the full narrative.
+  around it. See `ISSUES.md` iteration 29 for the full narrative.
 
 ---
 
@@ -278,7 +280,7 @@ notification naming the editor. No new frontend surface beyond the Phase 3 inbox
   request time.
 - Phase 4 added a third check worth keeping for anything RLS-heavy: a real manual pass
   through a running browser with two genuinely separate accounts, not just the automated
-  suite. `#76` shipped past a fully green `pytest` run because no automated test ever
+  suite. `#85` shipped past a fully green `pytest` run because no automated test ever
   exercised the authorized happy path's actual write (a non-admin/owner approver cloning
   a campaign) - only the security boundary around it. Automated RLS tests prove
   unauthorized access is blocked; they don't by themselves prove authorized access works.

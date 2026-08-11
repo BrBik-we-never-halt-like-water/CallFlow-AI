@@ -14,9 +14,9 @@ import {
 import { Panel } from '@/components/ui/panel';
 import { useToast } from '@/components/ui/toast';
 import { MaskedPhone } from './masked-phone';
-import { api, type Escalation, type Member } from '@/lib/api';
+import { api, type Campaign, type Escalation, type Member } from '@/lib/api';
 import { useAppStore } from '@/lib/app-store';
-import { formatAge, formatDuration } from '@/lib/format';
+import { formatAge, formatDuration, formatTimestamp } from '@/lib/format';
 import { useSession } from '@/lib/hooks/use-session';
 
 /**
@@ -30,6 +30,7 @@ import { useSession } from '@/lib/hooks/use-session';
 export function EscalationCard({
   escalation,
   members,
+  campaigns,
   compact = false,
   onOpen,
 }: {
@@ -38,6 +39,9 @@ export function EscalationCard({
    *  not per card, since every card on `/app/escalations` would otherwise
    *  duplicate the same `GET /api/v1/organisations/me/members` call. */
   members?: Member[];
+  /** For the campaign-name tag - same "fetched once by the page" reasoning
+   *  as `members`. */
+  campaigns?: Campaign[];
   compact?: boolean;
   onOpen?: () => void;
 }) {
@@ -55,6 +59,7 @@ export function EscalationCard({
 
   const chain = buildChain(escalation);
   const isOpen = escalation.escalation_status === 'open';
+  const campaign = campaigns?.find((c) => c.id === escalation.campaign_id);
 
   async function resolve() {
     setResolving(true);
@@ -119,65 +124,92 @@ export function EscalationCard({
             size="md"
             label={isOpen ? 'Needs a person' : 'Resolved'}
           />
-          <div className="flex min-w-0 flex-col">
-            <p className="truncate text-small font-medium text-text">
-              {escalation.contact_name}
-            </p>
+          <div className="flex min-w-0 flex-col gap-0.5">
+            <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+              <p className="truncate text-small font-medium text-text">
+                {escalation.contact_name}
+              </p>
+              {campaign ? (
+                <Tag className="shrink-0">{campaign.name}</Tag>
+              ) : null}
+            </div>
             <MaskedPhone phone={escalation.phone_masked} />
           </div>
         </div>
 
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex shrink-0 flex-col items-end gap-0.5">
           {escalation.assigned_to_name ? (
             <Tag>Assigned · {escalation.assigned_to_name}</Tag>
           ) : null}
-          <span className="font-mono text-data text-text-mute">
-            {formatAge(escalation.created_at)}
+          <span
+            className="font-mono text-data text-text-mute"
+            title={formatTimestamp(escalation.created_at)}
+          >
+            {isOpen
+              ? `Waiting ${formatAge(escalation.created_at)}`
+              : formatAge(escalation.created_at)}
           </span>
           {escalation.duration_seconds != null ? (
             <span className="font-mono text-data tabular-nums text-text-mute">
-              {formatDuration(escalation.duration_seconds)}
+              {formatDuration(escalation.duration_seconds)} call
             </span>
           ) : null}
         </div>
       </div>
 
-      {/* The reasoning chain. Tag's own `whitespace-nowrap` is right for a short
-          role/template label, but disposition_reason/sentiment_reason are full
-          sentences - overridden back to wrapping here so a long one wraps
-          inside the card instead of pushing past its edge. */}
-      <ol className="flex flex-wrap items-start gap-1.5">
-        {chain.map((step, i) => (
-          <li key={i} className="flex min-w-0 max-w-full items-center gap-1.5">
-            {i > 0 ? (
-              <span
-                aria-hidden
-                className="shrink-0 font-mono text-data text-text-mute"
-              >
-                →
-              </span>
-            ) : null}
-            <Tag
-              mono={false}
-              className={cn(
-                'min-w-0 whitespace-normal break-words',
-                i === chain.length - 1 && 'text-lamp-flare-text',
-              )}
+      {/* The reasoning chain. No boxed background here - kept flush with
+          "Last thing they said"/"Summary" below so all three read as one
+          consistent rhythm of label-then-content, not one section singled
+          out with heavier chrome. Tag's own `whitespace-nowrap` is right for
+          a short role/template label, but disposition_reason/sentiment_reason
+          are full sentences - overridden back to wrapping here so a long one
+          wraps inside the card instead of pushing past its edge. */}
+      <div className="flex flex-col gap-1.5">
+        <p className="text-small font-bold text-text-mute">Why it&apos;s here</p>
+        <ol className="flex flex-wrap items-start gap-x-1.5 gap-y-2">
+          {chain.map((step, i) => (
+            <li
+              key={i}
+              className="flex min-w-0 max-w-full items-center gap-1.5"
             >
-              {step}
-            </Tag>
-          </li>
-        ))}
-      </ol>
+              {i > 0 ? (
+                <span
+                  aria-hidden
+                  className="shrink-0 font-mono text-data text-text-mute"
+                >
+                  →
+                </span>
+              ) : null}
+              <Tag
+                mono={false}
+                className={cn(
+                  'min-w-0 whitespace-normal break-words',
+                  i === chain.length - 1 && 'text-lamp-flare-text',
+                )}
+              >
+                {step}
+              </Tag>
+            </li>
+          ))}
+        </ol>
+      </div>
 
       {!compact && escalation.transcript ? (
-        <blockquote className="border-l-2 border-rule pl-3 text-small text-text-dim">
-          {excerpt(escalation.transcript)}
-        </blockquote>
+        <div className="flex flex-col gap-1">
+          <p className="text-small font-bold text-text-mute">
+            Last thing they said
+          </p>
+          <blockquote className="border-l-2 border-rule pl-3 text-small text-text-dim">
+            {excerpt(escalation.transcript)}
+          </blockquote>
+        </div>
       ) : null}
 
       {!compact && escalation.summary ? (
-        <p className="text-small text-text-dim">{escalation.summary}</p>
+        <div className="flex flex-col gap-1">
+          <p className="text-small font-bold text-text-mute">Summary</p>
+          <p className="text-small text-text-dim">{escalation.summary}</p>
+        </div>
       ) : null}
 
       {isOpen ? (

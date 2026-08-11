@@ -1,14 +1,15 @@
-import type { Metadata } from 'next';
-import Link from 'next/link';
-import { notFound } from 'next/navigation';
-import { RoiCalculator } from '@/components/marketing/roi-calculator';
-import { Tag } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { CodeBlock } from '@/components/ui/code-block';
-import { Accordion } from '@/components/ui/disclosure';
-import { Eyebrow, SectionHeading } from '@/components/ui/panel';
-import { Rule } from '@/components/ui/rule';
-import { getVertical, schemaToJson, VERTICALS } from '@/lib/verticals';
+import type { Metadata } from "next";
+import { CaretRightIcon } from "@phosphor-icons/react/dist/ssr";
+import Link from "next/link";
+import { notFound } from "next/navigation";
+import { RoiCalculator } from "@/components/marketing/roi-calculator";
+import { Tag } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { CodeBlock } from "@/components/ui/code-block";
+import { Accordion } from "@/components/ui/disclosure";
+import { Eyebrow, SectionHeading } from "@/components/ui/panel";
+import { Rule } from "@/components/ui/rule";
+import { getVertical, schemaToJson, VERTICALS } from "@/lib/verticals";
 
 export function generateStaticParams() {
   return VERTICALS.map((vertical) => ({ vertical: vertical.slug }));
@@ -71,14 +72,16 @@ export default async function SolutionPage({
       {/* ---- The pain ------------------------------------------------------ */}
       <Divider />
       <section className="mx-auto max-w-(--container-marketing) px-4 sm:px-6">
-        <SectionHeading
-          eyebrow="The problem"
-          title="What this actually costs you today."
-        />
-        <ol className="mt-8 grid gap-6 border-t border-rule pt-8 md:grid-cols-3">
+        <SectionHeading title="What this actually costs you today." />
+        <ol className="mt-8 grid items-stretch gap-4 md:grid-cols-3">
           {vertical.pain.map((line, i) => (
-            <li key={i} className="flex flex-col gap-2">
-              <Eyebrow as="span">{String(i + 1).padStart(2, '0')}</Eyebrow>
+            <li
+              key={i}
+              className="card-raised flex h-full flex-col gap-3 p-5"
+            >
+              <span className="font-display text-h3 leading-none text-text-mute">
+                {String(i + 1).padStart(2, "0")}
+              </span>
               <p className="text-body text-text-dim">{line}</p>
             </li>
           ))}
@@ -89,16 +92,15 @@ export default async function SolutionPage({
       <Divider />
       <section className="mx-auto max-w-(--container-marketing) px-4 sm:px-6">
         <SectionHeading
-          eyebrow="The campaign"
           title="The exact goal, and the exact fields it returns."
-          sub="This is the whole template, not an excerpt. It is what the agent is told, verbatim - including what it must refuse to do."
+          sub="This is the whole template, not an excerpt. It is what the agent is told, verbatim — including what it must refuse to do."
         />
 
         {/* One basin, not two boxes: what the agent is told flows in on the
             left, the shape it returns flows back on the right, joined by a seam
             that fades at both ends. min-w-0 keeps the unwrapped JSON from pushing
             the columns past the viewport on mobile. */}
-        <div className="pool mt-10 grid gap-x-8 gap-y-10 p-5 sm:p-8 lg:grid-cols-[1.05fr_1fr] lg:gap-x-12">
+        <div className="card-sunken mt-10 grid gap-x-8 gap-y-10 p-5 sm:p-8 lg:grid-cols-[1.05fr_1fr] lg:gap-x-12">
           <div className="flex min-w-0 flex-col gap-4">
             <div className="flex flex-wrap items-center gap-2">
               <Eyebrow as="span">Goal template</Eyebrow>
@@ -139,7 +141,6 @@ export default async function SolutionPage({
       <Divider />
       <section className="mx-auto max-w-(--container-marketing) px-4 sm:px-6">
         <SectionHeading
-          eyebrow="The maths"
           title="What it frees up, on your numbers."
           sub="Change any of these. Nothing here is a claim about your business until you put your own figures in."
         />
@@ -151,10 +152,7 @@ export default async function SolutionPage({
       {/* ---- Objections ---------------------------------------------------- */}
       <Divider />
       <section className="mx-auto max-w-(--container-marketing) px-4 sm:px-6">
-        <SectionHeading
-          eyebrow="Fair questions"
-          title="The two objections we hear most."
-        />
+        <SectionHeading title="The two objections we hear most." />
         <div className="mt-8 max-w-3xl">
           <Accordion
             items={vertical.objections.map((objection) => ({
@@ -169,14 +167,21 @@ export default async function SolutionPage({
       <Divider />
       <section className="mx-auto max-w-(--container-marketing) px-4 sm:px-6">
         <Eyebrow>Other teams</Eyebrow>
-        <ul className="mt-4 flex flex-wrap gap-2">
+        <ul className="mt-4 grid gap-3 sm:grid-cols-3">
           {VERTICALS.filter((v) => v.slug !== vertical.slug).map((other) => (
             <li key={other.slug}>
               <Link
                 href={`/solutions/${other.slug}`}
-                className="inline-flex items-center rounded-sm border border-rule px-3 py-2 text-small text-text-dim transition-colors hover:bg-surface-hover hover:text-text"
+                className="group card-raised card-interactive flex items-center justify-between gap-3 p-4"
               >
-                {other.name}
+                <span className="min-w-0">
+                  <span className="block text-body font-medium text-text">{other.name}</span>
+                  <span className="block text-small text-text-mute">{other.metricLabel}</span>
+                </span>
+                <CaretRightIcon
+                  aria-hidden
+                  className="size-4 shrink-0 text-text-mute transition-transform duration-(--dur-base) ease-(--ease-out) group-hover:translate-x-1"
+                />
               </Link>
             </li>
           ))}

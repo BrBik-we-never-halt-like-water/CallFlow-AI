@@ -11,6 +11,7 @@ from app.domain.entities import CallOutcome, Contact, Disposition
 from app.domain.goal_rendering import render_goal
 from app.domain.outcome_extraction import (
     _extract_attempts,
+    _extract_duration,
     _extract_result,
     _extract_transcript,
     _resolve_outcome,
@@ -323,6 +324,77 @@ async def test_run_processes_every_contact() -> None:
     assert len(await runner.run(TRAVEL_DISCOVERY, contacts)) == 2
 
 
+async def test_idempotency_key_is_stable_per_run_and_contact_not_random() -> None:
+    """ISSUES.md #54: a freshly-random suffix per attempt defeated the whole
+    point of an idempotency key. It must depend only on the run id and the
+    contact - calling the same contact twice in one run (or once via two
+    separate CampaignRunner calls sharing a run_id) must produce the same
+    key both times, and different runs must never collide."""
+    seen_keys: list[str] = []
+
+    class RecordingGateway:
+        def start_call(self, **kwargs: Any) -> dict[str, Any]:
+            seen_keys.append(kwargs["idempotency_key"])
+            return {"id": "call_test123", "status": "queued"}
+
+        def get_call(self, call_id: str) -> dict[str, Any]:
+            return {"id": call_id, "status": "completed", "structured_result": {}}
+
+    contact = Contact(name="A", phone="+15555550100")
+    runner = CampaignRunner(gateway=RecordingGateway(), run_id="run_abc")  # type: ignore[arg-type]
+    await runner.run_one(TRAVEL_DISCOVERY, contact)
+    await runner.run_one(TRAVEL_DISCOVERY, contact)
+
+    assert len(seen_keys) == 2
+    assert seen_keys[0] == seen_keys[1]
+
+    other_run = CampaignRunner(gateway=RecordingGateway(), run_id="run_xyz")  # type: ignore[arg-type]
+    await other_run.run_one(TRAVEL_DISCOVERY, contact)
+    assert seen_keys[2] != seen_keys[0]
+
+
+async def test_calls_made_increments_even_when_the_dial_itself_raises() -> None:
+    """ISSUES.md #54: counting only *confirmed successes* left a
+    connection-drop retry uncounted against the per-run ceiling, even though
+    the vendor may already have placed the call. Counting the attempt - not
+    the confirmed result - is the fail-closed choice."""
+    from app.integrations.voice.engine import EngineConnectionError
+
+    runner = CampaignRunner(gateway=FailingGateway(EngineConnectionError("dropped")))  # type: ignore[arg-type]
+    assert runner._calls_made == 0
+    await runner.run_one(TRAVEL_DISCOVERY, Contact(name="A", phone="+15555550100"))
+    assert runner._calls_made == 1
+
+
+async def test_run_stops_early_when_should_cancel_returns_true() -> None:
+    """A canceled run dials no further contacts once should_cancel() flips -
+    but never mid-contact, only between them (see `run()`'s own docstring)."""
+    runner = CampaignRunner(gateway=FakeGateway())  # type: ignore[arg-type]
+    contacts = [
+        Contact(name="A", phone="+15555550100"),
+        Contact(name="B", phone="+15555550101"),
+        Contact(name="C", phone="+15555550102"),
+    ]
+
+    calls = {"n": 0}
+
+    async def should_cancel() -> bool:
+        calls["n"] += 1
+        return calls["n"] > 1  # let the first contact through, then stop
+
+    outcomes = await runner.run(TRAVEL_DISCOVERY, contacts, should_cancel=should_cancel)
+
+    assert len(outcomes) == 1
+    assert outcomes[0].contact_name == "A"
+    assert runner.canceled is True
+
+
+async def test_run_is_not_canceled_when_it_finishes_on_its_own() -> None:
+    runner = CampaignRunner(gateway=FakeGateway())  # type: ignore[arg-type]
+    await runner.run(TRAVEL_DISCOVERY, [Contact(name="A", phone="+15555550100")])
+    assert runner.canceled is False
+
+
 async def test_progress_hook_fires_per_contact() -> None:
     """Each contact fires at least once - a "dialing" event, then the
     resolved outcome - in that relative order *for that contact*. Contacts
@@ -488,6 +560,7 @@ def _attempt(
     turns: list[dict[str, Any]] | None = None,
     *,
     started_at: str | None = None,
+    completed_at: str | None = None,
 ) -> dict[str, Any]:
     """A `CallTaskAttempt`-shaped fixture - every field the generated SDK
     model has, not just the ones today's assertions read, so a fixture that
@@ -497,7 +570,7 @@ def _attempt(
         "phone": "+15555550100",
         "status": status,
         "started_at": started_at,
-        "completed_at": None,
+        "completed_at": completed_at,
         "summary": None,
         "transcript_turns": turns or [],
         "provider_call_id": None,
@@ -685,6 +758,69 @@ def test_extract_transcript_returns_none_when_nothing_usable(call: dict[str, Any
     assert _extract_transcript(call) is None
 
 
+def test_extract_duration_computes_from_the_final_attempts_own_timestamps() -> None:
+    # There is no duration_seconds field anywhere in the real response
+    # (ISSUES.md #61) - duration has to be computed from the same attempt
+    # _extract_transcript already selects.
+    call = {
+        "recipients": [
+            {
+                "attempts": [
+                    _attempt(
+                        "completed",
+                        [{"offset_seconds": 0, "speaker": "bot", "text": "Hi."}],
+                        started_at="2026-08-09T10:00:00+00:00",
+                        completed_at="2026-08-09T10:02:30+00:00",
+                    )
+                ]
+            }
+        ]
+    }
+    assert _extract_duration(call) == 150.0
+
+
+def test_extract_duration_uses_the_same_attempt_as_the_transcript() -> None:
+    # A redialled recipient: the failed first attempt must not contribute its
+    # own (irrelevant) timing to the duration reported for the real attempt.
+    call = {
+        "recipients": [
+            {
+                "attempts": [
+                    _attempt(
+                        "failed",
+                        [{"offset_seconds": 0, "speaker": "bot", "text": "No answer."}],
+                        started_at="2026-08-09T09:00:00+00:00",
+                        completed_at="2026-08-09T09:00:05+00:00",
+                    ),
+                    _attempt(
+                        "completed",
+                        [{"offset_seconds": 0, "speaker": "bot", "text": "Hello!"}],
+                        started_at="2026-08-09T10:00:00+00:00",
+                        completed_at="2026-08-09T10:01:00+00:00",
+                    ),
+                ]
+            }
+        ]
+    }
+    assert _extract_duration(call) == 60.0
+
+
+@pytest.mark.parametrize(
+    "call",
+    [
+        {"recipients": []},
+        {"recipients": [{"attempts": []}]},
+        {"recipients": [{"attempts": [_attempt("queued", started_at=None, completed_at=None)]}]},
+        {"recipients": [{"attempts": [_attempt("failed", started_at="2026-08-09T10:00:00+00:00")]}]},
+        {"duration_seconds": 42, "recipients": []},  # a legacy flat key must never be read
+    ],
+)
+def test_extract_duration_returns_none_when_timestamps_are_unavailable(
+    call: dict[str, Any],
+) -> None:
+    assert _extract_duration(call) is None
+
+
 def test_extract_attempts_preserves_every_attempt_not_just_the_final_one() -> None:
     call = {
         "recipients": [
@@ -750,6 +886,33 @@ def test_resolve_outcome_defaults_confidence_and_evidence_when_absent() -> None:
     assert resolved.attempts == []
 
 
+def test_resolve_outcome_computes_duration_from_final_attempt() -> None:
+    # `_resolve_outcome` must actually thread `_extract_duration`'s result into
+    # the `CallOutcome` - the richer-outcome-data rewrite that added
+    # task_completed/confidence/evidence extraction here still read the
+    # still-nonexistent flat `duration_seconds` key for duration specifically
+    # (ISSUES.md #61/#80), so this regresses at the integration level too, not
+    # just in `_extract_duration`'s own unit tests above.
+    call = {
+        "status": "completed",
+        "id": "call_1",
+        "recipients": [
+            {
+                "attempts": [
+                    {
+                        "status": "completed",
+                        "started_at": "2026-08-09T10:00:00+00:00",
+                        "completed_at": "2026-08-09T10:00:41+00:00",
+                        "transcript_turns": [],
+                    }
+                ]
+            }
+        ],
+    }
+    resolved = _resolve_outcome(_base(), call, escalate_on_negative=True)
+    assert resolved.duration_seconds == 41.0
+
+
 async def test_run_one_surfaces_the_real_transcript() -> None:
     """End-to-end: `run_one` must actually thread `_extract_transcript`'s output
     into the `CallOutcome`, using a payload shaped like CALL-E's real response
@@ -785,6 +948,67 @@ async def test_run_one_surfaces_the_real_transcript() -> None:
 
     assert result.transcript == "bot: Hello!\nuser: Hi."
     assert result.disposition is Disposition.AUTO_CLOSED
+
+
+async def test_duration_settles_when_the_terminal_response_lags_its_own_timestamps() -> None:
+    """Confirmed against a real call: the engine's top-level `status` can go
+    terminal in the same response where the nested attempt's own
+    `completed_at` is still unset - an eventual-consistency gap on the
+    engine's side, not a bug in `_extract_duration` itself, which computes
+    correctly once given a settled payload. The first terminal poll here
+    still says "failed" but leaves `completed_at` null; only the next fetch
+    fills it in - `run_one` must not accept the unsettled snapshot."""
+
+    class LaggingDurationGateway:
+        def __init__(self) -> None:
+            self._polls = 0
+
+        def start_call(self, **_: Any) -> dict[str, Any]:
+            return {"id": "call_test123", "status": "queued"}
+
+        def get_call(self, call_id: str) -> dict[str, Any]:
+            self._polls += 1
+            completed_at = None if self._polls == 1 else "2026-08-09T13:24:13Z"
+            return {
+                "id": call_id,
+                "status": "failed",
+                "structured_result": None,
+                "recipients": [
+                    {
+                        "status": "failed",
+                        "attempts": [
+                            _attempt(
+                                "failed",
+                                started_at="2026-08-09T13:24:13Z",
+                                completed_at=completed_at,
+                            )
+                        ],
+                    }
+                ],
+            }
+
+    runner = CampaignRunner(gateway=LaggingDurationGateway())  # type: ignore[arg-type]
+    result = await runner.run_one(TRAVEL_DISCOVERY, Contact(name="A", phone="+15555550100"))
+
+    assert result.duration_seconds == 0.0
+
+
+async def test_duration_gives_up_gracefully_if_it_never_settles() -> None:
+    """A call whose duration never settles (e.g. genuinely cancelled before
+    dialing) must not hang the run forever - the bounded retry gives up and
+    the call still resolves, just with `duration_seconds` left `None`."""
+
+    class NeverSettlesGateway:
+        def start_call(self, **_: Any) -> dict[str, Any]:
+            return {"id": "call_test123", "status": "queued"}
+
+        def get_call(self, call_id: str) -> dict[str, Any]:
+            return {"id": call_id, "status": "canceled", "structured_result": None}
+
+    runner = CampaignRunner(gateway=NeverSettlesGateway())  # type: ignore[arg-type]
+    result = await runner.run_one(TRAVEL_DISCOVERY, Contact(name="A", phone="+15555550100"))
+
+    assert result.duration_seconds is None
 
 
 async def test_one_transient_poll_failure_does_not_fail_the_call() -> None:

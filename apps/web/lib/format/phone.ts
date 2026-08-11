@@ -14,6 +14,37 @@ export function isE164(phone: string): boolean {
 }
 
 /**
+ * Restricts free-typed input to what a phone number can actually contain: an
+ * optional leading `+`, then digits only. Anything else typed - a letter, a
+ * space, a dash, a stray second `+` - is discarded rather than typed and
+ * reported as an error later. Capped at 13 digits after the `+` (a 1-3 digit
+ * country code plus a 10-digit national number - see `hasValidNationalLength`),
+ * so a pasted block of digits can't run away past what any supported number
+ * needs.
+ */
+export function sanitizePhoneInput(raw: string): string {
+  const plus = raw.startsWith('+') ? '+' : '';
+  const digits = raw.replace(/\D/g, '').slice(0, 13);
+  return `${plus}${digits}`;
+}
+
+/**
+ * True when the digits after the leading `+` decompose into a 1-3 digit
+ * country code plus an exactly-10-digit national number - the shape both of
+ * this product's default regions use (+91 India, +1 US/Canada). Layered on
+ * top of `isE164` rather than folded into it: `isE164` is the general format
+ * check used for allowlist/suppression entries too, where a 10-digit
+ * national number isn't a universal assumption worth forcing everywhere -
+ * this stricter rule is deliberately scoped to the run composer's own
+ * contact list (`lib/contacts.ts`'s `validateRow`).
+ */
+export function hasValidNationalLength(phone: string): boolean {
+  const digits = phone.replace(/^\+/, '');
+  const countryCodeLength = digits.length - 10;
+  return countryCodeLength >= 1 && countryCodeLength <= 3;
+}
+
+/**
  * Normalise loose input into E.164 where the intent is unambiguous.
  *
  * Anything still not E.164 afterwards is reported as an error rather than
