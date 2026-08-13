@@ -403,13 +403,25 @@ body {
 .app-font-scope {
   --font-sans: var(--font-ubuntu), ui-sans-serif, system-ui, sans-serif;
   font-family: var(--font-ubuntu), ui-sans-serif, system-ui, sans-serif;
+}
 
+/* The dark palette. Raw values only - nothing here decides what is dark, it
+   only says what dark *is*. `:root[data-theme='dark']` below is what actually
+   points the generic tokens at these.
+
+   These used to be declared inside `.app-font-scope`, which scoped them to
+   `/app/*`. That was correct while dark was a dashboard-only pivot and wrong
+   the moment it became a product-wide theme: a marketing page has no
+   `.app-font-scope`, so every one of these resolved to nothing there. Moved to
+   `:root` - the values cost nothing when unused, and the theme is now free to
+   apply anywhere. */
+:root {
   /* ---- Dark glassmorphism palette (round-3 dashboard-polish, dark pivot) -
      Additive, not a swap: every light token above keeps its light value
-     everywhere. These `--dark-*` custom properties are declared only here,
-     inside `.app-font-scope` - the identical trick this rule already uses
-     for `--font-sans` - so they resolve for every element under `/app/*`
-     (the only tree this class wraps, `app/(app)/app/layout.tsx`) and are
+     everywhere. These `--dark-*` custom properties were declared only inside
+     `.app-font-scope` - the identical trick that rule already uses
+     for `--font-sans` - so they resolved for every element under `/app/*`
+     (the only tree that class wraps, `app/(app)/app/layout.tsx`) and are
      unset (not "wrong", genuinely absent) for marketing and auth, which
      never render inside it.
 
@@ -582,11 +594,108 @@ body {
    more` block (bottom of this file) gives the light tokens - muted text
    moves closer to primary, the hairline moves to its stronger variant. */
 @media (prefers-contrast: more) {
-  .app-font-scope {
+  :root {
     --dark-text-dim: var(--dark-text);
     --dark-text-mute: #c7d0e0;
     --dark-rule: var(--dark-rule-strong);
   }
+}
+
+/* ==========================================================================
+   THE THEME SWITCH
+
+   One rule. Everything above declares what light and dark *are*; this is the
+   only place that decides which one is in effect, by repointing the generic
+   tokens - the names every component actually reads - at the dark palette.
+
+   There is deliberately no `@media (prefers-color-scheme: dark)` here. The
+   pre-paint script in `app/layout.tsx` resolves the user's stored choice
+   ("light" / "dark" / "system") against `matchMedia` and always writes a
+   concrete `data-theme`, so CSS never has to express "system" at all. One
+   selector instead of two near-identical blocks, and no chance of the two
+   drifting apart - which is the failure mode this codebase already hit once
+   with `--glass` vs `--glass-surface`.
+
+   `color-scheme` is not decoration: it is what makes form controls, scrollbars
+   and the canvas behind the page render dark. Without it a dark page keeps
+   white scrollbars and light-chrome `<select>`s.
+   ========================================================================== */
+
+:root {
+  color-scheme: light;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  /* Surfaces. `--surface` is the page itself, which in dark is the near-black
+     `--dark-bg` rather than `--dark-surface` (that one is the raised card). */
+  --surface: var(--dark-bg);
+  --surface-raised: var(--dark-surface);
+  --surface-hover: var(--dark-surface-hover);
+  --surface-sunken: var(--dark-surface-sunken);
+  /* Inverted surface flips with the theme, or the "inverse" of dark would
+     still be dark. */
+  --surface-inverse: #f1f5f9;
+  --text-inverse: #0a0a0a;
+
+  --text: var(--dark-text);
+  --text-dim: var(--dark-text-dim);
+  --text-mute: var(--dark-text-mute);
+
+  --rule: var(--dark-rule);
+  --rule-strong: var(--dark-rule-strong);
+
+  /* The glass composite. These three are read directly by `Panel`, `DataTable`
+     and `Button`'s secondary variant, none of which know the theme exists. */
+  --glass-surface: var(--dark-glass-surface);
+  --glass-border: var(--dark-glass-border);
+  --glass-blur: var(--dark-glass-blur);
+
+  /* The primary/accent family. `--dark-accent` is a lighter indigo than the
+     light theme's `--primary` because a solid button on a near-black page has
+     to clear the white-label bar and the against-the-page bar at once - see
+     its own citation above. */
+  --primary: var(--dark-accent);
+  --primary-hover: #4038c9;
+  --primary-active: #372fb0;
+  --primary-ink: #b3aef7;
+  --primary-mid: #7a6ff0;
+  --primary-wash: color-mix(in oklab, var(--dark-accent) 14%, var(--dark-bg));
+  --accent: var(--dark-accent);
+  --accent-text: var(--dark-text);
+  --accent-wash: var(--primary-wash);
+
+  /* Lamps. The five call states keep their meaning; only their rendered value
+     changes, to the muted/lightened variants already derived for a dark
+     surface. This is the one family where getting it wrong changes what the
+     UI *means*, not just how it looks. */
+  --lamp-off: var(--dark-lamp-off);
+  --lamp-ice: var(--dark-lamp-ice);
+  --lamp-brass: var(--dark-lamp-brass);
+  --lamp-jade: var(--dark-lamp-jade);
+  --lamp-flare: var(--dark-lamp-flare);
+  --lamp-off-text: var(--dark-lamp-off-text);
+  --lamp-ice-text: var(--dark-lamp-ice-text);
+  --lamp-brass-text: var(--dark-lamp-brass-text);
+  --lamp-jade-text: var(--dark-lamp-jade-text);
+  --lamp-flare-text: var(--dark-lamp-flare-text);
+
+  /* Marketing's warm sand ground has no dark equivalent - a sand-coloured band
+     on a near-black page reads as a rendering fault, not a section break. It
+     becomes a slightly-raised neutral instead, keeping the alternating-ground
+     rhythm the deck depends on without inventing a colour. */
+  --secondary: #141414;
+
+  /* Depth. Dark surfaces separate by lightness, not by shadow: a black shadow
+     on a black page is invisible, and the light theme's values just muddy the
+     card edges. Kept as near-nothing rather than removed, so any rule reading
+     them still resolves. */
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.45), 0 3px 8px -2px rgba(0, 0, 0, 0.5);
+  --shadow-md: 0 2px 4px rgba(0, 0, 0, 0.45), 0 10px 24px -6px rgba(0, 0, 0, 0.55);
+  --shadow-lg: 0 2px 6px rgba(0, 0, 0, 0.5), 0 18px 36px -12px rgba(0, 0, 0, 0.6);
+  --shadow-overlay: 0 1px 3px rgba(0, 0, 0, 0.6), 0 16px 40px -8px rgba(0, 0, 0, 0.7);
 }
 
 /* Archivo at width 112 ("Expanded"). Applied through a class rather than an
