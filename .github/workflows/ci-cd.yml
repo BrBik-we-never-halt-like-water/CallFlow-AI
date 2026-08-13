@@ -13,8 +13,96 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # ---------------------------------------------------------------------------
+  # Which half of the monorepo actually changed.
+  #
+  # The api and web halves are deployed independently below, so most pushes only
+  # need one of them. A web-only change should not pay for `alembic upgrade head`
+  # against a real database, and an api-only change should not pay for the web
+  # build twice (once here, once on the VM) - that pair is where the wall-clock
+  # actually goes: web checks are ~66s and the VM's own `npm ci && npm run build`
+  # is most of the deploy's ~60s.
+  #
+  # Fail-OPEN, deliberately, and the opposite of how the product's own safety
+  # gates work: when this cannot tell what changed - a new branch with no `before`
+  # commit, a force-push whose base is gone, anything touching a shared file -
+  # it reports BOTH as changed and everything runs. A wrongly-skipped deploy
+  # ships a half-updated VM, which is far worse than a wasted minute. Detection
+  # being uncertain is not a reason to deploy less.
+  # ---------------------------------------------------------------------------
+  changes:
+    name: Detect changes
+    runs-on: ubuntu-latest
+    outputs:
+      api: ${{ steps.filter.outputs.api }}
+      web: ${{ steps.filter.outputs.web }}
+    steps:
+      # No `actions/checkout`, deliberately. This job sits on the critical path
+      # of every run, so it has to be cheap or it eats the time the filtering
+      # saves - cloning the repo just to run `git diff` costs more than the
+      # `migrate` job it lets us skip. The compare API answers the same question
+      # without a working tree, and `gh` is preinstalled on the runner.
+      - id: filter
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          set -uo pipefail
+
+          everything() {
+            echo "$1"
+            echo "api=true" >> "$GITHUB_OUTPUT"
+            echo "web=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          }
+
+          # A first push to a branch reports an all-zero `before`, and a
+          # force-pushed base may no longer be reachable.
+          case "$BASE" in
+            ""|0000000000000000000000000000000000000000) everything "No usable base commit - running everything." ;;
+          esac
+
+          changed=$(gh api --paginate \
+            "repos/${{ github.repository }}/compare/$BASE...${{ github.sha }}" \
+            --jq '.files[].filename' 2>/dev/null) \
+            || everything "Could not compare $BASE...${{ github.sha }} - running everything."
+
+          if [ -z "$changed" ]; then
+            everything "No file diff resolved - running everything."
+          fi
+
+          # The compare endpoint caps `files` at 300 and does not paginate that
+          # array. A truncated list could omit the very files that should have
+          # triggered the other half, so at the cap we stop trusting it.
+          count=$(printf '%s\n' "$changed" | grep -c .)
+          if [ "$count" -ge 300 ]; then
+            everything "File list hit the compare API's 300-file cap - running everything."
+          fi
+
+          echo "Changed files ($count):"
+          printf '%s\n' "$changed" | sed 's/^/  /'
+
+          api=false
+          web=false
+          # Anything outside the two app directories is shared - the workflow
+          # itself, ecosystem.config.js, scripts/bootstrap.sh, the root
+          # package.json - and any of them can change how BOTH halves deploy.
+          while IFS= read -r f; do
+            case "$f" in
+              apps/api/*) api=true ;;
+              apps/web/*) web=true ;;
+              *)          api=true; web=true ;;
+            esac
+          done <<< "$changed"
+
+          echo "api=$api" >> "$GITHUB_OUTPUT"
+          echo "web=$web" >> "$GITHUB_OUTPUT"
+          echo "Result: api=$api web=$web"
+
   api:
     name: API lint & tests
+    needs: [changes]
+    if: ${{ needs.changes.outputs.api == 'true' }}
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -46,6 +134,8 @@ jobs:
 
   web:
     name: Web lint, type-check, build
+    needs: [changes]
+    if: ${{ needs.changes.outputs.web == 'true' }}
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -65,20 +155,38 @@ jobs:
           NEXT_PUBLIC_API_URL: https://callflow-ai.brbik.com
 
   # ---------------------------------------------------------------------------
-  # Three deployment jobs, one per thing that can independently go wrong: the
-  # machine, the schema, the code. Each is separately visible and separately
-  # re-runnable, so a failed migration is a red `migrate`, not something buried
-  # in the middle of a deploy log.
+  # Deployment: one shared provision, then two independent chains.
   #
-  # All three resolve `environment` from the branch name, so main and dev supply
-  # their own APP_DIR / PUBLIC_URL / VM_* / ENV_FILE_B64 and no job holds an
-  # environment literal.
+  #   provision ─┬─ migrate ─ deploy-api      (schema, then the FastAPI process)
+  #              └─ deploy-web                (the Next build + its own process)
+  #
+  # The two chains are genuinely independent past provision and run in parallel:
+  # the web build no longer waits behind `alembic upgrade head`, and the API
+  # restart no longer waits behind a Next build it has nothing to do with.
+  # `provision` stays shared and stays first because both halves deploy out of
+  # ONE checkout on ONE VM - it is what puts the right commit there, and running
+  # two `git checkout -B` against the same directory concurrently is a race.
+  #
+  # Each job is still separately visible and separately re-runnable, so a failed
+  # migration is a red `migrate` rather than something buried in a deploy log.
+  #
+  # All of them resolve `environment` from the branch name, so main and dev
+  # supply their own APP_DIR / PUBLIC_URL / VM_* / ENV_FILE_B64 and no job holds
+  # an environment literal.
+  #
+  # The `!cancelled() && ... != 'failure'` guard on each: a *skipped* dependency
+  # would otherwise skip everything downstream of it, which is exactly what
+  # happens on a web-only push where the `api` job never ran.
   # ---------------------------------------------------------------------------
 
   provision:
     name: Provision ${{ github.ref_name }}
-    needs: [api, web]
-    if: github.event_name == 'push'
+    needs: [changes, api, web]
+    if: >-
+      ${{ github.event_name == 'push'
+          && !cancelled()
+          && needs.api.result != 'failure'
+          && needs.web.result != 'failure' }}
     runs-on: ubuntu-latest
     environment: ${{ github.ref_name }}
     env:
@@ -146,9 +254,15 @@ jobs:
           ORIGIN_KEY_B64: ${{ secrets.ORIGIN_KEY_B64 }}
           CERTBOT_EMAIL: ${{ vars.CERTBOT_EMAIL }}
 
+  # ---- API chain -------------------------------------------------------------
+
   migrate:
     name: Migrate ${{ github.ref_name }}
-    needs: [provision]
+    needs: [changes, provision]
+    if: >-
+      ${{ needs.changes.outputs.api == 'true'
+          && !cancelled()
+          && needs.provision.result == 'success' }}
     runs-on: ubuntu-latest
     environment: ${{ github.ref_name }}
     env:
@@ -174,9 +288,13 @@ jobs:
             "$APP_DIR/.venv/bin/alembic" upgrade head
             "$APP_DIR/.venv/bin/alembic" current
 
-  deploy:
-    name: Deploy ${{ github.ref_name }}
-    needs: [migrate]
+  deploy-api:
+    name: Deploy API ${{ github.ref_name }}
+    needs: [changes, migrate]
+    if: >-
+      ${{ needs.changes.outputs.api == 'true'
+          && !cancelled()
+          && needs.migrate.result == 'success' }}
     runs-on: ubuntu-latest
     environment: ${{ github.ref_name }}
     env:
@@ -184,14 +302,14 @@ jobs:
       APP_DIR: ${{ vars.APP_DIR }}
       PUBLIC_URL: ${{ vars.PUBLIC_URL }}
     steps:
-      - name: Build and restart
+      - name: Restart the API process
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ vars.VM_HOST }}
           username: ${{ vars.VM_USER }}
           key: ${{ secrets.VM_SSH_KEY }}
-          command_timeout: 20m
-          envs: BRANCH,APP_DIR,PUBLIC_URL
+          command_timeout: 10m
+          envs: BRANCH,APP_DIR
           script: |
             set -euo pipefail
             cd "$APP_DIR"
@@ -209,12 +327,6 @@ jobs:
             pm2 startOrRestart "$APP_DIR/ecosystem.config.js" \
               --only "callflow-api$SUFFIX" --update-env
 
-            cd apps/web
-            NEXT_PUBLIC_API_URL="$PUBLIC_URL" npm ci
-            NEXT_PUBLIC_API_URL="$PUBLIC_URL" npm run build
-            pm2 startOrRestart "$APP_DIR/ecosystem.config.js" \
-              --only "callflow-web$SUFFIX" --update-env
-
             # Records the process list so the systemd unit has something to replay.
             pm2 save
 
@@ -222,4 +334,50 @@ jobs:
         run: |
           sleep 5
           curl -fsS --retry 5 --retry-delay 3 --retry-connrefused "$PUBLIC_URL/api/health"
+
+  # ---- Web chain -------------------------------------------------------------
+  #
+  # Depends on `provision` only, never on `migrate` - a Next build has no
+  # relationship to the database schema, and waiting behind it was pure serial
+  # time. Runs concurrently with the whole API chain above.
+
+  deploy-web:
+    name: Deploy web ${{ github.ref_name }}
+    needs: [changes, provision]
+    if: >-
+      ${{ needs.changes.outputs.web == 'true'
+          && !cancelled()
+          && needs.provision.result == 'success' }}
+    runs-on: ubuntu-latest
+    environment: ${{ github.ref_name }}
+    env:
+      BRANCH: ${{ github.ref_name }}
+      APP_DIR: ${{ vars.APP_DIR }}
+      PUBLIC_URL: ${{ vars.PUBLIC_URL }}
+    steps:
+      - name: Build and restart the web process
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ vars.VM_HOST }}
+          username: ${{ vars.VM_USER }}
+          key: ${{ secrets.VM_SSH_KEY }}
+          command_timeout: 20m
+          envs: BRANCH,APP_DIR,PUBLIC_URL
+          script: |
+            set -euo pipefail
+            cd "$APP_DIR/apps/web"
+
+            if [ "$BRANCH" = "main" ]; then SUFFIX=""; else SUFFIX="-dev"; fi
+            if [ "$BRANCH" = "main" ]; then export CALLFLOW_ENV=production; else export CALLFLOW_ENV=dev; fi
+
+            NEXT_PUBLIC_API_URL="$PUBLIC_URL" npm ci
+            NEXT_PUBLIC_API_URL="$PUBLIC_URL" npm run build
+            pm2 startOrRestart "$APP_DIR/ecosystem.config.js" \
+              --only "callflow-web$SUFFIX" --update-env
+
+            pm2 save
+
+      - name: Health check
+        run: |
+          sleep 5
           curl -fsS --retry 5 --retry-delay 3 --retry-connrefused -o /dev/null "$PUBLIC_URL/"
