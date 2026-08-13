@@ -38,6 +38,26 @@ const RESULT_FIELDS: ResultField[] = [
 /** Shared easing for the bloom — a soft, water-like ease-out. */
 const EASE_OUT = [0.22, 1, 0.36, 1] as const;
 
+/**
+ * The hero's three proof points. Each one is checkable further down the page —
+ * that is the point of a hero strip, and why the wording here is the claim
+ * rather than the explanation.
+ */
+const HERO_PROOF: { title: string; body: string }[] = [
+  {
+    title: "Schema-validated fields",
+    body: "Outcome, sentiment, and the fields you defined — not a transcript to read.",
+  },
+  {
+    title: "Only escalations reach a person",
+    body: "Clean calls close themselves; opt-outs and frustration route to your team.",
+  },
+  {
+    title: "Guarded before it dials",
+    body: "Allowlist, per-run ceiling, rate limit. Every guard fails closed.",
+  },
+];
+
 /** Staggered entrance for the headline stack. */
 const RISE = {
   hidden: { opacity: 0, y: 22 },
@@ -76,13 +96,18 @@ export function Hero() {
           the only parallax on the site, off under prefers-reduced-motion. */}
       <ParallaxGrid />
 
-      {/* Sized to leave the hero dominant on the first screen without ever
-          clipping: a MIN height, capped well under a tall viewport so the
-          content fills it rather than floating in the middle of it, and
-          collapsing to content on short screens. The cap is deliberately
-          short of the full viewport — a sliver of the next section showing
-          is what tells a reader there is more below. */}
-      <div className="relative mx-auto flex min-h-[min(calc(100svh-var(--h-site-header)),660px)] max-w-(--container-marketing) flex-col justify-center px-4 pt-8 pb-12 sm:px-6 sm:pt-10">
+      {/* Exactly the viewport below the sticky header — the same box every
+          `DeckSection` gets, so the hero owns the first screen and nothing else
+          is on it.
+
+          This used to be capped at 660px on the reasoning that a sliver of the
+          next section is what tells a reader there is more below. That reads as
+          a section that failed to fill rather than as an invitation, and it is
+          the one thing the deck layout exists to prevent everywhere else on
+          this page. Scroll affordance comes from the deck's own snap and from
+          the section that follows being a full screen of its own, not from
+          leaking 200px of it into this one. */}
+      <div className="relative mx-auto flex min-h-[calc(100svh-var(--h-site-header))] max-w-(--container-marketing) flex-col justify-center px-4 py-10 sm:px-6">
         <div className="grid items-center gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,460px)] lg:gap-16">
           {/* ---- Argument: rises in as a staggered stack --------------------- */}
           <motion.div
@@ -114,6 +139,22 @@ export function Hero() {
                 <Link href="/demo">Book a 15-min demo</Link>
               </Button>
             </motion.div>
+
+            {/* The value-prop strip. A hero states the claim; this is the three
+                things that make it checkable, one line each — deliberately a
+                summary of what the sections below elaborate, which is a hero's
+                job, not duplication of them. */}
+            <motion.ul
+              variants={RISE}
+              className="mt-2 flex flex-col gap-3 border-t border-rule pt-6 sm:flex-row sm:gap-8"
+            >
+              {HERO_PROOF.map((p) => (
+                <li key={p.title} className="flex flex-col gap-1 sm:flex-1">
+                  <span className="text-small font-medium text-text">{p.title}</span>
+                  <span className="text-small text-text-mute">{p.body}</span>
+                </li>
+              ))}
+            </motion.ul>
           </motion.div>
 
           {/* ---- The proof: opens as the voice signal, then blooms into the

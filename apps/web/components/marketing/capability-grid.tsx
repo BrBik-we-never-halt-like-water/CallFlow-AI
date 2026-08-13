@@ -121,22 +121,49 @@ export function CapabilityGrid() {
           to, and at the previous card size this section overflowed by 68px
           there and spilled into the next one. Padding and type do the fitting;
           nothing was cut from what the cards say. */}
+      {/* Four identical cards, and "identical" is doing real work here.
+          `h-full` alone only equalises the card's *outer* box — the row inside
+          each one still started wherever its own copy happened to end, so the
+          four proof wells sat at four different heights and the grid read as
+          four unrelated tiles. Every row is pinned instead:
+
+            header  icon + title on one line   — fixed by the icon's own size
+            body    min-h, two lines of copy   — the longest body sets it
+            proof   h-26, a fixed well          — so all four wells align exactly
+
+          The icon moved inline with the title rather than sitting above it,
+          which is what buys back the height the fixed well costs, and gives the
+          card a flatter, more deliberate shape than the stacked version.
+
+          Sized so the whole section still clears a 900px-tall viewport — a
+          maximised browser with chrome is ~950px, not the 1080 a headless check
+          defaults to. */}
       <RevealGroup className="mt-8 grid gap-4 sm:grid-cols-2">
         {CAPABILITIES.map(({ icon: IconComponent, title, body, proof }) => (
           <RevealItem key={title} className="flex">
-            <div className="card-raised card-interactive group flex h-full flex-col gap-3 p-5 sm:p-6">
-              <span className="flex size-10 items-center justify-center rounded-lg bg-surface-sunken text-text-dim transition-colors duration-(--dur-base) group-hover:text-text">
-                <IconComponent aria-hidden weight="light" className="size-5" />
-              </span>
+            {/* `w-full` is load-bearing, not defensive. `RevealItem` is a flex
+                container, so without an explicit width this card shrinks to its
+                own content instead of filling its grid column — which is why the
+                four had ragged right edges (606/559/518/514px) and read as four
+                different shapes. `h-full` was already here and only ever fixed
+                the other axis. */}
+            <div className="card-raised card-interactive group flex h-full w-full flex-col gap-3 p-5 sm:p-6">
+              <div className="flex items-center gap-3">
+                <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-surface-sunken text-text-dim transition-colors duration-(--dur-base) group-hover:text-text">
+                  <IconComponent aria-hidden weight="light" className="size-5" />
+                </span>
+                <h3 className="text-h4 font-medium text-text">{title}</h3>
+              </div>
 
-              <h3 className="text-h4 font-medium text-text">{title}</h3>
-              <p className="text-small text-text-dim">{body}</p>
+              <p className="min-h-[2.625rem] text-small text-text-dim">{body}</p>
 
               {/* The proof sits in a well rather than under a hairline: at this
                   card size a single rule read as a stray line, and the fragment
                   is the point of the card — it should look like a piece of the
-                  product, not a footnote. */}
-              <span className="mt-auto flex min-h-14 flex-col justify-center rounded-md bg-surface-sunken/70 px-3.5 py-2.5">
+                  product, not a footnote. Fixed height, not `min-h`: a taller
+                  proof in one card is exactly what knocked the four out of
+                  alignment before. */}
+              <span className="mt-auto flex h-26 flex-col justify-center rounded-md bg-surface-sunken/70 px-3.5 py-2.5">
                 {proof}
               </span>
             </div>
