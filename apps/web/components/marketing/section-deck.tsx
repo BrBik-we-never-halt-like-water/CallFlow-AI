@@ -4,17 +4,26 @@ import { cn } from "@/lib/cn";
 import { useScrollDepth } from "@/lib/hooks/use-scroll-depth";
 
 /**
- * The home page as a deck of full-height sections.
+ * The home page as a deck of sections.
  *
- * One section fills the screen at a time, and depth does the transition: the
- * section at the centre of the viewport sits forward at full presence while the
- * ones around it scale back and take a veil. Scrolling reads as moving through
- * a stack rather than past a list.
+ * Depth does the transition: the section nearest the viewport's centre sits
+ * forward at full presence while the ones around it scale back and take a veil.
+ * Scrolling reads as moving through a stack rather than past a list.
+ *
+ * **One section fills the screen, and the fix for an empty one is more content,
+ * not less height.** These were briefly shortened to content-height because they
+ * measured 47-60% empty. That traded one problem for a worse one: at ~700px a
+ * neighbouring section is always visible, so navigating to a section no longer
+ * shows you that section — it shows you a piece of three. The height is back to
+ * `100svh` and the sections have been filled instead.
+ *
+ * If a section here looks empty, the answer is to give it something to say. Do
+ * not shrink it; that breaks the one thing this layout exists to do.
  *
  * `100svh` rather than `100vh` so mobile browser chrome does not cut the last
- * line off, and `min-height` rather than `height` throughout — a section that
- * genuinely needs more room takes it, and nothing is ever clipped. Content wins
- * over the grid.
+ * line off, and `min-height` rather than `height` — a section that genuinely
+ * needs more room takes it, and nothing is ever clipped. Content wins over the
+ * grid.
  */
 export function SectionDeck({ children }: { children: React.ReactNode }) {
   const ref = useScrollDepth<HTMLDivElement>();
@@ -44,7 +53,9 @@ export function DeckSection({
       id={id}
       data-deck-section
       className={cn(
-        "deck-section relative flex min-h-[100svh] flex-col py-(--space-band)",
+        // Height lives in `.deck-section` (globals.css), not here — it is
+        // `100svh` minus the sticky header, which needs the token in a calc.
+        "deck-section relative flex flex-col",
         centred ? "justify-center" : "justify-start",
         ground === "sand" && "ground-sand",
         ground === "sunken" && "ground-sunken",

@@ -8,7 +8,7 @@ const COLUMNS = [
     links: [
       { label: 'Features', href: '/#capabilities' },
       { label: 'How it works', href: '/#how-it-works' },
-      { label: 'Pricing', href: '/pricing' },
+      // 'Pricing' removed with the pricing pages — see site-header.tsx.
       { label: 'Docs', href: '/docs' },
       { label: 'Changelog', href: '/docs/changelog' },
     ],

@@ -263,7 +263,9 @@ function Section({
       {/* The reveal. Height is FIXED (not min-height) to the tallest result any
           scenario produces, so neither the call ending nor cycling scenarios can
           change the section's height and shove the page below. */}
-      <div className="relative mt-7 h-[17rem]">
+      {/* Scales with viewport height — this sits in a one-screen-tall deck
+          section, and a flat 17rem is what made that section overflow a laptop. */}
+      <div className="relative mt-7 h-[clamp(12rem,26vh,17rem)]">
         <AnimatePresence mode="wait">
           {done ? (
             <motion.div

@@ -45,9 +45,11 @@ for buttons, links, headings, hovers, or decoration.
 
 Consequences that look odd until you know the rule:
 
-- The primary CTA is **monochrome** (`--surface-inverse` on `--text-inverse`) everywhere
-  except `/app/*`, not brand-coloured - see the Lush Forest note below for the one
-  scoped exception.
+- The primary CTA is **`--primary`** (CAL-4's Signal indigo) everywhere, marketing and
+  `/app/*` alike. It is brand-coloured, and the rule above is what constrains *which*
+  colour: indigo sits 110° from jade, 162° from brass and 117° from flare, so a lit lamp
+  still reads as state rather than as brand. It was monochrome
+  (`--surface-inverse` on `--text-inverse`) off `/app/*` until 2026-08-10 - see §20.
 - JSON syntax highlighting in `CodeBlock` uses **weight and dimming, not hue** - a syntax
   palette would put arbitrary colour on screen.
 - Charts and sparklines are drawn in `--rule-strong`, with no series colours.
@@ -65,6 +67,13 @@ for it in reverse: `--accent` must never appear anywhere a lamp colour would be 
 honest choice instead (never inside `Lamp`, `LampBadge`, `DonutChart`, or `OutcomeCount`
 
 - verified as of the round below).
+
+> **Superseded by the CAL-4 indigo restore (see the section at the end of this file).**
+> The Lush Forest round described immediately below is history, not current state.
+> `--forest-*` no longer exists; `--accent`/`--accent-text`/`--accent-wash` are aliases
+> of `--primary`/`--primary-ink`/`--primary-wash`. The accepted-tradeoff discussion
+> below is retained because it is the reasoning that the restore acts on, not because
+> the palette it describes is still in the product.
 
 **Lush Forest (round-3 dashboard-polish, 2026-08-08).** `--accent` was originally an
 indigo, chosen specifically to sit far from every lamp hue. This round repointed it at
@@ -721,3 +730,298 @@ already-non-interactive `NeedsPersonRow` and needed no change), and the Organisa
 logo `ImageUpload`, which had no `disabled` prop at all before this - `ImageUpload` gained
 one, wired to `!canUpdate` (`org:update`), matching the org-name field beside it that was
 already gated.
+
+## 20. CAL-4 "Signal" indigo restored, opaque header, larger type scale (2026-08-10)
+
+**What was actually wrong.** Not a regression in the usual sense - the colour never
+arrived. CAL-4 designed a full indigo family (`--primary` `#3b2fd9` plus `-hover`,
+`-active`, `-on`, `-wash`, `-edge`), registered it in the Tailwind `@theme inline`
+bridge, and wired `Button variant="primary"`, `:focus-visible` and `::selection` to it.
+The merge that brought `dev` onto that branch (`f30f5b9`) resolved the `globals.css`
+conflict by keeping this file's older token layer wholesale and **appending** only
+CAL-4's marketing surface rules. What survived was a bare `--primary: #3b2fd9` at the
+bottom of the file with no siblings and no `@theme` registration, consumed by exactly
+two `.card-feature` lines. Everything else fell back: marketing CTAs to near-black
+(`--surface-inverse`), the light dashboard to Lush Forest green, the dark dashboard to
+`#9333ea` violet. Three primaries, none of them blue.
+
+**Decision.** One primary across the whole product, marketing and dashboard, light and
+dark - which is what CAL-4 was designed as. This deliberately reverses two earlier,
+separately-approved rounds: the Lush Forest repointing (§2 above) and the dark pivot's
+move from indigo to unambiguous violet. Both were made under briefs that no longer hold.
+
+**What changed:**
+
+- `--primary` family restored to `:root`, ahead of the appended marketing block, and the
+  duplicate declaration removed from that block - it sat *later* in the file and would
+  have silently shadowed the canonical token.
+- `--color-primary*` re-registered in `@theme inline`. This is the piece whose absence
+  meant `bg-primary` / `text-primary-on` compiled to nothing rather than to a wrong
+  colour - worth remembering as a failure mode, because it is invisible in review.
+- `--forest-*` deleted. `--accent` / `--accent-text` / `--accent-wash` are now aliases of
+  `--primary` / `--primary-ink` / `--primary-wash`, so every existing `--accent*`
+  consumer (charts, `NextMoveCard`, `.canvas-tint`, `.header-glass`) resolves unchanged.
+- `.btn-glass-primary` tints toward `--primary` instead of `--surface-inverse`, and gains
+  real `:hover`/`:active` steps through `--primary-hover`/`--primary-active`. `Button`
+  correspondingly drops `hover:opacity-90 active:opacity-80`: on a translucent fill an
+  opacity fade washes the button toward its backdrop rather than deepening it.
+- The `.app-font-scope .btn-glass-primary` override is **gone**, not retargeted. It only
+  ever existed to give the dashboard a different primary from marketing's; with one
+  primary it was setting the colour it already had. Likewise `btn-pulse-forest` folded
+  back into `btn-pulse`, now tinted `--primary-mid`.
+- `:focus-visible` and `::selection` moved from ink to `--primary`.
+- Dark pivot: `--dark-bg-glow` and `--dark-accent` both `#4f46e5`, keeping the previous
+  round's "one hue for the ambient glow and the interactive accent" decision intact at a
+  new hue. `--dark-accent` stays a separate token from `--primary` rather than aliasing
+  it, and the lightness gap is load-bearing - see below.
+
+**Why the dark accent is a lighter indigo than the light one.** A solid button on the
+near-black `/app` page has to clear two bars pulling in opposite directions: white label
+text on the fill (≥4.5:1) and the fill against the page (≥3:1, the non-text bar - a
+button nobody can find is not a button). `--primary` `#3b2fd9` dropped straight in gives
+8.09:1 for the label but 2.52:1 against `--dark-bg`; it sinks into the page. `#4f46e5`
+gives 6.29:1 and 3.24:1. That is the entire reason the dark scope keeps its own token.
+
+**Contrast, recomputed rather than inherited.** Every number below is computed (WCAG
+relative luminance, OKLab `color-mix` for composites), and the method was validated by
+reproducing this file's own previously-published figures before being trusted for new
+ones - the `#231436` canvas peak and the ~16.9:1 / ~7.2:1 / ~4.4:1 chrome composites
+come back out exactly.
+
+| | value | check |
+|---|---|---|
+| `--primary` | `#3b2fd9` | white on it 8.09:1; 7.35:1 as a focus ring on `--surface` |
+| `--primary-hover` / `-active` | `#3226b8` / `#2a1f9e` | 9.98:1 / 11.74:1 - hover can never be the state that fails |
+| `--primary-ink` (`--accent-text`) | `#221a6b` | 13.36:1 on `--surface` (forest ink was ~10.7:1) |
+| `--primary-wash` (`--accent-wash`) | `#f0effd` | `--text-mute` 4.57:1 undiluted at `.canvas-tint`'s 0% stop |
+| `--dark-accent` / `--dark-bg-glow` | `#4f46e5` | label 6.29:1, page 3.24:1; chrome composite text 17.06:1, dim 12.59:1, mute 7.29:1, flare dot 4.46:1 - each a shade better than the violet |
+
+The wash is noticeably paler than the mint it replaces, and that is forced, not a taste
+call: indigo is a low-luminance hue, so a tint of it darkens far faster than a tint of
+mint at the same visual weight. `.canvas-tint` renders it undiluted at the gradient's 0%
+stop where `--text-mute` can land directly on it, and `#eceafc` - only slightly deeper -
+is already 4.39:1, under the AA floor. `#f0effd` is where it can sit.
+
+**The tradeoff §2 flagged is now resolved.** That section recorded, as a known and
+accepted risk, that `--forest-deep`/`--forest-mid` sat ~21° from `--lamp-jade` and read
+as the same green at a glance - closer still under deuteranopia/protanopia - and that
+this was "sailing closer to the rule than the indigo it replaced ever did". Indigo sits
+110° from jade, 162° from brass and 117° from flare (recomputed here: the forest gap to
+jade measures 14° by this file's OKLab math, tighter than the 21° originally recorded).
+Ice is the nearest lamp at 20°, but ice is a dot on a monochrome panel and never a
+filled button, so the two never appear as the same kind of mark.
+
+### Same merge, two more casualties: the header's transparency and the type scale
+
+Found while fixing the colour, and worth reading together with it - all three are the
+same `f30f5b9` merge, and all three were invisible in a diff.
+
+**The header was see-through because of an invalid CSS declaration, not a decision.**
+`.glass` wrote `backdrop-filter: blur(var(--glass-blur)) saturate(1.4)`. On CAL-4
+`--glass-blur` was a bare length (`16px`) and that composed correctly. On this side of
+the merge `--glass-blur` is a *complete filter value* (`blur(24px) saturate(150%)`), so
+the declaration expanded to `blur(blur(24px) saturate(150%)) saturate(1.4)` - invalid,
+and dropped whole by the parser. The blur never applied. `background: var(--glass)` was
+a separate declaration and survived at 72% opacity, so the site header rendered as a
+translucent bar with none of the blur meant to keep text on it legible, and page content
+read straight through the nav.
+
+The header is solid `--surface-raised` when scrolled now. `.glass` had no other
+consumers, so it and `--glass`/`--glass-edge` are deleted rather than repaired.
+
+Note for anyone touching this: `--glass`/`--glass-edge` and
+`--glass-surface`/`--glass-border`/`--glass-blur` are **two different token families**.
+The second is the dashboard's panel and button material and is untouched. Two families
+with nearly the same name is precisely what let a cross-branch collision through
+unnoticed - if either is ever renamed, rename the dead-sounding one.
+
+**The type scale was the older, smaller ramp.** Same loss as `--primary`. The structural
+fault was not that the numbers were small but that `--t-h3`/`--t-h4` were *frozen* at a
+single rem value while the display sizes scaled with the viewport: between tablet and
+laptop the displays grew away from the headings under them and the hierarchy compressed,
+so an h3 beside a 4.5rem display read as body copy. Every step is fluid again, and body
+sizes go up a notch to follow (`--t-body` 1rem -> 1.0625rem, `--t-body-l` 1.125 ->
+1.1875). `--t-small` and below are deliberately unchanged - metadata, data cells and
+labels are already at their ceiling before a table stops reading as a table.
+
+`--w-marketing` went 1180 -> 1280 in the same pass. At 1180 on a 1920 display the column
+left ~370px of dead margin each side, and the eye judges the block before it judges the
+font - the type alone would not have fixed "the sections look small". Body copy is
+already constrained by its own `max-w-*`, so this spreads the layout without lengthening
+a line of prose.
+
+### Pricing pages removed (2026-08-10)
+
+`/pricing`, the home page's pricing deck section, `PricingPreview`, `PricingTable`,
+`CostComparison` and `PriceValue` are gone. The plans are undecided, and the pages were
+rendering visible `TODO` chips where the prices belong - §12's "a wrong number is worse
+than a missing one" rule was being honoured, but the honest missing number was still
+shipping to visitors. The nav and footer links went with them. `FinalCta` sits on the
+base ground, so dropping the section before it does not put two `sand` grounds together.
+
+`lib/pricing.ts` is deliberately **kept whole** rather than trimmed to its two live
+consumers (`PLANS` for the in-app billing page; `ROI_DEFAULTS` for the solution pages'
+ROI calculator, which models the *buyer's* own human-call cost and never ours, and so is
+unaffected by our own pricing being unset). It is the file where the numbers get decided,
+and `FEATURE_MATRIX`/`PRICING_FAQ`/`ENTERPRISE` are written content the pages will want
+back; its header now carries the checklist for restoring them. Treat those exports as
+staged, not dead.
+
+Two knock-ons worth knowing about:
+
+- `SegmentedToggle` moved from `marketing/pricing-table.tsx` to `components/ui/`. It was
+  never pricing-specific - it only happened to be first used by the billing-period and
+  currency toggles - and `RoiCalculator` imports it.
+- `lib/verticals.ts`'s lead-qualification goal script told callers that pricing "is
+  published on the website". That script is read to real people on real calls, and it
+  stopped being true the moment the page went, so it now says a specialist will confirm
+  and explicitly does not send anyone looking. Anything that removes a public page should
+  check that file - it is the one place marketing copy escapes the website.
+
+### A note on screenshotting this site
+
+`fullPage: true` is useless on the home page and will make you think sections are empty.
+Every `DeckSection` is `min-h-[100svh]`, and full-page capture expands the viewport, so
+`svh` resolves against the whole document and each section inflates to page height. Take
+real viewport-sized shots and scroll between them.
+
+### Deck sections: anchor targets and the emptiness (2026-08-10)
+
+Two complaints, both about the home page, both measured before being changed.
+
+**"Clicking a Product-menu link doesn't centre the section."** The anchor names
+were split across two elements. The `DeckSection` carried a short internal id
+(`how`, `guards`) while the component *inside* it carried the public one
+(`how-it-works`, `safety`) - so `/#how-it-works` scrolled to the inner element,
+which sits ~320px below the section that does the centring. Measured landing:
+content centre 226px *above* the viewport centre, section top already scrolled
+past. `#capabilities` looked fine only by accident - that id existed **twice**
+(deck section and inner section), invalid HTML, and the deck section won on
+document order.
+
+Now: one id per section, on the `DeckSection`, using the public name. All three
+land identically - section top at 92px (the `scroll-padding-top` clearing the
+sticky header), content centre within 92-99px of the viewport centre. The inner
+`<section>` elements keep their semantics and lose their ids.
+
+If you add a section, put the anchor on the `DeckSection`, not on the component.
+The component does not know how tall the screen it is centred in is.
+
+**"Every section looks too empty."** It was not a feeling - sections were
+`min-h-[100svh]` while their content ran 435-573px, so on a 1080px viewport each
+one was **47-60% empty**. Height now comes from content plus `--space-section`
+top and bottom, with `min-h-[62svh]` as a floor that nothing currently reaches.
+Empty space is 32-40% and all of it is the padding, i.e. rhythm rather than dead
+air. The page is 5791px instead of 7504px for exactly the same content.
+
+The depth effect did not need the full height: `use-scroll-depth` compares each
+section's centre to the viewport's centre and normalises by viewport height, so
+it works at any section height. The real tradeoff is that a neighbouring section
+is now more often partly visible instead of a screen of nothing - which is the
+point. `--space-band` lost its only consumer in this change.
+
+### Sections fill the screen again — the fix for an empty section is content (2026-08-13)
+
+The previous round shrank the deck sections to content height because they
+measured 47-60% empty. That was the wrong fix and is reverted. At ~700px a
+neighbouring section is always partly on screen, so navigating to a section
+stopped showing you *that* section and started showing you a piece of three.
+Height is back; the sections are filled instead.
+
+**If a deck section looks empty, give it something to say. Do not shrink it.**
+
+Geometry, which was also wrong in a way that survived both rounds:
+
+- A section is `calc(100svh - var(--h-site-header))`, not `100svh`. At a full
+  viewport height the sticky header covers the section's own first 68px, so the
+  last 68px always fell past the fold.
+- `.deck-section` carries `scroll-margin-top: -24px`, cancelling the 24px that
+  `html`'s `scroll-padding-top` adds above every anchor. That gap is right for a
+  docs heading and wrong here — it was pulled straight out of the previous
+  section and showed as a band under the bar. Anchors now land at exactly 68px,
+  flush. It corrects the snap position too, since `scroll-snap-align: start`
+  resolves against the same snapport.
+- The header was `h-16` (64px) while `--h-site-header` said 68px. Everything
+  that positions against the header reads the token, so the 4px lie showed up as
+  a sliver. The header takes its height from the token now.
+
+What went into the sections, all of it real product material rather than filler:
+
+| Section | Was | Now | Added |
+|---|---|---|---|
+| listening | 449 | 621 | The run queue behind the result stack — five contacts, masked numbers, lamp states |
+| problem | — | 759 | `ProblemCompare` + `LiveExtraction`, 649 lines that were built and never mounted |
+| how-it-works | 444 | 624 | Heading sub; every step shows its own description instead of one swapping line |
+| capabilities | 435 | 900 | 2-up grid of taller cards, each proof expanded into a real fragment |
+| verticals | 573 | 803 | Per-row pain line and the `metricLabel` that was already in the data |
+| safety | 447 | 763 | "When a guard trips, it says so" — the product's real error messages |
+
+Two things deliberately *not* done, both worth knowing:
+
+- **Capabilities stayed at four cards.** Two were cut in an earlier round because
+  one asserted a calling window nothing enforces (ISSUES.md D1, CLAUDE.md §4 #8).
+  A card added to occupy space says something untrue or something obvious. The
+  section fills on card size and proof depth instead.
+- **The vertical rows show `pain[0]`, not `goalTemplate`.** The goal is the better
+  artefact — it is what a buyer is really evaluating — but it is stored with its
+  runtime placeholders and rendered as `You are calling {name} about the
+  {context[role]} role`, which reads as a broken page. It belongs there once
+  something substitutes example values in.
+
+`StepFlow` was considered for the how-it-works section and rejected: it is a 24px
+`aria-hidden` decorative rail built to sit above a *horizontal* step row, and that
+section uses a vertical tracker. It is still unmounted.
+
+### The deck's vertical rhythm scales with viewport HEIGHT (2026-08-13)
+
+Three rounds were spent trimming sections to fit, and each one broke at a
+shorter viewport, because the premise was wrong: a deck section is one screen
+tall, so what its contents must fit inside is the viewport's *height* — and that
+swings from ~632px of usable space (a 1080p laptop at 125% Windows scaling) to
+~1012px (a maximised 1080p browser at 100%). A 380px range. No fixed set of
+paddings, gaps and media heights fits both ends. Sized for the tall case it
+overflowed every laptop; sized for the short case it floated in the middle of a
+big monitor. Both were shipped, in that order.
+
+Two mechanisms now, and both are needed:
+
+**1. Height-relative spacing.** `--space-band` (section padding) and the new
+`--deck-gap` (between a section's major blocks) are `clamp()`s on `vh`, not
+`vw` and not fixed rem. Use `--deck-gap` for any spacing separating the big
+parts of a deck section. The tall media blocks are height-relative too — the
+morph card (`clamp(16rem,38vh,25rem)`), the result stack
+(`clamp(15rem,32vh,22rem)`), `LiveExtraction`'s stage (`clamp(12rem,26vh,17rem)`).
+Those three were the single largest contributors to overflow. `vh` rather than
+`svh` deliberately: these are spacing values, and the mobile URL-bar wobble that
+`svh` exists to avoid is not worth constant reflow. The section's own
+`min-height` still uses `svh`, where it does matter.
+
+**2. A height breakpoint, because scaling alone is not enough.** Below
+`max-height: 850px` the deck stops forcing full-screen sections: `min-height`
+releases to content, snap is dropped, and the page becomes an ordinary scrolling
+page. A content-height section cannot spill, by construction. Above it the deck
+behaves as designed.
+
+850px is measured, not picked: at an 840px viewport the tightest section
+(`safety`) cleared the screen by only 39px — one line of copy from breaking.
+Above 850 the worst case is 63px and climbs.
+
+Dropping snap below the threshold matters as much as releasing the height —
+snapping to sections taller than the viewport is what produces the "stuck
+between two screens" feeling.
+
+**Verify with both questions, not one.** Above the threshold the question is
+"does content fit the screen"; below it, "did `min-height` actually release".
+A checker that only asks the first reports false failures for every short
+viewport, which is exactly what happened here before the modes were separated.
+
+### While you are in here: two flex traps this page has now hit twice
+
+- **A card in a flex wrapper needs an explicit width.** `RevealItem` is
+  `display:flex`; a card inside it with `h-full` but no `w-full` shrinks to its
+  own content, so a 2-up grid rendered four different widths (606/559/518/514px)
+  while looking deliberately equal in code. `h-full` only ever fixed one axis.
+- **`h-full` does not align anything inside the cards.** It equalises the outer
+  box while each card's rows still start wherever its own copy ends. If elements
+  are meant to line up across a row — an icon, a title, a proof well — pin them:
+  a fixed height on the well, a `min-h` on the body set by the longest one.

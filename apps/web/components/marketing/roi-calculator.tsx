@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { Field } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { Eyebrow, Panel } from '@/components/ui/panel';
-import { SegmentedToggle } from './pricing-table';
+import { SegmentedToggle } from '@/components/ui/segmented-toggle';
 import { formatCurrency, formatNumber, type Currency } from '@/lib/format';
 import { ROI_DEFAULTS } from '@/lib/pricing';
 import type { Vertical } from '@/lib/verticals';

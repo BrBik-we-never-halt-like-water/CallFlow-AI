@@ -9,22 +9,28 @@ export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger';
 export type ButtonSize = 'sm' | 'md' | 'lg';
 
 /**
- * The primary action is monochrome, not brand-coloured.
+ * The primary action is CAL-4's Signal indigo.
  *
- * That is deliberate and it is the most important rule in the design: lamp
- * colours are reserved for call state. Because a button is never brass or jade,
- * a lamp lighting on an otherwise ink-on-paper page carries real weight.
+ * The rule it has to respect is unchanged and is still the most important one
+ * in the design: lamp colours are reserved for call state. Indigo sits 110°
+ * from jade, 162° from brass and 117° from flare in OKLab (computed, see
+ * `--primary` in globals.css), so a lit lamp still reads as state rather than
+ * as brand - which is exactly why this hue was chosen over the forest green
+ * that briefly replaced it and sat 14° from jade.
  *
  * `primary` and `secondary` both pick up the same glass material as `Panel`
  * (`.btn-glass-primary` / `.btn-glass-secondary`, globals.css) - a button
  * sitting on a glass panel shouldn't read as a different substance. Their
  * hover/active states live in those CSS classes rather than as `hover:`/
  * `active:` utilities here, because both classes are unlayered and a layered
- * utility touching `background` could never win against them.
+ * utility touching `background` could never win against them. That is also
+ * why `primary` no longer carries `hover:opacity-90 active:opacity-80`: the
+ * class now darkens through `--primary-hover`/`--primary-active` instead, and
+ * an opacity fade on top of it would just wash that back out.
  */
 const VARIANTS: Record<ButtonVariant, string> = {
   primary:
-    'btn-pulse btn-glass-primary text-text-inverse hover:opacity-90 active:opacity-80 border border-transparent',
+    'btn-pulse btn-glass-primary text-primary-on border border-transparent',
   secondary: 'btn-glass-secondary border text-text',
   ghost:
     'border border-transparent bg-transparent text-text-dim hover:bg-surface-hover hover:text-text',

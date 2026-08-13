@@ -92,20 +92,21 @@ const DARK_SCOPE_STYLE = {
 } as CSSProperties;
 
 /**
- * The primary button's background is `--accent` within all of `/app/*`
- * already (globals.css, `.app-font-scope .btn-glass-primary` - the round-3
- * approval documented in DESIGN_NOTES §2), which on this page would mean the
- * *light* theme's forest-green CTA sitting on a dark purple-accented page -
- * `--accent`/`--dark-accent` are kept deliberately independent tokens
- * (globals.css, CLAUDE.md §4 #10), so nothing flips that automatically.
- * Rather than touch the shared `Button`/globals.css (out of this task's file
- * scope, and shared with every other `/app/*` page), every primary button
- * on this page gets this inline override instead - still token-only, no raw
- * hex. `--dark-accent` is a low-luminance violet (globals.css's own
- * citation for the exact number), so white text sits on it correctly
- * (~5.4:1) - the inverse of this token's previous cyan value, where white
- * only cleared ~2.4:1 and had to be swapped for dark text instead. Text
- * flips along with the color, not independently of it.
+ * The primary button's background is `--primary` everywhere now (globals.css,
+ * `.btn-glass-primary`), which is the light theme's indigo. This page is the
+ * dark pivot, and `--primary`/`--dark-accent` are deliberately independent
+ * tokens (globals.css, CLAUDE.md §4 #10), so nothing flips that automatically.
+ * Every primary button on this page therefore gets this inline override -
+ * still token-only, no raw hex.
+ *
+ * The override survived the CAL-4 indigo restore because it is still doing
+ * real work, even though both tokens are now the same hue. A solid button on
+ * this near-black page has to clear the label bar and the against-the-page bar
+ * at once: `--primary` (`#3b2fd9`) manages 8.09:1 for white text but only
+ * 2.52:1 against `--dark-bg`, so it would sink into the page. `--dark-accent`
+ * (`#4f46e5`) is the lighter indigo that clears both, at 6.29:1 and 3.24:1.
+ * White text stays the correct pairing - both are low-luminance, unlike the
+ * cyan this token held two rounds ago, where white cleared only ~2.4:1.
  */
 const PRIMARY_CTA_STYLE = {
   background: 'color-mix(in oklab, var(--dark-accent) 92%, transparent)',

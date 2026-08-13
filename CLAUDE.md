@@ -221,12 +221,23 @@ These override style preference, convenience, and personal taste.
     `apps/web/DESIGN_NOTES.md` §2 for the three documented exceptions. With dry_run gone,
     `ice` (previously "simulated") is reserved and currently unassigned - do not repurpose
     it without updating the lamp-state table everywhere it's documented (`SYSTEM.md`,
-    the docs site's triage-rules page). Separately, `--accent` (an indigo, `globals.css`)
-    exists as the product's one **decorative-only** colour - dashboard chart markers, one
-    CTA card, a tinted page canvas. The line between it and the lamps is absolute: `--accent`
-    must never appear inside anything that represents call/run/escalation state (`Lamp`,
+    the docs site's triage-rules page). Separately, `--primary` (CAL-4's Signal indigo
+    `#3b2fd9`, `globals.css`) is the product's one **non-lamp** colour, and it covers both
+    jobs: the action colour (primary buttons, focus ring, selection) and the decorative
+    accent (dashboard chart markers, one CTA card, a tinted page canvas). `--accent` is an
+    alias of it, kept so existing `--accent*` consumers resolve unchanged - it is not a
+    second colour. The dark pivot keeps its own `--dark-accent` (`#4f46e5`) because a
+    solid button there must clear both the white-label bar and the against-the-page bar;
+    same hue, different lightness, and the reason is cited in `globals.css`.
+
+    The line between all of that and the lamps is absolute: `--primary`/`--accent` must
+    never appear inside anything that represents call/run/escalation state (`Lamp`,
     `LampBadge`, `DonutChart`, or any future component like them) - see
-    `apps/web/DESIGN_NOTES.md` §2 for where it's used today.
+    `apps/web/DESIGN_NOTES.md` §2 for where it's used today. Indigo is chosen to make that
+    line easy to hold: it sits 110° from jade, 162° from brass and 117° from flare in
+    OKLab. If you are ever tempted to move the primary to a hue near a lamp's - the forest
+    green that briefly held this slot sat 14° from jade - that is the constraint you are
+    trading away, and it is the one that makes a lit lamp mean something.
 
 ---
 
