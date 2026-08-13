@@ -12,9 +12,7 @@
  * headings, borders, hovers, or decoration.
  */
 
-import type { Disposition, Outcome, RunStatus } from './api';
-
-export type { RunStatus };
+import type { Disposition, Outcome } from './api';
 
 export type LampState = 'off' | 'ice' | 'brass' | 'jade' | 'flare';
 
@@ -66,10 +64,11 @@ export function lampForDisposition(disposition: Disposition): LampSpec {
   }
 }
 
+/** A run's own batch-level status - distinct from any one call's disposition. */
+export type RunStatus = 'running' | 'completed' | 'failed';
+
 const RUN_STATUS_LABELS: Record<RunStatus, string> = {
   running: 'Running',
-  canceling: 'Canceling…',
-  canceled: 'Canceled',
   completed: 'Completed',
   failed: 'Failed',
 };
@@ -78,23 +77,11 @@ const RUN_STATUS_LABELS: Record<RunStatus, string> = {
  * Which lamp a run's own status gets. `lampForOutcome` is per call; this is
  * the run as a whole, so every list that shows a run's status reads the same
  * colour and the same words instead of each re-deriving them.
- *
- * `canceling`/`canceled` deliberately use the neutral `off` state rather than
- * a new colour: the five lamp colours are reserved for call-state meaning
- * (CLAUDE.md), and a run someone stopped on purpose isn't a call-state signal
- * the way "needs a person" or "clean close" are.
  */
 export function lampForRunStatus(status: RunStatus): LampSpec {
   switch (status) {
     case 'running':
       return { state: 'brass', pulse: true, label: RUN_STATUS_LABELS.running };
-    case 'canceling':
-      // No `pulse` here: `off` never animates regardless (Lamp's own
-      // `isLit = state !== 'off'` gate) - the "…" in the label is what
-      // signals "still settling," not motion on a lamp that reads as idle.
-      return { state: 'off', label: RUN_STATUS_LABELS.canceling };
-    case 'canceled':
-      return { state: 'off', label: RUN_STATUS_LABELS.canceled };
     case 'failed':
       return { state: 'flare', label: RUN_STATUS_LABELS.failed };
     case 'completed':

@@ -131,10 +131,8 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
         setHydratedRuns(hydrated.filter((run): run is Run => run !== null));
 
         // A run still going means the summary/list view will otherwise show a
-        // stale "running"/"canceling" row for however long the visitor leaves
-        // the tab open - 'canceling' isn't terminal, the background loop only
-        // checks for it between contacts, so it can outlive a single poll tick.
-        if (summaries.some((r) => r.status === 'running' || r.status === 'canceling')) {
+        // stale "running" row for however long the visitor leaves the tab open.
+        if (summaries.some((r) => r.status === 'running')) {
           livePoll = setTimeout(() => void load(), LIVE_POLL_MS);
         }
       } catch {
