@@ -1923,11 +1923,11 @@ button[data-menu][data-state='open']:focus-visible {
    ========================================================================== */
 
 :root {
-  /* `--space-band` sat here too. It was the deck sections' vertical padding,
-     sized small because those sections were a full `100svh` and the padding only
-     had to keep content off the edges. They are content-height now and pad with
-     `--space-section` instead, which left this with no consumers. */
   --secondary: #f0e9de;
+  /* The deck sections' vertical padding. Small on purpose: those sections are a
+     full `100svh`, so this only has to keep content off the edges — the breathing
+     room comes from the height, not from the padding. */
+  --space-band: clamp(36px, 4.5vw, 64px);
 }
 
 /* No borders.
@@ -2032,6 +2032,25 @@ button[data-menu][data-state='open']:focus-visible {
   --d: 1;
   scroll-snap-align: start;
   scroll-snap-stop: normal;
+
+  /* A section is exactly the viewport *below the sticky header*, not the whole
+     viewport. At a full `100svh` the header covers the section's own first
+     68px, so the last 68px spilled past the fold and a sliver of the next
+     section sat under the bar — navigating to a section showed you parts of
+     three. Subtracting the header makes the visible area and the section the
+     same box. `min-height`, so a section that genuinely needs more still takes
+     it rather than clipping. */
+  min-height: calc(100svh - var(--h-site-header));
+
+  /* `html` adds 24px above an anchor on top of the header height. That is right
+     for a docs heading — it wants air above it — and wrong for a full-screen
+     section, where those 24px are pulled straight from the previous section and
+     show as a band under the header. Cancel exactly that 24px here, so a deck
+     section lands flush and nothing else is on screen. This composes with the
+     container's scroll-padding rather than fighting it, and it also corrects
+     the snap position, since `scroll-snap-align: start` resolves against the
+     same snapport. */
+  scroll-margin-top: -24px;
 }
 
 .deck-inner {

@@ -989,3 +989,55 @@ section's centre to the viewport's centre and normalises by viewport height, so
 it works at any section height. The real tradeoff is that a neighbouring section
 is now more often partly visible instead of a screen of nothing - which is the
 point. `--space-band` lost its only consumer in this change.
+
+### Sections fill the screen again — the fix for an empty section is content (2026-08-13)
+
+The previous round shrank the deck sections to content height because they
+measured 47-60% empty. That was the wrong fix and is reverted. At ~700px a
+neighbouring section is always partly on screen, so navigating to a section
+stopped showing you *that* section and started showing you a piece of three.
+Height is back; the sections are filled instead.
+
+**If a deck section looks empty, give it something to say. Do not shrink it.**
+
+Geometry, which was also wrong in a way that survived both rounds:
+
+- A section is `calc(100svh - var(--h-site-header))`, not `100svh`. At a full
+  viewport height the sticky header covers the section's own first 68px, so the
+  last 68px always fell past the fold.
+- `.deck-section` carries `scroll-margin-top: -24px`, cancelling the 24px that
+  `html`'s `scroll-padding-top` adds above every anchor. That gap is right for a
+  docs heading and wrong here — it was pulled straight out of the previous
+  section and showed as a band under the bar. Anchors now land at exactly 68px,
+  flush. It corrects the snap position too, since `scroll-snap-align: start`
+  resolves against the same snapport.
+- The header was `h-16` (64px) while `--h-site-header` said 68px. Everything
+  that positions against the header reads the token, so the 4px lie showed up as
+  a sliver. The header takes its height from the token now.
+
+What went into the sections, all of it real product material rather than filler:
+
+| Section | Was | Now | Added |
+|---|---|---|---|
+| listening | 449 | 621 | The run queue behind the result stack — five contacts, masked numbers, lamp states |
+| problem | — | 759 | `ProblemCompare` + `LiveExtraction`, 649 lines that were built and never mounted |
+| how-it-works | 444 | 624 | Heading sub; every step shows its own description instead of one swapping line |
+| capabilities | 435 | 900 | 2-up grid of taller cards, each proof expanded into a real fragment |
+| verticals | 573 | 803 | Per-row pain line and the `metricLabel` that was already in the data |
+| safety | 447 | 763 | "When a guard trips, it says so" — the product's real error messages |
+
+Two things deliberately *not* done, both worth knowing:
+
+- **Capabilities stayed at four cards.** Two were cut in an earlier round because
+  one asserted a calling window nothing enforces (ISSUES.md D1, CLAUDE.md §4 #8).
+  A card added to occupy space says something untrue or something obvious. The
+  section fills on card size and proof depth instead.
+- **The vertical rows show `pain[0]`, not `goalTemplate`.** The goal is the better
+  artefact — it is what a buyer is really evaluating — but it is stored with its
+  runtime placeholders and rendered as `You are calling {name} about the
+  {context[role]} role`, which reads as a broken page. It belongs there once
+  something substitutes example values in.
+
+`StepFlow` was considered for the how-it-works section and rejected: it is a 24px
+`aria-hidden` decorative rail built to sit above a *horizontal* step row, and that
+section uses a vertical tracker. It is still unmounted.

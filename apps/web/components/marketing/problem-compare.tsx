@@ -11,7 +11,7 @@ import { LiveExtraction } from "./live-extraction";
  */
 export function ProblemCompare() {
   return (
-    <section id="problem" className="mx-auto max-w-(--container-marketing) px-4 sm:px-6">
+    <section className="mx-auto max-w-(--container-marketing) px-4 sm:px-6">
       <Reveal className="flex max-w-2xl flex-col gap-4">
         <Eyebrow>Every call, understood</Eyebrow>
         <h2 className="measure-display font-display text-h2 text-text">

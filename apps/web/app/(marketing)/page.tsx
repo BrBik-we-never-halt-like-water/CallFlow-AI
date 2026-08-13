@@ -2,6 +2,7 @@ import { CapabilityGrid } from "@/components/marketing/capability-grid";
 import { FinalCta } from "@/components/marketing/final-cta";
 import { Hero } from "@/components/marketing/hero";
 import { Listening } from "@/components/marketing/listening";
+import { ProblemCompare } from "@/components/marketing/problem-compare";
 import { SafetySection } from "@/components/marketing/safety-section";
 import { Steps } from "@/components/marketing/steps";
 import { VerticalStrip } from "@/components/marketing/vertical-strip";
@@ -49,7 +50,16 @@ export default function HomePage() {
             content — while `/#capabilities` happened to land correctly, because
             that name existed *twice* and the deck section won on document order.
             One id per section, on the section that owns the screen. */}
-        <DeckSection id="how-it-works">
+        {/* `ProblemCompare` (with `LiveExtraction`) was built, complete, and
+            never mounted anywhere — 649 lines of the sharpest argument on the
+            site sitting unused. It earns its screen: the same call resolving
+            two ways, live, which is exactly the "why not just read the log"
+            objection this page otherwise only asserts an answer to. */}
+        <DeckSection id="problem">
+          <ProblemCompare />
+        </DeckSection>
+
+        <DeckSection id="how-it-works" ground="sunken">
           <Steps />
         </DeckSection>
 

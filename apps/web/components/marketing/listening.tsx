@@ -26,6 +26,22 @@ interface Result {
   tone: "jade" | "flare";
 }
 
+/**
+ * The queue behind the stack.
+ *
+ * The card stack shows results *arriving*; this shows the run they arrive from,
+ * so the section reads as a system under load rather than one card at a time.
+ * Numbers are masked, the same way every surface in the product masks them
+ * (`lib/format/phone.ts`) — a marketing page is not an exemption.
+ */
+const QUEUE: { name: string; phone: string; state: string; lamp: string }[] = [
+  { name: "Aditi Sharma", phone: "+91*******210", state: "in conversation", lamp: "bg-lamp-brass" },
+  { name: "Rahul Verma", phone: "+91*******884", state: "dialling", lamp: "bg-lamp-brass" },
+  { name: "Meera Joshi", phone: "+91*******051", state: "closed itself", lamp: "bg-lamp-jade" },
+  { name: "Karan Shah", phone: "+91*******377", state: "needs a person", lamp: "bg-lamp-flare" },
+  { name: "Nisha Rao", phone: "+91*******629", state: "queued", lamp: "bg-lamp-off" },
+];
+
 const RESULTS: Result[] = [
   {
     who: "Admissions follow-up",
@@ -141,6 +157,23 @@ export function Listening({ className }: { className?: string }) {
             </span>
             Live results, cycling
           </p>
+
+          {/* The run underneath the results. Five rows is enough to read as a
+              queue without becoming a table nobody scans. */}
+          <ul className="mt-2 flex flex-col divide-y divide-rule border-y border-rule">
+            {QUEUE.map((c) => (
+              <li key={c.name} className="flex items-center gap-3 py-2.5">
+                <span className={cn("size-2 shrink-0 rounded-full", c.lamp)} />
+                <span className="min-w-0 flex-1 truncate text-small text-text">{c.name}</span>
+                <span className="hidden font-mono text-data text-text-mute sm:block">
+                  {c.phone}
+                </span>
+                <span className="w-32 shrink-0 text-right text-small text-text-dim">
+                  {c.state}
+                </span>
+              </li>
+            ))}
+          </ul>
         </div>
 
         {/* The stack. Newest in front; the two behind it step back in depth

@@ -107,7 +107,11 @@ export function SiteHeader() {
   return (
     <header
       className={cn(
-        "sticky top-0 z-40 h-16 border-b",
+        // Height comes from the token, not a literal. `--h-site-header` is what
+        // `scroll-padding-top` and the deck sections' own height are computed
+        // from, and this was `h-16` (64px) against a token of 68px — a 4px lie
+        // that showed up as a sliver of the previous section under the bar.
+        "sticky top-0 z-40 h-(--h-site-header) border-b",
         "transition-[border-color,box-shadow,background-color] duration-(--dur-base) ease-(--ease-out)",
         // Flush with the page at the top — header and hero share --surface, so
         // there is nothing to lift. Once content starts passing underneath, the
