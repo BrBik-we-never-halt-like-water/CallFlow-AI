@@ -64,14 +64,14 @@ const CAPABILITIES: { icon: Icon; title: string; body: string; proof: ReactNode 
     title: "Safe by default",
     body: "An allowlist and a per-run ceiling stop accidental calls. Every run validates first.",
     proof: (
-      <span className="flex flex-col gap-2">
+      <span className="flex flex-col gap-1.5">
         <span className="flex flex-wrap gap-1.5">
           <Tag>ALLOWLIST</Tag>
           <Tag>CEILING 25</Tag>
           <Tag>2 / HOUR</Tag>
         </span>
         <span className="text-small text-text-mute">
-          Every guard fails closed — if a check cannot complete, the dial does not happen.
+          Fails closed — if a check cannot complete, the dial does not happen.
         </span>
       </span>
     ),
@@ -116,22 +116,27 @@ export function CapabilityGrid() {
         />
       </Reveal>
 
-      <RevealGroup className="mt-10 grid gap-5 sm:grid-cols-2">
+      {/* Sized so the whole section clears a 900px-tall viewport — a maximised
+          browser with chrome is ~950px, not the 1080 a headless check defaults
+          to, and at the previous card size this section overflowed by 68px
+          there and spilled into the next one. Padding and type do the fitting;
+          nothing was cut from what the cards say. */}
+      <RevealGroup className="mt-8 grid gap-4 sm:grid-cols-2">
         {CAPABILITIES.map(({ icon: IconComponent, title, body, proof }) => (
           <RevealItem key={title} className="flex">
-            <div className="card-raised card-interactive group flex h-full flex-col gap-4 p-6 sm:p-7">
-              <span className="flex size-11 items-center justify-center rounded-lg bg-surface-sunken text-text-dim transition-colors duration-(--dur-base) group-hover:text-text">
-                <IconComponent aria-hidden weight="light" className="size-6" />
+            <div className="card-raised card-interactive group flex h-full flex-col gap-3 p-5 sm:p-6">
+              <span className="flex size-10 items-center justify-center rounded-lg bg-surface-sunken text-text-dim transition-colors duration-(--dur-base) group-hover:text-text">
+                <IconComponent aria-hidden weight="light" className="size-5" />
               </span>
 
-              <h3 className="text-h3 font-medium text-text">{title}</h3>
-              <p className="text-body text-text-dim">{body}</p>
+              <h3 className="text-h4 font-medium text-text">{title}</h3>
+              <p className="text-small text-text-dim">{body}</p>
 
               {/* The proof sits in a well rather than under a hairline: at this
                   card size a single rule read as a stray line, and the fragment
                   is the point of the card — it should look like a piece of the
                   product, not a footnote. */}
-              <span className="mt-auto flex min-h-16 flex-col justify-center rounded-md bg-surface-sunken/70 px-4 py-3">
+              <span className="mt-auto flex min-h-14 flex-col justify-center rounded-md bg-surface-sunken/70 px-3.5 py-2.5">
                 {proof}
               </span>
             </div>

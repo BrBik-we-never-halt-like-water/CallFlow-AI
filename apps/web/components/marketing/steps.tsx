@@ -97,7 +97,7 @@ function StepTracker({
           Four short lines do not need progressive disclosure, and inlining them
           fills the column against the card beside it. Heights are constant per
           row, so switching steps still never reflows the section. */}
-      <ol className="relative flex flex-col gap-7 pl-8">
+      <ol className="relative flex flex-col gap-9 pl-8">
         <span aria-hidden className="absolute top-2 bottom-2 left-[9px] w-px bg-rule" />
         <motion.span
           aria-hidden
@@ -174,7 +174,7 @@ function MorphCard({ step, reduced }: { step: number; reduced: boolean }) {
     // must not resize as they swap, or the whole section jumps on every tick.
     // Sized to the tallest form plus room — tall enough to balance the tracker
     // beside it, not so tall that the shortest form floats in an empty box.
-    <div className="card-raised relative flex h-[21rem] flex-col justify-center overflow-hidden p-6 sm:p-8">
+    <div className="card-raised relative flex h-[25rem] flex-col justify-center overflow-hidden p-6 sm:p-8">
       <AnimatePresence mode="wait">
         <motion.div
           key={step}

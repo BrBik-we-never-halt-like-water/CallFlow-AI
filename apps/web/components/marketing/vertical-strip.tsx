@@ -22,13 +22,13 @@ export function VerticalStrip() {
         />
       </Reveal>
 
-      <ul className="mt-8 border-t border-rule">
+      <ul className="mt-6 border-t border-rule">
         {VERTICALS.map((vertical, i) => (
           <Reveal key={vertical.slug} delayMs={Math.min(i, 11) * 60}>
             <li className="border-b border-rule">
               <Link
                 href={`/solutions/${vertical.slug}`}
-                className="group flex items-center gap-6 py-7 transition-colors duration-(--dur-micro) hover:bg-surface-hover"
+                className="group flex items-center gap-6 py-6 transition-colors duration-(--dur-micro) hover:bg-surface-hover"
               >
                 <div className="min-w-0 flex-1">
                   <span className="block text-h4 font-medium text-text">{vertical.name}</span>

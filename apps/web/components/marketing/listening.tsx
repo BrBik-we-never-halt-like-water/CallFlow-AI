@@ -40,6 +40,7 @@ const QUEUE: { name: string; phone: string; state: string; lamp: string }[] = [
   { name: "Meera Joshi", phone: "+91*******051", state: "closed itself", lamp: "bg-lamp-jade" },
   { name: "Karan Shah", phone: "+91*******377", state: "needs a person", lamp: "bg-lamp-flare" },
   { name: "Nisha Rao", phone: "+91*******629", state: "queued", lamp: "bg-lamp-off" },
+  { name: "Vikram Desai", phone: "+91*******145", state: "queued", lamp: "bg-lamp-off" },
 ];
 
 const RESULTS: Result[] = [
@@ -158,7 +159,7 @@ export function Listening({ className }: { className?: string }) {
             Live results, cycling
           </p>
 
-          {/* The run underneath the results. Five rows is enough to read as a
+          {/* The run underneath the results. Six rows is enough to read as a
               queue without becoming a table nobody scans. */}
           <ul className="mt-2 flex flex-col divide-y divide-rule border-y border-rule">
             {QUEUE.map((c) => (
