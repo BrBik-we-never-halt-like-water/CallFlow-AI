@@ -138,7 +138,7 @@ export function CapabilityGrid() {
           Sized so the whole section still clears a 900px-tall viewport — a
           maximised browser with chrome is ~950px, not the 1080 a headless check
           defaults to. */}
-      <RevealGroup className="mt-8 grid gap-4 sm:grid-cols-2">
+      <RevealGroup className="mt-(--deck-gap) grid gap-4 sm:grid-cols-2">
         {CAPABILITIES.map(({ icon: IconComponent, title, body, proof }) => (
           <RevealItem key={title} className="flex">
             {/* `w-full` is load-bearing, not defensive. `RevealItem` is a flex

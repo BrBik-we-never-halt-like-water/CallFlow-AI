@@ -179,7 +179,10 @@ export function Listening({ className }: { className?: string }) {
 
         {/* The stack. Newest in front; the two behind it step back in depth
             rather than leaving, so the section shows a queue being worked. */}
-        <div className="relative h-[22rem] sm:h-[20rem]">
+        {/* Scales with the viewport for the same reason the morph card does:
+            this sits inside a one-screen-tall section, so a flat rem height is
+            a promise the short viewports can't keep. */}
+        <div className="relative h-[clamp(15rem,32vh,22rem)]">
           {RESULTS.map((r, idx) => {
             // Distance behind the front card, wrapped so the stack is a loop.
             const depth = (idx - i + RESULTS.length * 100) % RESULTS.length;
@@ -234,7 +237,7 @@ export function Listening({ className }: { className?: string }) {
       {/* The section is a full screen, and the argument above fills about half
           of it. Rather than pad the gap, it carries the numbers that make the
           claim concrete — the same figures the dashboard reports. */}
-      <dl className="relative mt-14 grid grid-cols-2 gap-x-8 gap-y-6 border-t border-rule pt-8 sm:grid-cols-4">
+      <dl className="relative mt-(--deck-gap) grid grid-cols-2 gap-x-8 gap-y-6 border-t border-rule pt-(--deck-gap) sm:grid-cols-4">
         {[
           { n: "18,402", l: "calls closed themselves last month" },
           { n: "6.1%", l: "reached a person" },

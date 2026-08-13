@@ -971,3 +971,57 @@ Two things deliberately *not* done, both worth knowing:
 `StepFlow` was considered for the how-it-works section and rejected: it is a 24px
 `aria-hidden` decorative rail built to sit above a *horizontal* step row, and that
 section uses a vertical tracker. It is still unmounted.
+
+### The deck's vertical rhythm scales with viewport HEIGHT (2026-08-13)
+
+Three rounds were spent trimming sections to fit, and each one broke at a
+shorter viewport, because the premise was wrong: a deck section is one screen
+tall, so what its contents must fit inside is the viewport's *height* — and that
+swings from ~632px of usable space (a 1080p laptop at 125% Windows scaling) to
+~1012px (a maximised 1080p browser at 100%). A 380px range. No fixed set of
+paddings, gaps and media heights fits both ends. Sized for the tall case it
+overflowed every laptop; sized for the short case it floated in the middle of a
+big monitor. Both were shipped, in that order.
+
+Two mechanisms now, and both are needed:
+
+**1. Height-relative spacing.** `--space-band` (section padding) and the new
+`--deck-gap` (between a section's major blocks) are `clamp()`s on `vh`, not
+`vw` and not fixed rem. Use `--deck-gap` for any spacing separating the big
+parts of a deck section. The tall media blocks are height-relative too — the
+morph card (`clamp(16rem,38vh,25rem)`), the result stack
+(`clamp(15rem,32vh,22rem)`), `LiveExtraction`'s stage (`clamp(12rem,26vh,17rem)`).
+Those three were the single largest contributors to overflow. `vh` rather than
+`svh` deliberately: these are spacing values, and the mobile URL-bar wobble that
+`svh` exists to avoid is not worth constant reflow. The section's own
+`min-height` still uses `svh`, where it does matter.
+
+**2. A height breakpoint, because scaling alone is not enough.** Below
+`max-height: 850px` the deck stops forcing full-screen sections: `min-height`
+releases to content, snap is dropped, and the page becomes an ordinary scrolling
+page. A content-height section cannot spill, by construction. Above it the deck
+behaves as designed.
+
+850px is measured, not picked: at an 840px viewport the tightest section
+(`safety`) cleared the screen by only 39px — one line of copy from breaking.
+Above 850 the worst case is 63px and climbs.
+
+Dropping snap below the threshold matters as much as releasing the height —
+snapping to sections taller than the viewport is what produces the "stuck
+between two screens" feeling.
+
+**Verify with both questions, not one.** Above the threshold the question is
+"does content fit the screen"; below it, "did `min-height` actually release".
+A checker that only asks the first reports false failures for every short
+viewport, which is exactly what happened here before the modes were separated.
+
+### While you are in here: two flex traps this page has now hit twice
+
+- **A card in a flex wrapper needs an explicit width.** `RevealItem` is
+  `display:flex`; a card inside it with `h-full` but no `w-full` shrinks to its
+  own content, so a 2-up grid rendered four different widths (606/559/518/514px)
+  while looking deliberately equal in code. `h-full` only ever fixed one axis.
+- **`h-full` does not align anything inside the cards.** It equalises the outer
+  box while each card's rows still start wherever its own copy ends. If elements
+  are meant to line up across a row — an icon, a title, a proof well — pin them:
+  a fixed height on the well, a `min-h` on the body set by the longest one.

@@ -55,7 +55,7 @@ export function DeckSection({
       className={cn(
         // Height lives in `.deck-section` (globals.css), not here — it is
         // `100svh` minus the sticky header, which needs the token in a calc.
-        "deck-section relative flex flex-col py-(--space-band)",
+        "deck-section relative flex flex-col",
         centred ? "justify-center" : "justify-start",
         ground === "sand" && "ground-sand",
         ground === "sunken" && "ground-sunken",

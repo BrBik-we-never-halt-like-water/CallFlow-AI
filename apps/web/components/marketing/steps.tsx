@@ -64,7 +64,7 @@ export function Steps() {
         />
       </Reveal>
 
-      <div className="mt-10 grid items-start gap-10 lg:grid-cols-[minmax(0,320px)_minmax(0,1fr)] lg:gap-16">
+      <div className="mt-(--deck-gap) grid items-start gap-10 lg:grid-cols-[minmax(0,320px)_minmax(0,1fr)] lg:gap-16">
         <StepTracker step={step} onSelect={setStep} />
         <Reveal delayMs={80}>
           <MorphCard step={step} reduced={reduced} />
@@ -170,11 +170,12 @@ function MorphCard({ step, reduced }: { step: number; reduced: boolean }) {
   const forms = [<LoadForm key="l" />, <ChooseForm key="c" />, <RunForm key="r" />, <TriageForm key="t" />];
 
   return (
-    // Fixed height on purpose: the four forms are different lengths and the card
-    // must not resize as they swap, or the whole section jumps on every tick.
-    // Sized to the tallest form plus room — tall enough to balance the tracker
-    // beside it, not so tall that the shortest form floats in an empty box.
-    <div className="card-raised relative flex h-[25rem] flex-col justify-center overflow-hidden p-6 sm:p-8">
+    // Fixed *for a given viewport* on purpose: the four forms are different
+    // lengths and the card must not resize as they swap, or the whole section
+    // jumps on every tick. The height itself scales with the viewport, because
+    // the section it lives in is exactly one screen tall — at a flat 25rem this
+    // was the single biggest reason this section overflowed a laptop.
+    <div className="card-raised relative flex h-[clamp(16rem,38vh,25rem)] flex-col justify-center overflow-hidden p-6 sm:p-8">
       <AnimatePresence mode="wait">
         <motion.div
           key={step}

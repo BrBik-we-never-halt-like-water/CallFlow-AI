@@ -91,7 +91,7 @@ export function SafetySection() {
         />
       </Reveal>
 
-      <Reveal delayMs={80} className="mt-8">
+      <Reveal delayMs={80} className="mt-(--deck-gap)">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           {ACTIVE_GUARDS.map((guard) => {
             const GuardIcon = guard.icon;
@@ -118,8 +118,8 @@ export function SafetySection() {
         </div>
       </Reveal>
 
-      <Reveal delayMs={120} className="mt-8">
-        <dl className="grid gap-x-8 gap-y-7 border-t border-rule pt-8 sm:grid-cols-2 lg:grid-cols-3">
+      <Reveal delayMs={120} className="mt-(--deck-gap)">
+        <dl className="grid gap-x-8 gap-y-(--deck-gap) border-t border-rule pt-(--deck-gap) sm:grid-cols-2 lg:grid-cols-3">
           {GUARDS_EXPLAINED.map((guard) => {
             const GuardIcon = guard.icon;
             return (
@@ -140,7 +140,7 @@ export function SafetySection() {
         </dl>
       </Reveal>
 
-      <Reveal delayMs={160} className="mt-8">
+      <Reveal delayMs={160} className="mt-(--deck-gap)">
         <div className="card-raised p-6 sm:p-7">
           <h3 className="text-h4 font-medium text-text">When a guard trips, it says so.</h3>
           <p className="mt-1.5 text-small text-text-dim">

@@ -1907,10 +1907,27 @@ button[data-menu][data-state='open']:focus-visible {
 
 :root {
   --secondary: #f0e9de;
-  /* The deck sections' vertical padding. Small on purpose: those sections are a
-     full `100svh`, so this only has to keep content off the edges — the breathing
-     room comes from the height, not from the padding. */
-  --space-band: clamp(36px, 4.5vw, 64px);
+
+  /* The deck sections' vertical rhythm, scaled by viewport HEIGHT rather than
+     width — the unusual choice, and the load-bearing one.
+
+     A deck section is exactly one screen tall, so the thing its contents have to
+     fit inside is the viewport's height, which in practice swings from ~632px of
+     usable space (a 1080p laptop at 125% Windows scaling) to ~1012px (a
+     maximised 1080p browser at 100%). That is a 380px range, and no fixed set of
+     paddings and gaps fits both ends: sized for the tall case the content spills
+     on every laptop, sized for the short case it floats in the middle of a big
+     monitor. Both failures were shipped, in that order, before this.
+
+     `vh` here rather than `svh`: these are spacing values, so the mobile
+     URL-bar wobble `svh` exists to avoid is not worth the constant reflow. The
+     section's own `min-height` still uses `svh`, where it does matter. */
+  --space-band: clamp(20px, 3.4vh, 44px);
+
+  /* The gap between a section's own major blocks (heading → content → detail).
+     Same reasoning, same axis - use this instead of a fixed `mt-8`/`mt-10` for
+     any spacing that separates the big parts of a deck section. */
+  --deck-gap: clamp(16px, 3vh, 40px);
 }
 
 /* No borders.
@@ -2024,6 +2041,7 @@ button[data-menu][data-state='open']:focus-visible {
      same box. `min-height`, so a section that genuinely needs more still takes
      it rather than clipping. */
   min-height: calc(100svh - var(--h-site-header));
+  padding-block: var(--space-band);
 
   /* `html` adds 24px above an anchor on top of the header height. That is right
      for a docs heading — it wants air above it — and wrong for a full-screen
@@ -2034,6 +2052,39 @@ button[data-menu][data-state='open']:focus-visible {
      the snap position, since `scroll-snap-align: start` resolves against the
      same snapport. */
   scroll-margin-top: -24px;
+}
+
+/* Below this height, stop forcing a section to fill the screen.
+
+   The one-section-per-screen layout is only honest while a section's content
+   actually fits the screen. A 1080p laptop at 125% Windows scaling leaves ~596px
+   of usable height; the shortest section here is ~630px even after every gap and
+   media block was made viewport-relative. Forcing `100svh` there guarantees the
+   exact failure this layout exists to prevent — the section overflows and the
+   next one bleeds into view — and no amount of further trimming fixes it without
+   gutting the page for everyone else.
+
+   So: above the threshold, the deck behaves as designed. Below it, sections size
+   to their content and the page is an ordinary scrolling page. A content-height
+   section cannot spill, by construction. Snap is dropped with it, since snapping
+   to sections taller than the viewport is what produces the "stuck between two
+   screens" feeling.
+
+   850px is the threshold because it is the point below which the tightest
+   section stops having real margin: at an 840px viewport `safety` clears the
+   screen by only 39px, which is a single line of copy away from breaking. Above
+   850 the worst case has 63px and climbs from there. Measured, not picked. */
+@media (max-height: 850px) {
+  .deck {
+    scroll-snap-type: none;
+  }
+
+  .deck-section {
+    min-height: 0;
+    padding-block: var(--space-section);
+    scroll-margin-top: 0;
+    scroll-snap-align: none;
+  }
 }
 
 .deck-inner {
