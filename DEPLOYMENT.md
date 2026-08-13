@@ -64,8 +64,10 @@ it are per-environment and easy to copy across by accident:
   suppression list's phone hash; reusing production's makes dev's suppression rows
   collide with real ones.
 
-Do **not** run `alembic upgrade head` by hand. The `migrate` job runs it on every push,
-so the first deploy applies the whole history to the empty project.
+Do **not** run `alembic upgrade head` by hand. The `migrate` job runs it on every push
+that touches `apps/api` (or anything shared - see §5), so the first deploy applies the
+whole history to the empty project: a first push has no base commit to compare against,
+which the change filter treats as "everything changed".
 
 ### Capping dev
 
@@ -266,9 +268,29 @@ was automated is repointed rather than failing on a machine with no key.
 
 ## 5. What the pipeline does
 
-`.github/workflows/ci-cd.yml`, on PR and push to `main` or `dev`. `api` and `web` lint,
-type-check and test. On a push, three more jobs run in order - one per thing that can
-independently go wrong:
+`.github/workflows/ci-cd.yml`, on PR and push to `main` or `dev`. The api and web halves
+are checked and deployed **independently**, so most pushes only pay for the half they
+touched:
+
+```
+changes ─┬─ api  ──┐                  ┌─ migrate ─ deploy-api
+         │         ├─ provision ──────┤
+         └─ web  ──┘                  └─ deploy-web
+```
+
+**`changes`** → decides whether `apps/api` and/or `apps/web` changed, from the compare
+API rather than a checkout (it is on every run's critical path, so cloning the repo just
+to run `git diff` would cost more than the jobs it skips). Anything **outside** those two
+directories - the workflow itself, `ecosystem.config.js`, `scripts/`, the root
+`package.json`, a root `.md` - counts as **both**, since any of them can change how
+either half deploys.
+
+It fails **open**, which is the opposite of how the product's own safety gates work and
+is deliberate: a new branch with no `before` commit, a force-push whose base is gone, or
+any API error reports both halves as changed and everything runs. A wrongly-skipped
+deploy ships a half-updated VM; a wasted minute costs a minute.
+
+**`api`** / **`web`** → lint, type-check, test. Each runs only if its half changed.
 
 **`provision`** → `scripts/bootstrap.sh`. Clones if absent, pins the checkout to the
 branch being deployed, creates `.venv`, installs the API, writes `.env` and
@@ -277,17 +299,37 @@ certificate, installs the pm2
 systemd unit. Idempotent: every step checks the desired state first, so it is a no-op
 on the deploys where nothing changed.
 
-**`migrate`** → `alembic current`, `upgrade head`, `current` again, run from `apps/api`.
-`alembic.ini` sets `script_location` and `prepend_sys_path` to `.` and alembic resolves
-both against the working directory, so running it from the repo root with `-c` finds no
-migrations and silently upgrades nothing.
+**Shared, and first, on purpose.** Both halves deploy out of one checkout on one VM, and
+`provision` is what puts the right commit there - two `git checkout -B` against the same
+directory concurrently is a race. It is the one job that cannot be split.
 
-**`deploy`** → `pm2 startOrRestart` the API, `npm ci && npm run build` the web app with
-`NEXT_PUBLIC_API_URL` set to `PUBLIC_URL`, restart it, `pm2 save`, then health-check
-`/api/health` and `/`.
+**`migrate`** → `alembic current`, `upgrade head`, `current` again, run from `apps/api`.
+Skipped entirely when only the frontend changed. `alembic.ini` sets `script_location` and
+`prepend_sys_path` to `.` and alembic resolves both against the working directory, so
+running it from the repo root with `-c` finds no migrations and silently upgrades nothing.
+
+**`deploy-api`** → `pm2 startOrRestart` the API, `pm2 save`, health-check `/api/health`.
+
+**`deploy-web`** → `npm ci && npm run build` with `NEXT_PUBLIC_API_URL` set to
+`PUBLIC_URL`, restart, `pm2 save`, health-check `/`.
+
+**These two run in parallel** and `deploy-web` deliberately does **not** depend on
+`migrate` - a Next build has no relationship to the database schema, and waiting behind
+it was pure serial time. An API restart likewise no longer waits behind a frontend build
+it has nothing to do with.
 
 The frontend is built on the VM rather than in CI because `NEXT_PUBLIC_API_URL` is baked
-in at build time and differs per environment.
+in at build time and differs per environment. This is also why the web app is built
+twice on a frontend change (once in `web`, once in `deploy-web`) - the CI build proves it
+compiles, the VM build produces the artefact that actually serves. Collapsing the two
+would mean shipping a CI-built bundle per environment, which is a bigger change than it
+looks.
+
+**Every job past `changes` carries a `!cancelled() && needs.X.result != 'failure'`
+guard.** Without it a *skipped* dependency skips everything downstream - which is exactly
+what a web-only push produces, where the `api` job never runs at all. `provision` treats
+`skipped` as fine and `failure` as fatal; the deploy jobs additionally require
+`provision.result == 'success'`, so a PR (where `provision` is skipped) deploys nothing.
 
 `cancel-in-progress` applies to pull requests only. A push is never cancelled - killing
 a run mid-`migrate` can leave the schema halfway between two revisions.
