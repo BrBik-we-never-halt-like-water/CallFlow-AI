@@ -10,6 +10,7 @@ import {
   XAxis,
 } from 'recharts';
 import { cn } from '@/lib/cn';
+import { useTheme } from '@/lib/hooks/use-theme';
 import { usePrefersReducedMotion } from '@/lib/hooks/use-external-store';
 
 export interface AreaChartPoint {
@@ -211,13 +212,22 @@ export function AreaChart({
   data,
   className,
   formatValue = (v) => String(v),
-  tone = 'light',
+  tone,
 }: {
   data: AreaChartPoint[];
   className?: string;
   formatValue?: (value: number) => string;
+  /**
+   * Defaults to the active theme. Only pass this to pin a chart against the
+   * theme deliberately - it used to default to `'light'` with the one call site
+   * hardcoding `'dark'`, which was correct while the dashboard was permanently
+   * dark and became a bug the moment the theme could change: the chart was the
+   * one element that stayed dark on a light page.
+   */
   tone?: AreaChartTone;
 }) {
+  const { resolved } = useTheme();
+  const activeTone = tone ?? resolved;
   const reducedMotion = usePrefersReducedMotion();
   // Unique per instance (not a fixed string) so a second dark chart on the
   // same page - none exists today, but this is a `components/ui/` primitive
@@ -227,13 +237,13 @@ export function AreaChart({
   const instanceId = useId().replace(/:/g, '');
   const dotGradientId = `area-chart-dot-glow-${instanceId}`;
   const pillGradientId = `area-chart-pill-glow-${instanceId}`;
-  const baseColors = TONE[tone];
+  const baseColors = TONE[activeTone];
   // The purple gradient (defined in `<defs>` below) replaces the flat
   // fallbacks `TONE.dark` declares for these three fields - see the
   // comments on `dot`/`pillBg` above for why a flat fill needs lightening
   // in the first place.
   const colors: ToneColors =
-    tone === 'dark'
+    activeTone === 'dark'
       ? {
           ...baseColors,
           dot: `url(#${dotGradientId})`,
@@ -256,7 +266,7 @@ export function AreaChart({
           data={data}
           margin={{ top: 26, right: 4, bottom: 0, left: 4 }}
         >
-          {tone === 'dark' ? (
+          {activeTone === 'dark' ? (
             <defs>
               {/* Point markers: a "glowing orb" - bright violet centre
                   fading to the exact ambient `--dark-bg-glow` purple at the
