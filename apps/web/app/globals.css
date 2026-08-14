@@ -378,6 +378,16 @@
 html {
   scroll-padding-top: calc(var(--h-site-header) + 24px);
   -webkit-text-size-adjust: 100%;
+
+  /* The root carries the page colour, not just `body`.
+     `body` was the only element with a background, which leaves the root
+     transparent - and anything transparent at the root composites against the
+     browser's own base canvas, whose colour comes from `color-scheme`. That
+     canvas flips the instant `data-theme` changes, independently of any
+     animation, so during a theme transition it can show through as a frame of
+     the wrong colour. Painting it here means there is never a gap to see
+     through, and it also fixes overscroll on both themes. */
+  background: var(--surface);
 }
 
 body {
@@ -1847,18 +1857,34 @@ button[data-menu][data-state='open']:focus-visible {
      marker is set by the toggle for exactly the duration of the transition, so
      route navigations - which share these same pseudo-elements - keep their
      cross-dissolve untouched. */
-  html[data-theme-transition]::view-transition-old(root) {
+  html[data-theme-transition]::view-transition-old(root),
+  html[data-theme-transition]::view-transition-new(root) {
+    /* **This line is the flash fix, and it is not obvious.**
+
+       Chrome's UA stylesheet sets `mix-blend-mode: plus-lighter` on these two
+       pseudo-elements, because its default cross-fade runs both at partial
+       opacity and `plus-lighter` is what stops the midpoint dipping toward the
+       backdrop. That reasoning does not survive turning the animations off:
+       with both frames at FULL opacity, `plus-lighter` adds them together, so
+       every pixel the growing circle has not yet covered is
+       old + new — visibly brighter than either theme. That is the flash.
+
+       `normal` makes the incoming frame simply cover the outgoing one, which is
+       what a wipe means. */
+    mix-blend-mode: normal;
+
+    /* Driven from JS (`element.animate`) rather than a stylesheet keyframe,
+       because the circle's origin is only known at click time. */
     animation: none;
-    /* The outgoing theme must stay *under* the incoming one, or the circle
-       grows behind the frame it is supposed to reveal. */
+  }
+
+  /* The outgoing theme must stay *under* the incoming one, or the circle grows
+     behind the frame it is supposed to reveal. */
+  html[data-theme-transition]::view-transition-old(root) {
     z-index: 0;
   }
 
   html[data-theme-transition]::view-transition-new(root) {
-    /* No animation here either - the clip-path keyframes are driven from JS
-       (`element.animate`), because the origin point is only known at click
-       time and cannot be expressed as a static stylesheet value. */
-    animation: none;
     z-index: 1;
   }
 }

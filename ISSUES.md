@@ -2663,6 +2663,32 @@ fixed` doesn't care about DOM nesting).
 **Depends on:** `#70` (this issue corrects that fix's Toast half; the `/app/profile`
 `.dark-canvas` half of `#70` is unaffected and unchanged).
 
+## Iteration 23 - 2026-08-14 · theme-switch review pass
+
+### #74 - Every theme switch flashed white, because Chrome adds the two view-transition frames together
+
+**S3 · FIXED · web · `apps/web/app/globals.css`**
+
+The light/dark toggle animates with the View Transitions API: Chrome snapshots the old
+page and the new one and cross-fades `::view-transition-old(root)` over
+`::view-transition-new(root)`. Its UA stylesheet gives both pseudo-elements
+`mix-blend-mode: plus-lighter`, which is *additive*, not a normal composite. That is
+correct for a fade between two frames of the same page - the two opacities sum to 1 and
+plus-lighter keeps the result from dipping - but here the two frames are a light page and
+a dark page. Mid-transition their luminances add, and any region where the light frame is
+already near white blows past it. The switch read as a white flash in both directions.
+
+**Impact.** Cosmetic, but on the one interaction whose entire purpose is to look smooth,
+and unpleasant for anyone switching to dark in a dark room.
+
+**Fix.** Override both pseudo-elements to `mix-blend-mode: normal` while
+`data-theme-transition` is set, and give them an explicit z-order so the new frame
+composites over the old one rather than being summed with it. `html` also gets
+`background: var(--surface)` so the frame behind the snapshots is never the browser's
+default white. Verified by screencasting both directions at ~55fps and measuring mean
+frame luminance: zero frames now fall outside the two endpoint luminances by more than
+6/255, where before the mid-transition frames overshot the lighter endpoint.
+
 ## Template for the next iteration
 
 ```

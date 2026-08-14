@@ -1025,3 +1025,77 @@ viewport, which is exactly what happened here before the modes were separated.
   box while each card's rows still start wherever its own copy ends. If elements
   are meant to line up across a row — an icon, a title, a proof well — pin them:
   a fixed height on the well, a `min-h` on the body set by the longest one.
+
+## 21. Hero field, review round 2: round dots, edge-to-edge, and the benchmark that lied
+
+Three asks from review - circular dots instead of squares, the grid and waveform
+spanning the full width with both ends faded, and the white flash on every theme
+switch. The flash is a real defect and lives in `ISSUES.md` #74. The other two are
+design, and the interesting part is what they cost.
+
+### Circles are cheap; *draw calls* are expensive
+
+The dots were squares for a stated reason: `arc` + `fill` per point costs several
+times a `fillRect` at ~8,000 points a frame. That reason is right about `arc` and
+wrong about the conclusion, because the cost is per **call**, not per circle.
+
+Three strategies, benchmarked at equal count on one canvas:
+
+| strategy                                  | ms/frame |
+| ----------------------------------------- | -------- |
+| `fillRect` per dot (what shipped)         | 3.92     |
+| `beginPath`/`arc`/`fill` per dot          | 7.14     |
+| one 32px sprite, `drawImage` scaled       | 305.31   |
+| arcs batched into a `Path2D` per opacity  | 3.23     |
+
+Alpha was already quantised into 48 buckets to avoid re-parsing `fillStyle`, so the
+buckets were already there to batch against: accumulate every dot's arc into that
+bucket's path, then `fill` once per bucket. ~47 fills a frame instead of ~8,000
+draw calls, and real antialiased circles for slightly *less* than the squares cost.
+
+The sprite-blit number is not a typo. `drawImage` from many small separate canvases
+was two orders of magnitude worse than everything else - each source is its own
+GPU texture and the per-particle source switch is pathological. It was the obvious
+first idea and it is the worst one available.
+
+**The benchmark still lied, and it is worth knowing how.** Canvas2D records into a
+display list and rasterises later, so timing the JS call measures *recording*, not
+painting. The table above ranks recording cost correctly and predicted the real
+page badly: batched arcs recorded fastest yet the real hero dropped from ~57fps to
+~30. Only an end-to-end frame-rate measurement on the actual page, with the actual
+compositing, tells you anything. Two rules from this:
+
+- Benchmark the page, not the primitive.
+- Measure headed, on the GPU. Headless Chromium rasterises canvas through
+  SwiftShader and reads roughly 15fps low - it will not show you a regression of
+  this size.
+
+The regression came back by halving the particle count, 176x44 -> 124x32 (3,968
+dots, down from 7,744). That is the trade the previous round already set up: the
+dots were made larger and brighter, and larger dots need fewer of them to read at
+the same density. Back to 54/51/60fps against the squares' 59/57/55.
+
+### The formations reach the edges now
+
+World-space `x` was projected through a fixed 0.34, which sized the standing
+formations as a multiple of the canvas *height*. On a wide viewport that left the
+waveform as a band floating in the middle with bare page either side. It is now
+solved the other way round - pick the horizontal factor that maps the world-x range
+onto the full canvas width at the wall's depth - so the grid and the waveform span
+whatever width they are given. Vertical keeps 0.34, or the perspective shears.
+
+The feathering that §20's round added for the wall borders is what makes this read
+as intended rather than as a clipped rectangle: full width, dissolving at both ends.
+
+### Lattice lines have to be indexed, not sampled
+
+The grid's vertical lines were a `cos^22` ridge in continuous `x`. Whether a ridge
+landed *on* a column of particles or fell between two of them depended on `COLS` -
+so halving the column count made the lattice almost vanish, while looking perfectly
+correct in the source. Both axes now light every Nth index instead
+(`GRID_EVERY_COL`, `GRID_EVERY_ROW`): crisp at any count, and cheaper than the
+`pow`/`cos` it replaced.
+
+The general shape of that bug: a continuous function sampled on a discrete grid is
+only stable if you own the relationship between the two. If the visual is "every
+Nth particle", say every Nth particle.

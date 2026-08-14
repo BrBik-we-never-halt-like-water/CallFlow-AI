@@ -30,12 +30,20 @@ import { cn } from "@/lib/cn";
  * Drawn far rows first so nearer particles land on top, which removes the need
  * to sort several thousand points every frame.
  *
- * Squares rather than circles: at this count `arc` costs several times more per
- * point, and below about 3px the shape is indistinguishable anyway.
+ * **Circles, batched into one fill per opacity.** These were squares because
+ * `arc` + `fill` per point costs several times a `fillRect` at this count — but
+ * that is a per-*call* cost, not a per-circle one. The arcs are accumulated into
+ * a `Path2D` per alpha bucket and filled ~47 times a frame instead of once per
+ * particle. `DESIGN_NOTES.md` §21 has the measurements, including the one that
+ * made the count drop from 176x44 to 124x32.
  */
 
-const COLS = 176;
-const ROWS = 44;
+const COLS = 124;
+const ROWS = 32;
+
+/** Every Nth column and row is a lattice line when the field becomes a grid. */
+const GRID_EVERY_COL = 9;
+const GRID_EVERY_ROW = 5;
 
 /**
  * Alpha is quantised into this many buckets, each with a pre-built colour
@@ -71,6 +79,9 @@ const CYCLE = STEP * 3;
  * halfway, so the transformation crosses the field as a front.
  */
 const SWEEP = 0.55;
+
+/** Half the world-space width the field occupies. `x` runs -X_HALF..+X_HALF. */
+const X_HALF = 2.6;
 
 const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v));
 
@@ -116,9 +127,9 @@ let phaseB = 0;
  *
  * `wave`'s amplitude and `grid`'s vertical lines are functions of the column
  * alone — they do not vary down a row. Computed inline they ran once per
- * *particle*: four `Math.sin` and a `Math.pow` × 7,744 instead of × 176. That
- * showed up as `wave` sitting at 47.9fps with a 49.9ms worst frame on real GPU
- * hardware while the other two formations held 60.
+ * *particle* rather than once per column, which showed up as `wave` sitting at
+ * 47.9fps with a 49.9ms worst frame on real GPU hardware while the other two
+ * formations held 60.
  */
 const colXt = new Float32Array(COLS);
 const colX = new Float32Array(COLS);
@@ -128,9 +139,11 @@ const colLineX = new Float32Array(COLS);
 for (let i = 0; i < COLS; i++) {
   const xt = i / (COLS - 1);
   colXt[i] = xt;
-  colX[i] = (xt - 0.5) * 5.2;
-  // Time-invariant, so this one is computed once for the life of the module.
-  colLineX[i] = Math.pow(Math.abs(Math.cos(xt * Math.PI * 13)), 22);
+  colX[i] = (xt - 0.5) * 2 * X_HALF;
+  // Indexed, not sampled. A `cos^22` ridge was continuous in x, so whether a
+  // lattice line landed on a column of particles or fell between two of them
+  // depended on COLS - the lines faded out entirely when the count changed.
+  colLineX[i] = i % GRID_EVERY_COL === 0 ? 1 : 0;
 }
 
 /**
@@ -168,8 +181,8 @@ function grid(xi: number, xt: number, zt: number, x: number, _z: number, time: n
   // node, and the ones standing on a major line are simply lit. Moving them
   // onto lines instead would leave gaps the eye reads as missing data.
   const lineX = colLineX[xi];
-  const lineY = Math.pow(Math.abs(Math.cos(zt * Math.PI * 7)), 16);
-  const onLine = clamp(lineX + lineY, 0, 1);
+  const lineY = Math.round(zt * (ROWS - 1)) % GRID_EVERY_ROW === 0 ? 1 : 0;
+  const onLine = lineX || lineY;
 
   outZ = Z_WALL;
   outY = up * 1.55 + breath;
@@ -198,6 +211,7 @@ export function VoiceField({ className }: { className?: string }) {
   const ref = useCanvasAnimation(
     ({ ctx, w, h, t, reduced }) => {
       ctx.clearRect(0, 0, w, h);
+      ctx.globalAlpha = 1;
 
       const time = reduced ? 5 : t;
 
@@ -227,13 +241,27 @@ export function VoiceField({ className }: { className?: string }) {
       const accent =
         getComputedStyle(document.documentElement).getPropertyValue("--primary").trim() ||
         "#3b2fd9";
-      const palette = paletteFor(hexToRgb(accent));
+      const rgb = hexToRgb(accent);
+      ctx.fillStyle = `rgb(${rgb})`;
 
       // Slow drift terms: per frame, not per particle.
       phaseA = Math.sin(time * 0.05) * 0.8;
       phaseB = Math.cos(time * 0.037) * 1.2;
 
-      let styleIndex = -1;
+      /**
+       * Horizontal spread, solved per frame so the standing formations reach
+       * both edges of whatever width they are given.
+       *
+       * `x` is world-space and was projected through a fixed 0.34, which made
+       * the wall a fixed multiple of the canvas *height* — on a wide viewport it
+       * ended as a band floating in the middle with bare page either side. This
+       * solves the other way round: pick the horizontal factor that maps the
+       * world-x range onto the full canvas width at the wall's depth, so the
+       * grid and the waveform always span it. Vertical keeps the original 0.34,
+       * or the perspective would shear.
+       */
+      const wallScale = focal / Z_WALL;
+      const spreadX = (w * 0.5) / (X_HALF * wallScale);
 
       // The waveform envelope, once per column per frame rather than once per
       // particle. Only worth filling when a wave is actually on screen.
@@ -290,30 +318,44 @@ export function VoiceField({ className }: { className?: string }) {
           const fog = clamp(1 - fogT * fogT * 0.92, 0, 1);
           if (fog <= 0.02) continue;
 
-          const sx = w * 0.5 + x * scale * 0.34;
+          const sx = w * 0.5 + x * scale * spreadX;
           const sy = horizonY + (camHeight - y) * scale * 0.34;
 
-          // Skip anything off-canvas before doing any paint work.
+          // Skip anything off-canvas before doing any paint work. The field's
+          // near rows now genuinely overrun the sides, so this culls more than
+          // it used to rather than less.
           if (sx < -8 || sx > w + 8 || sy < -8 || sy > h + 8) continue;
 
-          // Quantised, and only re-assigned when the bucket actually changes.
-          // Neighbouring particles nearly always share one, so this collapses
-          // ~12,000 colour parses a frame into a few hundred.
           // Bucket 0 is below the point where a dot is distinguishable from the
-          // page, and the feathered wall edges put a lot of particles there.
-          // Skipping them is free contrast *and* free frame time - larger dots
-          // cost fill rate, and this is where it comes back from.
-          const bucket = ((ALPHA_BASE + lit * ALPHA_RANGE) * fog * ALPHA_SCALE) | 0;
+          // page, and the feathered edges put a lot of particles there.
+          // Skipping them is free contrast and free frame time.
+          let bucket = ((ALPHA_BASE + lit * ALPHA_RANGE) * fog * ALPHA_SCALE) | 0;
           if (bucket < 1) continue;
-          if (bucket !== styleIndex) {
-            styleIndex = bucket;
-            ctx.fillStyle = palette[bucket < 0 ? 0 : bucket > ALPHA_STEPS - 1 ? ALPHA_STEPS - 1 : bucket];
-          }
+          if (bucket > ALPHA_STEPS - 1) bucket = ALPHA_STEPS - 1;
 
-          const size = scale * DOT_SCALE;
-          const s = size < DOT_MIN ? DOT_MIN : size;
-          ctx.fillRect(sx, sy, s, s);
+          const r = scale * DOT_RADIUS;
+          const path = buckets[bucket] ?? (buckets[bucket] = new Path2D());
+          // `arc` alone would draw a line from wherever the subpath left off,
+          // joining every dot in the bucket into one blob.
+          path.moveTo(sx + r, sy);
+          path.arc(sx, sy, r < 0.6 ? 0.6 : r, 0, TAU);
         }
+      }
+
+      // One fill per opacity, not one draw call per particle - which is what
+      // buys real circles for slightly less than the squares cost. A
+      // per-particle `drawImage` blit, the obvious first idea, measured two
+      // orders of magnitude worse than either (`DESIGN_NOTES.md` §21).
+      //
+      // The tradeoff is that back-to-front ordering now only holds within a
+      // bucket. At these opacities, with dots this sparse, overlap between two
+      // different buckets is rare and invisible when it happens.
+      for (let b = 1; b < ALPHA_STEPS; b++) {
+        const path = buckets[b];
+        if (!path) continue;
+        ctx.globalAlpha = alphaOf(b);
+        ctx.fill(path);
+        buckets[b] = null;
       }
     },
     { staticAt: 5 },
@@ -327,36 +369,36 @@ export function VoiceField({ className }: { className?: string }) {
  *
  * Raised from `0.05 + lit*0.2`: at that range the field was atmosphere you had
  * to look for rather than something the eye registers. The dots are also drawn
- * larger (`DOT_SCALE`). It is still background - it sits behind a headline and
+ * larger (`DOT_RADIUS`). It is still background - it sits behind a headline and
  * must never compete with it - but it now reads as a thing rather than a haze.
  */
 const ALPHA_BASE = 0.09;
 const ALPHA_RANGE = 0.34;
 const ALPHA_MAX = ALPHA_BASE + ALPHA_RANGE;
 
-/** Particle size as a fraction of the projected scale. */
-const DOT_SCALE = 0.0034;
-const DOT_MIN = 1;
+/** Particle radius as a fraction of the projected scale. */
+const DOT_RADIUS = 0.0017;
 const ALPHA_SCALE = ALPHA_STEPS / ALPHA_MAX;
+const TAU = Math.PI * 2;
 
 /**
- * The pre-built colour strings, rebuilt only when the accent changes — which is
- * once, or twice if the theme is toggled. Cached against the channel string
- * rather than rebuilt per frame: 48 `toFixed` calls a frame is nothing, but it
- * is also entirely avoidable.
+ * One accumulating path per opacity, reused across frames.
+ *
+ * Module-level rather than per-frame: 47 `Path2D` allocations sixty times a
+ * second is exactly the sort of churn the scratch variables above exist to
+ * avoid. Each is dropped as it is filled and rebuilt on demand next frame -
+ * `Path2D` has no clear.
  */
-let paletteKey = "";
-let paletteCache: string[] = [];
+const buckets: (Path2D | null)[] = new Array(ALPHA_STEPS).fill(null);
 
-function paletteFor(rgb: string): string[] {
-  if (rgb === paletteKey) return paletteCache;
-  paletteKey = rgb;
-  paletteCache = Array.from(
-    { length: ALPHA_STEPS },
-    (_, i) => `rgba(${rgb}, ${((i + 0.5) / ALPHA_SCALE).toFixed(3)})`,
-  );
-  return paletteCache;
-}
+/**
+ * The opacity a bucket represents.
+ *
+ * This was a table of pre-built `rgba(...)` strings assigned to `fillStyle`
+ * per particle. With one fill per bucket, opacity is a plain number on
+ * `globalAlpha` set 47 times a frame — no cache, no string, no colour re-parse.
+ */
+const alphaOf = (bucket: number) => (bucket + 0.5) / ALPHA_SCALE;
 
 /** `--primary` is authored as a hex token; the canvas needs its channels. */
 function hexToRgb(hex: string): string {
