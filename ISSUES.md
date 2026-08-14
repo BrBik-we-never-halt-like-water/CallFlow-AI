@@ -2727,6 +2727,51 @@ guess.
 
 **Depends on:** `#74` (this corrects that fix's scope).
 
+### #76 - Canvases kept painting the previous theme's ink until something remounted them
+
+**S3 · FIXED · web · `apps/web/lib/hooks/use-canvas-animation.ts`, `apps/web/components/brand/wave-canvas.tsx`, `apps/web/components/marketing/step-flow.tsx`**
+
+Switching theme left the closing CTA card's waveform invisible - dark ink on a dark card -
+until a hard reload. Same in the other direction, and the same on the step-flow rail.
+
+A canvas cannot read a CSS variable, so every canvas here resolves its tokens through
+`getComputedStyle` and paints the resulting literal. `voice-field.tsx` and `listening.tsx`
+resolve inside the draw callback, so they follow the theme for free. `wave-canvas.tsx` and
+`step-flow.tsx` resolve once at the top of a `useEffect` whose dependency lists were
+`[tone, seed, pitch]` and `[reduced, count]` - neither of which changes when the theme does.
+The effect never re-ran, the resolved colour was never re-read, and the animation loop
+carried on drawing the old palette. A reload remounted the component, which is why the
+reviewer found reloading fixed it.
+
+The same shape has a second, quieter case: `useCanvasAnimation` paints exactly one frame
+under `prefers-reduced-motion` and then stops. Even a draw function that resolves its tokens
+per frame is stale the moment it stops being called, so *every* consumer of that hook was
+exposed, not just the two components above.
+
+**Impact.** A section of the marketing page rendered invisible after an interaction the
+product itself offers, with no error and no way to guess that reloading would fix it.
+
+**Fix.** The resolved theme becomes a redraw trigger. `useCanvasAnimation` takes
+`useTheme().resolved` into its effect dependencies, which repaints the static frame for
+every current and future consumer; `wave-canvas.tsx` and `step-flow.tsx` each take the same
+value into theirs. Pixels a canvas has already drawn do not restyle themselves - the theme
+has to be a reason to draw.
+
+**Verified** by reading the ink straight out of each canvas's backing store (mean RGB of
+pixels above 80 alpha, so an animated waveform's per-frame jitter does not matter) at three
+points: the starting theme, after a switch with no reload, and a fresh load in the target
+theme. Before: two canvases sat at distance 0 from the *starting* ink and 390 from the
+target. After: every canvas on the page matches a reload in the new theme exactly, in both
+directions.
+
+One methodological trap worth recording. The first probe scrolled the whole page to find
+every canvas, and that scrolling was itself remounting the CTA card - so the one canvas the
+reviewer actually reported came back clean while genuinely broken. The check that counts
+reproduces the user's sequence (sit at the bottom, switch, do not scroll, do not reload),
+not the sequence that is convenient to automate.
+
+**Depends on:** the theme system (`#74`, `#75` are the same feature's other two defects).
+
 ## Template for the next iteration
 
 ```

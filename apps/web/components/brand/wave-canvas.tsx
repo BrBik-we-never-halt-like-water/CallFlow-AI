@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { cn } from "@/lib/cn";
+import { useTheme } from "@/lib/hooks/use-theme";
 
 /**
  * A live voice waveform on a canvas — the bold, structural counterpart to the
@@ -63,6 +64,10 @@ export function WaveCanvas({
   className?: string;
 }) {
   const ref = useRef<HTMLCanvasElement>(null);
+  // Not read - a dependency. `color` below is resolved once per effect run, and
+  // without this the effect has no reason to run again, so the canvas keeps
+  // painting the old theme's ink until something remounts it.
+  const { resolved: theme } = useTheme();
 
   useEffect(() => {
     const canvas = ref.current;
@@ -128,7 +133,7 @@ export function WaveCanvas({
       unregister(draw);
       ro.disconnect();
     };
-  }, [tone, seed, pitch]);
+  }, [tone, seed, pitch, theme]);
 
   return <canvas ref={ref} aria-hidden className={cn("block h-full w-full", className)} />;
 }
