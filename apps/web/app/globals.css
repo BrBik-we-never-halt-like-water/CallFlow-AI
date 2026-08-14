@@ -150,6 +150,15 @@
   --accent-text: var(--primary-ink); /* 13.36:1 on --surface, for text/icons */
   --accent-wash: var(--primary-wash); /* the tinted-canvas colour */
 
+  /* The hero's particle field (components/brand/voice-field.tsx): its colour,
+     and an opacity multiplier. Tokens rather than a branch in the component,
+     because both are colour decisions and colour decisions live here.
+
+     In light the field is simply the primary. The dark pivot needs its own
+     value - see the override for why. */
+  --field-ink: var(--primary);
+  --field-gain: 1;
+
   /* ---- Type scale - fluid at every step ---------------------------------
      CAL-4's scale, restored. Like `--primary`, this was designed on that
      branch and lost in the same merge, which kept the older, smaller scale
@@ -378,6 +387,16 @@
 html {
   scroll-padding-top: calc(var(--h-site-header) + 24px);
   -webkit-text-size-adjust: 100%;
+
+  /* The root carries the page colour, not just `body`.
+     `body` was the only element with a background, which leaves the root
+     transparent - and anything transparent at the root composites against the
+     browser's own base canvas, whose colour comes from `color-scheme`. That
+     canvas flips the instant `data-theme` changes, independently of any
+     animation, so during a theme transition it can show through as a frame of
+     the wrong colour. Painting it here means there is never a gap to see
+     through, and it also fixes overscroll on both themes. */
+  background: var(--surface);
 }
 
 body {
@@ -403,13 +422,25 @@ body {
 .app-font-scope {
   --font-sans: var(--font-ubuntu), ui-sans-serif, system-ui, sans-serif;
   font-family: var(--font-ubuntu), ui-sans-serif, system-ui, sans-serif;
+}
 
+/* The dark palette. Raw values only - nothing here decides what is dark, it
+   only says what dark *is*. `:root[data-theme='dark']` below is what actually
+   points the generic tokens at these.
+
+   These used to be declared inside `.app-font-scope`, which scoped them to
+   `/app/*`. That was correct while dark was a dashboard-only pivot and wrong
+   the moment it became a product-wide theme: a marketing page has no
+   `.app-font-scope`, so every one of these resolved to nothing there. Moved to
+   `:root` - the values cost nothing when unused, and the theme is now free to
+   apply anywhere. */
+:root {
   /* ---- Dark glassmorphism palette (round-3 dashboard-polish, dark pivot) -
      Additive, not a swap: every light token above keeps its light value
-     everywhere. These `--dark-*` custom properties are declared only here,
-     inside `.app-font-scope` - the identical trick this rule already uses
-     for `--font-sans` - so they resolve for every element under `/app/*`
-     (the only tree this class wraps, `app/(app)/app/layout.tsx`) and are
+     everywhere. These `--dark-*` custom properties were declared only inside
+     `.app-font-scope` - the identical trick that rule already uses
+     for `--font-sans` - so they resolved for every element under `/app/*`
+     (the only tree that class wraps, `app/(app)/app/layout.tsx`) and are
      unset (not "wrong", genuinely absent) for marketing and auth, which
      never render inside it.
 
@@ -526,12 +557,35 @@ body {
      Nothing that cleared a bar before stops clearing it now. */
   --dark-bg: #050505;
   --dark-bg-glow: #4f46e5;
-  --dark-surface: #0a0a0a;
-  --dark-glass-surface: color-mix(in oklab, var(--dark-surface) 42%, transparent);
-  --dark-glass-border: color-mix(in oklab, #ffffff 14%, transparent);
+
+  /* `--dark-surface` was `#0a0a0a`, five values off the `#050505` page, and
+     `--dark-glass-surface` then composited it at 42% - so a card landed at
+     OKLab L 0.155 against a page at 0.115. A separation of 0.04 is not a card
+     floating above a page, it is a card printed on it, which is exactly how it
+     read: the panels dissolved into the background.
+
+     Raised to `#1f1f26` at 62%. That lands a card near L 0.22 - a delta of
+     ~0.11, which is a plane you can see the edge of without it becoming grey -
+     while `--dark-text` still clears 15.6:1 on it, so nothing that was legible
+     stops being legible.
+
+     **This partly reverses a recorded decision, deliberately.** DESIGN_NOTES
+     §15 lowered this from 66% to 42% because cards "read as blackish rather
+     than actual glass" - true, and the fix for it was the wrong lever. The
+     problem was never the opacity, it was that the fill underneath was almost
+     the page colour, so more translucency only revealed more of the same
+     black. Lifting the base colour buys the separation; the opacity can then
+     stay near where it started and the surface still reads as glass.
+
+     The border does the rest of the work: at these lightnesses a 14% white
+     hairline is nearly gone, so it goes to 20% - a card should have an edge
+     even where its fill and the page briefly agree. */
+  --dark-surface: #1f1f26;
+  --dark-glass-surface: color-mix(in oklab, var(--dark-surface) 62%, transparent);
+  --dark-glass-border: color-mix(in oklab, #ffffff 20%, transparent);
   --dark-glass-blur: blur(24px) saturate(150%);
-  --dark-rule: color-mix(in oklab, #ffffff 10%, transparent);
-  --dark-rule-strong: color-mix(in oklab, #ffffff 18%, transparent);
+  --dark-rule: color-mix(in oklab, #ffffff 12%, transparent);
+  --dark-rule-strong: color-mix(in oklab, #ffffff 22%, transparent);
 
   /* Tonal variants of the one neutral `--dark-surface` now, shared by
      `.dark-chrome` and `.dark-panel-glass` alike (both re-scope
@@ -541,7 +595,11 @@ body {
      without covering the glass effect it's hovering on top of, which an
      opaque fill would. */
   --dark-surface-hover: color-mix(in oklab, #ffffff 8%, transparent);
-  --dark-surface-sunken: #2d2d2d; /* +18% white, OKLab, over --dark-surface */
+  /* Derived from `--dark-surface` rather than pinned to a literal, so lifting
+     the card surface above carries the well up with it instead of leaving the
+     two nearly equal - `#2d2d2d` was +18% white over the old near-black and is
+     barely a step above the new one. */
+  --dark-surface-sunken: color-mix(in oklab, #ffffff 14%, var(--dark-surface));
 
   --dark-text: #f1f5f9;
   --dark-text-dim: #cbd5e1;
@@ -582,11 +640,122 @@ body {
    more` block (bottom of this file) gives the light tokens - muted text
    moves closer to primary, the hairline moves to its stronger variant. */
 @media (prefers-contrast: more) {
-  .app-font-scope {
+  :root {
     --dark-text-dim: var(--dark-text);
     --dark-text-mute: #c7d0e0;
     --dark-rule: var(--dark-rule-strong);
   }
+}
+
+/* ==========================================================================
+   THE THEME SWITCH
+
+   One rule. Everything above declares what light and dark *are*; this is the
+   only place that decides which one is in effect, by repointing the generic
+   tokens - the names every component actually reads - at the dark palette.
+
+   There is deliberately no `@media (prefers-color-scheme: dark)` here. The
+   pre-paint script in `app/layout.tsx` resolves the user's stored choice
+   ("light" / "dark" / "system") against `matchMedia` and always writes a
+   concrete `data-theme`, so CSS never has to express "system" at all. One
+   selector instead of two near-identical blocks, and no chance of the two
+   drifting apart - which is the failure mode this codebase already hit once
+   with `--glass` vs `--glass-surface`.
+
+   `color-scheme` is not decoration: it is what makes form controls, scrollbars
+   and the canvas behind the page render dark. Without it a dark page keeps
+   white scrollbars and light-chrome `<select>`s.
+   ========================================================================== */
+
+:root {
+  color-scheme: light;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  /* Surfaces. `--surface` is the page itself, which in dark is the near-black
+     `--dark-bg` rather than `--dark-surface` (that one is the raised card). */
+  --surface: var(--dark-bg);
+  --surface-raised: var(--dark-surface);
+  --surface-hover: var(--dark-surface-hover);
+  --surface-sunken: var(--dark-surface-sunken);
+  /* Inverted surface flips with the theme, or the "inverse" of dark would
+     still be dark. */
+  --surface-inverse: #f1f5f9;
+  --text-inverse: #0a0a0a;
+
+  --text: var(--dark-text);
+  --text-dim: var(--dark-text-dim);
+  --text-mute: var(--dark-text-mute);
+
+  --rule: var(--dark-rule);
+  --rule-strong: var(--dark-rule-strong);
+
+  /* The glass composite. These three are read directly by `Panel`, `DataTable`
+     and `Button`'s secondary variant, none of which know the theme exists. */
+  --glass-surface: var(--dark-glass-surface);
+  --glass-border: var(--dark-glass-border);
+  --glass-blur: var(--dark-glass-blur);
+
+  /* The field cannot use `--primary` here. `--dark-accent` is a mid-dark indigo
+     chosen to carry white button text; painted at 9-43% opacity on a near-black
+     page it lands a few points off the background and the whole formation goes
+     to mud. Opacity alone cannot fix that - at 100% it is still that colour.
+
+     So the field gets a light tint of the same hue instead: `color-mix(in
+     oklab, var(--dark-accent) 45%, #ffffff)`, resolved to a literal because the
+     canvas parses this value's channels and cannot evaluate a `color-mix()`.
+     Same hue as everywhere else, so it stays as far from every lamp as the
+     primary is; light enough to actually read as light on black. The gain then
+     only has to close the remaining gap, not carry the whole job. */
+  --field-ink: #a09aef;
+  --field-gain: 1.45;
+
+  /* The primary/accent family. `--dark-accent` is a lighter indigo than the
+     light theme's `--primary` because a solid button on a near-black page has
+     to clear the white-label bar and the against-the-page bar at once - see
+     its own citation above. */
+  --primary: var(--dark-accent);
+  --primary-hover: #4038c9;
+  --primary-active: #372fb0;
+  --primary-ink: #b3aef7;
+  --primary-mid: #7a6ff0;
+  --primary-wash: color-mix(in oklab, var(--dark-accent) 14%, var(--dark-bg));
+  --accent: var(--dark-accent);
+  --accent-text: var(--dark-text);
+  --accent-wash: var(--primary-wash);
+
+  /* Lamps. The five call states keep their meaning; only their rendered value
+     changes, to the muted/lightened variants already derived for a dark
+     surface. This is the one family where getting it wrong changes what the
+     UI *means*, not just how it looks. */
+  --lamp-off: var(--dark-lamp-off);
+  --lamp-ice: var(--dark-lamp-ice);
+  --lamp-brass: var(--dark-lamp-brass);
+  --lamp-jade: var(--dark-lamp-jade);
+  --lamp-flare: var(--dark-lamp-flare);
+  --lamp-off-text: var(--dark-lamp-off-text);
+  --lamp-ice-text: var(--dark-lamp-ice-text);
+  --lamp-brass-text: var(--dark-lamp-brass-text);
+  --lamp-jade-text: var(--dark-lamp-jade-text);
+  --lamp-flare-text: var(--dark-lamp-flare-text);
+
+  /* Marketing's warm sand ground has no dark equivalent - a sand-coloured band
+     on a near-black page reads as a rendering fault, not a section break. It
+     becomes a slightly-raised neutral instead, keeping the alternating-ground
+     rhythm the deck depends on without inventing a colour. */
+  --secondary: #141414;
+
+  /* Depth. Dark surfaces separate by lightness, not by shadow: a black shadow
+     on a black page is invisible, and the light theme's values just muddy the
+     card edges. Kept as near-nothing rather than removed, so any rule reading
+     them still resolves. */
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.45), 0 3px 8px -2px rgba(0, 0, 0, 0.5);
+  --shadow-md: 0 2px 4px rgba(0, 0, 0, 0.45), 0 10px 24px -6px rgba(0, 0, 0, 0.55);
+  --shadow-lg: 0 2px 6px rgba(0, 0, 0, 0.5), 0 18px 36px -12px rgba(0, 0, 0, 0.6);
+  --shadow-overlay: 0 1px 3px rgba(0, 0, 0, 0.6), 0 16px 40px -8px rgba(0, 0, 0, 0.7);
 }
 
 /* Archivo at width 112 ("Expanded"). Applied through a class rather than an
@@ -860,7 +1029,18 @@ button[data-menu][data-state='open']:focus-visible {
    16.92:1 / 7.12:1 / 4.73:1 - a few hundredths tighter, since `--primary-
    wash` is a fractionally different lightness from `--forest-mint`, and all
    three still clear 4.5:1 with real margin. */
-.header-glass {
+/* The dashboard's chrome - top bar, sidebar, tab rail. One class, two recipes,
+   same collapse as `.app-canvas` above: was `.header-glass` (light) and
+   `.dark-chrome` (dark).
+
+   The two are not the same material, which is why this is a background
+   override rather than a token swap. Light chrome is frosted glass over
+   whatever scrolls beneath it. Dark chrome is *opaque* - a deliberate,
+   recorded correction (DESIGN_NOTES §15): translucent chrome over a near-black
+   page reads as smeared rather than layered, and the ambient glow behind it is
+   already doing the depth work. So dark also drops the blur entirely, rather
+   than blurring something it no longer lets through. */
+.app-chrome {
   background: color-mix(
     in oklab,
     color-mix(in oklab, var(--surface-raised) 50%, var(--accent-wash) 50%) 66%,
@@ -869,6 +1049,16 @@ button[data-menu][data-state='open']:focus-visible {
   border-color: var(--glass-border);
   backdrop-filter: var(--glass-blur);
   -webkit-backdrop-filter: var(--glass-blur);
+}
+
+:root[data-theme='dark'] .app-chrome {
+  background: radial-gradient(
+    170% 150% at 50% -10%,
+    color-mix(in oklab, var(--dark-bg-glow) 26%, var(--surface)),
+    var(--surface) 90%
+  );
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 @supports not (backdrop-filter: blur(1px)) {
@@ -1097,11 +1287,25 @@ button[data-menu][data-state='open']:focus-visible {
    this is the one place the accent tints something structural rather than a
    single decorative element, since it's the canvas the whole page sits on,
    not a claim about any one piece of content. */
-.canvas-tint {
+/* The dashboard's ambient page wash. One class, two recipes.
+   Was `.canvas-tint` (light) and `.dark-canvas` (dark), applied by whichever
+   the page hardcoded. The token remapping both used to carry is gone - the
+   theme owns that now - so all that is left is the gradient itself, which is
+   genuinely different per theme rather than merely differently-coloured: light
+   is a soft tint falling to the page, dark is a wider, taller glow. */
+.app-canvas {
   background: radial-gradient(
     130% 80% at 50% -15%,
     var(--accent-wash) 0%,
     var(--surface) 78%
+  );
+}
+
+:root[data-theme='dark'] .app-canvas {
+  background: radial-gradient(
+    170% 150% at 50% -10%,
+    color-mix(in oklab, var(--dark-bg-glow) 26%, var(--surface)),
+    var(--surface) 90%
   );
 }
 
@@ -1130,120 +1334,7 @@ button[data-menu][data-state='open']:focus-visible {
    glow stop is the exact figure the contrast citation on `.app-font-scope`
    is computed against - changing it here invalidates that number. */
 
-.dark-canvas {
-  background: radial-gradient(
-    170% 150% at 50% -10%,
-    color-mix(in oklab, var(--dark-bg-glow) 26%, var(--dark-bg)),
-    var(--dark-bg) 90%
-  );
 
-  /* Same generic-token re-scoping as `.dark-chrome`/`.dark-panel-glass` (see
-     their comments) - but here because a real instance of the gap surfaced:
-     a `Button` sitting directly in the content column, not inside any card,
-     rendered with a light glass background because nothing between it and
-     the page root redeclared `--glass-surface` etc. `.dark-canvas` is the
-     one wrapper every piece of dark-theme content is guaranteed to sit
-     inside, so it's the right place to close this for good - not just for
-     the one button found, but for anything future work drops loose into a
-     page without wrapping it in `.dark-panel-glass` first. */
-  --text: var(--dark-text);
-  --text-dim: var(--dark-text-dim);
-  --text-mute: var(--dark-text-mute);
-  --rule: var(--dark-rule);
-  --rule-strong: var(--dark-rule-strong);
-  --surface-raised: var(--dark-surface);
-  --surface-hover: var(--dark-surface-hover);
-  --surface-sunken: var(--dark-surface-sunken);
-  --glass-surface: var(--dark-glass-surface);
-  --glass-border: var(--dark-glass-border);
-  --glass-blur: var(--dark-glass-blur);
-  /* Closes the same class of gap as everything above, for `--accent` -
-     `.btn-glass-primary` (globals.css) always reads `--accent` directly, and
-     without this, every primary button on a dark page (found live:
-     `campaign-card.tsx`'s "Run") rendered the *light* theme's forest-green
-     CTA instead of `--dark-accent`'s purple, since `--accent` is a `:root`
-     token with no closer override for anything to inherit otherwise. */
-  --accent: var(--dark-accent);
-  --accent-text: var(--dark-text);
-  --accent-wash: var(--dark-bg-glow);
-  --lamp-off: var(--dark-lamp-off);
-  --lamp-ice: var(--dark-lamp-ice);
-  --lamp-brass: var(--dark-lamp-brass);
-  --lamp-jade: var(--dark-lamp-jade);
-  --lamp-flare: var(--dark-lamp-flare);
-  --lamp-off-text: var(--dark-lamp-off-text);
-  --lamp-ice-text: var(--dark-lamp-ice-text);
-  --lamp-brass-text: var(--dark-lamp-brass-text);
-  --lamp-jade-text: var(--dark-lamp-jade-text);
-  --lamp-flare-text: var(--dark-lamp-flare-text);
-}
-
-.dark-panel-glass {
-  background: var(--dark-glass-surface);
-  border-color: var(--dark-glass-border);
-  backdrop-filter: var(--dark-glass-blur);
-  -webkit-backdrop-filter: var(--dark-glass-blur);
-  box-shadow:
-    inset 0 1px 0 color-mix(in oklab, #ffffff 8%, transparent),
-    var(--shadow-card);
-
-  /* Re-scope the generic tokens (below) the same way `.dark-chrome` does -
-     added when building `.dark-chrome` and folded back in here so a card
-     using this class gets legible children (`text-text`, `text-text-mute`,
-     a `Lamp`, a lamp-coloured badge, `bg-surface-sunken`, ...) automatically,
-     for free, the moment it's dropped into `/app/*` markup - no per-child
-     colour edit needed. See `.dark-chrome`'s own comment for why this is
-     safe (CSS custom properties inherit through the DOM regardless of
-     component boundaries, and Radix portals - DropdownMenu/Tooltip content -
-     render outside this element's subtree, so popovers stay correctly
-     unaffected either way).
-
-     `--glass-surface`/`--glass-border`/`--glass-blur` (the light theme's own
-     composite glass tokens, defined at `:root` above) are re-scoped here too -
-     a gap the D3/D4 dark-rebuild tasks both found independently: `DataTable`'s
-     table wrapper (`.panel-glass`), `Panel`, and `Button`'s secondary variant
-     (`.btn-glass-secondary`) all read these three names directly, not the
-     `--dark-*` family, so a component using one of them inside a
-     `.dark-panel-glass` card previously kept rendering the *light* glass
-     recipe even though every other token around it had gone dark - each of
-     those tasks had to re-derive the same three tokens locally (an inline
-     `style` object on their own page) rather than get them for free from this
-     class, exactly like the generic set above already provides. Fixed at the
-     source here instead: any descendant that reads `--glass-surface` et al -
-     with zero awareness of the dark pivot - now resolves to the correct dark
-     composite the moment it renders inside this class, the same way the
-     generic re-scoping above already works. */
-  --text: var(--dark-text);
-  --text-dim: var(--dark-text-dim);
-  --text-mute: var(--dark-text-mute);
-  --rule: var(--dark-rule);
-  --rule-strong: var(--dark-rule-strong);
-  --surface-raised: var(--dark-surface);
-  --surface-hover: var(--dark-surface-hover);
-  --surface-sunken: var(--dark-surface-sunken);
-
-  --glass-surface: var(--dark-glass-surface);
-  --glass-border: var(--dark-glass-border);
-  --glass-blur: var(--dark-glass-blur);
-
-  /* Same `--accent` gap-close as `.dark-canvas` (see its own comment for the
-     live "Run" button bug this fixes) - a primary button rendered in the
-     sidebar/chrome or inside any card needs this exactly as much. */
-  --accent: var(--dark-accent);
-  --accent-text: var(--dark-text);
-  --accent-wash: var(--dark-bg-glow);
-
-  --lamp-off: var(--dark-lamp-off);
-  --lamp-ice: var(--dark-lamp-ice);
-  --lamp-brass: var(--dark-lamp-brass);
-  --lamp-jade: var(--dark-lamp-jade);
-  --lamp-flare: var(--dark-lamp-flare);
-  --lamp-off-text: var(--dark-lamp-off-text);
-  --lamp-ice-text: var(--dark-lamp-ice-text);
-  --lamp-brass-text: var(--dark-lamp-brass-text);
-  --lamp-jade-text: var(--dark-lamp-jade-text);
-  --lamp-flare-text: var(--dark-lamp-flare-text);
-}
 
 @supports not (backdrop-filter: blur(1px)) {
   .dark-panel-glass {
@@ -1408,49 +1499,6 @@ button[data-menu][data-state='open']:focus-visible {
    gone with the translucency they existed to manage - an opaque background
    has nothing left to blur, and a feature-detection fallback for a feature
    no longer in use is dead code, not defensive code. */
-.dark-chrome {
-  background: radial-gradient(
-    170% 150% at 50% -10%,
-    color-mix(in oklab, var(--dark-bg-glow) 26%, var(--dark-bg)),
-    var(--dark-bg) 90%
-  );
-  border-color: var(--dark-glass-border);
-
-  --text: var(--dark-text);
-  --text-dim: var(--dark-text-dim);
-  --text-mute: var(--dark-text-mute);
-  --rule: var(--dark-rule);
-  --rule-strong: var(--dark-rule-strong);
-  --surface-raised: var(--dark-surface);
-  --surface-hover: var(--dark-surface-hover);
-  --surface-sunken: var(--dark-surface-sunken);
-
-  /* Same `.dark-panel-glass`-gap fix, for chrome children - see that class's
-     own comment for the D3/D4 finding this closes. A `Button` rendered
-     inside the sidebar/tab bar (`.dark-chrome`) needs this exactly as much
-     as one rendered inside a card. */
-  --glass-surface: var(--dark-glass-surface);
-  --glass-border: var(--dark-glass-border);
-  --glass-blur: var(--dark-glass-blur);
-
-  /* Same `--accent` gap-close as `.dark-canvas` (see its own comment for the
-     live "Run" button bug this fixes) - a primary button rendered in the
-     sidebar/chrome or inside any card needs this exactly as much. */
-  --accent: var(--dark-accent);
-  --accent-text: var(--dark-text);
-  --accent-wash: var(--dark-bg-glow);
-
-  --lamp-off: var(--dark-lamp-off);
-  --lamp-ice: var(--dark-lamp-ice);
-  --lamp-brass: var(--dark-lamp-brass);
-  --lamp-jade: var(--dark-lamp-jade);
-  --lamp-flare: var(--dark-lamp-flare);
-  --lamp-off-text: var(--dark-lamp-off-text);
-  --lamp-ice-text: var(--dark-lamp-ice-text);
-  --lamp-brass-text: var(--dark-lamp-brass-text);
-  --lamp-jade-text: var(--dark-lamp-jade-text);
-  --lamp-flare-text: var(--dark-lamp-flare-text);
-}
 
 @supports not (backdrop-filter: blur(1px)) {
   .dark-chrome {
@@ -1819,6 +1867,57 @@ button[data-menu][data-state='open']:focus-visible {
   ::view-transition-new(root) {
     animation-duration: var(--dur-base);
     animation-timing-function: var(--ease-out);
+
+    /* **Ungated on purpose - this is the flash fix.**
+
+       Chrome's UA stylesheet sets `mix-blend-mode: plus-lighter` here, because
+       its default cross-fade runs both frames at partial opacity and
+       plus-lighter is what stops the midpoint dipping toward the backdrop. That
+       reasoning does not survive the theme wipe below, which holds both frames
+       at FULL opacity: plus-lighter then *adds* a light page to a dark one, and
+       every pixel the growing circle has not yet covered blows out. That is the
+       flash.
+
+       The first attempt scoped this to `[data-theme-transition]`, which left a
+       gap - the attribute comes off when the transition ends, and for the frame
+       or two before the browser tears the pseudo-elements down, plus-lighter
+       came back with the new frame fully covering the old one. Everything, added
+       to everything: one white frame, *after* the switch, which is exactly what
+       it looked like. Blend mode is not something this app ever wants
+       inconsistent, so it is set once for both transition kinds rather than
+       toggled around a race.
+
+       The route cross-dissolve is unaffected in practice: `html` paints
+       `--surface`, so the midpoint dips toward the page's own colour. */
+    mix-blend-mode: normal;
+  }
+
+  /* The theme reveal (components/ui/theme-toggle.tsx) is a clip-path wipe, not
+     a cross-fade, and the two cannot both run: the browser's default is to
+     fade the old frame out *and* the new frame in, so a clipped circle growing
+     over a fading backdrop shows the old theme washing out ahead of the wipe
+     rather than being covered by it.
+
+     So during a theme change only: the old frame holds still at full opacity
+     and the new frame is painted on top, clipped. The `html[data-theme]`
+     marker is set by the toggle for exactly the duration of the transition, so
+     route navigations - which share these same pseudo-elements - keep their
+     cross-dissolve untouched. */
+  html[data-theme-transition]::view-transition-old(root),
+  html[data-theme-transition]::view-transition-new(root) {
+    /* Driven from JS (`element.animate`) rather than a stylesheet keyframe,
+       because the circle's origin is only known at click time. */
+    animation: none;
+  }
+
+  /* The outgoing theme must stay *under* the incoming one, or the circle grows
+     behind the frame it is supposed to reveal. */
+  html[data-theme-transition]::view-transition-old(root) {
+    z-index: 0;
+  }
+
+  html[data-theme-transition]::view-transition-new(root) {
+    z-index: 1;
   }
 }
 
@@ -2118,6 +2217,26 @@ button[data-menu][data-state='open']:focus-visible {
 
 .ground-sand {
   background: var(--secondary);
+}
+
+/* `--text-mute` is tuned to clear 4.5:1 against `--surface` (4.73:1), and the
+   sand ground is warmer and slightly darker than that - which drops the same
+   token to 4.31:1 on it, under the AA floor. Pre-existing, and found by
+   auditing every rendered text node rather than by looking: the two grounds are
+   close enough that nothing about it reads as wrong.
+
+   Nudged just far enough to pass (4.51:1) rather than to a round number -
+   `--text-mute` is deliberately the quietest text in the product, and
+   over-correcting here would make metadata on the sand bands louder than the
+   same metadata everywhere else.
+
+   **Light only, and that qualifier is the whole point.** Written unscoped
+   first, this same override applied in dark, where `--secondary` is a
+   near-black neutral rather than warm sand - turning one 4.31:1 failure into
+   29 far worse ones. A contrast fix that names a colour is always a fix for
+   one theme; scope it to that theme. */
+:root[data-theme='light'] .ground-sand {
+  --text-mute: #636a78;
 }
 
 .ground-sunken {

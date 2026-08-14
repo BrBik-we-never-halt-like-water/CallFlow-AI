@@ -30,14 +30,14 @@ import { useAppStore } from '@/lib/app-store';
 import { useSession } from '@/lib/hooks/use-session';
 
 /**
- * `.dark-panel-glass`/`.dark-chrome` (globals.css) re-scope the generic text/
+ * `.panel-glass`/`.app-chrome` (globals.css) re-scope the generic text/
  * rule/surface/lamp tokens for a dark surface, and - since the coherence pass
  * that consolidated the dark theme's cross-page findings - also
  * `--glass-surface`/`--glass-border`/`--glass-blur`, the composite tokens
  * `.panel-glass` (`Panel`, `DataTable`'s table wrapper) and
  * `.btn-glass-secondary` (`Button`) read directly. That fix does not reach
- * this page's own root, though: it wraps its content in `.dark-canvas`
- * (the ambient gradient), not `.dark-panel-glass`/`.dark-chrome` - putting
+ * this page's own root, though: it wraps its content in `.app-canvas`
+ * (the ambient gradient), not `.panel-glass`/`.app-chrome` - putting
  * either of *those* here instead would paint over the gradient with a flat
  * glass fill, since both classes set their own `background`. So this object
  * still needs to declare the glass three itself, alongside the generic set -
@@ -213,7 +213,7 @@ export default function RunsPage() {
 
   return (
     <div
-      className="dark-canvas -mx-4 -my-6 flex min-h-[calc(100dvh-var(--h-app-topbar))] flex-col gap-6 px-4 py-6 sm:-mx-6 sm:px-6"
+      className="app-canvas -mx-4 -my-6 flex min-h-[calc(100dvh-var(--h-app-topbar))] flex-col gap-6 px-4 py-6 sm:-mx-6 sm:px-6"
       style={DARK_SCOPE_VARS}
     >
       <div className="flex flex-wrap items-start justify-between gap-3">

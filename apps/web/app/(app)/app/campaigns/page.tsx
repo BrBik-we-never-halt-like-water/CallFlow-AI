@@ -260,7 +260,7 @@ export default function CampaignsPage() {
             {Array.from({ length: 3 }, (_, i) => (
               <Panel
                 key={i}
-                className="dark-panel-glass flex flex-col gap-3 p-4"
+                className="panel-glass flex flex-col gap-3 p-4"
               >
                 <Skeleton className="h-5 w-40" />
                 <Skeleton className="h-3 w-full" />
@@ -270,7 +270,7 @@ export default function CampaignsPage() {
             ))}
           </div>
         ) : campaigns.length === 0 ? (
-          <Panel className="dark-panel-glass">
+          <Panel className="panel-glass">
             <EmptyState
               icon={MegaphoneIcon}
               title="No campaigns yet"
@@ -285,7 +285,7 @@ export default function CampaignsPage() {
             />
           </Panel>
         ) : shown.length === 0 ? (
-          <Panel className="dark-panel-glass">
+          <Panel className="panel-glass">
             <EmptyState
               icon={MegaphoneIcon}
               title="No campaigns match"

@@ -27,6 +27,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Tooltip } from '@/components/ui/tooltip';
 import { VRule } from '@/components/ui/rule';
+import { ThemeToggle } from '@/components/ui/theme-toggle';
 import { useActiveOrg } from '@/lib/hooks/use-active-org';
 import { useOrganisations } from '@/lib/hooks/use-organisations';
 import { hasRole } from '@/lib/hooks/use-permission';
@@ -95,12 +96,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   if (minimalRoute) {
     return (
-      // `dark-canvas` was missing here entirely - this branch has no sidebar
+      // `app-canvas` was missing here entirely - this branch has no sidebar
       // to keep visually separate from the content column (unlike the normal
       // layout below), so the whole wrapper gets it, not just a nested
-      // column. `MinimalTopBar` already carries its own `dark-chrome`, so
+      // column. `MinimalTopBar` already carries its own `app-chrome`, so
       // nesting it inside this doesn't change its look, only `<main>`'s.
-      <div className="dark-canvas flex min-h-dvh flex-col">
+      <div className="app-canvas flex min-h-dvh flex-col">
         <a href="#app-main" className="skip-link">
           Skip to content
         </a>
@@ -122,11 +123,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     // `bg-dark-bg` is flat, deliberately no gradient - the purple lives on
-    // the content column below (`dark-canvas`), not here. This wrapper is
+    // the content column below (`app-canvas`), not here. This wrapper is
     // what actually shows through the sidebar's translucent glass (they're
     // flex siblings, not stacked), so it stays plain near-black, never
-    // purple - see `.dark-canvas`'s own comment in globals.css.
-    <div className="flex min-h-dvh bg-dark-bg">
+    // purple - see `.app-canvas`'s own comment in globals.css.
+    <div className="flex min-h-dvh bg-surface">
       <a href="#app-main" className="skip-link">
         Skip to content
       </a>
@@ -137,14 +138,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         escalationCount={escalations.length}
       />
 
-      {/* No more per-page opt-in (`pathname === '/app' && 'canvas-tint'`) -
+      {/* No more per-page opt-in (`pathname === '/app' && 'app-canvas'`) -
           the dark canvas is the content column's resting background on
           every /app/* route now, not a dashboard-only accent. Page content
           itself (cards, tables) is still the light theme until D2-D4 rebuild
           it - the same "chrome/canvas dark, content light" transitional
           state this round's report documents as expected, just now visible
           on every route instead of only behind the sidebar. */}
-      <div className="dark-canvas flex min-w-0 flex-1 flex-col">
+      <div className="app-canvas flex min-w-0 flex-1 flex-col">
         <main
           id="app-main"
           className="mx-auto w-full max-w-(--container-app) flex-1 px-4 py-6 sm:px-6"
@@ -192,7 +193,7 @@ function MinimalTopBar({
   }
 
   return (
-    <header className="dark-chrome sticky top-0 z-30 flex h-(--h-app-topbar) shrink-0 items-center gap-3 border-b px-4 sm:px-6">
+    <header className="app-chrome sticky top-0 z-30 flex h-(--h-app-topbar) shrink-0 items-center gap-3 border-b px-4 sm:px-6">
       <Link
         href="/app"
         className="flex shrink-0 items-center gap-2.5 text-text"
@@ -246,7 +247,7 @@ function AppSidebar({
   return (
     <aside
       className={cn(
-        'dark-chrome sticky top-0 hidden h-dvh shrink-0 flex-col border-r lg:flex',
+        'app-chrome sticky top-0 hidden h-dvh shrink-0 flex-col border-r lg:flex',
         collapsed ? 'w-(--w-app-sidebar-collapsed)' : 'w-(--w-app-sidebar)',
         !reducedMotion &&
           'transition-[width] duration-(--dur-base) ease-(--ease-out)',
@@ -350,6 +351,18 @@ function AppSidebar({
           collapsed ? 'items-center border-transparent' : 'border-rule',
         )}
       >
+        {/* Sits with the account/settings rows rather than in the top bar:
+            theme is a preference about this person's machine, which is what
+            this footer already collects. Hidden when the sidebar is collapsed
+            - the segmented control has no icon-only form, and squeezing one
+            into a 40px rail would make it the least legible thing here. */}
+        {!collapsed ? (
+          <div className="flex items-center justify-between px-2.5 py-1.5">
+            <span className="text-small text-text-mute">Theme</span>
+            <ThemeToggle />
+          </div>
+        ) : null}
+
         <ProfileFooterLink
           profile={profile}
           collapsed={collapsed}

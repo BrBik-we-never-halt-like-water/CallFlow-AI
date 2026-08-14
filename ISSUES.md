@@ -2663,6 +2663,115 @@ fixed` doesn't care about DOM nesting).
 **Depends on:** `#70` (this issue corrects that fix's Toast half; the `/app/profile`
 `.dark-canvas` half of `#70` is unaffected and unchanged).
 
+## Iteration 23 - 2026-08-14 · theme-switch review pass
+
+### #74 - Every theme switch flashed white, because Chrome adds the two view-transition frames together
+
+**S3 · FIXED · web · `apps/web/app/globals.css`**
+
+The light/dark toggle animates with the View Transitions API: Chrome snapshots the old
+page and the new one and cross-fades `::view-transition-old(root)` over
+`::view-transition-new(root)`. Its UA stylesheet gives both pseudo-elements
+`mix-blend-mode: plus-lighter`, which is *additive*, not a normal composite. That is
+correct for a fade between two frames of the same page - the two opacities sum to 1 and
+plus-lighter keeps the result from dipping - but here the two frames are a light page and
+a dark page. Mid-transition their luminances add, and any region where the light frame is
+already near white blows past it. The switch read as a white flash in both directions.
+
+**Impact.** Cosmetic, but on the one interaction whose entire purpose is to look smooth,
+and unpleasant for anyone switching to dark in a dark room.
+
+**Fix.** Override both pseudo-elements to `mix-blend-mode: normal` while
+`data-theme-transition` is set, and give them an explicit z-order so the new frame
+composites over the old one rather than being summed with it. `html` also gets
+`background: var(--surface)` so the frame behind the snapshots is never the browser's
+default white. Verified by screencasting both directions at ~55fps and measuring mean
+frame luminance: zero frames now fall outside the two endpoint luminances by more than
+6/255, where before the mid-transition frames overshot the lighter endpoint.
+
+### #75 - `#74`'s fix was scoped to an attribute that comes off before the transition ends
+
+**S3 · FIXED · web · `apps/web/app/globals.css`, `apps/web/components/ui/theme-toggle.tsx`**
+
+`#74` put `mix-blend-mode: normal` behind `html[data-theme-transition]`, and the toggle
+removed that attribute when its clip-path animation finished. The animation finishing and
+the browser tearing down the view-transition pseudo-elements are not the same instant. In
+the frames between them the override had stopped applying while the snapshots were still on
+screen - and by then the reveal circle covers the whole viewport, so plus-lighter was adding
+the *entire* old frame to the entire new one. One white frame, at the end. The reviewer's
+report was precise: "after the switch there is a flash".
+
+**Impact.** Same as `#74`, and worse-placed: a flash at the end reads as the page breaking
+rather than as part of the animation.
+
+**Fix.** Two independent closes, because the first one alone is a race and the second alone
+depends on a browser timing guarantee that is not written down anywhere.
+
+1. `mix-blend-mode: normal` is no longer gated. It applies to `::view-transition-old(root)`
+   and `::view-transition-new(root)` for both transition kinds. Blend mode is not something
+   this app ever wants inconsistent, and the route cross-dissolve is unaffected in practice
+   now that `html` paints `--surface` (the midpoint dips toward the page's own colour).
+2. The marker is tied to `transition.finished` instead of the clip-path animation's, so the
+   rules that *are* still scoped to it - `animation: none` and the z-order - stay in force
+   for the whole transition.
+
+**Method note, because the first pass got a false negative.** The check that cleared `#74`
+screencast the switch and found no luminance overshoot, and the flash was still there. Two
+things were wrong with it: it sampled at 1x speed, where a one-or-two-frame artefact can
+fall between captured frames, and it had no positive control, so "no flash detected" and
+"cannot detect a flash" were indistinguishable. The current check runs all animations at 1/8
+speed and measures the same switch twice - once as shipped and once with `plus-lighter`
+forced back on. The control reports 130-180 frames above the brighter endpoint, peaking near
+white; as shipped, zero, in both directions. A verification without a positive control is a
+guess.
+
+**Depends on:** `#74` (this corrects that fix's scope).
+
+### #76 - Canvases kept painting the previous theme's ink until something remounted them
+
+**S3 · FIXED · web · `apps/web/lib/hooks/use-canvas-animation.ts`, `apps/web/components/brand/wave-canvas.tsx`, `apps/web/components/marketing/step-flow.tsx`**
+
+Switching theme left the closing CTA card's waveform invisible - dark ink on a dark card -
+until a hard reload. Same in the other direction, and the same on the step-flow rail.
+
+A canvas cannot read a CSS variable, so every canvas here resolves its tokens through
+`getComputedStyle` and paints the resulting literal. `voice-field.tsx` and `listening.tsx`
+resolve inside the draw callback, so they follow the theme for free. `wave-canvas.tsx` and
+`step-flow.tsx` resolve once at the top of a `useEffect` whose dependency lists were
+`[tone, seed, pitch]` and `[reduced, count]` - neither of which changes when the theme does.
+The effect never re-ran, the resolved colour was never re-read, and the animation loop
+carried on drawing the old palette. A reload remounted the component, which is why the
+reviewer found reloading fixed it.
+
+The same shape has a second, quieter case: `useCanvasAnimation` paints exactly one frame
+under `prefers-reduced-motion` and then stops. Even a draw function that resolves its tokens
+per frame is stale the moment it stops being called, so *every* consumer of that hook was
+exposed, not just the two components above.
+
+**Impact.** A section of the marketing page rendered invisible after an interaction the
+product itself offers, with no error and no way to guess that reloading would fix it.
+
+**Fix.** The resolved theme becomes a redraw trigger. `useCanvasAnimation` takes
+`useTheme().resolved` into its effect dependencies, which repaints the static frame for
+every current and future consumer; `wave-canvas.tsx` and `step-flow.tsx` each take the same
+value into theirs. Pixels a canvas has already drawn do not restyle themselves - the theme
+has to be a reason to draw.
+
+**Verified** by reading the ink straight out of each canvas's backing store (mean RGB of
+pixels above 80 alpha, so an animated waveform's per-frame jitter does not matter) at three
+points: the starting theme, after a switch with no reload, and a fresh load in the target
+theme. Before: two canvases sat at distance 0 from the *starting* ink and 390 from the
+target. After: every canvas on the page matches a reload in the new theme exactly, in both
+directions.
+
+One methodological trap worth recording. The first probe scrolled the whole page to find
+every canvas, and that scrolling was itself remounting the CTA card - so the one canvas the
+reviewer actually reported came back clean while genuinely broken. The check that counts
+reproduces the user's sequence (sit at the bottom, switch, do not scroll, do not reload),
+not the sequence that is convenient to automate.
+
+**Depends on:** the theme system (`#74`, `#75` are the same feature's other two defects).
+
 ## Template for the next iteration
 
 ```

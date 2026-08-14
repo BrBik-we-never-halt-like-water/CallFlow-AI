@@ -64,7 +64,7 @@ export function CampaignCard({
   const showMenu = canWrite || canDelete;
 
   return (
-    <Panel interactive className="dark-panel-glass flex flex-col gap-4 p-4">
+    <Panel interactive className="panel-glass flex flex-col gap-4 p-4">
       <div className="flex items-start justify-between gap-2">
         <h3 className="min-w-0 truncate text-h4 font-medium text-text">
           {campaign.name}

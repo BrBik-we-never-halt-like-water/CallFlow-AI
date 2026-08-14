@@ -120,7 +120,7 @@ export function AppTabBar({
   return (
     <nav
       aria-label="Dashboard"
-      className="dark-chrome sticky bottom-0 z-30 flex shrink-0 border-t lg:hidden"
+      className="app-chrome sticky bottom-0 z-30 flex shrink-0 border-t lg:hidden"
     >
       {items.map((item) => {
         const active = isActive(pathname, item.href);

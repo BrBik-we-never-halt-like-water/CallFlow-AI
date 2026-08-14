@@ -2,6 +2,8 @@
 
 import { useEffect, useRef } from "react";
 
+import { useTheme } from "@/lib/hooks/use-theme";
+
 /**
  * The signal rail.
  *
@@ -35,6 +37,7 @@ export function StepFlow({
 }) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const { resolved: theme } = useTheme();
   const anim = useRef({ active: -1, prev: -1, start: 0, arrived: 0, pc: -SIGMA });
 
   // Record each hand-off so the render loop can carry the burst from the old
@@ -64,6 +67,9 @@ export function StepFlow({
       wrap.removeChild(probe);
       return c;
     };
+    // Resolved once per effect run, which is why `theme` is in the dependency
+    // list: these three are theme-dependent and the loop would otherwise draw
+    // the old palette forever.
     const colRule = resolve("--rule-strong");
     const colJade = resolve("--lamp-jade");
     const colSurface = resolve("--surface");
@@ -165,7 +171,7 @@ export function StepFlow({
       cancelAnimationFrame(raf);
       ro.disconnect();
     };
-  }, [reduced, count]);
+  }, [reduced, count, theme]);
 
   if (reduced) {
     return (

@@ -9,6 +9,7 @@ import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/cn";
 import { BrandLockup } from "@/components/brand/wordmark";
 import { Button } from "@/components/ui/button";
+import { ThemeToggle } from "@/components/ui/theme-toggle";
 
 const PRODUCT_LINKS = [
   { label: "How it works", href: "/#how-it-works", hint: "Four steps, spreadsheet to queue" },
@@ -169,6 +170,10 @@ export function SiteHeader() {
         </nav>
 
         <div className="flex items-center gap-2">
+          {/* Hidden on small screens: at that width the bar is already the
+              wordmark, a CTA and the menu button, and a third control pushes
+              the CTA off. It reappears inside the mobile sheet instead. */}
+          <ThemeToggle className="hidden md:inline-flex" />
           <Button asChild variant="ghost" size="sm" className="hidden sm:inline-flex">
             <Link href="/login">Sign in</Link>
           </Button>
@@ -323,6 +328,11 @@ function MobileNav() {
           </nav>
 
           <div className="flex shrink-0 flex-col gap-2 border-t border-rule p-4">
+            {/* The toggle the top bar hides at this width. */}
+            <div className="flex items-center justify-between pb-2">
+              <span className="text-small text-text-mute">Theme</span>
+              <ThemeToggle />
+            </div>
             <Button asChild size="lg">
               <Link href="/signup" onClick={() => setOpen(false)}>
                 Start free
