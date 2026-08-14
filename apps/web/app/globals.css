@@ -538,12 +538,35 @@ body {
      Nothing that cleared a bar before stops clearing it now. */
   --dark-bg: #050505;
   --dark-bg-glow: #4f46e5;
-  --dark-surface: #0a0a0a;
-  --dark-glass-surface: color-mix(in oklab, var(--dark-surface) 42%, transparent);
-  --dark-glass-border: color-mix(in oklab, #ffffff 14%, transparent);
+
+  /* `--dark-surface` was `#0a0a0a`, five values off the `#050505` page, and
+     `--dark-glass-surface` then composited it at 42% - so a card landed at
+     OKLab L 0.155 against a page at 0.115. A separation of 0.04 is not a card
+     floating above a page, it is a card printed on it, which is exactly how it
+     read: the panels dissolved into the background.
+
+     Raised to `#1f1f26` at 62%. That lands a card near L 0.22 - a delta of
+     ~0.11, which is a plane you can see the edge of without it becoming grey -
+     while `--dark-text` still clears 15.6:1 on it, so nothing that was legible
+     stops being legible.
+
+     **This partly reverses a recorded decision, deliberately.** DESIGN_NOTES
+     §15 lowered this from 66% to 42% because cards "read as blackish rather
+     than actual glass" - true, and the fix for it was the wrong lever. The
+     problem was never the opacity, it was that the fill underneath was almost
+     the page colour, so more translucency only revealed more of the same
+     black. Lifting the base colour buys the separation; the opacity can then
+     stay near where it started and the surface still reads as glass.
+
+     The border does the rest of the work: at these lightnesses a 14% white
+     hairline is nearly gone, so it goes to 20% - a card should have an edge
+     even where its fill and the page briefly agree. */
+  --dark-surface: #1f1f26;
+  --dark-glass-surface: color-mix(in oklab, var(--dark-surface) 62%, transparent);
+  --dark-glass-border: color-mix(in oklab, #ffffff 20%, transparent);
   --dark-glass-blur: blur(24px) saturate(150%);
-  --dark-rule: color-mix(in oklab, #ffffff 10%, transparent);
-  --dark-rule-strong: color-mix(in oklab, #ffffff 18%, transparent);
+  --dark-rule: color-mix(in oklab, #ffffff 12%, transparent);
+  --dark-rule-strong: color-mix(in oklab, #ffffff 22%, transparent);
 
   /* Tonal variants of the one neutral `--dark-surface` now, shared by
      `.dark-chrome` and `.dark-panel-glass` alike (both re-scope
@@ -553,7 +576,11 @@ body {
      without covering the glass effect it's hovering on top of, which an
      opaque fill would. */
   --dark-surface-hover: color-mix(in oklab, #ffffff 8%, transparent);
-  --dark-surface-sunken: #2d2d2d; /* +18% white, OKLab, over --dark-surface */
+  /* Derived from `--dark-surface` rather than pinned to a literal, so lifting
+     the card surface above carries the well up with it instead of leaving the
+     two nearly equal - `#2d2d2d` was +18% white over the old near-black and is
+     barely a step above the new one. */
+  --dark-surface-sunken: color-mix(in oklab, #ffffff 14%, var(--dark-surface));
 
   --dark-text: #f1f5f9;
   --dark-text-dim: #cbd5e1;
