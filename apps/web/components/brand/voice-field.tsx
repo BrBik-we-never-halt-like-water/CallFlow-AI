@@ -65,7 +65,7 @@ const Z_FAR = 4.2;
 const Z_WALL = 1.45;
 
 /** Seconds each formation is held, and seconds spent travelling between them. */
-const HOLD = 5;
+const HOLD = 8;
 const MORPH = 2.4;
 const STEP = HOLD + MORPH;
 const CYCLE = STEP * 3;
@@ -83,6 +83,43 @@ const SWEEP = 0.55;
 /** Half the world-space width the field occupies. `x` runs -X_HALF..+X_HALF. */
 const X_HALF = 2.6;
 
+/**
+ * How far past the canvas edge the standing formations reach.
+ *
+ * Mapping the world exactly onto the canvas width sounds right and is not: the
+ * feathered border then eats its fade out of visible width, so a wall that
+ * "spans the screen" reads as ~10% narrower than it is on each side. Overrunning
+ * pushes most of the fade off-canvas and leaves the rest as a short dissolve at
+ * the very edge.
+ */
+const WALL_OVERSCAN = 1.18;
+
+/**
+ * How much of the wall's width and height the border fade occupies.
+ *
+ * Combined with the overscan above, `EDGE_X` puts the fade in roughly the outer
+ * 5% of the visible width - enough that the formation dissolves rather than
+ * stopping, and no more than that.
+ */
+const EDGE_X = 0.12;
+const EDGE_Y = 0.1;
+
+/** How tall the two standing formations reach, in world units. */
+const GRID_HEIGHT = 2.6;
+const WAVE_HEIGHT = 2.7;
+
+/**
+ * Dot size per formation, as a multiplier on `DOT_RADIUS`.
+ *
+ * The rolling field's near rows sit at a third of the wall's depth, so
+ * perspective already draws them two to three times larger than anything in the
+ * grid or the waveform - one radius for all three left the field coarse and the
+ * two walls fine. These pull the three back to roughly the same apparent
+ * weight.
+ */
+const SIZE_FIELD = 0.78;
+const SIZE_WALL = 1.38;
+
 const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v));
 
 /**
@@ -96,8 +133,8 @@ const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v));
  * visible line where the fade begins.
  */
 function edgeFade(xt: number, zt: number) {
-  const fx = clamp(Math.min(xt, 1 - xt) / 0.2, 0, 1);
-  const fy = clamp(Math.min(zt, 1 - zt) / 0.16, 0, 1);
+  const fx = clamp(Math.min(xt, 1 - xt) / EDGE_X, 0, 1);
+  const fy = clamp(Math.min(zt, 1 - zt) / EDGE_Y, 0, 1);
   return fx * fx * (fy * fy);
 }
 
@@ -108,14 +145,18 @@ const ease = (p: number) => p * p * p * (p * (p * 6 - 15) + 10);
 /**
  * The three formations, as scalar fields.
  *
- * Each writes depth, height and brightness for one particle into the scratch
- * below rather than returning an object: at 16,120 particles a frame, an
- * allocation per particle per formation is 2 million short-lived objects a
- * second, and the garbage collector shows up as periodic stutter.
+ * Each writes depth, height, brightness and dot size for one particle into the
+ * scratch below rather than returning an object: at several thousand particles
+ * a frame, an allocation per particle per formation is millions of short-lived
+ * objects a second, and the garbage collector shows up as periodic stutter.
+ *
+ * `outSize` interpolates through a morph like everything else, so a dot grows
+ * or shrinks *while* it travels rather than snapping at either end.
  */
 let outZ = 0;
 let outY = 0;
 let outLit = 0;
+let outSize = 1;
 
 /** Per-frame constants for `field`'s slow frequency drift — one `sin`/`cos` a
  *  frame instead of one per particle. */
@@ -164,6 +205,7 @@ function field(_xi: number, xt: number, zt: number, x: number, z: number, time: 
   outZ = z;
   outY = wave * 0.34;
   outLit = clamp(0.5 + wave * 0.55, 0, 1);
+  outSize = SIZE_FIELD;
 }
 
 function grid(xi: number, xt: number, zt: number, x: number, _z: number, time: number) {
@@ -185,8 +227,12 @@ function grid(xi: number, xt: number, zt: number, x: number, _z: number, time: n
   const onLine = lineX || lineY;
 
   outZ = Z_WALL;
-  outY = up * 1.55 + breath;
-  outLit = (0.14 + onLine * 0.86) * edgeFade(xt, zt);
+  outY = up * GRID_HEIGHT + breath;
+  outLit = (0.26 + onLine * 0.74) * edgeFade(xt, zt);
+  // The filler between lines is drawn smaller as well as dimmer. It reads as a
+  // lattice either way, the lines carry more weight for the contrast, and the
+  // ~85% of particles that are not on a line stop costing full fill rate.
+  outSize = onLine ? SIZE_WALL : SIZE_WALL * 0.66;
 }
 
 function wave(xi: number, xt: number, zt: number, _x: number, _z: number, _time: number) {
@@ -199,10 +245,11 @@ function wave(xi: number, xt: number, zt: number, _x: number, _z: number, _time:
   const amp = colAmp[xi];
 
   outZ = Z_WALL;
-  outY = across * amp * 2.1;
+  outY = across * amp * WAVE_HEIGHT;
   // Brightest at the crest of the band, falling away toward the axis, so the
   // waveform has an edge rather than being a solid block.
   outLit = clamp(0.25 + Math.abs(across) * 1.6 * amp * 3, 0, 1) * edgeFade(xt, zt);
+  outSize = SIZE_WALL;
 }
 
 const FORMATIONS = [field, grid, wave] as const;
@@ -238,11 +285,18 @@ export function VoiceField({ className }: { className?: string }) {
       // The accent, read once a frame rather than per particle: this is the one
       // value that has to follow the theme, and `getComputedStyle` inside the
       // inner loop would be 12,000 style resolutions a frame.
+      const style = getComputedStyle(document.documentElement);
       const accent =
-        getComputedStyle(document.documentElement).getPropertyValue("--primary").trim() ||
+        style.getPropertyValue("--field-ink").trim() ||
+        style.getPropertyValue("--primary").trim() ||
         "#3b2fd9";
       const rgb = hexToRgb(accent);
       ctx.fillStyle = `rgb(${rgb})`;
+
+      // Applied to the final opacity rather than folded into ALPHA_BASE/RANGE,
+      // which would push the buckets past ALPHA_STEPS and quietly lose the top
+      // of the range to clamping.
+      const gain = Number.parseFloat(style.getPropertyValue("--field-gain")) || 1;
 
       // Slow drift terms: per frame, not per particle.
       phaseA = Math.sin(time * 0.05) * 0.8;
@@ -261,7 +315,7 @@ export function VoiceField({ className }: { className?: string }) {
        * or the perspective would shear.
        */
       const wallScale = focal / Z_WALL;
-      const spreadX = (w * 0.5) / (X_HALF * wallScale);
+      const spreadX = ((w * 0.5) / (X_HALF * wallScale)) * WALL_OVERSCAN;
 
       // The waveform envelope, once per column per frame rather than once per
       // particle. Only worth filling when a wave is actually on screen.
@@ -296,6 +350,7 @@ export function VoiceField({ className }: { className?: string }) {
           let z = outZ;
           let y = outY;
           let lit = outLit;
+          let dotSize = outSize;
 
           if (morphing) {
             // The sweep: a particle's own progress is offset by where it stands,
@@ -306,6 +361,7 @@ export function VoiceField({ className }: { className?: string }) {
               z += (outZ - z) * p;
               y += (outY - y) * p;
               lit += (outLit - lit) * p;
+              dotSize += (outSize - dotSize) * p;
             }
           }
 
@@ -333,7 +389,7 @@ export function VoiceField({ className }: { className?: string }) {
           if (bucket < 1) continue;
           if (bucket > ALPHA_STEPS - 1) bucket = ALPHA_STEPS - 1;
 
-          const r = scale * DOT_RADIUS;
+          const r = scale * DOT_RADIUS * dotSize;
           const path = buckets[bucket] ?? (buckets[bucket] = new Path2D());
           // `arc` alone would draw a line from wherever the subpath left off,
           // joining every dot in the bucket into one blob.
@@ -353,7 +409,7 @@ export function VoiceField({ className }: { className?: string }) {
       for (let b = 1; b < ALPHA_STEPS; b++) {
         const path = buckets[b];
         if (!path) continue;
-        ctx.globalAlpha = alphaOf(b);
+        ctx.globalAlpha = clamp(alphaOf(b) * gain, 0, 1);
         ctx.fill(path);
         buckets[b] = null;
       }
@@ -377,7 +433,7 @@ const ALPHA_RANGE = 0.34;
 const ALPHA_MAX = ALPHA_BASE + ALPHA_RANGE;
 
 /** Particle radius as a fraction of the projected scale. */
-const DOT_RADIUS = 0.0017;
+const DOT_RADIUS = 0.0022;
 const ALPHA_SCALE = ALPHA_STEPS / ALPHA_MAX;
 const TAU = Math.PI * 2;
 

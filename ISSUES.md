@@ -2689,6 +2689,44 @@ default white. Verified by screencasting both directions at ~55fps and measuring
 frame luminance: zero frames now fall outside the two endpoint luminances by more than
 6/255, where before the mid-transition frames overshot the lighter endpoint.
 
+### #75 - `#74`'s fix was scoped to an attribute that comes off before the transition ends
+
+**S3 · FIXED · web · `apps/web/app/globals.css`, `apps/web/components/ui/theme-toggle.tsx`**
+
+`#74` put `mix-blend-mode: normal` behind `html[data-theme-transition]`, and the toggle
+removed that attribute when its clip-path animation finished. The animation finishing and
+the browser tearing down the view-transition pseudo-elements are not the same instant. In
+the frames between them the override had stopped applying while the snapshots were still on
+screen - and by then the reveal circle covers the whole viewport, so plus-lighter was adding
+the *entire* old frame to the entire new one. One white frame, at the end. The reviewer's
+report was precise: "after the switch there is a flash".
+
+**Impact.** Same as `#74`, and worse-placed: a flash at the end reads as the page breaking
+rather than as part of the animation.
+
+**Fix.** Two independent closes, because the first one alone is a race and the second alone
+depends on a browser timing guarantee that is not written down anywhere.
+
+1. `mix-blend-mode: normal` is no longer gated. It applies to `::view-transition-old(root)`
+   and `::view-transition-new(root)` for both transition kinds. Blend mode is not something
+   this app ever wants inconsistent, and the route cross-dissolve is unaffected in practice
+   now that `html` paints `--surface` (the midpoint dips toward the page's own colour).
+2. The marker is tied to `transition.finished` instead of the clip-path animation's, so the
+   rules that *are* still scoped to it - `animation: none` and the z-order - stay in force
+   for the whole transition.
+
+**Method note, because the first pass got a false negative.** The check that cleared `#74`
+screencast the switch and found no luminance overshoot, and the flash was still there. Two
+things were wrong with it: it sampled at 1x speed, where a one-or-two-frame artefact can
+fall between captured frames, and it had no positive control, so "no flash detected" and
+"cannot detect a flash" were indistinguishable. The current check runs all animations at 1/8
+speed and measures the same switch twice - once as shipped and once with `plus-lighter`
+forced back on. The control reports 130-180 frames above the brighter endpoint, peaking near
+white; as shipped, zero, in both directions. A verification without a positive control is a
+guess.
+
+**Depends on:** `#74` (this corrects that fix's scope).
+
 ## Template for the next iteration
 
 ```

@@ -63,7 +63,10 @@ export function ThemeToggle({ className }: { className?: string }) {
 
     const startViewTransition = (
       document as Document & {
-        startViewTransition?: (cb: () => void) => { ready: Promise<void> };
+        startViewTransition?: (cb: () => void) => {
+          ready: Promise<void>;
+          finished: Promise<void>;
+        };
       }
     ).startViewTransition;
 
@@ -102,7 +105,7 @@ export function ThemeToggle({ className }: { className?: string }) {
 
     transition.ready
       .then(() => {
-        const animation = root.animate(
+        root.animate(
           {
             clipPath: [
               `circle(0px at ${x}px ${y}px)`,
@@ -120,12 +123,19 @@ export function ThemeToggle({ className }: { className?: string }) {
             pseudoElement: '::view-transition-new(root)',
           },
         );
-        return animation.finished;
       })
-      // The attribute has to come off however this ends. A rejected `ready`
-      // (the transition was skipped, or another started on top of it) would
-      // otherwise leave the marker on and permanently disable the route
-      // crossfade - a failed animation quietly breaking an unrelated one.
+      .catch(() => {});
+
+    // Tied to the *transition*, not to the clip-path animation. The animation
+    // finishing is not the same instant as the browser tearing down the
+    // pseudo-elements, and in the frames between them the marker's rules had
+    // already stopped applying while the snapshots were still on screen.
+    //
+    // The attribute has to come off however this ends. A rejected promise (the
+    // transition was skipped, or another started on top of it) would otherwise
+    // leave the marker on and permanently disable the route crossfade - a
+    // failed animation quietly breaking an unrelated one.
+    transition.finished
       .catch(() => {})
       .finally(() => root.removeAttribute('data-theme-transition'));
   }

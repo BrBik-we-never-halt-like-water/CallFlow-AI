@@ -150,6 +150,15 @@
   --accent-text: var(--primary-ink); /* 13.36:1 on --surface, for text/icons */
   --accent-wash: var(--primary-wash); /* the tinted-canvas colour */
 
+  /* The hero's particle field (components/brand/voice-field.tsx): its colour,
+     and an opacity multiplier. Tokens rather than a branch in the component,
+     because both are colour decisions and colour decisions live here.
+
+     In light the field is simply the primary. The dark pivot needs its own
+     value - see the override for why. */
+  --field-ink: var(--primary);
+  --field-gain: 1;
+
   /* ---- Type scale - fluid at every step ---------------------------------
      CAL-4's scale, restored. Like `--primary`, this was designed on that
      branch and lost in the same merge, which kept the older, smaller scale
@@ -688,6 +697,20 @@ body {
   --glass-surface: var(--dark-glass-surface);
   --glass-border: var(--dark-glass-border);
   --glass-blur: var(--dark-glass-blur);
+
+  /* The field cannot use `--primary` here. `--dark-accent` is a mid-dark indigo
+     chosen to carry white button text; painted at 9-43% opacity on a near-black
+     page it lands a few points off the background and the whole formation goes
+     to mud. Opacity alone cannot fix that - at 100% it is still that colour.
+
+     So the field gets a light tint of the same hue instead: `color-mix(in
+     oklab, var(--dark-accent) 45%, #ffffff)`, resolved to a literal because the
+     canvas parses this value's channels and cannot evaluate a `color-mix()`.
+     Same hue as everywhere else, so it stays as far from every lamp as the
+     primary is; light enough to actually read as light on black. The gain then
+     only has to close the remaining gap, not carry the whole job. */
+  --field-ink: #a09aef;
+  --field-gain: 1.45;
 
   /* The primary/accent family. `--dark-accent` is a lighter indigo than the
      light theme's `--primary` because a solid button on a near-black page has
@@ -1844,6 +1867,29 @@ button[data-menu][data-state='open']:focus-visible {
   ::view-transition-new(root) {
     animation-duration: var(--dur-base);
     animation-timing-function: var(--ease-out);
+
+    /* **Ungated on purpose - this is the flash fix.**
+
+       Chrome's UA stylesheet sets `mix-blend-mode: plus-lighter` here, because
+       its default cross-fade runs both frames at partial opacity and
+       plus-lighter is what stops the midpoint dipping toward the backdrop. That
+       reasoning does not survive the theme wipe below, which holds both frames
+       at FULL opacity: plus-lighter then *adds* a light page to a dark one, and
+       every pixel the growing circle has not yet covered blows out. That is the
+       flash.
+
+       The first attempt scoped this to `[data-theme-transition]`, which left a
+       gap - the attribute comes off when the transition ends, and for the frame
+       or two before the browser tears the pseudo-elements down, plus-lighter
+       came back with the new frame fully covering the old one. Everything, added
+       to everything: one white frame, *after* the switch, which is exactly what
+       it looked like. Blend mode is not something this app ever wants
+       inconsistent, so it is set once for both transition kinds rather than
+       toggled around a race.
+
+       The route cross-dissolve is unaffected in practice: `html` paints
+       `--surface`, so the midpoint dips toward the page's own colour. */
+    mix-blend-mode: normal;
   }
 
   /* The theme reveal (components/ui/theme-toggle.tsx) is a clip-path wipe, not
@@ -1859,20 +1905,6 @@ button[data-menu][data-state='open']:focus-visible {
      cross-dissolve untouched. */
   html[data-theme-transition]::view-transition-old(root),
   html[data-theme-transition]::view-transition-new(root) {
-    /* **This line is the flash fix, and it is not obvious.**
-
-       Chrome's UA stylesheet sets `mix-blend-mode: plus-lighter` on these two
-       pseudo-elements, because its default cross-fade runs both at partial
-       opacity and `plus-lighter` is what stops the midpoint dipping toward the
-       backdrop. That reasoning does not survive turning the animations off:
-       with both frames at FULL opacity, `plus-lighter` adds them together, so
-       every pixel the growing circle has not yet covered is
-       old + new — visibly brighter than either theme. That is the flash.
-
-       `normal` makes the incoming frame simply cover the outgoing one, which is
-       what a wipe means. */
-    mix-blend-mode: normal;
-
     /* Driven from JS (`element.animate`) rather than a stylesheet keyframe,
        because the circle's origin is only known at click time. */
     animation: none;

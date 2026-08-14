@@ -1099,3 +1099,57 @@ correct in the source. Both axes now light every Nth index instead
 The general shape of that bug: a continuous function sampled on a discrete grid is
 only stable if you own the relationship between the two. If the visual is "every
 Nth particle", say every Nth particle.
+
+## 22. Hero field, review round 3: per-formation dot size, a longer hold, and the field's own colour
+
+### The three formations needed three dot sizes
+
+One radius for all three was wrong in a way that is obvious once stated: the rolling field's
+near rows sit at roughly a third of the wall's depth, so perspective already draws them two
+to three times larger than anything in the grid or the waveform. The same `DOT_RADIUS`
+produced a coarse field and two fine walls.
+
+`outSize` now joins depth, height and brightness in the per-particle scratch, which means it
+interpolates through a morph like everything else - a dot grows or shrinks *while* it
+travels, rather than snapping at either end. Field 0.78, walls 1.38.
+
+Inside the grid it varies per particle too: the ~85% of dots that are not on a lattice line
+are drawn at 0.66 of the line dots. That reads better - the lines carry more weight for the
+contrast - and it is also where the frame time came from. Uniform 1.38 put the grid at
+42fps; splitting the size restored it to 52 while making the lattice *more* prominent, not
+less. Cheaper and better is rare; take it when it appears.
+
+### The field needed its own colour in dark, not just more opacity
+
+The first attempt at "brighter in dark mode" was an opacity multiplier, `--field-gain`. It
+helped and could not finish the job, because `--primary` in dark is `--dark-accent` - a
+mid-dark indigo chosen to carry white button text. Painted on a near-black page it lands a
+few points off the background, and opacity cannot fix a colour that is still wrong at 100%.
+
+So the field gets `--field-ink`: `--primary` in light, and in dark a light tint of the same
+hue (`color-mix(in oklab, var(--dark-accent) 45%, #ffffff)`, written as its resolved literal
+because the canvas parses the value's channels and cannot evaluate a `color-mix()`). Same
+hue as the primary, so it sits exactly as far from every lamp; light enough to actually read
+on black. `--field-gain` then only closes the remaining gap - 1.45 rather than the 1.55 it
+needed when it was doing the whole job alone.
+
+Both are tokens rather than a branch in the component: they are colour decisions, and colour
+decisions live in `globals.css` (CLAUDE.md §2). The component reads `--field-ink` and falls
+back to `--primary`, so deleting the token degrades to the old behaviour rather than to
+black.
+
+### Timing and framing
+
+`HOLD` 5s -> 8s. At five seconds a formation arrived, and something moved again before the
+eye had settled on it; the cycle is now 31.2s, and each formation gets long enough to be
+looked at rather than merely noticed. `MORPH` is unchanged at 2.4s - the travel was never
+the problem.
+
+The border feather is narrower (`EDGE_X` 0.2 -> 0.12, `EDGE_Y` 0.16 -> 0.1) and the walls
+now overrun the canvas by 18% (`WALL_OVERSCAN`). Mapping the world exactly onto the canvas
+width sounds right and is not: the feather then eats its fade out of *visible* width, so a
+wall that "spans the screen" reads as ~10% narrower on each side than it is. Overrunning
+pushes most of the fade off-canvas and leaves the rest as a short dissolve at the very edge.
+The two standing formations are taller as well (`GRID_HEIGHT` 2.6, `WAVE_HEIGHT` 2.7, from
+1.55 and 2.1), which fills the frame vertically and - because more particles now fall off
+the top and bottom and get culled - costs nothing.
