@@ -1,18 +1,19 @@
 """The `VoiceProvider` protocol every voice adapter conforms to.
 
-CALL-E (`engine.py`) is the only *production* implementation today.
-`tests/test_engine.py`'s `StubVoiceProvider` is the second, non-vendor one
-CLAUDE.md's Substitutability section calls for ("write the second adapter,
-even if it is only a stub for tests") - it exists so this protocol is proven
-to fit more than one shape of provider, not just described in terms of
-`EngineGateway`'s own methods.
+**Nothing implements this today.** CALL-E was the only production
+implementation and it has been removed along with its stub adapter; the
+LiveKit client that replaces it lands in RUNBOOK_HET_PART_1.md P1-T5/P1-T6.
+The protocol is kept rather than deleted because it is the shape the new
+adapters are meant to fit, and because its `supports()`/`VoiceCapability`
+split is the pattern ADR-1 says survives the migration.
 
-`campaign_runner.py` still imports `EngineGateway` by name rather than this
-protocol, though - the return type below is still `JsonObject`, the raw,
-CALL-E-shaped payload, not a normalised type, because designing that
-normalisation from a single *real* vendor's data would be guessing, not
-abstracting. That switch-over happens once a second production adapter
-(Twilio or Plivo, `VOICE_AGENT_PLATFORM.md` P5) exists to prove the real shape.
+Treat the method signatures below as a starting point, not a settled
+contract: the return type is still `JsonObject`, a raw vendor-shaped payload
+rather than a normalised type, because designing that normalisation from a
+single vendor's data would be guessing rather than abstracting. Settle it
+once LiveKit plus a second real carrier prove the actual shape - the same
+"don't abstract before a second implementation exists" discipline this file
+already documents.
 
 `VoiceProvider` is a structural `Protocol`: an adapter conforms by having the
 right methods, not by inheriting from anything here.

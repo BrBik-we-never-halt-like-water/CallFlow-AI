@@ -42,10 +42,6 @@ def _origins(name: str) -> list[str]:
 
 @dataclass(frozen=True)
 class Config:
-    api_key: str = field(default_factory=lambda: os.getenv("CALLE_API_KEY", ""))
-    default_region: str = field(default_factory=lambda: os.getenv("CALLE_DEFAULT_REGION", "IN"))
-    default_language: str = field(default_factory=lambda: os.getenv("CALLE_DEFAULT_LANGUAGE", "en"))
-
     max_calls_per_run: int = field(default_factory=lambda: _int("CALLFLOW_MAX_CALLS_PER_RUN", 3))
     allowlist: list[str] = field(default_factory=lambda: _list("CALLFLOW_ALLOWLIST"))
 
@@ -58,20 +54,12 @@ class Config:
     log_format: str = field(default_factory=lambda: os.getenv("CALLFLOW_LOG_FORMAT", "text"))
 
     # This API's own publicly-reachable base URL (e.g. https://api.example.com,
-    # no trailing slash) - needed to build the `webhook_url` handed to CALL-E
-    # at call-creation time. Empty ⇒ no `webhook_url` is sent and this
-    # deployment falls back to polling only (today's behaviour, unchanged).
+    # no trailing slash). Kept through the CALL-E removal because the voice
+    # runtime needs a callback base to POST a finished call's transcript back to
+    # (RUNBOOK_HET_PART_1.md P1-T4); nothing reads it until that lands.
     public_api_url: str = field(
         default_factory=lambda: os.getenv("CALLFLOW_PUBLIC_API_URL", "").rstrip("/")
     )
-    # Shared secret embedded in the webhook path CALL-E is told to call back on
-    # (`/api/v1/webhooks/calle/{secret}`). CALL-E's webhooks are unsigned (its
-    # own SDK docs: the HMAC verify/unwrap helpers are deprecated and "must not
-    # be used to parse current deliveries"), so a guessable/absent secret here
-    # means anyone who finds the endpoint could feed it fabricated call data.
-    # Empty ⇒ the receiver refuses every request and no webhook_url is sent -
-    # fails closed, not open, same spirit as `owner_key`/`resend_api_key`.
-    webhook_secret: str = field(default_factory=lambda: os.getenv("CALLFLOW_WEBHOOK_SECRET", ""))
 
     # --- public demo limits -------------------------------------------------
     # The hosted dashboard lets visitors call their own number. These caps stop
@@ -88,10 +76,8 @@ class Config:
     poll_interval_seconds: float = 10.0
     poll_timeout_seconds: float = 900.0
 
-    # How many contacts in one run may be dialling/polling at once. CALL-E
-    # publishes no rate-limit numbers (confirmed against the OpenAPI spec and
-    # public docs - CALLE.md §5), so this starts conservative rather than
-    # guessing a number the vendor might reject under load.
+    # How many contacts in one run may be dialling at once. Starts conservative
+    # rather than guessing a number a carrier might reject under load.
     max_concurrent_calls: int = field(
         default_factory=lambda: _int("CALLFLOW_MAX_CONCURRENT_CALLS", 5)
     )
@@ -150,12 +136,3 @@ class Config:
 
 
 config = Config()
-
-
-def require_api_key() -> str:
-    if not config.api_key:
-        raise RuntimeError(
-            "No Voice API key is set. Copy .env.example to .env and set "
-            "CALLE_API_KEY before placing live calls."
-        )
-    return config.api_key
