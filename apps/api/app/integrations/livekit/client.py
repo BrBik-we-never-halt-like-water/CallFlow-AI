@@ -217,7 +217,7 @@ class LiveKitGateway:
             numbers=numbers,
             allowed_addresses=allowed_addresses or [],
         )
-        info = await self._sip.create_sip_inbound_trunk(
+        info = await self._sip.create_inbound_trunk(
             _vendor_api.CreateSIPInboundTrunkRequest(trunk=trunk)
         )
         return str(info.sip_trunk_id)
@@ -245,7 +245,7 @@ class LiveKitGateway:
             auth_password=auth_password or "",
             transport=_TRANSPORTS[transport],
         )
-        info = await self._sip.create_sip_outbound_trunk(
+        info = await self._sip.create_outbound_trunk(
             _vendor_api.CreateSIPOutboundTrunkRequest(trunk=trunk)
         )
         return str(info.sip_trunk_id)
@@ -263,7 +263,7 @@ class LiveKitGateway:
                 room_prefix=room_prefix
             )
         )
-        info = await self._sip.create_sip_dispatch_rule(
+        info = await self._sip.create_dispatch_rule(
             _vendor_api.CreateSIPDispatchRuleRequest(
                 dispatch_rule=_vendor_api.SIPDispatchRuleInfo(
                     name=name, rule=rule, trunk_ids=trunk_ids

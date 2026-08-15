@@ -125,7 +125,12 @@ def _credentials_key(monkeypatch: pytest.MonkeyPatch) -> None:
     from app.services import number_provisioning as service
 
     monkeypatch.setattr(
-        service, "config", dataclasses.replace(config, provider_credentials_key="test-key")
+        service,
+        "config",
+        # `livekit_sip_host` blanked too: the service falls back to config when
+        # the argument is empty, so a developer with a real .env would otherwise
+        # silently skip the refusal these tests assert.
+        dataclasses.replace(config, provider_credentials_key="test-key", livekit_sip_host=""),
     )
 
 

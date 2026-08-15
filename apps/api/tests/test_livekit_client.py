@@ -37,17 +37,17 @@ class StubSip:
         if self._fail_with is not None:
             raise self._fail_with
 
-    async def create_sip_inbound_trunk(self, request: Any) -> Any:
+    async def create_inbound_trunk(self, request: Any) -> Any:
         self.calls.append(("inbound", request))
         self._maybe_fail()
         return type("Info", (), {"sip_trunk_id": "ST_inbound_1"})()
 
-    async def create_sip_outbound_trunk(self, request: Any) -> Any:
+    async def create_outbound_trunk(self, request: Any) -> Any:
         self.calls.append(("outbound", request))
         self._maybe_fail()
         return type("Info", (), {"sip_trunk_id": "ST_outbound_1"})()
 
-    async def create_sip_dispatch_rule(self, request: Any) -> Any:
+    async def create_dispatch_rule(self, request: Any) -> Any:
         self.calls.append(("dispatch", request))
         self._maybe_fail()
         return type("Info", (), {"sip_dispatch_rule_id": "SDR_1"})()
