@@ -1,4 +1,4 @@
-# secrets — never commit
+# secrets - never commit
 .env
 .env.*
 !.env.example
@@ -31,8 +31,15 @@ __pycache__/
 venv/
 
 # scaffolding notes
-web/CLAUDE.md
-web/AGENTS.md
+apps/web/CLAUDE.md
+apps/web/AGENTS.md
 
-# next.js incremental build cache
-web/tsconfig.tsbuildinfo
+# next.js incremental build cache. Matched by name, not by path, so the next
+# time a directory moves this does not silently start tracking it again.
+*.tsbuildinfo
+
+# subagent-driven-development scratch (plans, ledgers, task briefs/reports)
+.superpowers/
+
+# Playwright MCP session scratch (screenshots, console logs, page snapshots)
+.playwright-mcp/

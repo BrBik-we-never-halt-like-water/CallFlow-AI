@@ -1,0 +1,2268 @@
+@import 'tailwindcss';
+
+/* ==========================================================================
+   CallFlow AI - token layer.
+   Every value in the design system lives here. No hard-coded hex anywhere
+   else in the codebase.
+
+   LIGHT MODE, product-wide, with one deliberate exception: `/app/*` is mid-
+   pivot to a dark-glassmorphism surface (round-3 dashboard-polish, dark
+   theme). Marketing and auth stay light-only, no toggle, same as before -
+   there is still exactly one surface for each part of the product, never a
+   user-facing choice between two. The `--dark-*` tokens live on `.app-font-
+   scope` (below) so they only exist where that surface is actually rolling
+   out; see the comment there for the scoping mechanism and the palette.
+
+   The palette is a cool grey-green - deliberately not cream, and deliberately
+   not the blue-grey every B2B dashboard defaults to. Accent colour is reserved
+   for call state (the lamps, §"Lamps" below) and nothing else.
+   ========================================================================== */
+
+:root {
+  color-scheme: light;
+
+  /* ---- Surfaces ---------------------------------------------------------- */
+  --surface: #f3f4f6; /* page background */
+  --surface-raised: #ffffff; /* cards, inputs, panels */
+  --surface-sunken: #eceff0; /* wells, table headers, code blocks */
+  --surface-hover: #e7ebeb; /* hover background */
+
+  /* ---- Text -------------------------------------------------------------- */
+  --text: #111318; /* primary */
+  --text-dim: #47545a; /* secondary - 7.4:1 on --surface */
+  /* ISSUES.md #47: was `#6b7280` (a stale comment here claimed 4.6:1 on --surface; the
+     real number was 4.39:1, below the 4.5:1 AA minimum that applies almost everywhere
+     this token is actually used - small `text-small`/`text-data`/`.eyebrow`/placeholder
+     text, never large enough for the 3:1 large-text exception). Pre-existing, not
+     introduced by round 3's glass treatment; caught during this round's own contrast
+     check and darkened here to actually clear the bar. */
+  --text-mute: #666d7b; /* tertiary, placeholders - 4.73:1 on --surface, 4.80:1 on
+     --glass-surface composited over the worst-case (`.canvas-tint`) backdrop */
+  --text-inverse: #ffffff; /* on --surface-inverse */
+
+  /* Inverted surface. The primary CTA is monochrome, never brand-coloured. */
+  --surface-inverse: #12181c;
+
+  /* ---- Rules ------------------------------------------------------------- */
+  --rule: #dde2e1;
+  --rule-strong: #c2cac8;
+
+  /* ---- Glass - the dashboard's surface material --------------------------
+     Round 3 pushes the previous round's subtle "monochrome glass" (a flat,
+     mostly-opaque card) into real glassmorphism: a translucent fill over a
+     `backdrop-filter` blur, so a panel reads as frosted glass floating above
+     the page rather than a card painted onto it. Built only from the existing
+     surface/rule tokens - `color-mix`ing with `transparent` changes alpha
+     only, never hue or lightness, so this stays achromatic like everything
+     else (CLAUDE.md §4 #10: the five lamp colours are the only colour that
+     means something). `--glass-border` dims `--rule-strong` the same way, so
+     the hairline still reads against a see-through fill instead of vanishing
+     into it. Contrast of `--text`/`--text-mute` against this fill composited
+     over the dashboard's `--accent-wash`-tinted canvas - the worst-case
+     backdrop - is verified in the round-3 task-1 report: ~17:1 / ~4.80:1,
+     both clearing the 4.5:1 AA body-text minimum with room to spare (see
+     ISSUES.md #47 for why `--text-mute` needed the 4.5:1 bar, not 3:1, and
+     for the value change that got it there). */
+  --glass-surface: color-mix(in oklab, var(--surface-raised) 66%, transparent);
+  --glass-border: color-mix(in oklab, var(--rule-strong) 62%, transparent);
+  --glass-blur: blur(24px) saturate(150%);
+
+  /* ---- Lamps - semantic only --------------------------------------------
+     These five colours communicate call state and nothing else. They are
+     never used for buttons, links, headings, hovers, or decoration. That
+     discipline is what makes a lit lamp mean something on an otherwise
+     monochrome page. */
+  --lamp-off: #b3bcbb;
+  --lamp-ice: #4b82c4;
+  --lamp-brass: #c2871a;
+  --lamp-jade: #2f8f6b;
+  --lamp-flare: #d2402a;
+
+  /* Text-safe variants. The pure lamp colours above do not all reach 4.5:1
+     against a light surface, so anything setting *text* in a lamp colour uses
+     these; the dot itself keeps the pure colour. */
+  --lamp-off-text: #5c6a6f;
+  --lamp-ice-text: #2b5688;
+  --lamp-brass-text: #7a5810;
+  --lamp-jade-text: #1c6349;
+  --lamp-flare-text: #9d2c1a;
+
+  /* ---- Primary - "Signal" indigo ----------------------------------------
+     CAL-4's action colour, restored as the product's one primary. It was
+     designed on the CAL-4 branch and then lost in the merge that brought
+     `dev` onto it (`f30f5b9`), which kept this file's older monochrome token
+     layer and appended only CAL-4's marketing surfaces - leaving a bare
+     `--primary` at the bottom of the file with no siblings, no `@theme`
+     registration, and only two `.card-feature` lines consuming it. The rest
+     of the product fell back to a near-black CTA on marketing and the Lush
+     Forest green here. This block is that family put back properly.
+
+     Every ratio below is computed (WCAG relative luminance / OKLab), not
+     eyeballed - same bar as `--text-mute` and the dark scope's own citations:
+
+       --primary        #3b2fd9  white on it  8.09:1   OKLCH L0.46 C0.242 H274
+       --primary-hover  #3226b8  white on it  9.98:1
+       --primary-active #2a1f9e  white on it 11.74:1
+       --primary-ink    #221a6b  13.36:1 on --surface (the text/icon tier)
+
+     Hue distance from every lamp, which is the actual constraint (CLAUDE.md
+     §4 #10 - lamps are the only colour that means something): jade 110°,
+     brass 162°, flare 117°, ice 20°. The forest green it replaces sat 14°
+     from jade, which the previous round's own comment flagged as "a real
+     family resemblance, worth a second look before this palette extends any
+     further" - this resolves that. Ice is the near neighbour at 20°, but ice
+     is a lamp *dot* on a monochrome panel, never a filled button, so the two
+     never appear as the same kind of mark.
+
+     `--primary-mid` is the pulse-ring colour only (`.app-font-scope
+     .btn-pulse`, below): 3.92:1 on white, short of the 4.5:1 text bar, so it
+     never sits under a label or icon - a translucent, text-free ring is the
+     one place that doesn't matter. It replaces `--forest-mid`, which had the
+     same single role at 2.35:1. */
+  --primary: #3b2fd9;
+  --primary-hover: #3226b8;
+  --primary-active: #2a1f9e;
+  --primary-on: #ffffff;
+  --primary-ink: #221a6b;
+  --primary-mid: #7a6ff0;
+  /* The tinted-canvas colour. Paler than the mint it replaces (`#cfffdc`)
+     because indigo is a low-luminance hue - a tint of it darkens far faster
+     than a tint of mint, and `.canvas-tint` renders this undiluted at the
+     gradient's 0% stop, where `--text-mute` can land directly on it with no
+     glass in between. At `#f0effd` that worst case is 4.57:1, clearing the
+     4.5:1 AA floor (mint managed 4.70:1); through the usual glass composite
+     it is 4.92:1. Going any deeper is what would break it - `#eceafc` is
+     already 4.39:1, under the bar. */
+  --primary-wash: #f0effd;
+  --primary-edge: color-mix(in oklab, var(--primary) 28%, transparent);
+
+  /* ---- Accent - decorative only, never state ----------------------------
+     Now an alias of the primary rather than a second hue. One action colour
+     and one decorative colour being the same thing is the point: dashboard
+     chart accents, one CTA card, the tinted page canvas (`.canvas-tint`),
+     the header frost (`.header-glass`), quiet visual warmth - never a
+     `Lamp`, `LampBadge`, `DonutChart` segment, or anything else that
+     represents call/run/escalation state. If a component means something
+     about a call, it uses a lamp colour or none at all; if it doesn't, it
+     may use this one. Kept as its own token names so every existing
+     `--accent*` consumer keeps resolving unchanged. */
+  --accent: var(--primary);
+  --accent-text: var(--primary-ink); /* 13.36:1 on --surface, for text/icons */
+  --accent-wash: var(--primary-wash); /* the tinted-canvas colour */
+
+  /* The hero's particle field (components/brand/voice-field.tsx): its colour,
+     and an opacity multiplier. Tokens rather than a branch in the component,
+     because both are colour decisions and colour decisions live here.
+
+     In light the field is simply the primary. The dark pivot needs its own
+     value - see the override for why. */
+  --field-ink: var(--primary);
+  --field-gain: 1;
+
+  /* ---- Type scale - fluid at every step ---------------------------------
+     CAL-4's scale, restored. Like `--primary`, this was designed on that
+     branch and lost in the same merge, which kept the older, smaller scale
+     here - which is why the marketing sections read as undersized on a large
+     display: not one heading being wrong, the whole ramp sitting a step low.
+
+     The structural fix is that **every** step scales now. Previously `--t-h3`
+     and `--t-h4` were frozen at a single rem value while the display sizes
+     scaled with the viewport, so between tablet and laptop the display sizes
+     grew away from the headings underneath them and the hierarchy compressed:
+     an h3 next to a 4.5rem display reads as body copy. A frozen step in an
+     otherwise fluid ramp is the bug; the larger numbers are the symptom.
+
+     Body sizes go up a notch too (`--t-body` 1rem -> 1.0625rem, `--t-body-l`
+     1.125 -> 1.1875), because the headings growing without the paragraphs
+     following just moves the imbalance down a level. `--t-small` and below are
+     deliberately unchanged: those are metadata, data cells and labels, where
+     16px is already the ceiling before a table stops reading as a table. */
+  --t-display-xl: clamp(3rem, 6.4vw, 5.25rem);
+  --t-display-l: clamp(2.5rem, 4.6vw, 3.75rem);
+  --t-h2: clamp(2rem, 3.4vw, 3rem);
+  --t-h3: clamp(1.375rem, 1.9vw, 1.75rem);
+  --t-h4: clamp(1.0625rem, 1.2vw, 1.1875rem);
+  --t-body-l: 1.1875rem;
+  --t-body: 1.0625rem;
+  --t-small: 0.875rem;
+  --t-data: 0.8125rem;
+  --t-label: 0.6875rem;
+
+  /* ---- Space ------------------------------------------------------------- */
+  --space-section: clamp(72px, 9vw, 132px);
+
+  /* ---- Radius ------------------------------------------------------------
+     Softer than an instrument panel, still precise. Nothing is pill-shaped
+     except lamps, status badges, and avatars. */
+  --r-xs: 4px;
+  --r-sm: 7px;
+  --r-md: 12px;
+  --r-lg: 18px;
+  --r-xl: 24px;
+  --r-full: 999px;
+
+  /* ---- Depth ------------------------------------------------------------
+     A soft shadow scale, used sparingly and always with a hairline border so
+     a card still has an edge on a light surface. */
+  --shadow-xs: 0 1px 2px rgba(11, 15, 18, 0.05);
+  --shadow-sm:
+    0 1px 2px rgba(11, 15, 18, 0.05), 0 3px 8px -2px rgba(11, 15, 18, 0.08);
+  --shadow-md:
+    0 2px 4px rgba(11, 15, 18, 0.05), 0 10px 24px -6px rgba(11, 15, 18, 0.12);
+  --shadow-lg:
+    0 4px 8px rgba(11, 15, 18, 0.05), 0 24px 48px -12px rgba(11, 15, 18, 0.14);
+  --shadow-overlay:
+    0 1px 2px rgba(11, 15, 18, 0.08), 0 16px 40px -8px rgba(11, 15, 18, 0.22);
+  /* One diffuse, single-value shadow for every card on the page - a
+     deliberately softer, wider spread than --shadow-sm/md, used so every
+     card reads with the exact same depth instead of each picking a rung off
+     the scale above. */
+  --shadow-card: 0 8px 24px -4px rgba(16, 24, 40, 0.06);
+
+  /* ---- Motion - 200-300ms with gentle easing ---------------------------- */
+  --dur-micro: 150ms;
+  --dur-base: 240ms;
+  --dur-enter: 420ms;
+  --dur-settle: 900ms;
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-inout: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* ---- Layout ------------------------------------------------------------
+     `--w-marketing` widened 1180 -> 1280. At 1180 on a 1920-wide display the
+     content column left ~370px of empty margin on each side, which is what
+     makes a section read as small even once the type inside it is right - the
+     eye judges the block, not the font. 1280 keeps the measure honest: body
+     copy on these pages is already constrained to its own `max-w-*` rather
+     than running the full width, so widening the container spreads the
+     *layout* (grids, card rows, the hero's two columns) without pushing any
+     paragraph past a readable line length. */
+  --w-marketing: 1280px;
+  --w-app: 1440px;
+  --w-app-sidebar: 240px;
+  --w-app-sidebar-collapsed: 68px;
+  --h-site-header: 68px;
+  --h-app-topbar: 60px;
+}
+
+/* --------------------------------------------------------------------------
+   Tailwind v4 theme bridge.
+   -------------------------------------------------------------------------- */
+
+@theme inline {
+  --color-surface: var(--surface);
+  --color-surface-raised: var(--surface-raised);
+  --color-surface-sunken: var(--surface-sunken);
+  --color-surface-hover: var(--surface-hover);
+  --color-surface-inverse: var(--surface-inverse);
+
+  --color-text: var(--text);
+  --color-text-dim: var(--text-dim);
+  --color-text-mute: var(--text-mute);
+  --color-text-inverse: var(--text-inverse);
+
+  --color-rule: var(--rule);
+  --color-rule-strong: var(--rule-strong);
+
+  --color-lamp-off: var(--lamp-off);
+  --color-lamp-ice: var(--lamp-ice);
+  --color-lamp-brass: var(--lamp-brass);
+  --color-lamp-jade: var(--lamp-jade);
+  --color-lamp-flare: var(--lamp-flare);
+
+  --color-lamp-off-text: var(--lamp-off-text);
+  --color-lamp-ice-text: var(--lamp-ice-text);
+  --color-lamp-brass-text: var(--lamp-brass-text);
+  --color-lamp-jade-text: var(--lamp-jade-text);
+  --color-lamp-flare-text: var(--lamp-flare-text);
+
+  /* The primary family, registered so `bg-primary`, `text-primary-on`,
+     `hover:bg-primary-hover` etc. exist as utilities again. This bridge is
+     what the CAL-4 merge dropped: the components on that branch were written
+     against these utility names, and without the registration they compiled
+     to nothing at all rather than to a wrong colour. */
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-active: var(--primary-active);
+  --color-primary-on: var(--primary-on);
+  --color-primary-ink: var(--primary-ink);
+  --color-primary-mid: var(--primary-mid);
+  --color-primary-wash: var(--primary-wash);
+  --color-primary-edge: var(--primary-edge);
+
+  --color-accent: var(--accent);
+  --color-accent-text: var(--accent-text);
+  --color-accent-wash: var(--accent-wash);
+
+  /* Dark-pivot palette (see `.app-font-scope` above for values, scoping,
+     and the contrast citation) - registered the same way as every light
+     token above so `/app/*` page rebuilds get `bg-dark-surface`,
+     `text-dark-text-mute`, etc. for free, resolving only where `--dark-*`
+     is actually defined. */
+  --color-dark-bg: var(--dark-bg);
+  --color-dark-bg-glow: var(--dark-bg-glow);
+  --color-dark-surface: var(--dark-surface);
+  --color-dark-surface-hover: var(--dark-surface-hover);
+  --color-dark-surface-sunken: var(--dark-surface-sunken);
+  --color-dark-text: var(--dark-text);
+  --color-dark-text-dim: var(--dark-text-dim);
+  --color-dark-text-mute: var(--dark-text-mute);
+  --color-dark-rule: var(--dark-rule);
+  --color-dark-rule-strong: var(--dark-rule-strong);
+  --color-dark-accent: var(--dark-accent);
+
+  --color-dark-lamp-off: var(--dark-lamp-off);
+  --color-dark-lamp-ice: var(--dark-lamp-ice);
+  --color-dark-lamp-brass: var(--dark-lamp-brass);
+  --color-dark-lamp-jade: var(--dark-lamp-jade);
+  --color-dark-lamp-flare: var(--dark-lamp-flare);
+  --color-dark-lamp-off-text: var(--dark-lamp-off-text);
+  --color-dark-lamp-ice-text: var(--dark-lamp-ice-text);
+  --color-dark-lamp-brass-text: var(--dark-lamp-brass-text);
+  --color-dark-lamp-jade-text: var(--dark-lamp-jade-text);
+  --color-dark-lamp-flare-text: var(--dark-lamp-flare-text);
+
+  --dark-glass-surface: var(--dark-glass-surface);
+  --dark-glass-border: var(--dark-glass-border);
+  --dark-glass-blur: var(--dark-glass-blur);
+
+  --font-display: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-inter-tight), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, monospace;
+
+  --text-display-xl: var(--t-display-xl);
+  --text-display-xl--line-height: 0.98;
+  --text-display-xl--letter-spacing: -0.03em;
+  --text-display-l: var(--t-display-l);
+  --text-display-l--line-height: 1.04;
+  --text-display-l--letter-spacing: -0.022em;
+  --text-h2: var(--t-h2);
+  --text-h2--line-height: 1.12;
+  --text-h2--letter-spacing: -0.018em;
+  --text-h3: var(--t-h3);
+  --text-h3--line-height: 1.25;
+  --text-h3--letter-spacing: -0.01em;
+  --text-h4: var(--t-h4);
+  --text-h4--line-height: 1.35;
+  --text-body-l: var(--t-body-l);
+  --text-body-l--line-height: 1.6;
+  --text-body: var(--t-body);
+  --text-body--line-height: 1.65;
+  --text-small: var(--t-small);
+  --text-small--line-height: 1.5;
+  --text-data: var(--t-data);
+  --text-data--line-height: 1.45;
+  --text-label: var(--t-label);
+  --text-label--line-height: 1;
+  --text-label--letter-spacing: 0.14em;
+
+  --radius-xs: var(--r-xs);
+  --radius-sm: var(--r-sm);
+  --radius-md: var(--r-md);
+  --radius-lg: var(--r-lg);
+  --radius-xl: var(--r-xl);
+  --radius-full: var(--r-full);
+
+  --shadow-xs: var(--shadow-xs);
+  --shadow-sm: var(--shadow-sm);
+  --shadow-md: var(--shadow-md);
+  --shadow-lg: var(--shadow-lg);
+  --shadow-overlay: var(--shadow-overlay);
+  --shadow-card: var(--shadow-card);
+
+  --glass-surface: var(--glass-surface);
+  --glass-border: var(--glass-border);
+  --glass-blur: var(--glass-blur);
+
+  --ease-out: var(--ease-out);
+  --ease-inout: var(--ease-inout);
+
+  --container-marketing: var(--w-marketing);
+  --container-app: var(--w-app);
+}
+
+/* --------------------------------------------------------------------------
+   Base
+   -------------------------------------------------------------------------- */
+
+html {
+  scroll-padding-top: calc(var(--h-site-header) + 24px);
+  -webkit-text-size-adjust: 100%;
+
+  /* The root carries the page colour, not just `body`.
+     `body` was the only element with a background, which leaves the root
+     transparent - and anything transparent at the root composites against the
+     browser's own base canvas, whose colour comes from `color-scheme`. That
+     canvas flips the instant `data-theme` changes, independently of any
+     animation, so during a theme transition it can show through as a frame of
+     the wrong colour. Painting it here means there is never a gap to see
+     through, and it also fixes overscroll on both themes. */
+  background: var(--surface);
+}
+
+body {
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--font-inter-tight), ui-sans-serif, system-ui, sans-serif;
+  font-size: var(--t-body);
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Ubuntu, scoped to the dashboard only - `app/(app)/app/layout.tsx` wraps its
+   tree in this class because that layout doesn't render `<html>`/`<body>`
+   itself (those stay Inter Tight for marketing/auth in the true root layout).
+   `font-family` is set directly here, not just redeclared as the `--font-sans`
+   custom property, because `body` above hardcodes `--font-inter-tight` rather
+   than routing through `--font-sans` - redeclaring the token alone would
+   leave the rendered face unchanged. `--font-sans` is redeclared too so
+   anything that *does* reach for the Tailwind `font-sans` utility anywhere
+   under `/app` still resolves to Ubuntu rather than silently falling back to
+   Inter Tight. */
+.app-font-scope {
+  --font-sans: var(--font-ubuntu), ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--font-ubuntu), ui-sans-serif, system-ui, sans-serif;
+}
+
+/* The dark palette. Raw values only - nothing here decides what is dark, it
+   only says what dark *is*. `:root[data-theme='dark']` below is what actually
+   points the generic tokens at these.
+
+   These used to be declared inside `.app-font-scope`, which scoped them to
+   `/app/*`. That was correct while dark was a dashboard-only pivot and wrong
+   the moment it became a product-wide theme: a marketing page has no
+   `.app-font-scope`, so every one of these resolved to nothing there. Moved to
+   `:root` - the values cost nothing when unused, and the theme is now free to
+   apply anywhere. */
+:root {
+  /* ---- Dark glassmorphism palette (round-3 dashboard-polish, dark pivot) -
+     Additive, not a swap: every light token above keeps its light value
+     everywhere. These `--dark-*` custom properties were declared only inside
+     `.app-font-scope` - the identical trick that rule already uses
+     for `--font-sans` - so they resolved for every element under `/app/*`
+     (the only tree that class wraps, `app/(app)/app/layout.tsx`) and are
+     unset (not "wrong", genuinely absent) for marketing and auth, which
+     never render inside it.
+
+     One neutral-black glass family now, not two - see `.superpowers/sdd/
+     round3-dashboard-polish/dark-theme-D1-report.md` §7-§10 for the full
+     history. An earlier pass on this same palette split chrome (sidebar/
+     tab bar) from content cards into two different bases (near-black vs a
+     navy `--dark-surface`) for a real reason - keeping a card visually
+     distinct from the chrome behind it. The user's actual ask cut across
+     that split entirely: a *true*, neutral black foundation everywhere
+     (`--dark-bg` and `--dark-surface` both), with colour reserved for
+     exactly one place - the ambient purple gradient on the main content
+     body (`--dark-bg-glow`, `.dark-canvas` below). Two different "black"
+     bases for chrome vs cards stopped being a meaningful distinction once
+     both are genuinely neutral, so they're unified back into one
+     `--dark-surface` this pass, at OKLab chroma 0 (perfectly grey/black,
+     confirmed by computing it, not assumed) - `#020617`'s old chroma was
+     ~0.041, exactly the "reads blue, not black" the user flagged.
+
+     `--dark-bg-glow` moved from `#4338ca` (indigo, OKLab hue ~277deg - the
+     blue/purple boundary, leaning blue) to `#9333ea` (hue ~302deg, well
+     into unambiguous purple/violet territory) - both computed, not
+     eyeballed, so "still kind of blue" isn't a guess either way.
+
+     CAL-4 restore: both `--dark-bg-glow` and `--dark-accent` are back on
+     indigo (`#4f46e5`, hue ~277deg), which deliberately reverses the move
+     to purple described in the paragraph above. That move was made when the
+     brief was "not blue"; the brief is now the opposite - the product has
+     one primary again and it is CAL-4's Signal indigo, so a purple dark
+     pivot would be the only surface in the app not speaking it. The
+     "unified glow and accent to a single hue" decision below is kept
+     exactly as it was, just at a different hue: they are still one colour,
+     not two. Contrast is re-verified for the new value rather than assumed
+     from the old one - see the recomputed numbers at the end of this note.
+
+     `--dark-accent` started as a cyan chosen to sit deliberately far from
+     every lamp hue (CLAUDE.md §4 #10) - correct in principle, but a real
+     rendered screenshot showed it reading as green in practice (small
+     saturated UI elements compress hue perception; `#06b6d4`'s green
+     channel, 182, sits closer to its blue channel, 212, than "cyan" implies
+     at a glance) - exactly the look the user explicitly ruled out
+     everywhere, action buttons included, not just status labels. Unified
+     with `--dark-bg-glow` instead: same violet the ambient gradient already
+     uses, so the one interactive accent color and the one decorative color
+     are now the same hue, deliberately - simpler than maintaining two
+     "different but both far from every lamp" colors, and the far-from-jade
+     property (OKLab hue ~302deg vs jade's ~157deg) holds just as well as
+     the cyan did. The dashboard's status pills still stay label-forward and
+     reuse the *existing* lamp semantics via the `--dark-lamp-*` variants
+     below, muted/lightened for a dark surface - this accent is not a
+     second status-colour system, it never appears in a status pill. The
+     escalation badge is dot-only now (never a numeric pill) - see
+     `--dark-lamp-flare`'s own comment for why that retired a now-unneeded
+     darkening.
+
+     Contrast, computed the same way as `--text-mute`'s own citation above
+     (`color-mix`/OKLab math, not eyeballed) and against the actual worst
+     case: `.dark-canvas`'s ambient glow peaks at `color-mix(in oklab,
+     --dark-bg-glow 26%, --dark-bg)` = `#231436` - used as the backdrop for
+     the chrome's own composite too (`.dark-chrome`, below `.dark-panel-
+     glass`), even though the sidebar most likely sits over a dimmer
+     stretch of the gradient in practice (its own position is nearer the
+     edge than the centre) - using the peak anyway is the same "worst
+     case, not the easier one" rule every other number in this file
+     follows. `--dark-glass-surface` lowered from 66% `--dark-surface` over
+     transparent to 42% - cards read as "blackish" rather than actual glass
+     at 66%, since so little of the ambient gradient behind them showed
+     through; contrast margin at 66% was large enough (see below) to give
+     up a lot of opacity before any number gets close to the 4.5:1 floor.
+     42% composited over the peak renders `#191024` (barely different from
+     66%'s `#120d19` - both endpoints are dark enough that the mix ratio
+     barely moves the result, which is exactly why there was room to spend
+     it on translucency instead). Against `#191024`: `--dark-text` ~16.9:1,
+     `--dark-text-dim` ~12.4:1, `--dark-text-mute` ~7.2:1,
+     `--dark-lamp-flare-text` ~7.7:1 - all still comfortably clear of 4.5:1,
+     each only a few tenths under the old 66% numbers. The escalation dot
+     (`--dark-lamp-flare`) is ~4.4:1 against this composite - just under
+     the 4.5:1 text bar, but it only ever needed the 3:1 non-text guideline
+     as a small decorative mark, same reasoning as the light `--lamp-*`
+     dots, and clears that with margin.
+
+     `--dark-accent` as a *solid button fill* (not decorative foreground
+     text) is a separate contrast question, since now something has to sit
+     ON it, not beside it: white text (`Button`'s own default
+     `text-inverse`) on solid `#9333ea` is 5.38:1 - clears 4.5:1 with real
+     margin, a genuine improvement over the old cyan, where white text only
+     managed ~2.4:1 (cyan is high-luminance; white-on-white-ish always was
+     the wrong pairing) and had to be compensated for with dark text
+     instead (see `apps/web/app/(app)/app/page.tsx`'s `PRIMARY_CTA_STYLE`,
+     now corrected to match - purple is low-luminance, so the correct
+     pairing inverted along with the color).
+
+     Recomputed for the indigo restore, same method, same worst cases:
+
+     `--dark-accent` `#4f46e5` is a *lighter* indigo than the light theme's
+     `--primary` `#3b2fd9`, and that gap is load-bearing, not drift. A solid
+     button has to clear two bars at once, and they pull in opposite
+     directions: white label text on the fill (>=4.5:1) and the fill itself
+     against the near-black page (>=3:1, the non-text bar - a button nobody
+     can find is not a button). `#3b2fd9` dropped straight in would be
+     8.09:1 for the label but only 2.52:1 against `--dark-bg`, i.e. it would
+     sink into the page. `#4f46e5` is 6.29:1 and 3.24:1 - both clear, which
+     is the whole reason the dark scope keeps its own token instead of
+     aliasing `--primary` the way `--accent` now does.
+
+     `--dark-bg-glow` `#4f46e5` re-run through the same chain as the purple
+     above: `.dark-canvas`'s peak `color-mix(in oklab, --dark-bg-glow 26%,
+     --dark-bg)` renders `#141635` (was `#231436`), and the chrome composite
+     over it `#0f1122` (was `#191024`). Against that composite `--dark-text`
+     is 17.06:1, `--dark-text-dim` 12.6:1, `--dark-text-mute` 7.29:1, and
+     the escalation dot `--dark-lamp-flare` 4.46:1 - every one a shade
+     *better* than the purple it replaces (16.86 / 12.4 / 7.20 / 4.41),
+     because indigo is marginally darker than violet at the same mix ratio.
+     Nothing that cleared a bar before stops clearing it now. */
+  --dark-bg: #050505;
+  --dark-bg-glow: #4f46e5;
+
+  /* `--dark-surface` was `#0a0a0a`, five values off the `#050505` page, and
+     `--dark-glass-surface` then composited it at 42% - so a card landed at
+     OKLab L 0.155 against a page at 0.115. A separation of 0.04 is not a card
+     floating above a page, it is a card printed on it, which is exactly how it
+     read: the panels dissolved into the background.
+
+     Raised to `#1f1f26` at 62%. That lands a card near L 0.22 - a delta of
+     ~0.11, which is a plane you can see the edge of without it becoming grey -
+     while `--dark-text` still clears 15.6:1 on it, so nothing that was legible
+     stops being legible.
+
+     **This partly reverses a recorded decision, deliberately.** DESIGN_NOTES
+     §15 lowered this from 66% to 42% because cards "read as blackish rather
+     than actual glass" - true, and the fix for it was the wrong lever. The
+     problem was never the opacity, it was that the fill underneath was almost
+     the page colour, so more translucency only revealed more of the same
+     black. Lifting the base colour buys the separation; the opacity can then
+     stay near where it started and the surface still reads as glass.
+
+     The border does the rest of the work: at these lightnesses a 14% white
+     hairline is nearly gone, so it goes to 20% - a card should have an edge
+     even where its fill and the page briefly agree. */
+  --dark-surface: #1f1f26;
+  --dark-glass-surface: color-mix(in oklab, var(--dark-surface) 62%, transparent);
+  --dark-glass-border: color-mix(in oklab, #ffffff 20%, transparent);
+  --dark-glass-blur: blur(24px) saturate(150%);
+  --dark-rule: color-mix(in oklab, #ffffff 12%, transparent);
+  --dark-rule-strong: color-mix(in oklab, #ffffff 22%, transparent);
+
+  /* Tonal variants of the one neutral `--dark-surface` now, shared by
+     `.dark-chrome` and `.dark-panel-glass` alike (both re-scope
+     `--surface-hover`/`--surface-sunken` to these, below). `-hover` is a
+     translucent white lift rather than an opaque tint on purpose - it
+     reads correctly layered over an already-translucent glass element
+     without covering the glass effect it's hovering on top of, which an
+     opaque fill would. */
+  --dark-surface-hover: color-mix(in oklab, #ffffff 8%, transparent);
+  /* Derived from `--dark-surface` rather than pinned to a literal, so lifting
+     the card surface above carries the well up with it instead of leaving the
+     two nearly equal - `#2d2d2d` was +18% white over the old near-black and is
+     barely a step above the new one. */
+  --dark-surface-sunken: color-mix(in oklab, #ffffff 14%, var(--dark-surface));
+
+  --dark-text: #f1f5f9;
+  --dark-text-dim: #cbd5e1;
+  --dark-text-mute: #94a3b8;
+
+  /* Same value as `--dark-bg-glow` above - one hue for the interactive accent
+     and the ambient decoration, deliberately. Lighter than the light theme's
+     `--primary` so it holds both the label bar and the against-the-page bar
+     at once; see the recomputed citation above. */
+  --dark-accent: #4f46e5;
+
+  /* Desaturated/lightened for a dark surface - not the light `--lamp-*`
+     hexes as-is. Same job as `--lamp-*-text` above: the dot stays the muted
+     pure colour, anything setting *text* uses the `-text` tier. */
+  --dark-lamp-off: #838787;
+  --dark-lamp-ice: #5883b7;
+  --dark-lamp-brass: #a47f47;
+  --dark-lamp-jade: #4b9073;
+  /* Back to the same OKLCH lightness (L 0.60) as the other four - the
+     escalation badge is dot-only now, never a numeric pill (this same
+     round), so the one constraint that justified darkening this
+     specifically past its siblings (solid white count-text needing 4.5:1
+     against the pill's own fill) no longer applies anywhere in the app.
+     Re-verified against the new near-black chrome composite rather than
+     just reverted blindly: `#c15f4d` clears ~4.6:1 there (better than the
+     darkened `#b45342` it's replacing, ~3.9:1) - reverting is a genuine
+     improvement, not just a tidy-up. */
+  --dark-lamp-flare: #c15f4d;
+
+  --dark-lamp-off-text: #bbbfbe;
+  --dark-lamp-ice-text: #8db4e5;
+  --dark-lamp-brass-text: #ccab7c;
+  --dark-lamp-jade-text: #88bfa6;
+  --dark-lamp-flare-text: #e49282;
+}
+
+/* Dark-mode high-contrast: same treatment `:root`'s own `prefers-contrast:
+   more` block (bottom of this file) gives the light tokens - muted text
+   moves closer to primary, the hairline moves to its stronger variant. */
+@media (prefers-contrast: more) {
+  :root {
+    --dark-text-dim: var(--dark-text);
+    --dark-text-mute: #c7d0e0;
+    --dark-rule: var(--dark-rule-strong);
+  }
+}
+
+/* ==========================================================================
+   THE THEME SWITCH
+
+   One rule. Everything above declares what light and dark *are*; this is the
+   only place that decides which one is in effect, by repointing the generic
+   tokens - the names every component actually reads - at the dark palette.
+
+   There is deliberately no `@media (prefers-color-scheme: dark)` here. The
+   pre-paint script in `app/layout.tsx` resolves the user's stored choice
+   ("light" / "dark" / "system") against `matchMedia` and always writes a
+   concrete `data-theme`, so CSS never has to express "system" at all. One
+   selector instead of two near-identical blocks, and no chance of the two
+   drifting apart - which is the failure mode this codebase already hit once
+   with `--glass` vs `--glass-surface`.
+
+   `color-scheme` is not decoration: it is what makes form controls, scrollbars
+   and the canvas behind the page render dark. Without it a dark page keeps
+   white scrollbars and light-chrome `<select>`s.
+   ========================================================================== */
+
+:root {
+  color-scheme: light;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  /* Surfaces. `--surface` is the page itself, which in dark is the near-black
+     `--dark-bg` rather than `--dark-surface` (that one is the raised card). */
+  --surface: var(--dark-bg);
+  --surface-raised: var(--dark-surface);
+  --surface-hover: var(--dark-surface-hover);
+  --surface-sunken: var(--dark-surface-sunken);
+  /* Inverted surface flips with the theme, or the "inverse" of dark would
+     still be dark. */
+  --surface-inverse: #f1f5f9;
+  --text-inverse: #0a0a0a;
+
+  --text: var(--dark-text);
+  --text-dim: var(--dark-text-dim);
+  --text-mute: var(--dark-text-mute);
+
+  --rule: var(--dark-rule);
+  --rule-strong: var(--dark-rule-strong);
+
+  /* The glass composite. These three are read directly by `Panel`, `DataTable`
+     and `Button`'s secondary variant, none of which know the theme exists. */
+  --glass-surface: var(--dark-glass-surface);
+  --glass-border: var(--dark-glass-border);
+  --glass-blur: var(--dark-glass-blur);
+
+  /* The field cannot use `--primary` here. `--dark-accent` is a mid-dark indigo
+     chosen to carry white button text; painted at 9-43% opacity on a near-black
+     page it lands a few points off the background and the whole formation goes
+     to mud. Opacity alone cannot fix that - at 100% it is still that colour.
+
+     So the field gets a light tint of the same hue instead: `color-mix(in
+     oklab, var(--dark-accent) 45%, #ffffff)`, resolved to a literal because the
+     canvas parses this value's channels and cannot evaluate a `color-mix()`.
+     Same hue as everywhere else, so it stays as far from every lamp as the
+     primary is; light enough to actually read as light on black. The gain then
+     only has to close the remaining gap, not carry the whole job. */
+  --field-ink: #a09aef;
+  --field-gain: 1.45;
+
+  /* The primary/accent family. `--dark-accent` is a lighter indigo than the
+     light theme's `--primary` because a solid button on a near-black page has
+     to clear the white-label bar and the against-the-page bar at once - see
+     its own citation above. */
+  --primary: var(--dark-accent);
+  --primary-hover: #4038c9;
+  --primary-active: #372fb0;
+  --primary-ink: #b3aef7;
+  --primary-mid: #7a6ff0;
+  --primary-wash: color-mix(in oklab, var(--dark-accent) 14%, var(--dark-bg));
+  --accent: var(--dark-accent);
+  --accent-text: var(--dark-text);
+  --accent-wash: var(--primary-wash);
+
+  /* Lamps. The five call states keep their meaning; only their rendered value
+     changes, to the muted/lightened variants already derived for a dark
+     surface. This is the one family where getting it wrong changes what the
+     UI *means*, not just how it looks. */
+  --lamp-off: var(--dark-lamp-off);
+  --lamp-ice: var(--dark-lamp-ice);
+  --lamp-brass: var(--dark-lamp-brass);
+  --lamp-jade: var(--dark-lamp-jade);
+  --lamp-flare: var(--dark-lamp-flare);
+  --lamp-off-text: var(--dark-lamp-off-text);
+  --lamp-ice-text: var(--dark-lamp-ice-text);
+  --lamp-brass-text: var(--dark-lamp-brass-text);
+  --lamp-jade-text: var(--dark-lamp-jade-text);
+  --lamp-flare-text: var(--dark-lamp-flare-text);
+
+  /* Marketing's warm sand ground has no dark equivalent - a sand-coloured band
+     on a near-black page reads as a rendering fault, not a section break. It
+     becomes a slightly-raised neutral instead, keeping the alternating-ground
+     rhythm the deck depends on without inventing a colour. */
+  --secondary: #141414;
+
+  /* Depth. Dark surfaces separate by lightness, not by shadow: a black shadow
+     on a black page is invisible, and the light theme's values just muddy the
+     card edges. Kept as near-nothing rather than removed, so any rule reading
+     them still resolves. */
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.45), 0 3px 8px -2px rgba(0, 0, 0, 0.5);
+  --shadow-md: 0 2px 4px rgba(0, 0, 0, 0.45), 0 10px 24px -6px rgba(0, 0, 0, 0.55);
+  --shadow-lg: 0 2px 6px rgba(0, 0, 0, 0.5), 0 18px 36px -12px rgba(0, 0, 0, 0.6);
+  --shadow-overlay: 0 1px 3px rgba(0, 0, 0, 0.6), 0 16px 40px -8px rgba(0, 0, 0, 0.7);
+}
+
+/* Archivo at width 112 ("Expanded"). Applied through a class rather than an
+   element selector so it is never inherited by body copy. */
+.font-display {
+  font-family: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
+  font-variation-settings: 'wdth' 112;
+  font-weight: 600;
+}
+
+/* Every piece of machine-produced data in this product is set in mono, with
+   tabular figures so columns and counters never jitter. */
+.font-mono,
+code,
+kbd,
+samp,
+pre {
+  font-variant-numeric: tabular-nums;
+}
+
+/* The uppercase mono eyebrow - the one place uppercase is used by design. */
+.eyebrow {
+  font-family: var(--font-jetbrains-mono), ui-monospace, monospace;
+  font-size: var(--t-label);
+  line-height: 1;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.measure {
+  max-width: 68ch;
+}
+
+.measure-display {
+  max-width: 20ch;
+}
+
+/* --------------------------------------------------------------------------
+   Focus. Visible focus is a hard requirement.
+   -------------------------------------------------------------------------- */
+
+/* The focus ring is the primary, not ink. A 2px indigo outline against
+   `--surface` is 7.35:1 (8.09:1 on `--surface-raised`) - well past the 3:1
+   the WCAG focus-indicator
+   guideline asks of a non-text mark - and being a colour the page uses for
+   nothing else, it never gets mistaken for a border that was already there,
+   which a `--text`-coloured ring on a dark control genuinely could be. */
+:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+  border-radius: inherit;
+}
+
+/* The mega-menu triggers open on hover; while a menu is open, the panel itself
+   is the affordance, so a focus outline on the trigger reads as an ugly box.
+   Suppress it only in the open state - a closed trigger still shows a focus ring
+   for keyboard navigation. Higher specificity than :focus-visible, so no
+   !important needed. */
+button[data-menu][data-state='open']:focus-visible {
+  outline: none;
+}
+
+.skip-link {
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  z-index: 100;
+  padding: 10px 16px;
+  background: var(--surface-raised);
+  color: var(--text);
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--r-sm);
+  box-shadow: var(--shadow-md);
+  font-size: var(--t-small);
+  transform: translateY(-200%);
+  transition: transform var(--dur-base) var(--ease-out);
+}
+
+.skip-link:focus-visible {
+  transform: translateY(0);
+}
+
+::selection {
+  background: var(--primary);
+  color: var(--primary-on);
+}
+
+/* --------------------------------------------------------------------------
+   Water - the flow language.
+
+   Where a section used to be two hard-bordered boxes, it becomes one soft
+   basin: content sits *in* a shallow, gradient-lit pool with no rectangular
+   edge, the two halves are joined by a seam that fades out top and bottom
+   instead of a full-height rule, and overflowing content dissolves at the edge
+   like a water surface rather than being chopped by a border. Softness plus
+   continuity is what reads as flow.
+   -------------------------------------------------------------------------- */
+
+.pool {
+  border-radius: var(--r-xl);
+  background: radial-gradient(
+    130% 90% at 50% -10%,
+    color-mix(in oklab, var(--surface-raised) 65%, var(--surface-sunken)),
+    var(--surface-sunken) 62%
+  );
+  box-shadow:
+    inset 0 1px 0 color-mix(in oklab, #ffffff 55%, transparent),
+    var(--shadow-sm);
+}
+
+/* A card: a flat raised surface with a soft hairline edge and a tighter radius -
+   defined without reading as a hard instrument-panel box. Shadow is left to the
+   element so the same surface can be a quiet card (shadow-sm) or lift on hover. */
+.surface-flow {
+  border-radius: var(--r-md);
+  background: var(--surface-raised);
+  border: 1px solid var(--rule);
+}
+
+/* The hero readout. Not a crisp card: a big 32px radius, a clearly visible
+   top-to-bottom gradient (bright at the top, settling into the cool page grey),
+   and a wide, very soft glow so the edges melt into the page rather than drawing
+   a hard rectangle. */
+.card-flow {
+  border-radius: 32px;
+  background: linear-gradient(
+    170deg,
+    #ffffff 0%,
+    var(--surface-raised) 34%,
+    color-mix(in oklab, var(--surface-raised) 82%, var(--surface-sunken)) 100%
+  );
+  box-shadow:
+    inset 0 1px 0 color-mix(in oklab, #ffffff 85%, transparent),
+    0 2px 6px -2px rgba(11, 15, 18, 0.06),
+    0 40px 80px -32px rgba(11, 15, 18, 0.4);
+}
+
+/* --------------------------------------------------------------------------
+   Monochrome glass - frosted content panels.
+
+   Real translucency, not just a border and a flat fill: a `color-mix`ed
+   background sits over a `backdrop-filter` blur, with the same soft
+   depth-and-highlight recipe `.pool` already uses. Built only from the
+   existing surface and rule tokens, so nothing here is a new hue - the five
+   lamp colours stay the only colour in the product (CLAUDE.md §4 #10).
+
+   `-sunken` reads recessed rather than raised, for a panel that sits inside
+   another. `-flat` drops the resting shadow down to just the hairline
+   highlight, for a panel nested inside a panel. `-interactive` is the hover
+   elevation: written as one rule rather than composed from `hover:shadow-md`,
+   because that Tailwind utility would replace the whole `box-shadow` and
+   erase the inset highlight instead of deepening it. */
+
+.panel-glass {
+  background: var(--glass-surface);
+  border-color: var(--glass-border);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  box-shadow:
+    inset 0 1px 0 color-mix(in oklab, var(--surface-raised) 55%, transparent),
+    var(--shadow-card);
+}
+
+.panel-glass-sunken {
+  background: color-mix(in oklab, var(--surface-sunken) 60%, transparent);
+  border-color: var(--glass-border);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  box-shadow: inset 0 1px 0
+    color-mix(in oklab, var(--surface-raised) 30%, transparent);
+}
+
+.panel-glass.panel-glass-flat {
+  box-shadow: inset 0 1px 0
+    color-mix(in oklab, var(--surface-raised) 55%, transparent);
+}
+
+/* Neither combination is used anywhere today, but the specificity tie below
+   would otherwise let :hover silently win over -flat/-sunken's own intent the
+   moment a caller does combine them - fixed now rather than left as a trap
+   for whoever adds the first real caller. */
+.panel-glass-flat.panel-glass-interactive:hover {
+  box-shadow: inset 0 1px 0
+    color-mix(in oklab, var(--surface-raised) 65%, transparent);
+}
+
+.panel-glass-sunken.panel-glass-interactive:hover {
+  box-shadow: inset 0 1px 0
+    color-mix(in oklab, var(--surface-raised) 40%, transparent);
+}
+
+.panel-glass-interactive {
+  transition:
+    box-shadow var(--dur-base) var(--ease-out),
+    border-color var(--dur-base) var(--ease-out),
+    transform var(--dur-base) var(--ease-out);
+}
+
+.panel-glass-interactive:hover {
+  border-color: color-mix(in oklab, var(--rule-strong) 80%, transparent);
+  box-shadow:
+    inset 0 1px 0 color-mix(in oklab, var(--surface-raised) 55%, transparent),
+    var(--shadow-md);
+}
+
+/* Browsers without backdrop-filter support (or a user who has turned
+   transparency effects off at the OS level) get a fully opaque panel instead
+   of a translucent one sitting directly over whatever's behind it with no
+   blur to soften it - a real contrast/legibility regression, not just a
+   missed visual flourish. */
+@supports not (backdrop-filter: blur(1px)) {
+  .panel-glass {
+    background: var(--surface-raised);
+  }
+
+  .panel-glass-sunken {
+    background: var(--surface-sunken);
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .panel-glass {
+    background: var(--surface-raised);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  .panel-glass-sunken {
+    background: var(--surface-sunken);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+
+/* The dashboard header, in the same glass as the content below it - the
+   header and the page canvas share one background token instead of an
+   opaque white bar over a grey page: the header is simply a translucent,
+   blurred view of whatever's actually behind it (the plain `--surface`, or
+   `.canvas-tint`'s wash on the dashboard). `border-b` (applied by the
+   caller) still gives it a seam where one is wanted.
+
+   Tinted with `--accent-wash` (round-3 dashboard-polish, Lush Forest
+   follow-up) rather than left as plain frosted white - `AppShell` only
+   rendered `.header-glass` on `/app/*` (all three call sites were inside
+   `components/layout/app-shell.tsx`/`app-nav.tsx`, which nothing outside
+   the dashboard imports), so unlike `Button` this class needed no
+   `.app-font-scope` scoping trick; it could carry the tint directly.
+
+   **Currently unused** as of the dark-theme-pivot chrome reskin: all three
+   call sites (`AppSidebar`, `AppTopBar`, `MinimalTopBar`) and `AppTabBar`'s
+   equivalent light treatment were switched to `.dark-chrome` (below
+   `.dark-panel-glass`), which is opaque rather than translucent - see that
+   class's own comment for why. Left defined rather than deleted: the
+   contrast work and Lush Forest tinting history below are still real
+   provenance, and this is the class to revive if `/app/*` ever needs a
+   light-chrome path again (a toggle, a fallback). The tint
+   is baked into the base colour *before* the existing translucency mix
+   (`50% --surface-raised, 50% --accent-wash`, then the same 66%-over-
+   transparent alpha every other glass surface already uses) rather than by
+   raising the alpha, so the header keeps the same blur/opacity recipe as
+   `.panel-glass` - it just frosts a pale tint instead of plain white. Kept
+   deliberately pale (under the Lush Forest palette, mixing in `--forest-mid`
+   for a stronger green was tried and rejected - it pushed `--text-mute`,
+   used for inactive nav links, down toward ~4.3–4.5:1, too close to the
+   4.5:1 AA floor for functional nav text). Verified contrast, computed
+   rather than eyeballed, worst-case backdrop (`--surface-sunken` scrolled
+   behind the blur). Under the mint wash: `--text` ~17.2:1, `--text-dim`
+   (Wordmark's "AI" suffix) ~7.2:1, `--text-mute` (inactive nav links, credit
+   balance) ~4.8:1. Re-run for the CAL-4 indigo wash this now frosts:
+   16.92:1 / 7.12:1 / 4.73:1 - a few hundredths tighter, since `--primary-
+   wash` is a fractionally different lightness from `--forest-mint`, and all
+   three still clear 4.5:1 with real margin. */
+/* The dashboard's chrome - top bar, sidebar, tab rail. One class, two recipes,
+   same collapse as `.app-canvas` above: was `.header-glass` (light) and
+   `.dark-chrome` (dark).
+
+   The two are not the same material, which is why this is a background
+   override rather than a token swap. Light chrome is frosted glass over
+   whatever scrolls beneath it. Dark chrome is *opaque* - a deliberate,
+   recorded correction (DESIGN_NOTES §15): translucent chrome over a near-black
+   page reads as smeared rather than layered, and the ambient glow behind it is
+   already doing the depth work. So dark also drops the blur entirely, rather
+   than blurring something it no longer lets through. */
+.app-chrome {
+  background: color-mix(
+    in oklab,
+    color-mix(in oklab, var(--surface-raised) 50%, var(--accent-wash) 50%) 66%,
+    transparent
+  );
+  border-color: var(--glass-border);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+}
+
+:root[data-theme='dark'] .app-chrome {
+  background: radial-gradient(
+    170% 150% at 50% -10%,
+    color-mix(in oklab, var(--dark-bg-glow) 26%, var(--surface)),
+    var(--surface) 90%
+  );
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+@supports not (backdrop-filter: blur(1px)) {
+  .header-glass {
+    background: color-mix(
+      in oklab,
+      var(--surface-raised) 50%,
+      var(--accent-wash) 50%
+    );
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .header-glass {
+    background: color-mix(
+      in oklab,
+      var(--surface-raised) 50%,
+      var(--accent-wash) 50%
+    );
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+
+/* Buttons get the same material as Panel, so one sitting on a glass panel
+   doesn't read as a different substance. `-primary` tints toward
+   `--primary` (CAL-4's Signal indigo) rather than `--glass-surface`, so the
+   solid action stays the most committed-looking element on the page - it
+   just now catches the same blur as everything else. It previously tinted
+   toward `--surface-inverse`, which is what made every marketing CTA read
+   as a plain near-black slab; the indigo is the colour CAL-4 designed and
+   `--surface-inverse` goes back to being only an inverted *surface*.
+   White label text on the solid fill is 8.09:1 (computed, see `--primary`),
+   so `Button`'s own `text-text-inverse` default is the correct pairing.
+   `-secondary` reuses `--glass-surface` directly: it used to be fully
+   transparent (`bg-transparent`), which on top of an already-translucent
+   Panel let two layers of "nothing" stack into no visible button at all.
+   Hover/active are written here rather than as Tailwind `hover:`/`active:`
+   utilities on the component, for the same reason `.panel-glass-interactive`
+   is: this file is unlayered, so a layered utility touching `background`
+   would never be able to override it (see the note above `.panel-glass-
+   interactive`). */
+.btn-glass-primary {
+  background: color-mix(in oklab, var(--primary) 88%, transparent);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+}
+
+/* Darkening through the `-hover`/`-active` steps rather than the opacity
+   fade the component used to carry: on a translucent fill, dropping opacity
+   washes the button toward whatever is behind it instead of deepening it,
+   which reads as the button going dim rather than being pressed. Both steps
+   raise white-label contrast (8.09:1 -> 9.98:1 -> 11.74:1), so the hover
+   state can never be the one that fails. */
+.btn-glass-primary:hover {
+  background: color-mix(in oklab, var(--primary-hover) 92%, transparent);
+}
+
+.btn-glass-primary:active {
+  background: var(--primary-active);
+}
+
+.btn-glass-secondary {
+  background: var(--glass-surface);
+  border-color: var(--glass-border);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+}
+
+.btn-glass-secondary:hover {
+  background: color-mix(in oklab, var(--surface-raised) 82%, transparent);
+}
+
+.btn-glass-secondary:active {
+  background: color-mix(in oklab, var(--surface-sunken) 78%, transparent);
+}
+
+@supports not (backdrop-filter: blur(1px)) {
+  .btn-glass-primary {
+    background: var(--primary);
+  }
+
+  .btn-glass-secondary {
+    background: var(--surface-raised);
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .btn-glass-primary {
+    background: var(--primary);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  .btn-glass-secondary {
+    background: var(--surface-raised);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+
+/* The `/app/*`-only primary-CTA override that used to live here is gone. It
+   existed to give the dashboard a different primary from marketing's - forest
+   green over near-black - by re-tinting `.btn-glass-primary` under
+   `.app-font-scope`. With `--accent` now an alias of `--primary` both sides
+   resolve to the same indigo, so the override was setting the colour it was
+   already getting, at a different opacity (92% vs 88%) for no reason other
+   than the luminance gap between the two old colours. One primary, one rule -
+   the divergence is the thing being removed, not a casualty of removing it. */
+
+/* Hairlines that fade at both ends - the flow-language replacement for a hard
+   full-width / full-height divider. `seam-x` is horizontal, `seam-y` vertical;
+   `flow-seam-l` is the desktop-only fading left border used between columns. */
+.seam-x {
+  height: 1px;
+  border: 0;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--rule-strong),
+    transparent
+  );
+}
+
+.seam-y {
+  width: 1px;
+  align-self: stretch;
+  background: linear-gradient(
+    180deg,
+    transparent,
+    var(--rule-strong),
+    transparent
+  );
+}
+
+@media (min-width: 1024px) {
+  .flow-seam-l {
+    border-left: 1px solid transparent;
+    border-image: linear-gradient(
+        180deg,
+        transparent,
+        var(--rule-strong) 28%,
+        var(--rule-strong) 72%,
+        transparent
+      )
+      1;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Signal field - the dashboard's own atmosphere.
+
+   An ambient glow built from the lamp colours themselves, not a new hue: three
+   very soft, blurred blooms in jade/ice/brass sitting behind the live outcome
+   strip, like a switchboard's own light spilling onto the wall behind it. The
+   lamps stay the only colour that means something (CLAUDE.md §4 #10) - this
+   is that same colour, diffused into atmosphere rather than decoration, and
+   only where the page is actually showing live call signal.
+   -------------------------------------------------------------------------- */
+
+.signal-field {
+  position: relative;
+  isolation: isolate;
+  /* The glow (`::before`, below) is deliberately oversized past this box so
+     `blur(40px)` has room to soften its edge instead of cutting the gradient
+     off hard - but with nothing here to clip it, that oversized box was real
+     layout, not just paint: it widened this element's own scrollable overflow,
+     and with no ancestor between here and `<body>` clipping horizontally
+     either, the whole page picked up a horizontal scrollbar the moment this
+     section rendered (ISSUES.md - "the whole UI scrolls left" report).
+     `overflow: hidden` contains the bleed to this card, where the glow was
+     always meant to stay. */
+  overflow: hidden;
+}
+
+.signal-field::before {
+  content: '';
+  position: absolute;
+  inset: -20% -10%;
+  z-index: -1;
+  background:
+    radial-gradient(
+      38% 55% at 12% 20%,
+      color-mix(in oklab, var(--lamp-jade) 16%, transparent),
+      transparent 70%
+    ),
+    radial-gradient(
+      34% 50% at 88% 15%,
+      color-mix(in oklab, var(--lamp-ice) 15%, transparent),
+      transparent 70%
+    ),
+    radial-gradient(
+      30% 45% at 50% 100%,
+      color-mix(in oklab, var(--lamp-brass) 12%, transparent),
+      transparent 70%
+    );
+  filter: blur(40px);
+  opacity: 0.8;
+}
+
+@media (prefers-contrast: more) {
+  .signal-field::before {
+    display: none;
+  }
+}
+
+/* The dashboard's own hero card - card-flow's gradient lift, at a bigger radius
+   and with room for a display-scale number. Distinct from `.card-flow` itself
+   (marketing's hero) so tuning one never silently moves the other. */
+.hero-flow {
+  border-radius: var(--r-xl);
+  background: linear-gradient(
+    165deg,
+    #ffffff 0%,
+    var(--surface-raised) 38%,
+    color-mix(in oklab, var(--surface-raised) 85%, var(--surface-sunken)) 100%
+  );
+  box-shadow:
+    inset 0 1px 0 color-mix(in oklab, #ffffff 80%, transparent),
+    var(--shadow-card);
+}
+
+/* A soft tint on the page canvas behind the dashboard's cards, so a white
+   card actually reads as floating rather than as a slightly-lighter rectangle
+   on an already-near-white page. Same accent hue as --accent, just diluted -
+   this is the one place the accent tints something structural rather than a
+   single decorative element, since it's the canvas the whole page sits on,
+   not a claim about any one piece of content. */
+/* The dashboard's ambient page wash. One class, two recipes.
+   Was `.canvas-tint` (light) and `.dark-canvas` (dark), applied by whichever
+   the page hardcoded. The token remapping both used to carry is gone - the
+   theme owns that now - so all that is left is the gradient itself, which is
+   genuinely different per theme rather than merely differently-coloured: light
+   is a soft tint falling to the page, dark is a wider, taller glow. */
+.app-canvas {
+  background: radial-gradient(
+    130% 80% at 50% -15%,
+    var(--accent-wash) 0%,
+    var(--surface) 78%
+  );
+}
+
+:root[data-theme='dark'] .app-canvas {
+  background: radial-gradient(
+    170% 150% at 50% -10%,
+    color-mix(in oklab, var(--dark-bg-glow) 26%, var(--surface)),
+    var(--surface) 90%
+  );
+}
+
+/* --------------------------------------------------------------------------
+   Dark glassmorphism - the /app/* pivot's own canvas + card material.
+
+   The dark-theme equivalents of `.canvas-tint` and `.panel-glass` above,
+   built from the `--dark-*` tokens declared on `.app-font-scope` (top of
+   this file) - same `color-mix(in oklab, ...)` glass mechanism, new
+   palette.
+
+   `.dark-canvas` belongs on the main *content* column specifically
+   (`AppShell`'s content `<div>`, `components/layout/app-shell.tsx`) - the
+   one deliberately coloured surface in the whole dark pivot, not the
+   sidebar/chrome, which stays neutral black glass (`.dark-chrome`, below
+   `.dark-panel-glass`) with no purple mixed into its own resting fill.
+   The outer shell wrapper (the flex row containing both the sidebar and
+   the content column) gets a *flat* `bg-dark-bg` instead - true black,
+   no gradient - so whatever's visible behind the sidebar specifically
+   (a translucent element, sitting beside the content column, not on top
+   of it) reads as plain black, never purple. Broadened this pass from a
+   top-only glow to a much wider spread, per the user's "diffuse ... all
+   over, not just near the top" request - the 90% stop is deliberately far
+   out; a page taller than the viewport still fades to flat `--dark-bg`
+   well before its bottom edge, which is the point. `.dark-canvas`'s 26%
+   glow stop is the exact figure the contrast citation on `.app-font-scope`
+   is computed against - changing it here invalidates that number. */
+
+
+
+@supports not (backdrop-filter: blur(1px)) {
+  .dark-panel-glass {
+    background: var(--dark-surface);
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .dark-panel-glass {
+    background: var(--dark-surface);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Dark chrome - the persistent /app/* shell (sidebar, mobile tab bar, the
+   profile route's minimal header), as opposed to `.dark-panel-glass` above
+   (floating content cards). `AppTopBar` - the third surface this class
+   used to cover - was removed entirely this pass (the user asked for no
+   persistent top bar at all); its two jobs, the account menu and the
+   credit balance, moved into `AppSidebar` and `AppTabBar` instead. See
+   `dark-theme-D1-report.md` §8 for that move and why `UserMenu` couldn't
+   just disappear with the header (mobile has no other path to sign out).
+
+   Translucent again, not opaque - a real reversal of an earlier pass on
+   this exact class, kept honest rather than silently discarded: that pass
+   went opaque because translucency pulled `--dark-text-mute` down toward
+   4.5:1 when the backdrop behind the sidebar was still the *old*, still-
+   light page content (D2-D4 hadn't run, so nothing dark existed to show
+   through the blur). That was a real bug at the time, but it was a
+   symptom of a missing background, not a reason translucency itself is
+   unsafe - fixed at the source this pass by giving the content column an
+   actual dark canvas to sit on (`.dark-canvas`, above), which makes
+   `.dark-chrome`'s blur reveal true black/dark-purple instead of light
+   grey. Once that's true, translucency is exactly as safe as
+   `.dark-panel-glass` already is, so this class now shares its literal
+   background formula (`--dark-glass-surface`) instead of inventing a
+   second, chrome-specific ratio.
+
+   The real payoff of this class isn't its own handful of properties -
+   it's the custom-property re-scoping below. Every existing chrome child
+   already styled with a *generic* token class (`AppSidebar`'s nav links in
+   `text-text`/`text-text-mute`, `SidebarOrgSwitcher`'s `bg-surface-sunken`
+   skeleton, `Wordmark`'s `text-text-dim` "AI" suffix, the credit balance
+   pill, the escalation badge's inline `var(--lamp-flare)`) inherits the
+   overridden value the instant it renders inside this element - CSS
+   custom properties cascade through the DOM regardless of which component
+   drew which node, exactly like `--font-sans` already flips for all of
+   `/app/*` inside `.app-font-scope`, just scoped to one chrome element
+   instead of the whole dashboard. `DropdownMenu`/`Popover`/`Dialog` are
+   unaffected by *this specific* class either way, since Radix portals
+   their content to `document.body`, outside this element's DOM subtree -
+   but they are no longer left light as a result. DESIGN_NOTES §14's "leave
+   popover chrome alone" call is superseded (§17): they now portal inside
+   `.app-font-scope` instead and pick up `.dark-overlay`, below.
+   `Tooltip`/`Select` are the one genuine exception - shared with a
+   light-themed marketing page, so they stay conditional or untouched
+   rather than always dark (see `.dark-overlay`'s own comment).
+
+   Contrast numbers, method, and the worst-case composite this is checked
+   against all live on `.app-font-scope`'s own citation now (top of this
+   file) - `.dark-chrome` and `.dark-panel-glass` share the identical
+   background token, so a second, separate citation here would just be a
+   second place for the two to drift out of sync. */
+/* `.dark-overlay` - DropdownMenu/Popover/Dialog content, portaled by Radix.
+   Reverses this file's former §14/§15 "leave popover chrome alone" call
+   (DESIGN_NOTES.md §17) - the user asked explicitly, twice, for these
+   surfaces to read as part of the same dark, purple-tinted product as
+   everything else, not a shared, unthemed exception. Requires the portal to
+   actually mount inside `.app-font-scope` first (`usePortalContainer()`,
+   `lib/hooks/use-portal-container.ts`) - CSS custom properties only
+   inherit through the real DOM tree, and Radix portals to `document.body`
+   by default, a *sibling* of `.app-font-scope`, not a descendant of it.
+   Every one of these components is exclusively used inside `/app`
+   (confirmed - `(auth)`/`(marketing)` never import DropdownMenu, Popover,
+   or Dialog outright; `Select` is the one exception, shared with a
+   marketing form, so it applies this class conditionally rather than
+   unconditionally - see its own component for the check).
+
+   The `background` is `.dark-canvas`'s own radial-gradient formula, not a
+   flat fill or `.dark-chrome`'s glass - the ask was specifically "the same
+   purple gradient as the main content", and a popover is exactly the kind
+   of small, opaque-appropriate surface that gradient already suits (unlike
+   `.dark-chrome`, which is deliberately neutral so nothing behind its own
+   translucency reads as coloured chrome). Percentages are relative to each
+   element's own box, so a small popover gets a tighter, more concentrated
+   version of the same glow rather than a literal crop of the page-wide one -
+   same recipe, correctly proportioned for a smaller surface. */
+.dark-overlay {
+  background: radial-gradient(
+    170% 150% at 50% -10%,
+    color-mix(in oklab, var(--dark-bg-glow) 26%, var(--dark-bg)),
+    var(--dark-bg) 90%
+  );
+  --text: var(--dark-text);
+  --text-dim: var(--dark-text-dim);
+  --text-mute: var(--dark-text-mute);
+  --rule: var(--dark-rule);
+  --rule-strong: var(--dark-rule-strong);
+  --surface-raised: var(--dark-surface);
+  --surface-hover: var(--dark-surface-hover);
+  --surface-sunken: var(--dark-surface-sunken);
+  --lamp-off: var(--dark-lamp-off);
+  --lamp-ice: var(--dark-lamp-ice);
+  --lamp-brass: var(--dark-lamp-brass);
+  --lamp-jade: var(--dark-lamp-jade);
+  --lamp-flare: var(--dark-lamp-flare);
+  --lamp-off-text: var(--dark-lamp-off-text);
+  --lamp-ice-text: var(--dark-lamp-ice-text);
+  --lamp-brass-text: var(--dark-lamp-brass-text);
+  --lamp-jade-text: var(--dark-lamp-jade-text);
+  --lamp-flare-text: var(--dark-lamp-flare-text);
+}
+
+/* `.toast-dark-overlay` - Toast, unconditionally, on every page (§18 follow-up).
+   Every other portaled surface (`.dark-overlay`, above) only goes dark when its
+   portal actually lands inside `.app-font-scope`, since `--dark-*` is
+   deliberately declared only there (see that class's own citation: "unset, not
+   wrong, for marketing and auth, which never render inside it" - a considered
+   boundary, not an oversight). Toast breaks that pattern on purpose: the user
+   asked for it to read as CallFlow's own notification chrome on *every* page,
+   including the light accept-invite screen, which never renders
+   `.app-font-scope` at all - there is nothing to inherit `--dark-*` from there,
+   conditionally or otherwise. So this hardcodes the same literal values
+   `.app-font-scope` defines, rather than referencing them - the one deliberate
+   exception to "reference the token, never the hex" in this file, and it's
+   here specifically because the whole point is to *not* depend on where the
+   toast is mounted. If the dark palette changes, update both places. */
+.toast-dark-overlay {
+  background: radial-gradient(
+    170% 150% at 50% -10%,
+    color-mix(in oklab, #9333ea 26%, #050505),
+    #050505 90%
+  );
+  border-color: color-mix(in oklab, #ffffff 18%, transparent);
+  --text: #f1f5f9;
+  --text-dim: #cbd5e1;
+  --text-mute: #94a3b8;
+  --rule: color-mix(in oklab, #ffffff 10%, transparent);
+  --rule-strong: color-mix(in oklab, #ffffff 18%, transparent);
+  --surface-hover: color-mix(in oklab, #ffffff 8%, transparent);
+  --lamp-ice: #5883b7;
+  --lamp-brass: #a47f47;
+  --lamp-jade: #4b9073;
+  --lamp-flare: #c15f4d;
+  --lamp-ice-text: #8db4e5;
+  --lamp-brass-text: #ccab7c;
+  --lamp-jade-text: #88bfa6;
+  --lamp-flare-text: #e49282;
+}
+
+/* §18 (DESIGN_NOTES.md): opaque purple gradient, not translucent glass - a
+   second reversal of this class's own background, and worth being explicit
+   about which "opaque vs translucent" era this is. `.dark-canvas`'s exact
+   gradient formula (`color-mix(in oklab, var(--dark-bg-glow) 26%, ...)`),
+   same reasoning as `.dark-overlay` (§17): the user asked directly for the
+   sidebar/tab-bar/topbar - "the taskbar" - to read as the same purple,
+   gradient-lit product as the content column and the popovers, not a
+   neutral black next to it. `backdrop-filter` and its two fallback blocks
+   (`@supports not (backdrop-filter)`, `prefers-reduced-transparency`) are
+   gone with the translucency they existed to manage - an opaque background
+   has nothing left to blur, and a feature-detection fallback for a feature
+   no longer in use is dead code, not defensive code. */
+
+@supports not (backdrop-filter: blur(1px)) {
+  .dark-chrome {
+    background: var(--dark-surface);
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .dark-chrome {
+    background: var(--dark-surface);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Page texture.
+
+   A single, very quiet grid behind the hero. Not a gradient blob and not a
+   mesh - a draughtsman's grid, masked so it fades out rather than ending at a
+   hard edge. It reads as paper, which is the point.
+   -------------------------------------------------------------------------- */
+
+.grid-field {
+  background-image:
+    linear-gradient(
+      to right,
+      color-mix(in oklab, var(--text) 5%, transparent) 1px,
+      transparent 1px
+    ),
+    linear-gradient(
+      to bottom,
+      color-mix(in oklab, var(--text) 5%, transparent) 1px,
+      transparent 1px
+    );
+  background-size: 56px 56px;
+  mask-image: radial-gradient(
+    ellipse 80% 55% at 50% 0%,
+    #000 20%,
+    transparent 78%
+  );
+}
+
+/* Ambient voice field: a very faint waveform, tiled and drifting slowly, that
+   replaces the draughtsman's grid behind the hero and closing CTA - so even the
+   background reads as voice. Masked to fade out; still under prefers-reduced-
+   motion it simply stops drifting. */
+.wave-field {
+  background-image: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='240'%20height='80'%3E%3Cpath%20d='M0%2040%20Q30%2012%2060%2040%20T120%2040%20T180%2040%20T240%2040'%20fill='none'%20stroke='%230b0f12'%20stroke-opacity='0.06'%20stroke-width='1.2'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+  background-size: 240px 80px;
+  animation: wave-drift 30s linear infinite;
+  mask-image: radial-gradient(
+    ellipse 82% 60% at 50% 0%,
+    #000 18%,
+    transparent 80%
+  );
+  -webkit-mask-image: radial-gradient(
+    ellipse 82% 60% at 50% 0%,
+    #000 18%,
+    transparent 80%
+  );
+}
+
+@keyframes wave-drift {
+  to {
+    background-position: 240px 0;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   The relay settle - the signature micro-interaction.
+
+   One fast flicker, then hold, plus the lamp's own glow fading in over the
+   last 300ms. It reads as an electromechanical relay closing. Never loops.
+   -------------------------------------------------------------------------- */
+
+@keyframes relay-settle {
+  0% {
+    opacity: 0.2;
+  }
+  12% {
+    opacity: 1;
+  }
+  22% {
+    opacity: 0.35;
+  }
+  40% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+@keyframes relay-glow {
+  0%,
+  66% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+  100% {
+    box-shadow: 0 0 0 3px var(--lamp-halo-color, transparent);
+  }
+}
+
+.lamp-settle {
+  animation:
+    relay-settle var(--dur-settle) var(--ease-out) both,
+    relay-glow var(--dur-settle) var(--ease-out) both;
+}
+
+/* A lamp holding its lit state keeps the halo without re-running the flicker.
+   On a light surface a glow reads as a soft ring rather than a bloom. */
+.lamp-lit {
+  box-shadow: 0 0 0 3px var(--lamp-halo-color, transparent);
+}
+
+/* --------------------------------------------------------------------------
+   Site loader - the first-paint brand splash.
+
+   A full surface with the wordmark over a listening waveform, which holds
+   briefly then fades and hides itself. Self-dismissing in pure CSS so it can
+   never trap the page; skipped entirely under prefers-reduced-motion (below).
+   -------------------------------------------------------------------------- */
+
+.site-loader {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: grid;
+  place-items: center;
+  background: var(--surface);
+  animation: loader-out 0.55s var(--ease-out) 0.9s forwards;
+}
+
+@keyframes loader-out {
+  to {
+    opacity: 0;
+    visibility: hidden;
+  }
+}
+
+.loader-bar {
+  transform-origin: center;
+  animation: loader-bar 1s var(--ease-inout) infinite;
+}
+
+@keyframes loader-bar {
+  0%,
+  100% {
+    transform: scaleY(0.28);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+
+/* Primary CTA: a soft pulse ring echoes outward on hover, like a voice emitting
+   a pulse. Off under prefers-reduced-motion.
+
+   Tinted with `--primary-mid`, so the ring leaves the button in the button's
+   own colour family rather than as a plain-ink flash. `--primary-mid` is
+   unused as a solid fill anywhere else (see the note over `--primary-mid`
+   near the top of this file - 3.92:1, under the text bar) and a low-opacity,
+   text-free ring is exactly the one place that doesn't matter.
+
+   There used to be two of these: this one tinted with `--text` for marketing,
+   and a `btn-pulse-forest` scoped to `.app-font-scope` for the dashboard's
+   green CTA. That split only existed because the two surfaces had different
+   primaries. They don't any more, so neither does the ring. */
+@keyframes btn-pulse {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in oklab, var(--primary-mid) 45%, transparent);
+    opacity: 0.55;
+  }
+  100% {
+    box-shadow: 0 0 0 12px transparent;
+    opacity: 0;
+  }
+}
+
+.btn-pulse::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+}
+
+.btn-pulse:hover::after {
+  animation: btn-pulse 1.3s var(--ease-out) infinite;
+}
+
+/* The 1–2 bars at the waveform's leading edge get a small live flutter as the
+   line is spoken. Transform-based so it never fights the inline height. */
+@keyframes wave-active {
+  0%,
+  100% {
+    transform: scaleY(1);
+  }
+  50% {
+    transform: scaleY(1.28);
+  }
+}
+
+.wave-active {
+  transform-origin: center;
+  animation: wave-active 0.5s var(--ease-inout) infinite;
+}
+
+@keyframes lamp-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}
+
+.lamp-pulse {
+  animation: lamp-pulse 2.4s var(--ease-inout) infinite;
+}
+
+/* --------------------------------------------------------------------------
+   Reveal + streaming rows
+   -------------------------------------------------------------------------- */
+
+.reveal {
+  opacity: 0;
+  transform: translateY(14px);
+  transition:
+    opacity var(--dur-enter) var(--ease-out),
+    transform var(--dur-enter) var(--ease-out);
+}
+
+.reveal[data-shown='true'] {
+  opacity: 1;
+  transform: none;
+}
+
+@keyframes row-enter {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.row-enter {
+  animation: row-enter var(--dur-base) var(--ease-out) both;
+}
+
+@keyframes caret {
+  0%,
+  49% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0;
+  }
+}
+
+.caret::after {
+  content: '';
+  display: inline-block;
+  width: 1px;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  background: currentColor;
+  animation: caret 1s steps(1, end) infinite;
+}
+
+/* --------------------------------------------------------------------------
+   Overlays - mega-menu popover and the mobile sheet.
+
+   The menu grows from its top edge with a small lift; the sheet fades up. The
+   menu closes instantly (see below); both collapse to an instant appearance
+   under prefers-reduced-motion (below).
+   -------------------------------------------------------------------------- */
+
+@keyframes menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.menu-pop[data-state='open'] {
+  animation: menu-in var(--dur-base) var(--ease-out);
+}
+
+/* No exit animation on purpose: with one-menu-at-a-time coordination, a closing
+   panel must vanish at once so it never overlaps the panel opening beside it.
+   Radix unmounts immediately when the closed state has no animation to await. */
+
+@keyframes sheet-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.sheet-in[data-state='open'] {
+  animation: sheet-in var(--dur-base) var(--ease-out);
+}
+
+/* --------------------------------------------------------------------------
+   Page transition.
+
+   Next remounts `template.tsx` on every navigation, so a fresh `.page-enter`
+   element is created each time and this animation replays - a gentle fade and
+   settle as the new route lands, while the persistent header/footer stay put.
+
+   CSS rather than a JS library on purpose: the resting state is fully visible,
+   so a crawler or a JS-disabled browser sees the content, never a blank page
+   stuck at opacity 0. `backwards` holds the start frame during the (zero) delay
+   so there is no pre-paint flash, and dropping `forwards` means no lingering
+   transform is left on the wrapper to trip up fixed/sticky descendants.
+   -------------------------------------------------------------------------- */
+
+@keyframes page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.page-enter {
+  animation: page-enter var(--dur-base) var(--ease-out) backwards;
+}
+
+/* --------------------------------------------------------------------------
+   View Transitions - the real cross-dissolve between routes.
+
+   Where the browser supports it, navigation is driven through
+   startViewTransition (see components/layout/view-transitions.tsx) and the old
+   page dissolves into the new one. Tuned to the design's own duration and
+   easing rather than the UA default. The `.page-enter` fade is redundant here,
+   so it is switched off wherever View Transitions run - the two would otherwise
+   stack into a double animation.
+   -------------------------------------------------------------------------- */
+
+@supports (view-transition-name: none) {
+  .page-enter {
+    animation: none;
+  }
+
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation-duration: var(--dur-base);
+    animation-timing-function: var(--ease-out);
+
+    /* **Ungated on purpose - this is the flash fix.**
+
+       Chrome's UA stylesheet sets `mix-blend-mode: plus-lighter` here, because
+       its default cross-fade runs both frames at partial opacity and
+       plus-lighter is what stops the midpoint dipping toward the backdrop. That
+       reasoning does not survive the theme wipe below, which holds both frames
+       at FULL opacity: plus-lighter then *adds* a light page to a dark one, and
+       every pixel the growing circle has not yet covered blows out. That is the
+       flash.
+
+       The first attempt scoped this to `[data-theme-transition]`, which left a
+       gap - the attribute comes off when the transition ends, and for the frame
+       or two before the browser tears the pseudo-elements down, plus-lighter
+       came back with the new frame fully covering the old one. Everything, added
+       to everything: one white frame, *after* the switch, which is exactly what
+       it looked like. Blend mode is not something this app ever wants
+       inconsistent, so it is set once for both transition kinds rather than
+       toggled around a race.
+
+       The route cross-dissolve is unaffected in practice: `html` paints
+       `--surface`, so the midpoint dips toward the page's own colour. */
+    mix-blend-mode: normal;
+  }
+
+  /* The theme reveal (components/ui/theme-toggle.tsx) is a clip-path wipe, not
+     a cross-fade, and the two cannot both run: the browser's default is to
+     fade the old frame out *and* the new frame in, so a clipped circle growing
+     over a fading backdrop shows the old theme washing out ahead of the wipe
+     rather than being covered by it.
+
+     So during a theme change only: the old frame holds still at full opacity
+     and the new frame is painted on top, clipped. The `html[data-theme]`
+     marker is set by the toggle for exactly the duration of the transition, so
+     route navigations - which share these same pseudo-elements - keep their
+     cross-dissolve untouched. */
+  html[data-theme-transition]::view-transition-old(root),
+  html[data-theme-transition]::view-transition-new(root) {
+    /* Driven from JS (`element.animate`) rather than a stylesheet keyframe,
+       because the circle's origin is only known at click time. */
+    animation: none;
+  }
+
+  /* The outgoing theme must stay *under* the incoming one, or the circle grows
+     behind the frame it is supposed to reveal. */
+  html[data-theme-transition]::view-transition-old(root) {
+    z-index: 0;
+  }
+
+  html[data-theme-transition]::view-transition-new(root) {
+    z-index: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Reduced motion. Durations collapse and transforms are removed. Lamps still
+   change colour - they simply stop flickering. Parallax is switched off
+   entirely by the components that use it.
+   -------------------------------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .reveal {
+    opacity: 1;
+    transform: none;
+  }
+
+  .lamp-settle {
+    animation: none;
+    box-shadow: 0 0 0 3px var(--lamp-halo-color, transparent);
+  }
+
+  .lamp-pulse,
+  .caret::after,
+  .page-enter,
+  .loader-bar {
+    animation: none;
+  }
+
+  /* Skip the splash entirely rather than letting it hold on screen. */
+  .site-loader {
+    display: none !important;
+  }
+}
+
+@media (prefers-contrast: more) {
+  :root {
+    --text-dim: var(--text);
+    --text-mute: #3b464b;
+    --rule: var(--rule-strong);
+  }
+}
+
+@supports (scrollbar-color: auto) {
+  * {
+    scrollbar-color: var(--rule-strong) transparent;
+    scrollbar-width: thin;
+  }
+}
+
+/* ==========================================================================
+   CAL-4 "Signal" surfaces, for the marketing site.
+
+   Originally appended here by the merge that brought `dev` onto the CAL-4
+   branch, which kept the dashboard on the older token layer and took CAL-4 for
+   marketing only - so these rules stayed bolted to the end of the file rather
+   than merged into the blocks above.
+
+   `--primary` is no longer one of them. It was declared in the block below with
+   none of its siblings and no `@theme` registration, which is what left the
+   product with an indigo that only two `.card-feature` lines could see. It now
+   lives with the rest of its family at the top of this file, and because that
+   declaration is *earlier*, re-declaring it here would silently shadow it - so
+   it is gone from here rather than duplicated. What remains below is genuinely
+   marketing-only surface material.
+
+   The rule the old note carried still stands and now covers the whole primary
+   family: it is decorative, and it must never reach Lamp, LampBadge,
+   DonutChart or anything else that renders call state (CLAUDE.md section 4.10).
+   ========================================================================== */
+
+:root {
+  --secondary: #f0e9de;
+
+  /* The deck sections' vertical rhythm, scaled by viewport HEIGHT rather than
+     width — the unusual choice, and the load-bearing one.
+
+     A deck section is exactly one screen tall, so the thing its contents have to
+     fit inside is the viewport's height, which in practice swings from ~632px of
+     usable space (a 1080p laptop at 125% Windows scaling) to ~1012px (a
+     maximised 1080p browser at 100%). That is a 380px range, and no fixed set of
+     paddings and gaps fits both ends: sized for the tall case the content spills
+     on every laptop, sized for the short case it floats in the middle of a big
+     monitor. Both failures were shipped, in that order, before this.
+
+     `vh` here rather than `svh`: these are spacing values, so the mobile
+     URL-bar wobble `svh` exists to avoid is not worth the constant reflow. The
+     section's own `min-height` still uses `svh`, where it does matter. */
+  --space-band: clamp(20px, 3.4vh, 44px);
+
+  /* The gap between a section's own major blocks (heading → content → detail).
+     Same reasoning, same axis - use this instead of a fixed `mt-8`/`mt-10` for
+     any spacing that separates the big parts of a deck section. */
+  --deck-gap: clamp(16px, 3vh, 40px);
+}
+
+/* No borders.
+   A card is a pool of lighter surface, not a box with an edge drawn round it.
+   Separation comes from the wash and from space; the moment every group of
+   content gets a rectangle, a page reads as a form rather than a composition.
+   The radius is large enough that the corner never reads as a frame. */
+.card {
+  background: linear-gradient(170deg, var(--surface-raised) 0%, var(--surface-sunken) 100%);
+  border: 0;
+  border-radius: var(--r-xl);
+}
+
+.card-raised {
+  background: linear-gradient(
+    170deg,
+    var(--surface-raised) 0%,
+    color-mix(in oklab, var(--surface-sunken) 55%, var(--surface-raised)) 100%
+  );
+  border: 0;
+  border-radius: var(--r-xl);
+  box-shadow: 0 1px 2px rgba(14, 17, 20, 0.03), 0 14px 30px -18px rgba(14, 17, 20, 0.16);
+}
+
+/* Earns attention by light, not by an outline: a warmer fill and a soft halo
+   in the primary, with no edge to draw. */
+.card-feature {
+  background: linear-gradient(
+    170deg,
+    var(--surface-raised) 0%,
+    color-mix(in oklab, var(--primary) 5%, var(--surface-raised)) 100%
+  );
+  border: 0;
+  border-radius: var(--r-xl);
+  box-shadow:
+    0 1px 2px rgba(14, 17, 20, 0.04),
+    0 20px 44px -22px color-mix(in oklab, var(--primary) 42%, transparent);
+}
+
+/* Interactive cards lift on hover. Transform and shadow only — never a
+   border-colour change, which reflows nothing but reads as a flicker. */
+.card-interactive {
+  transition:
+    box-shadow var(--dur-base) var(--ease-out),
+    transform var(--dur-base) var(--ease-out);
+}
+
+.card-interactive:hover {
+  box-shadow: var(--shadow-md);
+  transform: translateY(-3px);
+}
+
+/* A sunken basin: content sits in a shallow well. Also borderless. */
+.card-sunken {
+  background: linear-gradient(
+    170deg,
+    var(--surface-sunken) 0%,
+    color-mix(in oklab, var(--surface-sunken) 70%, var(--surface-raised)) 100%
+  );
+  border: 0;
+  border-radius: var(--r-xl);
+}
+
+/* `.glass` used to live here, and it was broken in a way worth recording.
+
+   It wrote `backdrop-filter: blur(var(--glass-blur)) saturate(1.4)`. On the
+   CAL-4 branch `--glass-blur` was a bare length (`16px`), so that composed
+   correctly. On this side of the merge `--glass-blur` is a complete filter
+   value (`blur(24px) saturate(150%)`, near the top of this file), so the
+   declaration expanded to `blur(blur(24px) saturate(150%))` - invalid, and
+   dropped whole by the parser. What survived was `background: var(--glass)`,
+   which is only 72% opaque. The result was the site header rendering as a
+   see-through bar with none of the blur that was supposed to make text on it
+   legible - page content read straight through the nav.
+
+   The header is solid now (`site-header.tsx`), which was the explicit ask, so
+   the class has no consumers left and is deleted rather than repaired - along
+   with `--glass`/`--glass-edge`, which nothing else read. Note that this is a
+   *different* token family from `--glass-surface`/`--glass-border`/
+   `--glass-blur`, which the dashboard's panel and button materials use and
+   which are untouched. Two families with nearly the same name is what let the
+   collision through the merge unnoticed in the first place. */
+
+/* --------------------------------------------------------------------------
+   The deck.
+
+   One section fills the screen; depth carries the transition. `--d` is written
+   per section by use-scroll-depth (1 = centred), and defaults to 1 so the page
+   is fully legible before hydration and under reduced motion.
+
+   Snap is `proximity`, never `mandatory`: mandatory snapping fights anyone who
+   wants to stop halfway, and traps keyboard and screen-reader users mid-section.
+   -------------------------------------------------------------------------- */
+
+.deck {
+  scroll-snap-type: y proximity;
+}
+
+/* The default lives here, on the element the hook writes to — putting it on
+   .deck-inner would shadow the inherited value and depth would never apply. */
+.deck-section {
+  --d: 1;
+  scroll-snap-align: start;
+  scroll-snap-stop: normal;
+
+  /* A section is exactly the viewport *below the sticky header*, not the whole
+     viewport. At a full `100svh` the header covers the section's own first
+     68px, so the last 68px spilled past the fold and a sliver of the next
+     section sat under the bar — navigating to a section showed you parts of
+     three. Subtracting the header makes the visible area and the section the
+     same box. `min-height`, so a section that genuinely needs more still takes
+     it rather than clipping. */
+  min-height: calc(100svh - var(--h-site-header));
+  padding-block: var(--space-band);
+
+  /* `html` adds 24px above an anchor on top of the header height. That is right
+     for a docs heading — it wants air above it — and wrong for a full-screen
+     section, where those 24px are pulled straight from the previous section and
+     show as a band under the header. Cancel exactly that 24px here, so a deck
+     section lands flush and nothing else is on screen. This composes with the
+     container's scroll-padding rather than fighting it, and it also corrects
+     the snap position, since `scroll-snap-align: start` resolves against the
+     same snapport. */
+  scroll-margin-top: -24px;
+}
+
+/* Below this height, stop forcing a section to fill the screen.
+
+   The one-section-per-screen layout is only honest while a section's content
+   actually fits the screen. A 1080p laptop at 125% Windows scaling leaves ~596px
+   of usable height; the shortest section here is ~630px even after every gap and
+   media block was made viewport-relative. Forcing `100svh` there guarantees the
+   exact failure this layout exists to prevent — the section overflows and the
+   next one bleeds into view — and no amount of further trimming fixes it without
+   gutting the page for everyone else.
+
+   So: above the threshold, the deck behaves as designed. Below it, sections size
+   to their content and the page is an ordinary scrolling page. A content-height
+   section cannot spill, by construction. Snap is dropped with it, since snapping
+   to sections taller than the viewport is what produces the "stuck between two
+   screens" feeling.
+
+   850px is the threshold because it is the point below which the tightest
+   section stops having real margin: at an 840px viewport `safety` clears the
+   screen by only 39px, which is a single line of copy away from breaking. Above
+   850 the worst case has 63px and climbs from there. Measured, not picked. */
+@media (max-height: 850px) {
+  .deck {
+    scroll-snap-type: none;
+  }
+
+  .deck-section {
+    min-height: 0;
+    padding-block: var(--space-section);
+    scroll-margin-top: 0;
+    scroll-snap-align: none;
+  }
+}
+
+.deck-inner {
+  transform: scale(calc(0.955 + 0.045 * var(--d)));
+  opacity: calc(0.45 + 0.55 * var(--d));
+  transition:
+    transform 120ms linear,
+    opacity 120ms linear;
+  will-change: transform, opacity;
+}
+
+/* The receding veil. Cheaper than blurring a full-viewport section, which
+   forces a compositor layer per section and is where this pattern usually
+   starts dropping frames. */
+.deck-section::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: var(--surface);
+  opacity: calc((1 - var(--d, 1)) * 0.35);
+  transition: opacity 120ms linear;
+}
+
+/* --------------------------------------------------------------------------
+   Section grounds.
+
+   Rhythm comes from alternating ground rather than from a rule between every
+   block. `sand` is the warm secondary surface; it appears on marketing only.
+   -------------------------------------------------------------------------- */
+
+.ground-sand {
+  background: var(--secondary);
+}
+
+/* `--text-mute` is tuned to clear 4.5:1 against `--surface` (4.73:1), and the
+   sand ground is warmer and slightly darker than that - which drops the same
+   token to 4.31:1 on it, under the AA floor. Pre-existing, and found by
+   auditing every rendered text node rather than by looking: the two grounds are
+   close enough that nothing about it reads as wrong.
+
+   Nudged just far enough to pass (4.51:1) rather than to a round number -
+   `--text-mute` is deliberately the quietest text in the product, and
+   over-correcting here would make metadata on the sand bands louder than the
+   same metadata everywhere else.
+
+   **Light only, and that qualifier is the whole point.** Written unscoped
+   first, this same override applied in dark, where `--secondary` is a
+   near-black neutral rather than warm sand - turning one 4.31:1 failure into
+   29 far worse ones. A contrast fix that names a colour is always a fix for
+   one theme; scope it to that theme. */
+:root[data-theme='light'] .ground-sand {
+  --text-mute: #636a78;
+}
+
+.ground-sunken {
+  background: var(--surface-sunken);
+}
+
+.ground-inverse {
+  background: var(--surface-inverse);
+  color: var(--text-inverse);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card-interactive:hover {
+    transform: none;
+  }
+
+  .deck {
+    scroll-snap-type: none;
+  }
+
+  .deck-inner {
+    transform: none;
+    opacity: 1;
+  }
+
+  .deck-section::after {
+    opacity: 0;
+  }
+}

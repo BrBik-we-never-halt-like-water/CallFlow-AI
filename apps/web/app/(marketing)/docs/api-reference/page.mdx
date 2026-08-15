@@ -1,0 +1,102 @@
+export const metadata = {
+  title: "API reference",
+  description: "Campaigns, previews, and runs over HTTP.",
+};
+
+# API reference
+
+Everything the dashboard does, it does over this API. Base URL is your deployment's
+host; all bodies are JSON.
+
+Authenticate with a **Voice API key** from **Settings → API keys**. Keys are shown once
+at creation and stored hashed, so if you lose one, revoke it and make another.
+
+## Endpoints
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /api/health` | Service status and the active safety settings. |
+| `GET /api/v1/campaigns` | List campaigns for the active organisation. |
+| `POST /api/v1/campaigns` | Create a campaign with custom extraction fields. |
+| `DELETE /api/v1/campaigns/{id}` | Remove a campaign you created. |
+| `POST /api/v1/campaigns/preview` | Render goals without dialling. Free and instant. |
+| `POST /api/v1/runs` | Start a run. Every run dials for real. Returns immediately; the run proceeds in the background. |
+| `GET /api/v1/runs` | List runs for the active organisation. |
+| `GET /api/v1/runs/{id}` | Poll status, outcomes, and stats. |
+
+## Health
+
+Returns the guards that are currently in force. Worth calling before automating a run.
+
+```json
+{
+  "ok": true,
+  "api_key_configured": true,
+  "max_calls_per_run": 3,
+  "allowlist_active": true,
+  "limits": { "used_today": 0, "daily_budget": 25, "per_window": 2, "window_minutes": 60 }
+}
+```
+
+## Preview
+
+Renders the goal for each contact and returns it. Nothing is dialled and no credits are
+spent, which makes this the right endpoint to call from a form or a test.
+
+```json
+{
+  "campaign_id": "travel-discovery",
+  "contacts": [
+    { "name": "Aditi", "phone": "+15555550100", "context": { "enquiry_note": "Bali in December" } }
+  ]
+}
+```
+
+A contact that fails validation comes back with an `error` on its entry rather than
+failing the whole request, so you can show the operator which row is wrong.
+
+## Starting a run
+
+Every run dials for real as soon as it starts — there is no simulated mode. The
+allowlist, per-run ceiling, rate limit, daily budget, and suppression list are all
+checked before each call goes out, and any of them can stop a contact from being dialled.
+
+```json
+{
+  "campaign_id": "travel-discovery",
+  "contacts": [
+    { "name": "Aditi", "phone": "+15555550100", "context": { "enquiry_note": "Bali in December" } }
+  ]
+}
+```
+
+Response:
+
+```json
+{ "run_id": "run_8f2a1c", "total": 1 }
+```
+
+## Polling a run
+
+`GET /api/v1/runs/{id}` returns the run with every outcome recorded so far, plus stats.
+
+A row appears as soon as a call is placed, so an in-flight call is visible while it
+happens. `stats.completed` counts only calls that have actually resolved — an
+in-flight one is not progress yet, and counting it as progress is how a progress
+indicator ends up going backwards.
+
+Poll every two to three seconds. There is no long-polling; if you want push instead,
+use [webhooks](/docs/webhooks).
+
+## Errors
+
+Errors come back with a `detail` string written for a person, not a code to look up.
+
+| Status | Meaning |
+|---|---|
+| `400` | The request was understood and rejected. `detail` says what to change. |
+| `404` | No campaign or run with that id. |
+| `429` | A rate limit or the daily budget. Honour `Retry-After`. |
+
+A `400` on a run is usually one of three things: no contacts, a number that is not
+E.164, or a run requested with no Voice API key configured.
