@@ -1,13 +1,12 @@
 'use client';
 
-import { useCallback, useMemo, useState } from 'react';
-import { cn } from '@/lib/cn';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ConnectionBanner } from '@/components/app/connection-banner';
 import { EscalationCard } from '@/components/app/escalation-card';
 import { ShareRequestDialog } from '@/components/app/share-request-dialog';
 import { TranscriptView } from '@/components/app/transcript-view';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogRoot } from '@/components/ui/dialog';
+import { DialogRoot, Sheet } from '@/components/ui/dialog';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Panel } from '@/components/ui/panel';
 import { Select } from '@/components/ui/select';
@@ -27,9 +26,7 @@ import { useSession } from '@/lib/hooks/use-session';
 
 type SortOrder = 'oldest' | 'newest';
 
-/** How many cards render at once, and how many more load per scroll step -
- * the whole list already lives in memory (`useAppStore`'s hydrated runs),
- * so this bounds DOM node count for a long queue, not network requests. */
+/** How many escalations render before the sentinel loads another page. */
 const PAGE_SIZE = 20;
 
 /**
@@ -60,12 +57,22 @@ export default function EscalationsPage() {
   const [visibleCountKey, setVisibleCountKey] = useState(
     `${campaignFilter}|${reasonFilter}|${sortOrder}`,
   );
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
 
   const hasActiveFilters = campaignFilter !== 'all' || reasonFilter !== 'all';
 
   function clearFilters() {
     setCampaignFilter('all');
     setReasonFilter('all');
+  }
+
+  // Filters/sort changing means the page resets to the top - adjusting state
+  // during render (not an effect) is the React-blessed way to do this, see
+  // CLAUDE.md's note on preferring derived state over syncing in an effect.
+  const filterKey = `${campaignFilter}|${reasonFilter}|${sortOrder}`;
+  if (filterKey !== visibleCountKey) {
+    setVisibleCountKey(filterKey);
+    setVisibleCount(PAGE_SIZE);
   }
 
   // Fetched once here, not per card - every EscalationCard on this page
@@ -117,42 +124,24 @@ export default function EscalationsPage() {
     return sortOrder === 'oldest' ? list : [...list].reverse();
   }, [openEscalations, campaignFilter, reasonFilter, sortOrder]);
 
-  // A filter/sort change invalidates the current scroll window - starting over
-  // at PAGE_SIZE avoids showing a tail end of items that no longer match, or a
-  // window sized for a since-shrunk list. Adjusted during render (React's
-  // documented pattern for resetting state from a prop-like change) rather
-  // than in an effect, which would commit the stale window for one frame
-  // before a second render corrected it.
-  const nextVisibleCountKey = `${campaignFilter}|${reasonFilter}|${sortOrder}`;
-  if (nextVisibleCountKey !== visibleCountKey) {
-    setVisibleCountKey(nextVisibleCountKey);
-    setVisibleCount(PAGE_SIZE);
-  }
+  const visible = shown.slice(0, visibleCount);
+  const hasMore = shown.length > visible.length;
 
-  const visible = useMemo(() => shown.slice(0, visibleCount), [shown, visibleCount]);
-  const hasMore = visibleCount < shown.length;
+  useEffect(() => {
+    const node = sentinelRef.current;
+    if (!node || !hasMore) return;
 
-  /**
-   * Loads the next page when the sentinel below the list scrolls into view.
-   * A `ref` callback rather than a `ref` object so the observer attaches
-   * and detaches exactly when the sentinel itself mounts/unmounts (React
-   * 19's ref-cleanup-function support) - it only exists while `hasMore` is
-   * true, so there's nothing to observe once the whole list is showing.
-   */
-  const sentinelRef = useCallback(
-    (node: HTMLDivElement | null) => {
-      if (!node) return;
-      const observer = new IntersectionObserver((entries) => {
+    const observer = new IntersectionObserver(
+      (entries) => {
         if (entries[0]?.isIntersecting) {
           setVisibleCount((count) => count + PAGE_SIZE);
         }
-      });
-      observer.observe(node);
-      return () => observer.disconnect();
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [hasMore],
-  );
+      },
+      { rootMargin: '200px' },
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [hasMore]);
 
   return (
     <div className="flex flex-col gap-6">
@@ -224,19 +213,17 @@ export default function EscalationsPage() {
             </div>
           ) : null}
 
-          {/* Always mounted, space reserved either way - toggling this in
-              and out of the layout (the previous behaviour) shifted every
-              control next to it the instant a filter was picked, which read
-              as the filter row "breaking" rather than just updating. */}
-          <Button
-            variant="ghost"
-            onClick={clearFilters}
-            className={cn(!hasActiveFilters && 'invisible')}
-            aria-hidden={!hasActiveFilters}
-            tabIndex={hasActiveFilters ? undefined : -1}
-          >
-            Clear filters
-          </Button>
+          {hasActiveFilters && (
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setCampaignFilter('all');
+                setReasonFilter('all');
+              }}
+            >
+              Clear filters
+            </Button>
+          )}
         </div>
       ) : null}
 
@@ -306,14 +293,12 @@ export default function EscalationsPage() {
         onOpenChange={(open) => !open && setSelected(null)}
       >
         {selected ? (
-          <Dialog
+          <Sheet
             title={selected.contact_name}
             description={selected.disposition_reason ?? 'Needs a person'}
-            size="xl"
-            contentClassName=""
           >
             <TranscriptView outcome={selected} />
-          </Dialog>
+          </Sheet>
         ) : null}
       </DialogRoot>
     </div>

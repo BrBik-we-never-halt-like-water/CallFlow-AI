@@ -12,7 +12,6 @@ import {
 } from '@phosphor-icons/react/dist/ssr';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { AnimatedNavIcon } from '@/components/ui/animated-nav-icon';
 import { cn } from '@/lib/cn';
 import { UserMenu } from './user-menu';
 import type { SessionProfile } from '@/lib/hooks/use-session';
@@ -121,7 +120,7 @@ export function AppTabBar({
   return (
     <nav
       aria-label="Dashboard"
-      className="dark-chrome sticky bottom-0 z-30 flex shrink-0 border-t lg:hidden"
+      className="app-chrome sticky bottom-0 z-30 flex shrink-0 border-t lg:hidden"
     >
       {items.map((item) => {
         const active = isActive(pathname, item.href);
@@ -133,11 +132,15 @@ export function AppTabBar({
             href={item.href}
             aria-current={active ? 'page' : undefined}
             className={cn(
-              'group relative flex min-h-14 flex-1 flex-col items-center justify-center gap-1 px-1 py-2',
+              'relative flex min-h-14 flex-1 flex-col items-center justify-center gap-1 px-1 py-2',
               active ? 'text-text' : 'text-text-mute',
             )}
           >
-            <AnimatedNavIcon icon={item.icon} active={active} className="size-5" />
+            <item.icon
+              aria-hidden
+              weight={active ? 'fill' : 'regular'}
+              className="size-5"
+            />
             <span className="truncate text-[0.6875rem] leading-none">
               {item.label === 'Needs a person' ? 'Needs you' : item.label}
             </span>

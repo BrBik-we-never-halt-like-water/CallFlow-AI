@@ -56,15 +56,16 @@ export function Steps() {
   }, [reduced]);
 
   return (
-    <section id="how-it-works" className="mx-auto max-w-(--container-marketing) px-4 sm:px-6">
+    <section className="mx-auto max-w-(--container-marketing) px-4 sm:px-6">
       <Reveal>
         <SectionHeading
           title="Watch one contact become a triaged result."
+          sub="One row, four forms — her validated row, the campaign goal, her live call, and the typed result your team actually reads. Every frame is the real product UI."
         />
       </Reveal>
 
-      <div className="mt-10 grid items-start gap-10 lg:grid-cols-[minmax(0,320px)_minmax(0,1fr)] lg:gap-16">
-        <StepTracker step={step} onSelect={setStep} reduced={reduced} />
+      <div className="mt-(--deck-gap) grid items-start gap-10 lg:grid-cols-[minmax(0,320px)_minmax(0,1fr)] lg:gap-16">
+        <StepTracker step={step} onSelect={setStep} />
         <Reveal delayMs={80}>
           <MorphCard step={step} reduced={reduced} />
         </Reveal>
@@ -74,27 +75,29 @@ export function Steps() {
 }
 
 /**
- * The vertical pipeline tracker. A line fills jade up to the current stage; each
- * stage's node lights as the signal reaches it, and only the current stage shows
- * its description — keeping the column quiet. Stages are clickable to jump.
+ * The vertical pipeline tracker. A line fills jade up to the current stage and
+ * each stage's node lights as the signal reaches it. Every stage shows its own
+ * description, dimmed until it is current. Stages are clickable to jump.
  */
 function StepTracker({
   step,
   onSelect,
-  reduced,
 }: {
   step: number;
   onSelect: (i: number) => void;
-  reduced: boolean;
 }) {
   const fill = STEPS.length > 1 ? (step / (STEPS.length - 1)) * 100 : 0;
 
   return (
     <Reveal>
-      {/* Titles keep a constant height; the description sits in a fixed-height
-          slot below, so switching steps never changes the column height (which
-          would shove the sections underneath). */}
-      <ol className="relative flex flex-col gap-6 pl-8">
+      {/* Every step shows its own description, dimmed until it is the current
+          one. It used to be one description in a fixed slot at the bottom that
+          swapped as the stage advanced — which kept the column short, but meant
+          three quarters of the explanation was always hidden behind a timer.
+          Four short lines do not need progressive disclosure, and inlining them
+          fills the column against the card beside it. Heights are constant per
+          row, so switching steps still never reflows the section. */}
+      <ol className="relative flex flex-col gap-9 pl-8">
         <span aria-hidden className="absolute top-2 bottom-2 left-[9px] w-px bg-rule" />
         <motion.span
           aria-hidden
@@ -111,11 +114,14 @@ function StepTracker({
               <button
                 type="button"
                 onClick={() => onSelect(i)}
-                className="group relative flex w-full items-baseline gap-2 py-0.5 text-left"
+                className="group relative flex w-full flex-col items-start gap-1.5 py-0.5 text-left"
               >
+                {/* Pinned to the title's own line, not the row's centre. The row
+                    carries a description now, so `top-1/2` would float the node
+                    down into the gap between title and body and break the rail. */}
                 <span
                   aria-hidden
-                  className="absolute top-1/2 -left-8 flex size-[18px] -translate-y-1/2 items-center justify-center rounded-full bg-surface ring-1 ring-rule"
+                  className="absolute top-[3px] -left-8 flex size-[18px] items-center justify-center rounded-full bg-surface ring-1 ring-rule"
                 >
                   <span
                     className="size-2 rounded-full transition-colors duration-300"
@@ -128,37 +134,33 @@ function StepTracker({
                   />
                 </span>
 
-                <Eyebrow as="span" className={current ? "text-lamp-jade-text" : "text-text-mute"}>
-                  {s.n}
-                </Eyebrow>
+                <span className="flex items-baseline gap-2">
+                  <Eyebrow as="span" className={current ? "text-lamp-jade-text" : "text-text-mute"}>
+                    {s.n}
+                  </Eyebrow>
+                  <span
+                    className={cn(
+                      "text-body font-medium transition-colors duration-300",
+                      current ? "text-text" : "text-text-dim group-hover:text-text",
+                    )}
+                  >
+                    {s.title}
+                  </span>
+                </span>
+
                 <span
                   className={cn(
-                    "text-body font-medium transition-colors duration-300",
-                    current ? "text-text" : "text-text-dim group-hover:text-text",
+                    "max-w-[42ch] text-small transition-colors duration-300",
+                    current ? "text-text-dim" : "text-text-mute",
                   )}
                 >
-                  {s.title}
+                  {s.body}
                 </span>
               </button>
             </li>
           );
         })}
       </ol>
-
-      <div className="mt-6 min-h-[4.5rem] border-t border-rule pt-4">
-        <AnimatePresence mode="wait">
-          <motion.p
-            key={step}
-            initial={reduced ? false : { opacity: 0, y: 4 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={reduced ? { opacity: 0 } : { opacity: 0, y: -4 }}
-            transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
-            className="max-w-[38ch] text-small text-text-dim"
-          >
-            {STEPS[step].body}
-          </motion.p>
-        </AnimatePresence>
-      </div>
     </Reveal>
   );
 }
@@ -168,7 +170,12 @@ function MorphCard({ step, reduced }: { step: number; reduced: boolean }) {
   const forms = [<LoadForm key="l" />, <ChooseForm key="c" />, <RunForm key="r" />, <TriageForm key="t" />];
 
   return (
-    <div className="card-raised relative flex h-[16.5rem] flex-col justify-center overflow-hidden p-6 sm:p-8">
+    // Fixed *for a given viewport* on purpose: the four forms are different
+    // lengths and the card must not resize as they swap, or the whole section
+    // jumps on every tick. The height itself scales with the viewport, because
+    // the section it lives in is exactly one screen tall — at a flat 25rem this
+    // was the single biggest reason this section overflowed a laptop.
+    <div className="card-raised relative flex h-[clamp(16rem,38vh,25rem)] flex-col justify-center overflow-hidden p-6 sm:p-8">
       <AnimatePresence mode="wait">
         <motion.div
           key={step}

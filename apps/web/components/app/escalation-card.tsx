@@ -157,42 +157,33 @@ export function EscalationCard({
         </div>
       </div>
 
-      {/* The reasoning chain. No boxed background here - kept flush with
-          "Last thing they said"/"Summary" below so all three read as one
-          consistent rhythm of label-then-content, not one section singled
-          out with heavier chrome. Tag's own `whitespace-nowrap` is right for
-          a short role/template label, but disposition_reason/sentiment_reason
-          are full sentences - overridden back to wrapping here so a long one
-          wraps inside the card instead of pushing past its edge. */}
-      <div className="flex flex-col gap-1.5">
-        <p className="text-small font-bold text-text-mute">Why it&apos;s here</p>
-        <ol className="flex flex-wrap items-start gap-x-1.5 gap-y-2">
-          {chain.map((step, i) => (
-            <li
-              key={i}
-              className="flex min-w-0 max-w-full items-center gap-1.5"
-            >
-              {i > 0 ? (
-                <span
-                  aria-hidden
-                  className="shrink-0 font-mono text-data text-text-mute"
-                >
-                  →
-                </span>
-              ) : null}
-              <Tag
-                mono={false}
-                className={cn(
-                  'min-w-0 whitespace-normal break-words',
-                  i === chain.length - 1 && 'text-lamp-flare-text',
-                )}
+      {/* The reasoning chain. Tag's own `whitespace-nowrap` is right for a short
+          role/template label, but disposition_reason/sentiment_reason are full
+          sentences - overridden back to wrapping here so a long one wraps
+          inside the card instead of pushing past its edge. */}
+      <ol className="flex flex-wrap items-start gap-1.5">
+        {chain.map((step, i) => (
+          <li key={i} className="flex min-w-0 max-w-full items-center gap-1.5">
+            {i > 0 ? (
+              <span
+                aria-hidden
+                className="shrink-0 font-mono text-data text-text-mute"
               >
-                {step}
-              </Tag>
-            </li>
-          ))}
-        </ol>
-      </div>
+                →
+              </span>
+            ) : null}
+            <Tag
+              mono={false}
+              className={cn(
+                'min-w-0 whitespace-normal break-words',
+                i === chain.length - 1 && 'text-lamp-flare-text',
+              )}
+            >
+              {step}
+            </Tag>
+          </li>
+        ))}
+      </ol>
 
       {!compact && escalation.transcript ? (
         <div className="flex flex-col gap-1">

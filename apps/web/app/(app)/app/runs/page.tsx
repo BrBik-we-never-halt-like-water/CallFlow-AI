@@ -1,10 +1,6 @@
 'use client';
 
-import {
-  BroadcastIcon,
-  FunnelIcon,
-  MagnifyingGlassIcon,
-} from '@phosphor-icons/react/dist/ssr';
+import { BroadcastIcon, FunnelIcon } from '@phosphor-icons/react/dist/ssr';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
@@ -34,14 +30,14 @@ import { useAppStore } from '@/lib/app-store';
 import { useSession } from '@/lib/hooks/use-session';
 
 /**
- * `.dark-panel-glass`/`.dark-chrome` (globals.css) re-scope the generic text/
+ * `.panel-glass`/`.app-chrome` (globals.css) re-scope the generic text/
  * rule/surface/lamp tokens for a dark surface, and - since the coherence pass
  * that consolidated the dark theme's cross-page findings - also
  * `--glass-surface`/`--glass-border`/`--glass-blur`, the composite tokens
  * `.panel-glass` (`Panel`, `DataTable`'s table wrapper) and
  * `.btn-glass-secondary` (`Button`) read directly. That fix does not reach
- * this page's own root, though: it wraps its content in `.dark-canvas`
- * (the ambient gradient), not `.dark-panel-glass`/`.dark-chrome` - putting
+ * this page's own root, though: it wraps its content in `.app-canvas`
+ * (the ambient gradient), not `.panel-glass`/`.app-chrome` - putting
  * either of *those* here instead would paint over the gradient with a flat
  * glass fill, since both classes set their own `background`. So this object
  * still needs to declare the glass three itself, alongside the generic set -
@@ -79,9 +75,9 @@ const DARK_SCOPE_VARS: React.CSSProperties = {
   '--lamp-flare-text': 'var(--dark-lamp-flare-text)',
 } as React.CSSProperties;
 
-const STATUS_FILTERS = (
-  ['running', 'canceling', 'canceled', 'completed', 'failed'] as RunStatus[]
-).map((value) => ({ value, label: lampForRunStatus(value).label }));
+const STATUS_FILTERS = (['running', 'completed', 'failed'] as RunStatus[]).map(
+  (value) => ({ value, label: lampForRunStatus(value).label }),
+);
 
 export default function RunsPage() {
   const router = useRouter();
@@ -97,7 +93,6 @@ export default function RunsPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
   const [query, setQuery] = useState('');
-  const [searchOpen, setSearchOpen] = useState(false);
   const [statusFilter, setStatusFilter] = useState<Set<RunStatus>>(new Set());
 
   const campaignName = (id: string) =>
@@ -218,7 +213,7 @@ export default function RunsPage() {
 
   return (
     <div
-      className="dark-canvas -mx-4 -my-6 flex min-h-[calc(100dvh-var(--h-app-topbar))] flex-col gap-6 px-4 py-6 sm:-mx-6 sm:px-6"
+      className="app-canvas -mx-4 -my-6 flex min-h-[calc(100dvh-var(--h-app-topbar))] flex-col gap-6 px-4 py-6 sm:-mx-6 sm:px-6"
       style={DARK_SCOPE_VARS}
     >
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -233,32 +228,14 @@ export default function RunsPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {searchOpen || query ? (
-            <SearchInput
-              autoFocus={searchOpen}
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              onClear={() => {
-                setQuery('');
-                setSearchOpen(false);
-              }}
-              onBlur={() => {
-                if (!query) setSearchOpen(false);
-              }}
-              placeholder="Search runs"
-              aria-label="Search runs"
-              className="h-10 w-48 rounded-full sm:w-64"
-            />
-          ) : (
-            <button
-              type="button"
-              aria-label="Search runs"
-              onClick={() => setSearchOpen(true)}
-              className="flex size-10 shrink-0 cursor-pointer items-center justify-center rounded-full border border-rule text-text-dim transition-colors hover:bg-surface-hover hover:text-text"
-            >
-              <MagnifyingGlassIcon aria-hidden weight="bold" className="size-4" />
-            </button>
-          )}
+          <SearchInput
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onClear={() => setQuery('')}
+            placeholder="Search runs"
+            aria-label="Search runs"
+            className="h-10 w-full rounded-full sm:w-64"
+          />
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>

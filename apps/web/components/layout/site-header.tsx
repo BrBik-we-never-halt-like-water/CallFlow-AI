@@ -9,6 +9,7 @@ import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/cn";
 import { BrandLockup } from "@/components/brand/wordmark";
 import { Button } from "@/components/ui/button";
+import { ThemeToggle } from "@/components/ui/theme-toggle";
 
 const PRODUCT_LINKS = [
   { label: "How it works", href: "/#how-it-works", hint: "Four steps, spreadsheet to queue" },
@@ -41,8 +42,10 @@ const SOLUTION_LINKS = [
   },
 ];
 
+// "Pricing" sat at the top of this list until the pricing pages were removed —
+// the plans are not decided, and the page was rendering `TODO` chips where the
+// numbers belong. Put it back here when there is something true to link to.
 const FLAT_LINKS = [
-  { label: "Pricing", href: "/pricing" },
   { label: "Docs", href: "/docs" },
   { label: "Trust", href: "/trust" },
 ];
@@ -105,15 +108,27 @@ export function SiteHeader() {
   return (
     <header
       className={cn(
-        "sticky top-0 z-40 h-16 border-b",
+        // Height comes from the token, not a literal. `--h-site-header` is what
+        // `scroll-padding-top` and the deck sections' own height are computed
+        // from, and this was `h-16` (64px) against a token of 68px — a 4px lie
+        // that showed up as a sliver of the previous section under the bar.
+        "sticky top-0 z-40 h-(--h-site-header) border-b",
         "transition-[border-color,box-shadow,background-color] duration-(--dur-base) ease-(--ease-out)",
         // Flush with the page at the top — header and hero share --surface, so
-        // there is nothing to lift. Once content starts passing underneath it
-        // becomes glass: blurred and saturated rather than merely translucent,
-        // which is what keeps nav labels legible over whatever scrolls beneath.
-        // `.glass` falls back to a solid surface where backdrop-filter is
-        // unsupported, so the text is never left floating on a see-through bar.
-        scrolled ? "glass rounded-none border-rule shadow-sm" : "border-transparent bg-surface",
+        // there is nothing to lift. Once content starts passing underneath, the
+        // bar lifts with a rule and a shadow but stays **opaque**.
+        //
+        // It used to switch to `.glass` here. That class composed its blur as
+        // `blur(var(--glass-blur))` against a `--glass-blur` that is already a
+        // complete filter value on this side of the CAL-4 merge, so the
+        // backdrop-filter was invalid and dropped while its 72%-opaque
+        // background stayed — a see-through bar with no blur, page content
+        // reading straight through the nav. Rather than repair the blur, the
+        // header is solid: nav labels sit on a known surface at a known
+        // contrast instead of on whatever happens to be scrolling beneath.
+        scrolled
+          ? "rounded-none border-rule bg-surface-raised shadow-sm"
+          : "border-transparent bg-surface",
       )}
     >
       <div className="mx-auto flex h-full max-w-(--container-marketing) items-center justify-between gap-4 px-4 sm:px-6">
@@ -155,6 +170,10 @@ export function SiteHeader() {
         </nav>
 
         <div className="flex items-center gap-2">
+          {/* Hidden on small screens: at that width the bar is already the
+              wordmark, a CTA and the menu button, and a third control pushes
+              the CTA off. It reappears inside the mobile sheet instead. */}
+          <ThemeToggle className="hidden md:inline-flex" />
           <Button asChild variant="ghost" size="sm" className="hidden sm:inline-flex">
             <Link href="/login">Sign in</Link>
           </Button>
@@ -309,6 +328,11 @@ function MobileNav() {
           </nav>
 
           <div className="flex shrink-0 flex-col gap-2 border-t border-rule p-4">
+            {/* The toggle the top bar hides at this width. */}
+            <div className="flex items-center justify-between pb-2">
+              <span className="text-small text-text-mute">Theme</span>
+              <ThemeToggle />
+            </div>
             <Button asChild size="lg">
               <Link href="/signup" onClick={() => setOpen(false)}>
                 Start free

@@ -5,6 +5,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { ToastProvider } from '@/components/ui/toast';
 import { ViewTransitions } from '@/components/layout/view-transitions';
 import { SiteLoader } from '@/components/layout/site-loader';
+import { THEME_PRE_PAINT_SCRIPT } from '@/lib/theme';
 import './globals.css';
 
 /**
@@ -74,10 +75,15 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  // Light only - there is no dark theme, so the browser chrome should not
-  // pretend there is one.
-  themeColor: '#F4F6F5',
-  colorScheme: 'light',
+  // Both, now that the theme is real. `themeColor` takes a media-keyed list so
+  // the browser's own chrome (the address bar on mobile, the window frame on
+  // some desktops) matches the page instead of framing a dark page in a light
+  // bar. These are `--surface`'s two values; keep them in step with globals.css.
+  themeColor: [
+    { media: '(prefers-color-scheme: light)', color: '#f3f4f6' },
+    { media: '(prefers-color-scheme: dark)', color: '#050505' },
+  ],
+  colorScheme: 'light dark',
 };
 
 export default function RootLayout({
@@ -87,7 +93,21 @@ export default function RootLayout({
     <html
       lang="en"
       className={`${archivo.variable} ${interTight.variable} ${jetbrainsMono.variable}`}
+      // The pre-paint script sets `data-theme` on this element before React
+      // hydrates, so the server-rendered markup and the DOM legitimately differ
+      // by that one attribute. Without this, React warns on every load.
+      suppressHydrationWarning
     >
+      <head>
+        {/*
+          Before first paint, not in a provider or an effect. A dark-theme user
+          who waits for React has already been shown a white page. See
+          `lib/theme.ts` for why this is a hand-written ES5 string.
+        */}
+        <script
+          dangerouslySetInnerHTML={{ __html: THEME_PRE_PAINT_SCRIPT }}
+        />
+      </head>
       <body className="min-h-dvh bg-surface text-text">
         <NuqsAdapter>
           <TooltipProvider>

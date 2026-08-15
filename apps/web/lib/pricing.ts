@@ -2,15 +2,34 @@
  * Commercial configuration — the single source of truth for pricing.
  *
  * ─────────────────────────────────────────────────────────────────────────────
- * TODO BEFORE LAUNCH — every `null` below is an unset commercial number and
- * renders as a visible `TODO` chip on /pricing. Nothing here is a placeholder
- * guess dressed up as a real price, because a wrong number on a pricing page is
- * worse than an obviously missing one.
+ * THE PUBLIC PRICING PAGES ARE CURRENTLY REMOVED.
+ *
+ * `/pricing`, `PricingPreview` (the home page's pricing section), `PricingTable`,
+ * `CostComparison` and `PriceValue` were all deleted because the numbers below
+ * are still unset and the pages were rendering visible `TODO` chips where the
+ * prices belong. This file is deliberately **kept whole** rather than trimmed to
+ * its two live consumers: it is where the numbers get decided, and
+ * `FEATURE_MATRIX` / `PRICING_FAQ` / `ENTERPRISE` are real written content that
+ * the pages will need again. Treat the unused exports as staged, not dead.
+ *
+ * Still consumed today:
+ *   - `PLANS`        → app/(app)/app/settings/billing/page.tsx
+ *   - `ROI_DEFAULTS` → components/marketing/roi-calculator.tsx (solution pages;
+ *                      it models the *buyer's* own human-call cost, never ours,
+ *                      which is why it survives with pricing undecided)
+ *
+ * TODO BEFORE THE PAGES COME BACK — every `null` below is an unset commercial
+ * number. Nothing here is a placeholder guess dressed up as a real price,
+ * because a wrong number on a pricing page is worse than a missing one.
  *
  *   [ ] monthlyInr / monthlyUsd for Starter, Growth, Scale
  *   [ ] includedCalls for every tier
  *   [ ] overageInr / overageUsd for every tier
  *   [ ] confirm ANNUAL_MONTHS_FREE matches what Billing actually charges
+ *   [ ] restore the routes + the "Pricing" nav/footer links (site-header.tsx,
+ *       site-footer.tsx) and the `#pricing` deck section on the home page
+ *   [ ] re-check lib/verticals.ts's goal script, which tells callers pricing is
+ *       "published on the website"
  *
  * Layout reads these values and never hard-codes one, so filling them in is a
  * single-file change.

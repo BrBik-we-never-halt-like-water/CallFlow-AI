@@ -11,7 +11,7 @@ import {
   TrendUpIcon,
 } from '@phosphor-icons/react/dist/ssr';
 import Link from 'next/link';
-import { useMemo, useState, type CSSProperties } from 'react';
+import { useMemo, useState } from 'react';
 import { Lamp } from '@/components/brand/lamp';
 import { ConnectionBanner } from '@/components/app/connection-banner';
 import { InviteDialog } from '@/components/app/invite-dialog';
@@ -61,61 +61,38 @@ const DISPOSITION_STAT_TRIO: {
 /** The strip shows the most recent calls. 100 is the design's stated window. */
 const STRIP_WINDOW = 100;
 
-/**
- * Re-scopes the generic colour tokens (`--text`, `--surface-raised`, the ten
- * `--lamp-*` pairs, ...) to their `--dark-*` equivalents - the exact
- * mechanism `.dark-chrome`/`.dark-panel-glass` use in globals.css (CSS
- * custom properties inherit through the DOM regardless of component
- * boundaries), applied inline here because this page can't add a class to
- * `AppShell`'s own wrapper (out of scope for this task - see the D2 report).
- * Every `.dark-panel-glass` card on this page carries the same block, so
- * this is only load-bearing for what's rendered *outside* a card: the page
- * header's buttons, `ConnectionBanner`, the loading skeleton. Radix portals
- * (`Popover`/`Dialog` content, e.g. the Team popover) render outside this
- * element's subtree and correctly keep rendering light, same as every other
- * popover in this pivot.
+/*
+ * `DARK_SCOPE_STYLE` used to live here - an inline object re-scoping the
+ * generic colour tokens to their `--dark-*` equivalents on this page's own
+ * wrapper, because at the time nothing above it could. Three separate tasks
+ * had re-derived that same block independently (this page, the runs page,
+ * `DataTable`), which is the usual sign that a thing belongs one level up.
+ *
+ * It belongs on `:root`, and that is where it is now: `[data-theme='dark']`
+ * (globals.css) repoints every one of those tokens for the whole document, so
+ * a page no longer has to know the theme exists. Deleted rather than kept as a
+ * no-op, because an inline `style` beats a stylesheet on specificity and would
+ * silently pin this page to dark forever - it would be the one surface the
+ * theme toggle could not move.
  */
-const DARK_SCOPE_STYLE = {
-  '--text': 'var(--dark-text)',
-  '--text-dim': 'var(--dark-text-dim)',
-  '--text-mute': 'var(--dark-text-mute)',
-  '--rule': 'var(--dark-rule)',
-  '--rule-strong': 'var(--dark-rule-strong)',
-  '--surface-raised': 'var(--dark-surface)',
-  '--surface-hover': 'var(--dark-surface-hover)',
-  '--surface-sunken': 'var(--dark-surface-sunken)',
-  '--lamp-off': 'var(--dark-lamp-off)',
-  '--lamp-ice': 'var(--dark-lamp-ice)',
-  '--lamp-brass': 'var(--dark-lamp-brass)',
-  '--lamp-jade': 'var(--dark-lamp-jade)',
-  '--lamp-flare': 'var(--dark-lamp-flare)',
-  '--lamp-off-text': 'var(--dark-lamp-off-text)',
-  '--lamp-ice-text': 'var(--dark-lamp-ice-text)',
-  '--lamp-brass-text': 'var(--dark-lamp-brass-text)',
-  '--lamp-jade-text': 'var(--dark-lamp-jade-text)',
-  '--lamp-flare-text': 'var(--dark-lamp-flare-text)',
-} as CSSProperties;
 
-/**
- * The primary button's background is `--accent` within all of `/app/*`
- * already (globals.css, `.app-font-scope .btn-glass-primary` - the round-3
- * approval documented in DESIGN_NOTES §2), which on this page would mean the
- * *light* theme's forest-green CTA sitting on a dark purple-accented page -
- * `--accent`/`--dark-accent` are kept deliberately independent tokens
- * (globals.css, CLAUDE.md §4 #10), so nothing flips that automatically.
- * Rather than touch the shared `Button`/globals.css (out of this task's file
- * scope, and shared with every other `/app/*` page), every primary button
- * on this page gets this inline override instead - still token-only, no raw
- * hex. `--dark-accent` is a low-luminance violet (globals.css's own
- * citation for the exact number), so white text sits on it correctly
- * (~5.4:1) - the inverse of this token's previous cyan value, where white
- * only cleared ~2.4:1 and had to be swapped for dark text instead. Text
- * flips along with the color, not independently of it.
+/*
+ * `PRIMARY_CTA_STYLE` is gone for the same reason as `DARK_SCOPE_STYLE` above,
+ * and it is worth saying why explicitly, because the reasoning that justified
+ * it was correct right up until it wasn't.
+ *
+ * It pinned this page's primary buttons to `--dark-accent`, because `--primary`
+ * was the light theme's indigo and this page was permanently dark: `#3b2fd9`
+ * clears 8.09:1 for its white label but only 2.52:1 against `--dark-bg`, so it
+ * sank into the page, while `#4f46e5` clears both at 6.29:1 and 3.24:1.
+ *
+ * All of that is still true - and it is now `[data-theme='dark']`'s job, where
+ * it says exactly that. `--primary` resolves to `#3b2fd9` in light and
+ * `#4f46e5` in dark, so the button is correct in both without an override.
+ * Keeping the inline style would have inverted its own purpose: an inline
+ * `background` outranks the stylesheet, so these buttons would have stayed
+ * dark-indigo on a white page.
  */
-const PRIMARY_CTA_STYLE = {
-  background: 'color-mix(in oklab, var(--dark-accent) 92%, transparent)',
-  color: 'var(--dark-text)',
-} as CSSProperties;
 
 export default function OverviewPage() {
   const session = useSession();
@@ -217,10 +194,10 @@ export default function OverviewPage() {
   // Once real data exists, never fall back to this, even on a background refetch.
   if ((phase !== 'up' || loadingRuns) && !hasAnything) {
     return (
-      <div className="relative isolate min-h-full" style={DARK_SCOPE_STYLE}>
+      <div className="relative isolate min-h-full">
         <div
           aria-hidden
-          className="dark-canvas absolute -inset-x-4 -inset-y-6 -z-10 sm:-inset-x-6"
+          className="app-canvas absolute -inset-x-4 -inset-y-6 -z-10 sm:-inset-x-6"
         />
         <div className="flex flex-col gap-6">
           <PageTitle session={session} canStart={canStart} />
@@ -232,7 +209,7 @@ export default function OverviewPage() {
   }
 
   return (
-    <div className="relative isolate min-h-full" style={DARK_SCOPE_STYLE}>
+    <div className="relative isolate min-h-full">
       {/* The dark canvas + indigo glow, bled into `<main>`'s own padding
           (AppShell, out of scope for this task) via negative inset rather
           than negative margin, so it fills the space that padding already
@@ -241,13 +218,13 @@ export default function OverviewPage() {
           negative z-index is only ever compared against its own sibling,
           regardless of `template.tsx`'s `.page-enter` transform animation
           (which briefly creates its own stacking context on every route
-          change and, without `isolate` here, let the ancestor `.canvas-tint`
+          change and, without `isolate` here, let the ancestor `.app-canvas`
           wash paint in front of the backdrop for that ~240ms window -
           confirmed with the browser's computed stacking order, not just
           inferred from spec-reading). */}
       <div
         aria-hidden
-        className="dark-canvas absolute -inset-x-4 -inset-y-6 -z-10 sm:-inset-x-6"
+        className="app-canvas absolute -inset-x-4 -inset-y-6 -z-10 sm:-inset-x-6"
       />
 
       <div className="flex flex-col gap-6">
@@ -260,10 +237,10 @@ export default function OverviewPage() {
         <div className="grid gap-6 lg:grid-cols-[3fr_2fr]">
           {/* ================= Left column (~60%) ================= */}
           <div className="flex flex-col gap-6">
-            <Panel className="dark-panel-glass flex flex-col gap-4 p-5 sm:p-7">
+            <Panel className="panel-glass flex flex-col gap-4 p-5 sm:p-7">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="flex items-center gap-3">
-                  <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-dark-accent/15 text-dark-accent">
+                  <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary/15 text-primary">
                     <ChartLineUpIcon aria-hidden className="size-4.5" />
                   </span>
                   <div className="flex flex-col">
@@ -276,7 +253,7 @@ export default function OverviewPage() {
                     {trend.up ? (
                       <TrendUpIcon
                         aria-hidden
-                        className="size-3.5 text-dark-accent"
+                        className="size-3.5 text-primary"
                       />
                     ) : (
                       <TrendDownIcon
@@ -291,7 +268,7 @@ export default function OverviewPage() {
               </div>
 
               {volumeSeries.length > 0 ? (
-                <AreaChart data={volumeSeries} tone="dark" />
+                <AreaChart data={volumeSeries} />
               ) : (
                 <p className="py-6 text-center text-small text-text-dim">
                   No calls yet
@@ -330,7 +307,7 @@ export default function OverviewPage() {
             {/* ---- Needs a person: taller, full right-column width -------- */}
             <Panel
               interactive
-              className="dark-panel-glass flex flex-1 flex-col gap-4 p-5 sm:p-6"
+              className="panel-glass flex flex-1 flex-col gap-4 p-5 sm:p-6"
             >
               <div className="flex items-center justify-between gap-2">
                 <p className="text-small font-bold text-text-mute">
@@ -353,7 +330,7 @@ export default function OverviewPage() {
                 />
               ) : (
                 <ul className="flex flex-col divide-y divide-rule">
-                  {escalations.slice(0, 2).map((outcome, i) => (
+                  {escalations.slice(0, 5).map((outcome, i) => (
                     <li key={`${outcome.contact_name}-${i}`}>
                       <NeedsPersonRow outcome={outcome} />
                     </li>
@@ -369,7 +346,7 @@ export default function OverviewPage() {
                 "more work than it's worth right now" is a resized donut; this
                 goes one step further into the actual stat-trio shape since the
                 layout cost of that was low, just without the sparkline detail). */}
-            <Panel className="dark-panel-glass flex flex-col gap-4 p-5 sm:p-6">
+            <Panel className="panel-glass flex flex-col gap-4 p-5 sm:p-6">
               <div className="flex items-baseline justify-between gap-2">
                 <p className="text-small font-bold text-text-mute">
                   Disposition
@@ -410,7 +387,7 @@ export default function OverviewPage() {
             more definitive than the sample backing it. A zero count still
             renders, dimmed: "0 need a person" is real information. --------- */}
         <div className="signal-field rounded-xl">
-          <Panel className="dark-panel-glass flex flex-col gap-5 p-5 sm:p-7">
+          <Panel className="panel-glass flex flex-col gap-5 p-5 sm:p-7">
             <div className="flex flex-col gap-1">
               <p className="text-small font-bold text-text-mute">
                 Outcome distribution
@@ -428,7 +405,7 @@ export default function OverviewPage() {
                 body="Add contacts and start a run."
                 action={
                   canStart ? (
-                    <Button asChild style={PRIMARY_CTA_STYLE}>
+                    <Button asChild>
                       <Link href="/app/runs/new">Start a run</Link>
                     </Button>
                   ) : undefined
@@ -460,7 +437,7 @@ export default function OverviewPage() {
         {/* ---- Recent runs --------------------------------------------------- */}
         <Panel
           interactive
-          className="dark-panel-glass flex flex-col gap-4 p-5 sm:p-6"
+          className="panel-glass flex flex-col gap-4 p-5 sm:p-6"
         >
           <div className="flex items-center justify-between gap-2">
             <p className="text-small font-bold text-text-mute">Recent runs</p>
@@ -478,7 +455,7 @@ export default function OverviewPage() {
               body="Runs are how contacts get called."
               action={
                 canStart ? (
-                  <Button asChild size="sm" style={PRIMARY_CTA_STYLE}>
+                  <Button asChild size="sm">
                     <Link href="/app/runs/new">Start a run</Link>
                   </Button>
                 ) : undefined
@@ -524,7 +501,7 @@ export default function OverviewPage() {
 
         {/* ---- Recent calls ---------------------------------------------- */}
         {settled.length > 0 ? (
-          <Panel className="dark-panel-glass flex flex-col gap-1 p-5 sm:p-6">
+          <Panel className="panel-glass flex flex-col gap-1 p-5 sm:p-6">
             <p className="pb-2 text-small font-bold text-text-mute">
               Recent calls
             </p>
@@ -657,7 +634,7 @@ function NeedsPersonRow({ outcome }: { outcome: Outcome }) {
       : outcome.disposition_reason;
 
   return (
-    <div className="flex flex-col gap-2.5 py-3 first:pt-0 last:pb-0 my-4">
+    <div className="flex flex-col gap-2.5 py-3 first:pt-0 last:pb-0">
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2.5">
           <span
@@ -841,7 +818,7 @@ function TeamPreview({ canInvite }: { canInvite: boolean }) {
   const shown = members.slice(0, 3);
 
   return (
-    <Panel className="dark-panel-glass flex flex-col gap-3 p-5 sm:p-6">
+    <Panel className="panel-glass flex flex-col gap-3 p-5 sm:p-6">
       <div className="flex items-center justify-between gap-2">
         <p className="text-small font-bold text-text-mute">Team</p>
         <div className="flex items-center gap-1.5">
@@ -906,9 +883,9 @@ function TeamPreview({ canInvite }: { canInvite: boolean }) {
  * point duplicating `TeamPreview`'s own "+" - retired, not repurposed). */
 function NextMoveCard({ canStart }: { canStart: boolean }) {
   return (
-    <Panel className="dark-panel-glass flex flex-col gap-3 p-5 sm:p-6">
-      <span className="flex size-10 items-center justify-center rounded-full bg-dark-accent/15">
-        <PhoneCallIcon aria-hidden className="size-5 text-dark-accent" />
+    <Panel className="panel-glass flex flex-col gap-3 p-5 sm:p-6">
+      <span className="flex size-10 items-center justify-center rounded-full bg-primary/15">
+        <PhoneCallIcon aria-hidden className="size-5 text-primary" />
       </span>
       <div className="flex flex-col gap-1">
         <h3 className="font-display text-h4 text-text">
@@ -919,7 +896,7 @@ function NextMoveCard({ canStart }: { canStart: boolean }) {
         </p>
       </div>
       {canStart ? (
-        <Button asChild size="sm" className="mt-1 self-start" style={PRIMARY_CTA_STYLE}>
+        <Button asChild size="sm" className="mt-1 self-start">
           <Link href="/app/runs/new">Start a run</Link>
         </Button>
       ) : null}
@@ -944,7 +921,7 @@ function PageTitle({
           <Link href="/app/campaigns">Campaigns</Link>
         </Button>
         {canStart ? (
-          <Button asChild style={PRIMARY_CTA_STYLE}>
+          <Button asChild>
             <Link href="/app/runs/new">Start a run</Link>
           </Button>
         ) : null}
@@ -958,14 +935,14 @@ function LoadingSkeleton() {
     <div className="flex flex-col gap-4">
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {Array.from({ length: 4 }, (_, i) => (
-          <Panel key={i} className="dark-panel-glass flex flex-col gap-3 p-4">
+          <Panel key={i} className="panel-glass flex flex-col gap-3 p-4">
             <Skeleton className="h-2.5 w-20" />
             <Skeleton className="h-8 w-16" />
             <Skeleton className="h-2.5 w-24" />
           </Panel>
         ))}
       </div>
-      <Panel className="dark-panel-glass flex flex-col gap-3 p-5">
+      <Panel className="panel-glass flex flex-col gap-3 p-5">
         <Skeleton className="h-2.5 w-32" />
         <Skeleton className="h-6 w-48" />
         <Skeleton className="h-3 w-full" />

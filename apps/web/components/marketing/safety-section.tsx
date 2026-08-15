@@ -57,9 +57,33 @@ const GUARDS_EXPLAINED: { icon: Icon; name: string; behaviour: string; detail: s
   },
 ];
 
+/**
+ * What a tripped guard actually says.
+ *
+ * A guard nobody can see the output of is a promise, not a feature — the claim
+ * "it fails closed" is only checkable if you know what closing looks like. These
+ * are the product's real messages, in the product's own voice (CLAUDE.md §5:
+ * state what happened and what to do next, never "something went wrong"), which
+ * is also the fastest way to show that a skip is specific rather than a shrug.
+ */
+const WHEN_A_GUARD_TRIPS: { trigger: string; message: string }[] = [
+  {
+    trigger: "A row fails validation",
+    message: "Not a valid E.164 number — try +919876543210.",
+  },
+  {
+    trigger: "The run reaches its ceiling",
+    message: "This run hit the per-run ceiling of 3 calls and stopped.",
+  },
+  {
+    trigger: "A number is on the suppression list",
+    message: "Skipped — this person opted out. They are never dialled again, by any campaign.",
+  },
+];
+
 export function SafetySection() {
   return (
-    <section id="safety" className="mx-auto max-w-(--container-marketing) px-4 sm:px-6">
+    <section className="mx-auto max-w-(--container-marketing) px-4 sm:px-6">
       <Reveal>
         <SectionHeading
           title="The guards fail closed."
@@ -67,8 +91,8 @@ export function SafetySection() {
         />
       </Reveal>
 
-      <Reveal delayMs={80} className="mt-8">
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <Reveal delayMs={80} className="mt-(--deck-gap)">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           {ACTIVE_GUARDS.map((guard) => {
             const GuardIcon = guard.icon;
             return (
@@ -94,8 +118,8 @@ export function SafetySection() {
         </div>
       </Reveal>
 
-      <Reveal delayMs={120} className="mt-8">
-        <dl className="grid gap-x-8 gap-y-7 border-t border-rule pt-8 sm:grid-cols-2 lg:grid-cols-3">
+      <Reveal delayMs={120} className="mt-(--deck-gap)">
+        <dl className="grid gap-x-8 gap-y-(--deck-gap) border-t border-rule pt-(--deck-gap) sm:grid-cols-2 lg:grid-cols-3">
           {GUARDS_EXPLAINED.map((guard) => {
             const GuardIcon = guard.icon;
             return (
@@ -114,6 +138,29 @@ export function SafetySection() {
             );
           })}
         </dl>
+      </Reveal>
+
+      <Reveal delayMs={160} className="mt-(--deck-gap)">
+        <div className="card-raised p-6 sm:p-7">
+          <h3 className="text-h4 font-medium text-text">When a guard trips, it says so.</h3>
+          <p className="mt-1.5 text-small text-text-dim">
+            The run keeps going where it safely can — the row is skipped, not the list.
+          </p>
+
+          <ul className="mt-5 flex flex-col gap-2.5">
+            {WHEN_A_GUARD_TRIPS.map(({ trigger, message }) => (
+              <li
+                key={trigger}
+                className="flex flex-col gap-1 rounded-md bg-surface-sunken/70 px-4 py-3 sm:flex-row sm:items-baseline sm:gap-4"
+              >
+                <span className="shrink-0 font-mono text-label tracking-wider text-text-mute uppercase sm:w-64">
+                  {trigger}
+                </span>
+                <span className="text-small text-text">{message}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
       </Reveal>
     </section>
   );

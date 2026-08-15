@@ -291,7 +291,7 @@ If they can talk, qualify on four things, conversationally rather than as a chec
 3. What timeline they are working to.
 4. Who else would be involved in deciding.
 
-Do not quote prices, offer a discount, or commit to any date. If they ask what it costs, say pricing depends on volume, that it is published on the website, and that a specialist will confirm the detail.
+Do not quote prices, offer a discount, or commit to any date. If they ask what it costs, say pricing depends on volume and that a specialist will confirm the detail. Do not tell them to look it up - there is no published price list yet.
 
 If they are clearly not a fit - no budget, no timeline, or a problem this does not solve - say so kindly, thank them, and close. It is better to mark a lead unqualified than to book a meeting nobody wants.
 

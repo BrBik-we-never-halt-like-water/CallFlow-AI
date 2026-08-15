@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef } from "react";
+import { useTheme } from "./use-theme";
 import { usePrefersReducedMotion } from "./use-external-store";
 
 export interface CanvasFrame {
@@ -27,6 +28,11 @@ export interface CanvasFrame {
  *    the finished image, not an empty box.
  * 3. **It re-scales on resize.** Canvas backing store is set from devicePixelRatio, so
  *    the drawing stays sharp and the draw function can work in plain CSS pixels.
+ * 4. **It repaints when the theme changes.** A draw function that resolves a CSS token
+ *    is correct while it animates and wrong the moment it stops: under reduced motion
+ *    one frame is painted and never again, so a theme switch left the old theme's ink
+ *    on the canvas until a reload. Pixels a canvas has already drawn do not restyle
+ *    themselves - the theme has to be a reason to draw.
  */
 export function useCanvasAnimation(
   draw: (frame: CanvasFrame) => void,
@@ -34,6 +40,7 @@ export function useCanvasAnimation(
 ) {
   const ref = useRef<HTMLCanvasElement | null>(null);
   const reduced = usePrefersReducedMotion();
+  const { resolved: theme } = useTheme();
 
   // Held in a ref so a new inline draw function on every render does not tear
   // down and restart the loop. Assigned in an effect rather than during render:
@@ -119,7 +126,7 @@ export function useCanvasAnimation(
       io.disconnect();
       ro.disconnect();
     };
-  }, [reduced, paused, staticAt, size]);
+  }, [reduced, paused, staticAt, size, theme]);
 
   return ref;
 }

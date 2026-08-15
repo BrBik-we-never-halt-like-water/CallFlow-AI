@@ -1,5 +1,5 @@
 import type { ContactInput } from './api';
-import { hasValidNationalLength, isE164, normalisePhone } from './format/phone';
+import { isE164, normalisePhone } from './format/phone';
 
 export interface ParsedRow {
   row: number;
@@ -127,30 +127,15 @@ export function validateRow(
       errorField: 'phone',
     };
   }
-  if (!hasValidNationalLength(normalised)) {
-    return {
-      valid: false,
-      error: 'Phone number must be 10 digits after the country code - try +919876543210.',
-      errorField: 'phone',
-    };
-  }
   return { valid: true };
 }
 
-/**
- * Normalises the phone again here, not just at entry - `row.phone` may still
- * hold whatever the person typed (a bare 10-digit number, say) even though
- * `valid: true` was computed against its normalised form. Sending the raw,
- * un-normalised value to the API would fail E.164 validation there for a row
- * this exact screen showed as ready - a defensive fix, not just a cosmetic
- * one, so this boundary is correct even if the grid's own state ever isn't.
- */
 export function toContactInputs(rows: ParsedRow[]): ContactInput[] {
   return rows
     .filter((r) => r.valid)
     .map((r) => ({
       name: r.name,
-      phone: normalisePhone(r.phone),
+      phone: r.phone,
       context: {
         enquiry_note: r.note || 'no note on file',
         appointment_time: 'tomorrow at 4pm',
@@ -158,10 +143,9 @@ export function toContactInputs(rows: ParsedRow[]): ContactInput[] {
     }));
 }
 
-// Downloadable template for the "Download sample CSV" button - the exact
-// columns the importer reads, plus one example row so the format is obvious
-// without anyone having to guess at it. A reserved fictional number
-// (+1 555 0100-0199) - sample data must never be able to reach a real person
-// if someone runs it in live mode.
+// Reserved fictional numbers only (+1 555 0100-0199) - sample data must never
+// be able to reach a real person if someone runs it in live mode.
 export const SAMPLE_CSV = `name,phone,note
-Aditi Sharma,+15555550100,asked about Bali in December`;
+Aditi Sharma,+15555550100,asked about Bali in December
+Rahul Verma,+15555550101,honeymoon package enquiry
+Priya Nair,+15555550102,family trip to Singapore`;

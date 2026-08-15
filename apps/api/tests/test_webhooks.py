@@ -210,11 +210,6 @@ async def test_happy_path_persists_the_same_outcome_polling_would_have(tenant: T
             campaign_id=TRAVEL_DISCOVERY.id,
             total=1,
             started_by=tenant.user_id,
-            max_calls_per_run=10,
-            allowlist=[],
-            calls_per_window=10,
-            window_minutes=60,
-            daily_budget=100,
         )
 
     payload = _payload(
@@ -260,11 +255,6 @@ async def test_webhook_write_uses_the_runs_own_starter_not_a_different_org(
                 campaign_id=TRAVEL_DISCOVERY.id,
                 total=1,
                 started_by=tenant.user_id,
-                max_calls_per_run=10,
-                allowlist=[],
-                calls_per_window=10,
-                window_minutes=60,
-                daily_budget=100,
             )
 
         payload = _payload(
