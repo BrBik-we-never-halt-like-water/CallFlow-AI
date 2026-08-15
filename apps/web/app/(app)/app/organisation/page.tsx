@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Suspense, useState } from 'react';
+import { Suspense, useCallback, useState } from 'react';
 import { InviteDialog, ROLES } from '@/components/app/invite-dialog';
 import { SessionGate } from '@/components/app/session-gate';
 import {
@@ -24,9 +24,16 @@ import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TabPanel, Tabs } from '@/components/ui/disclosure';
 import { useToast } from '@/components/ui/toast';
-import { api, type Member, type PendingInvite, type Team } from '@/lib/api';
+import {
+  api,
+  type Member,
+  type PendingInvite,
+  type ShareRequest,
+  type Team,
+} from '@/lib/api';
 import { formatAge, formatTimestamp } from '@/lib/format';
 import { useActiveOrg } from '@/lib/hooks/use-active-org';
+import { useOrgRealtime } from '@/lib/hooks/use-org-realtime';
 import { useOrgScopedEffect } from '@/lib/hooks/use-org-scoped-effect';
 import { useSession, type SessionProfile } from '@/lib/hooks/use-session';
 
@@ -46,11 +53,15 @@ export default function OrganisationPage() {
   );
 }
 
+const TAB_VALUES = ['organisation', 'team', 'sharing'] as const;
+
 function OrganisationPageContent() {
   const session = useSession();
   const searchParams = useSearchParams();
+  const requestedTab = searchParams.get('tab');
   const initialTab =
-    searchParams.get('tab') === 'team' ? 'team' : 'organisation';
+    (TAB_VALUES as readonly string[]).find((v) => v === requestedTab) ??
+    'organisation';
   const [tab, setTab] = useState(initialTab);
 
   return (
@@ -76,6 +87,7 @@ function OrganisationPageContent() {
             tabs={[
               { value: 'organisation', label: 'Organisation' },
               { value: 'team', label: 'Team' },
+              { value: 'sharing', label: 'Sharing' },
             ]}
           >
             <TabPanel value="organisation" className="max-w-2xl pt-6">
@@ -83,6 +95,9 @@ function OrganisationPageContent() {
             </TabPanel>
             <TabPanel value="team" className="max-w-2xl pt-6">
               <TeamPane profile={profile} />
+            </TabPanel>
+            <TabPanel value="sharing" className="max-w-2xl pt-6">
+              <SharingPane profile={profile} />
             </TabPanel>
           </Tabs>
         )}
@@ -316,6 +331,14 @@ function TeamPane({ profile }: { profile: SessionProfile }) {
   const [loading, setLoading] = useState(true);
   const [inviting, setInviting] = useState(false);
   const [pendingRemove, setPendingRemove] = useState<Member | null>(null);
+  const [allocations, setAllocations] = useState<Map<string, number>>(
+    new Map(),
+  );
+
+  const canInvite = profile.permissions.includes('team:invite');
+  const canRemove = profile.permissions.includes('team:remove');
+  const canSetRole = profile.permissions.includes('team:set_role');
+  const canSetCredits = profile.permissions.includes('credits:write');
 
   function load() {
     api
@@ -325,13 +348,26 @@ function TeamPane({ profile }: { profile: SessionProfile }) {
       .finally(() => setLoading(false));
   }
 
+  function loadAllocations() {
+    if (!canSetCredits) return;
+    api
+      .teamPerformance()
+      .then((rows) =>
+        setAllocations(
+          new Map(
+            rows
+              .filter((r): r is typeof r & { user_id: string } => !!r.user_id)
+              .map((r) => [r.user_id, r.daily_allocation]),
+          ),
+        ),
+      )
+      .catch(() => setAllocations(new Map()));
+  }
+
   useOrgScopedEffect(() => {
     void load();
+    loadAllocations();
   });
-
-  const canInvite = profile.permissions.includes('team:invite');
-  const canRemove = profile.permissions.includes('team:remove');
-  const canSetRole = profile.permissions.includes('team:set_role');
 
   return (
     <div className="flex flex-col gap-4">
@@ -366,7 +402,10 @@ function TeamPane({ profile }: { profile: SessionProfile }) {
                 self={member.user_id === profile.user_id}
                 canRemove={canRemove}
                 canSetRole={canSetRole}
+                canSetCredits={canSetCredits}
+                dailyAllocation={allocations.get(member.user_id) ?? 0}
                 onChanged={load}
+                onCreditsChanged={loadAllocations}
                 onRequestRemove={setPendingRemove}
               />
             ))}
@@ -424,6 +463,155 @@ function TeamPane({ profile }: { profile: SessionProfile }) {
         }}
         onRemoved={load}
       />
+    </div>
+  );
+}
+
+/**
+ * Peer-to-peer sharing (role-based UI roadmap, Phase 4): requests this
+ * person has sent, and any directed at them waiting for a decision. Shown
+ * to every role - who can *send* one is gated server-side
+ * (`sharing:request`, operator-only); anyone who happens to own a
+ * resource, any role, can be on the receiving end.
+ */
+function SharingPane({ profile }: { profile: SessionProfile }) {
+  const toast = useToast();
+  const [requests, setRequests] = useState<ShareRequest[] | null>(null);
+  const [deciding, setDeciding] = useState<string | null>(null);
+
+  const load = useCallback(() => {
+    api
+      .listShareRequests()
+      .then(setRequests)
+      .catch(() => toast({ tone: 'error', title: "Couldn't load sharing requests" }));
+  }, [toast]);
+
+  useOrgScopedEffect(() => {
+    load();
+  }, [load]);
+  useOrgRealtime('share_requests', profile.active.org_id, load);
+
+  async function decide(request: ShareRequest, approve: boolean) {
+    setDeciding(request.id);
+    try {
+      if (approve) {
+        await api.approveShareRequest(request.id);
+      } else {
+        await api.rejectShareRequest(request.id);
+      }
+      toast({
+        tone: approve ? 'success' : 'info',
+        title: approve ? 'Request approved' : 'Request rejected',
+      });
+      load();
+    } catch (error) {
+      toast({
+        tone: 'error',
+        title: "That decision wasn't saved",
+        body: error instanceof Error ? error.message : undefined,
+      });
+    } finally {
+      setDeciding(null);
+    }
+  }
+
+  const waitingOnYou = (requests ?? []).filter(
+    (r) => r.owner_user_id === profile.user_id && r.status === 'pending',
+  );
+  const sentByYou = (requests ?? []).filter(
+    (r) => r.requested_by === profile.user_id,
+  );
+
+  return (
+    <div className="flex flex-col gap-4">
+      <SettingsSection
+        title="Waiting on you"
+        description="Teammates asking for something you own."
+      >
+        {requests === null ? (
+          <div className="flex flex-col gap-2">
+            <Skeleton className="h-14 w-full" />
+          </div>
+        ) : waitingOnYou.length === 0 ? (
+          <EmptyState
+            title="Nothing waiting"
+            body="A request appears here the moment a teammate sends one - live, not on refresh."
+          />
+        ) : (
+          <ul className="flex flex-col divide-y divide-rule">
+            {waitingOnYou.map((request) => (
+              <li
+                key={request.id}
+                className="flex flex-wrap items-center justify-between gap-3 py-3"
+              >
+                <div className="flex min-w-0 flex-col gap-0.5">
+                  <span className="text-small font-medium text-text">
+                    {request.requested_by_name || 'A teammate'} wants your{' '}
+                    {request.resource_type}
+                    {request.resource_name ? ` "${request.resource_name}"` : ''}
+                  </span>
+                  {request.message ? (
+                    <span className="text-small text-text-dim">
+                      &ldquo;{request.message}&rdquo;
+                    </span>
+                  ) : null}
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    loading={deciding === request.id}
+                    onClick={() => decide(request, false)}
+                  >
+                    Reject
+                  </Button>
+                  <Button
+                    size="sm"
+                    loading={deciding === request.id}
+                    onClick={() => decide(request, true)}
+                  >
+                    Approve
+                  </Button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </SettingsSection>
+
+      <SettingsSection
+        title="Requests you've sent"
+        description="What you've asked for, and whether it's been decided."
+      >
+        {requests === null ? (
+          <div className="flex flex-col gap-2">
+            <Skeleton className="h-10 w-full" />
+          </div>
+        ) : sentByYou.length === 0 ? (
+          <EmptyState
+            title="Nothing sent"
+            body="Ask for a teammate's campaign or escalation from its own page."
+          />
+        ) : (
+          <ul className="flex flex-col divide-y divide-rule">
+            {sentByYou.map((request) => (
+              <li
+                key={request.id}
+                className="flex flex-wrap items-center justify-between gap-3 py-3"
+              >
+                <span className="min-w-0 truncate text-small text-text">
+                  {request.resource_type === 'campaign' ? 'Campaign' : 'Escalation'}{' '}
+                  {request.resource_name
+                    ? `"${request.resource_name}"`
+                    : request.resource_id}{' '}
+                  &middot; {request.owner_name || 'a teammate'}
+                </span>
+                <Tag>{request.status}</Tag>
+              </li>
+            ))}
+          </ul>
+        )}
+      </SettingsSection>
     </div>
   );
 }
@@ -502,14 +690,20 @@ function MemberRow({
   self,
   canRemove,
   canSetRole,
+  canSetCredits,
+  dailyAllocation,
   onChanged,
+  onCreditsChanged,
   onRequestRemove,
 }: {
   member: Member;
   self: boolean;
   canRemove: boolean;
   canSetRole: boolean;
+  canSetCredits: boolean;
+  dailyAllocation: number;
   onChanged: () => void;
+  onCreditsChanged: () => void;
   onRequestRemove: (member: Member) => void;
 }) {
   const toast = useToast();
@@ -563,6 +757,13 @@ function MemberRow({
         </span>
       </div>
       <div className="flex items-center gap-2">
+        {canSetCredits && !isOwner ? (
+          <CreditsField
+            userId={member.user_id}
+            initialAllocation={dailyAllocation}
+            onSaved={onCreditsChanged}
+          />
+        ) : null}
         <Tag>{member.role}</Tag>
         {(canRemove || (canSetRole && !isOwner) || self) && !isOwner ? (
           <DropdownMenu>
@@ -599,6 +800,71 @@ function MemberRow({
         ) : null}
       </div>
     </li>
+  );
+}
+
+/**
+ * A teammate's slice of the org's existing daily call budget - a
+ * subdivision, not a second limit (CLAUDE.md's own framing for this table:
+ * `member_credit_allocations` never bypasses `org_safety_settings.daily_budget`,
+ * which still applies on top). Saves on blur/Enter rather than needing a
+ * separate confirm button, matching how small a single-number field like
+ * this should be to commit.
+ */
+function CreditsField({
+  userId,
+  initialAllocation,
+  onSaved,
+}: {
+  userId: string;
+  initialAllocation: number;
+  onSaved: () => void;
+}) {
+  const toast = useToast();
+  const [value, setValue] = useState(String(initialAllocation));
+  const [saving, setSaving] = useState(false);
+
+  async function save() {
+    const parsed = Number.parseInt(value, 10);
+    if (!Number.isFinite(parsed) || parsed < 0) {
+      setValue(String(initialAllocation));
+      return;
+    }
+    if (parsed === initialAllocation) return;
+    setSaving(true);
+    try {
+      await api.setMemberCredits(userId, parsed);
+      toast({ tone: 'success', title: 'Daily credits updated' });
+      onSaved();
+    } catch (error) {
+      setValue(String(initialAllocation));
+      toast({
+        tone: 'error',
+        title: "Couldn't update their daily credits",
+        body: error instanceof Error ? error.message : undefined,
+      });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <label className="flex items-center gap-1.5 text-small text-text-dim">
+      Credits/day
+      <Input
+        type="number"
+        min={0}
+        value={value}
+        disabled={saving}
+        onChange={(e) => setValue(e.target.value)}
+        onBlur={save}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') e.currentTarget.blur();
+        }}
+        className="h-8 w-20 px-2 text-right"
+        aria-label="Daily credit allocation"
+      />
+    </label>
   );
 }
 

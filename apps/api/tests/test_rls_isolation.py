@@ -22,9 +22,13 @@ import pytest
 import pytest_asyncio
 
 from app.core.config import config
+from app.database.repositories import campaigns as campaigns_repo
+from app.database.repositories import credits as credits_repo
+from app.database.repositories import escalations as escalations_repo
 from app.database.repositories import invitations as invitations_repo
 from app.database.repositories import organisations as org_repo
 from app.database.repositories import runs as runs_repo
+from app.database.repositories import sharing as sharing_repo
 from app.domain.api_keys import generate_api_key, hash_api_key
 
 pytestmark = [
@@ -1518,6 +1522,689 @@ async def test_an_operator_cannot_call_remove_member_and_reassign_data_directly(
     )
     assert still_there, "an operator removed a teammate directly, bypassing the role check"
 
+    await db.execute(
+        "delete from auth.users where id = any($1::uuid[])",
+        [op1.auth_user_id, op2.auth_user_id],
+    )
+    await db.execute("delete from public.organisations where deleted_at is not null")
+
+
+# --- Real, persisted escalations + per-teammate credits (Phase 2 / Phase 5
+# slice of the role-based UI roadmap, migration 202608100900) --------------
+
+
+async def _insert_escalated_outcome_and_escalation(
+    db: asyncpg.Connection, *, org_id: uuid.UUID, run_id: str
+) -> uuid.UUID:
+    """Insert a call_outcome with an escalating disposition and the matching
+    `escalations` row - the same two-step sequence `runs.py`'s `on_progress`
+    closure performs, just without the run-scoped `as_user()` context (this
+    helper always runs while seated as `postgres`)."""
+    call_outcome_id = await db.fetchval(
+        """
+        insert into public.call_outcomes (run_id, org_id, contact_name, phone_masked, disposition)
+        values ($1, $2, 'Escalated Contact', '+1 555 0101', 'escalated')
+        returning id
+        """,
+        run_id,
+        org_id,
+    )
+    escalation_id = await db.fetchval(
+        """
+        insert into public.escalations (org_id, run_id, call_outcome_id)
+        values ($1, $2, $3)
+        returning id
+        """,
+        org_id,
+        run_id,
+        call_outcome_id,
+    )
+    return escalation_id
+
+
+async def test_operator_cannot_see_a_teammates_escalation(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    a, _ = tenants
+    await _as_postgres(db)
+
+    op1 = await _create_tenant(db, "esc-op1")
+    op2 = await _create_tenant(db, "esc-op2")
+    await _seat(db, a.org_id, op1, "operator")
+    await _seat(db, a.org_id, op2, "operator")
+    run_id = await _insert_run(db, org_id=a.org_id, started_by=op1.user_id)
+    await _insert_escalated_outcome_and_escalation(db, org_id=a.org_id, run_id=run_id)
+
+    async with db.transaction():
+        await _as_user(db, op2.auth_user_id)
+        rows = await escalations_repo.list_for_org(db, a.org_id)
+    assert rows == [], "operator can see a teammate's escalation"
+
+    async with db.transaction():
+        await _as_user(db, op1.auth_user_id)
+        rows = await escalations_repo.list_for_org(db, a.org_id)
+    assert len(rows) == 1
+
+    await _as_postgres(db)
+    await db.execute("delete from public.runs where org_id = $1", a.org_id)
+    await db.execute(
+        "delete from auth.users where id = any($1::uuid[])",
+        [op1.auth_user_id, op2.auth_user_id],
+    )
+    await db.execute("delete from public.organisations where deleted_at is not null")
+
+
+async def test_assigning_an_escalation_makes_it_visible_to_the_assignee(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    """An operator with no relationship to the run itself still sees an
+    escalation once it's assigned to them - the `assigned_to` branch of
+    `escalations_select`, independent of who started the underlying run."""
+    a, _ = tenants
+    await _as_postgres(db)
+
+    admin = await _create_tenant(db, "esc-assign-admin")
+    op1 = await _create_tenant(db, "esc-assign-op1")
+    op2 = await _create_tenant(db, "esc-assign-op2")
+    await _seat(db, a.org_id, admin, "admin")
+    await _seat(db, a.org_id, op1, "operator")
+    await _seat(db, a.org_id, op2, "operator")
+    run_id = await _insert_run(db, org_id=a.org_id, started_by=op1.user_id)
+    escalation_id = await _insert_escalated_outcome_and_escalation(
+        db, org_id=a.org_id, run_id=run_id
+    )
+
+    async with db.transaction():
+        await _as_user(db, op2.auth_user_id)
+        rows = await escalations_repo.list_for_org(db, a.org_id)
+    assert rows == [], "unassigned operator can already see another's escalation"
+
+    async with db.transaction():
+        await _as_user(db, admin.auth_user_id)
+        updated = await escalations_repo.assign(
+            db,
+            org_id=a.org_id,
+            escalation_id=escalation_id,
+            assigned_to=op2.user_id,
+            assigned_by=admin.user_id,
+        )
+    assert updated is not None
+
+    async with db.transaction():
+        await _as_user(db, op2.auth_user_id)
+        rows = await escalations_repo.list_for_org(db, a.org_id)
+    assert len(rows) == 1, "assignee still cannot see the escalation assigned to them"
+    assert rows[0]["assigned_to"] == op2.user_id
+
+    await _as_postgres(db)
+    await db.execute("delete from public.runs where org_id = $1", a.org_id)
+    await db.execute(
+        "delete from auth.users where id = any($1::uuid[])",
+        [admin.auth_user_id, op1.auth_user_id, op2.auth_user_id],
+    )
+    await db.execute("delete from public.organisations where deleted_at is not null")
+
+
+async def test_operator_cannot_assign_or_resolve_a_teammates_escalation(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    """RLS is the actual backstop for "is this row yours" - `ESCALATIONS_ASSIGN`/
+    `ESCALATIONS_RESOLVE` only gate that the *kind* of action is available to
+    the role at all, not which specific row. Called directly here the same
+    way the route calls the repository, bypassing the API's permission
+    dependency entirely, to prove the database itself refuses it."""
+    a, _ = tenants
+    await _as_postgres(db)
+
+    op1 = await _create_tenant(db, "esc-guard-op1")
+    op2 = await _create_tenant(db, "esc-guard-op2")
+    await _seat(db, a.org_id, op1, "operator")
+    await _seat(db, a.org_id, op2, "operator")
+    run_id = await _insert_run(db, org_id=a.org_id, started_by=op1.user_id)
+    escalation_id = await _insert_escalated_outcome_and_escalation(
+        db, org_id=a.org_id, run_id=run_id
+    )
+
+    async with db.transaction():
+        await _as_user(db, op2.auth_user_id)
+        assign_result = await escalations_repo.assign(
+            db,
+            org_id=a.org_id,
+            escalation_id=escalation_id,
+            assigned_to=op2.user_id,
+            assigned_by=op2.user_id,
+        )
+        resolve_result = await escalations_repo.resolve(
+            db, org_id=a.org_id, escalation_id=escalation_id, resolved_by=op2.user_id
+        )
+    assert assign_result is None, "operator self-assigned a teammate's escalation"
+    assert resolve_result is None, "operator resolved a teammate's escalation"
+
+    async with db.transaction():
+        await _as_user(db, op1.auth_user_id)
+        resolved = await escalations_repo.resolve(
+            db, org_id=a.org_id, escalation_id=escalation_id, resolved_by=op1.user_id
+        )
+    assert resolved is not None, "the run's own starter could not resolve their own escalation"
+
+    await _as_postgres(db)
+    await db.execute("delete from public.runs where org_id = $1", a.org_id)
+    await db.execute(
+        "delete from auth.users where id = any($1::uuid[])",
+        [op1.auth_user_id, op2.auth_user_id],
+    )
+    await db.execute("delete from public.organisations where deleted_at is not null")
+
+
+async def test_member_credit_allocations_scoped_to_self_or_team_read(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    a, _ = tenants
+    await _as_postgres(db)
+
+    admin = await _create_tenant(db, "credits-admin")
+    op1 = await _create_tenant(db, "credits-op1")
+    op2 = await _create_tenant(db, "credits-op2")
+    await _seat(db, a.org_id, admin, "admin")
+    await _seat(db, a.org_id, op1, "operator")
+    await _seat(db, a.org_id, op2, "operator")
+
+    async with db.transaction():
+        await _as_user(db, admin.auth_user_id)
+        await credits_repo.set_allocation(
+            db, org_id=a.org_id, user_id=op1.user_id, daily_allocation=50, updated_by=admin.user_id
+        )
+
+    async with db.transaction():
+        await _as_user(db, op2.auth_user_id)
+        rows = await credits_repo.list_allocations(db, a.org_id)
+    assert rows == [], "operator can see a teammate's credit allocation"
+
+    async with db.transaction():
+        await _as_user(db, op1.auth_user_id)
+        rows = await credits_repo.list_allocations(db, a.org_id)
+    assert [r["daily_allocation"] for r in rows] == [50], "operator cannot see their own allocation"
+
+    async with db.transaction():
+        await _as_user(db, admin.auth_user_id)
+        rows = await credits_repo.list_allocations(db, a.org_id)
+    assert len(rows) == 1, "admin cannot see the team's credit allocations"
+
+    await _as_postgres(db)
+    await db.execute("delete from public.member_credit_allocations where org_id = $1", a.org_id)
+    await db.execute(
+        "delete from auth.users where id = any($1::uuid[])",
+        [admin.auth_user_id, op1.auth_user_id, op2.auth_user_id],
+    )
+    await db.execute("delete from public.organisations where deleted_at is not null")
+
+
+async def test_operator_cannot_set_a_credit_allocation_directly(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    """Defense in depth for `Permission.CREDITS_WRITE` (admin/owner only) -
+    called directly, bypassing the API's permission dependency, the same
+    shape as the escalation-assignment guard test above."""
+    a, _ = tenants
+    await _as_postgres(db)
+
+    op1 = await _create_tenant(db, "credits-guard-op1")
+    op2 = await _create_tenant(db, "credits-guard-op2")
+    await _seat(db, a.org_id, op1, "operator")
+    await _seat(db, a.org_id, op2, "operator")
+
+    with pytest.raises(asyncpg.exceptions.InsufficientPrivilegeError):
+        async with db.transaction():
+            await _as_user(db, op1.auth_user_id)
+            await credits_repo.set_allocation(
+                db, org_id=a.org_id, user_id=op2.user_id, daily_allocation=99, updated_by=op1.user_id
+            )
+
+    await _as_postgres(db)
+    await db.execute("delete from public.member_credit_allocations where org_id = $1", a.org_id)
+    await db.execute(
+        "delete from auth.users where id = any($1::uuid[])",
+        [op1.auth_user_id, op2.auth_user_id],
+    )
+    await db.execute("delete from public.organisations where deleted_at is not null")
+
+
+async def test_used_today_counts_only_connected_calls_and_ceiling_distinguishes_unset_from_zero(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    """`used_today()` now backs credit *enforcement*
+    (`check_dial_allowed`'s `credits_remaining`, wired up in
+    `CampaignRunner`), not just display - it must count a connected call
+    (`status = 'COMPLETED'`), not merely an attempted one, or setting
+    someone's daily allocation to N would start blocking them after N dial
+    *attempts*, most of which never actually spent anything.
+    `get_enforced_ceiling()` must also tell "no row at all" (no per-teammate
+    limit - only the org-wide budget applies) apart from "a row with
+    daily_allocation = 0" (deliberately blocked) - `get_allocation()`'s own
+    0-default conflates the two for display, which is the right call for the
+    UI but would be a real enforcement bug here.
+    """
+    a, _ = tenants
+    await _as_postgres(db)
+
+    admin = await _create_tenant(db, "credits-enforce-admin")
+    op1 = await _create_tenant(db, "credits-enforce-op1")
+    op2 = await _create_tenant(db, "credits-enforce-op2")
+    await _seat(db, a.org_id, admin, "admin")
+    await _seat(db, a.org_id, op1, "operator")
+    await _seat(db, a.org_id, op2, "operator")
+
+    run_id = await _insert_run(db, org_id=a.org_id, started_by=op1.user_id)
+    await db.execute(
+        """
+        insert into public.call_outcomes (run_id, org_id, contact_name, phone_masked, status, disposition)
+        values ($1, $2, 'Connected', '+1 555 0102', 'COMPLETED', 'auto_closed')
+        """,
+        run_id,
+        a.org_id,
+    )
+    await db.execute(
+        """
+        insert into public.call_outcomes (run_id, org_id, contact_name, phone_masked, status, disposition)
+        values ($1, $2, 'Never answered', '+1 555 0103', 'NO_ANSWER', 'unreachable')
+        """,
+        run_id,
+        a.org_id,
+    )
+
+    async with db.transaction():
+        await _as_user(db, op1.auth_user_id)
+        used = await credits_repo.used_today(db, a.org_id, op1.user_id)
+        no_row_ceiling = await credits_repo.get_enforced_ceiling(db, a.org_id, op1.user_id)
+    assert used == 1, "used_today counted a call that never connected"
+    assert no_row_ceiling is None, "a teammate with no allocation row was treated as having a ceiling"
+
+    async with db.transaction():
+        await _as_user(db, admin.auth_user_id)
+        await credits_repo.set_allocation(
+            db, org_id=a.org_id, user_id=op2.user_id, daily_allocation=0, updated_by=admin.user_id
+        )
+
+    async with db.transaction():
+        await _as_user(db, op2.auth_user_id)
+        zero_ceiling = await credits_repo.get_enforced_ceiling(db, a.org_id, op2.user_id)
+    assert zero_ceiling == 0, "an explicit zero allocation was indistinguishable from no allocation at all"
+
+    await _as_postgres(db)
+    await db.execute("delete from public.call_outcomes where run_id = $1", run_id)
+    await db.execute("delete from public.runs where id = $1", run_id)
+    await db.execute("delete from public.member_credit_allocations where org_id = $1", a.org_id)
+    await db.execute(
+        "delete from auth.users where id = any($1::uuid[])",
+        [admin.auth_user_id, op1.auth_user_id, op2.auth_user_id],
+    )
+    await db.execute("delete from public.organisations where deleted_at is not null")
+
+
+# --- Peer-to-peer campaign/escalation sharing (role-based UI roadmap,
+# Phase 4, migration 4cbc5103657f) ------------------------------------------
+
+
+async def test_resolve_resource_owner_finds_the_real_campaign_creator_past_the_requesters_own_scope(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    """The whole point of `resolve_resource_owner()` - a plain SELECT under
+    op2's own connection can't see op1's campaign at all (Phase 1's RLS), but
+    the `SECURITY DEFINER` function still correctly resolves who owns it."""
+    a, _ = tenants
+    await _as_postgres(db)
+
+    op1 = await _create_tenant(db, "share-owner-op1")
+    op2 = await _create_tenant(db, "share-owner-op2")
+    await _seat(db, a.org_id, op1, "operator")
+    await _seat(db, a.org_id, op2, "operator")
+    campaign_id = await _insert_campaign(db, org_id=a.org_id, created_by=op1.user_id)
+
+    async with db.transaction():
+        await _as_user(db, op2.auth_user_id)
+        plain_select = await db.fetch(
+            "select id from public.campaigns where org_id = $1 and id = $2", a.org_id, campaign_id
+        )
+        owner = await sharing_repo.resolve_resource_owner(
+            db, org_id=a.org_id, resource_type="campaign", resource_id=campaign_id
+        )
+    assert plain_select == [], "operator's plain query already sees a teammate's campaign"
+    assert owner == op1.user_id
+
+    await _as_postgres(db)
+    await db.execute("delete from public.campaigns where org_id = $1", a.org_id)
+    await db.execute(
+        "delete from auth.users where id = any($1::uuid[])",
+        [op1.auth_user_id, op2.auth_user_id],
+    )
+    await db.execute("delete from public.organisations where deleted_at is not null")
+
+
+async def test_resolve_resource_owner_returns_null_across_tenants(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    """A caller who isn't even a member of the target org gets null, not the
+    real owner - the internal `is_org_member()` guard every other
+    `SECURITY DEFINER` function in this codebase already has."""
+    a, b = tenants
+    await _as_postgres(db)
+    campaign_id = await _insert_campaign(db, org_id=a.org_id, created_by=b.user_id)
+
+    async with db.transaction():
+        await _as_user(db, b.auth_user_id)
+        owner = await sharing_repo.resolve_resource_owner(
+            db, org_id=a.org_id, resource_type="campaign", resource_id=campaign_id
+        )
+    assert owner is None, "a non-member resolved a real campaign's owner"
+
+    await _as_postgres(db)
+    await db.execute("delete from public.campaigns where org_id = $1", a.org_id)
+
+
+async def test_campaign_directory_lists_names_org_wide_but_plain_select_stays_narrowed(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    a, _ = tenants
+    await _as_postgres(db)
+
+    op1 = await _create_tenant(db, "share-dir-op1")
+    op2 = await _create_tenant(db, "share-dir-op2")
+    await _seat(db, a.org_id, op1, "operator")
+    await _seat(db, a.org_id, op2, "operator")
+    await _insert_campaign(db, org_id=a.org_id, created_by=op1.user_id)
+
+    async with db.transaction():
+        await _as_user(db, op2.auth_user_id)
+        directory = await sharing_repo.list_campaign_directory(db, a.org_id)
+        plain_select = await db.fetch(
+            "select id from public.campaigns where org_id = $1", a.org_id
+        )
+    assert plain_select == [], "operator's plain query already sees a teammate's campaign"
+    assert {r["owner_user_id"] for r in directory} == {op1.user_id}
+
+    await _as_postgres(db)
+    await db.execute("delete from public.campaigns where org_id = $1", a.org_id)
+    await db.execute(
+        "delete from auth.users where id = any($1::uuid[])",
+        [op1.auth_user_id, op2.auth_user_id],
+    )
+    await db.execute("delete from public.organisations where deleted_at is not null")
+
+
+async def test_directory_functions_return_nothing_across_tenants(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    a, b = tenants
+    await _as_postgres(db)
+    await _insert_campaign(db, org_id=a.org_id, created_by=b.user_id)
+
+    async with db.transaction():
+        await _as_user(db, b.auth_user_id)
+        directory = await sharing_repo.list_campaign_directory(db, a.org_id)
+    assert directory == [], "a non-member saw another tenant's campaign directory"
+
+    await _as_postgres(db)
+    await db.execute("delete from public.campaigns where org_id = $1", a.org_id)
+
+
+async def _insert_share_request(
+    db: asyncpg.Connection,
+    *,
+    org_id: uuid.UUID,
+    resource_type: str,
+    resource_id: str,
+    requested_by: uuid.UUID,
+    owner_user_id: uuid.UUID,
+) -> uuid.UUID:
+    return await db.fetchval(
+        """
+        insert into public.share_requests
+            (org_id, resource_type, resource_id, requested_by, owner_user_id)
+        values ($1, $2, $3, $4, $5)
+        returning id
+        """,
+        org_id,
+        resource_type,
+        resource_id,
+        requested_by,
+        owner_user_id,
+    )
+
+
+async def test_share_requests_visible_to_requester_owner_and_admin_only(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    a, _ = tenants
+    await _as_postgres(db)
+
+    admin = await _create_tenant(db, "share-vis-admin")
+    op1 = await _create_tenant(db, "share-vis-requester")
+    op2 = await _create_tenant(db, "share-vis-owner")
+    op3 = await _create_tenant(db, "share-vis-unrelated")
+    await _seat(db, a.org_id, admin, "admin")
+    await _seat(db, a.org_id, op1, "operator")
+    await _seat(db, a.org_id, op2, "operator")
+    await _seat(db, a.org_id, op3, "operator")
+    campaign_id = await _insert_campaign(db, org_id=a.org_id, created_by=op2.user_id)
+    await _insert_share_request(
+        db,
+        org_id=a.org_id,
+        resource_type="campaign",
+        resource_id=campaign_id,
+        requested_by=op1.user_id,
+        owner_user_id=op2.user_id,
+    )
+
+    for tenant, expected in ((op1, True), (op2, True), (admin, True), (op3, False)):
+        async with db.transaction():
+            await _as_user(db, tenant.auth_user_id)
+            rows = await sharing_repo.list_for_org(db, a.org_id)
+        assert (len(rows) == 1) is expected, f"visibility wrong for {tenant.email}"
+
+    await _as_postgres(db)
+    await db.execute("delete from public.share_requests where org_id = $1", a.org_id)
+    await db.execute("delete from public.campaigns where org_id = $1", a.org_id)
+    await db.execute(
+        "delete from auth.users where id = any($1::uuid[])",
+        [admin.auth_user_id, op1.auth_user_id, op2.auth_user_id, op3.auth_user_id],
+    )
+    await db.execute("delete from public.organisations where deleted_at is not null")
+
+
+async def test_only_the_named_owner_can_decide_a_share_request(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    """`share_requests_update` restricts the UPDATE to `owner_user_id = self`
+    - not admin/owner, and not the requester either, matching the roadmap's
+    own scoping (approving is the resource owner's call alone)."""
+    a, _ = tenants
+    await _as_postgres(db)
+
+    admin = await _create_tenant(db, "share-decide-admin")
+    op1 = await _create_tenant(db, "share-decide-requester")
+    op2 = await _create_tenant(db, "share-decide-owner")
+    await _seat(db, a.org_id, admin, "admin")
+    await _seat(db, a.org_id, op1, "operator")
+    await _seat(db, a.org_id, op2, "operator")
+    campaign_id = await _insert_campaign(db, org_id=a.org_id, created_by=op2.user_id)
+    request_id = await _insert_share_request(
+        db,
+        org_id=a.org_id,
+        resource_type="campaign",
+        resource_id=campaign_id,
+        requested_by=op1.user_id,
+        owner_user_id=op2.user_id,
+    )
+
+    for tenant in (op1, admin):
+        async with db.transaction():
+            await _as_user(db, tenant.auth_user_id)
+            decided = await sharing_repo.decide(
+                db, org_id=a.org_id, request_id=request_id, approve=True
+            )
+        assert decided is None, f"{tenant.email} decided a request they don't own"
+
+    async with db.transaction():
+        await _as_user(db, op2.auth_user_id)
+        decided = await sharing_repo.decide(
+            db, org_id=a.org_id, request_id=request_id, approve=True
+        )
+    assert decided is not None, "the real owner could not decide their own request"
+
+    # Idempotency: the same owner deciding the same request a second time
+    # (a client retry after a dropped response, a double-click) must be a
+    # no-op, not a second grant - the primitive `_decide()`'s reordering
+    # fix (route calls `decide()` before the grant, not after) depends on.
+    async with db.transaction():
+        await _as_user(db, op2.auth_user_id)
+        decided_again = await sharing_repo.decide(
+            db, org_id=a.org_id, request_id=request_id, approve=True
+        )
+    assert decided_again is None, "deciding an already-decided request succeeded a second time"
+
+    await _as_postgres(db)
+    await db.execute("delete from public.share_requests where org_id = $1", a.org_id)
+    await db.execute("delete from public.campaigns where org_id = $1", a.org_id)
+    await db.execute(
+        "delete from auth.users where id = any($1::uuid[])",
+        [admin.auth_user_id, op1.auth_user_id, op2.auth_user_id],
+    )
+    await db.execute("delete from public.organisations where deleted_at is not null")
+
+
+async def test_a_forged_owner_user_id_still_cannot_actually_grant_access(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    """`share_requests_insert` only checks `requested_by = self` - nothing
+    stops a row being inserted with the *wrong* `owner_user_id` (the route
+    never trusts client input for it, but RLS alone doesn't forbid a
+    hand-crafted one either). This proves the second, independent layer:
+    even if op3 forges themselves in as `owner_user_id` and RLS lets them
+    "decide" it, the actual grant - reading the real campaign to clone it -
+    still runs under their own `campaigns_select` scope, which a non-creator
+    operator fails. Application code (`sharing.py`'s `_decide`) checks this
+    read before marking anything decided; this test pins the repository-
+    level fact that makes that check meaningful, not just presumed."""
+    a, _ = tenants
+    await _as_postgres(db)
+
+    op1 = await _create_tenant(db, "share-forge-creator")
+    op3 = await _create_tenant(db, "share-forge-attacker")
+    await _seat(db, a.org_id, op1, "operator")
+    await _seat(db, a.org_id, op3, "operator")
+    campaign_id = await _insert_campaign(db, org_id=a.org_id, created_by=op1.user_id)
+
+    async with db.transaction():
+        await _as_user(db, op3.auth_user_id)
+        forged = await sharing_repo.get_for_org(
+            db,
+            a.org_id,
+            await _insert_share_request(
+                db,
+                org_id=a.org_id,
+                resource_type="campaign",
+                resource_id=campaign_id,
+                requested_by=op3.user_id,
+                owner_user_id=op3.user_id,
+            ),
+        )
+        # RLS lets this "decide" through - op3 really is `owner_user_id` on
+        # this (forged) row.
+        assert forged is not None
+        # But the read the real grant depends on is still scoped to op3's
+        # own campaigns - the actual campaign was never theirs to clone.
+        original = await campaigns_repo.get_org_campaign(db, a.org_id, campaign_id)
+    assert original is None, "a forged owner_user_id could read the real campaign to clone it"
+
+    await _as_postgres(db)
+    await db.execute("delete from public.share_requests where org_id = $1", a.org_id)
+    await db.execute("delete from public.campaigns where org_id = $1", a.org_id)
+    await db.execute(
+        "delete from auth.users where id = any($1::uuid[])",
+        [op1.auth_user_id, op3.auth_user_id],
+    )
+    await db.execute("delete from public.organisations where deleted_at is not null")
+
+
+async def test_operator_can_clone_a_teammates_campaign_via_share_approval(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    """Regression test: a plain `INSERT ... RETURNING` here used to fail
+    with `InsufficientPrivilegeError` for exactly this - the most common -
+    case, caught only by manually walking the approve flow end to end, not
+    by any earlier automated test. `campaigns_insert`'s `WITH CHECK` is
+    role-only and lets an operator insert; but `campaigns_select` for an
+    operator is `created_by = self`, and `RETURNING` requires the inserted
+    row to pass that too - which it never can here, since the clone's
+    `created_by` is the *requester*, not the operator running the insert.
+    `clone_for_share()` (backed by the `SECURITY DEFINER` function
+    `clone_campaign_for_share()`) is the fix; this pins that it actually
+    works for the ordinary operator-approves-operator case, not just for
+    admin/owner.
+    """
+    a, _ = tenants
+    await _as_postgres(db)
+
+    op1 = await _create_tenant(db, "share-clone-owner")
+    op2 = await _create_tenant(db, "share-clone-requester")
+    await _seat(db, a.org_id, op1, "operator")
+    await _seat(db, a.org_id, op2, "operator")
+    campaign_id = await _insert_campaign(db, org_id=a.org_id, created_by=op1.user_id)
+
+    async with db.transaction():
+        await _as_user(db, op1.auth_user_id)
+        await campaigns_repo.clone_for_share(
+            db,
+            org_id=a.org_id,
+            source_campaign_id=campaign_id,
+            new_campaign_id=f"{campaign_id}-clone",
+            new_owner=op2.user_id,
+        )
+
+    async with db.transaction():
+        await _as_user(db, op2.auth_user_id)
+        cloned = await campaigns_repo.get_org_campaign(db, a.org_id, f"{campaign_id}-clone")
+    assert cloned is not None, "the clone did not land, or the new owner cannot see it"
+    assert cloned["created_by"] == op2.user_id
+    assert cloned["id"] != campaign_id, "the clone reused the original's id instead of a new one"
+
+    await _as_postgres(db)
+    await db.execute("delete from public.campaigns where org_id = $1", a.org_id)
+    await db.execute(
+        "delete from auth.users where id = any($1::uuid[])",
+        [op1.auth_user_id, op2.auth_user_id],
+    )
+    await db.execute("delete from public.organisations where deleted_at is not null")
+
+
+async def test_operator_cannot_insert_a_share_request_on_someone_elses_behalf(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    """`share_requests_insert` requires `requested_by = current_user_id()` -
+    op1 cannot submit a request that claims op2 as the requester."""
+    a, _ = tenants
+    await _as_postgres(db)
+
+    op1 = await _create_tenant(db, "share-insert-guard-op1")
+    op2 = await _create_tenant(db, "share-insert-guard-op2")
+    await _seat(db, a.org_id, op1, "operator")
+    await _seat(db, a.org_id, op2, "operator")
+    campaign_id = await _insert_campaign(db, org_id=a.org_id, created_by=op2.user_id)
+
+    with pytest.raises(asyncpg.exceptions.InsufficientPrivilegeError):
+        async with db.transaction():
+            await _as_user(db, op1.auth_user_id)
+            await _insert_share_request(
+                db,
+                org_id=a.org_id,
+                resource_type="campaign",
+                resource_id=campaign_id,
+                requested_by=op2.user_id,
+                owner_user_id=op2.user_id,
+            )
+
+    await _as_postgres(db)
+    await db.execute("delete from public.campaigns where org_id = $1", a.org_id)
     await db.execute(
         "delete from auth.users where id = any($1::uuid[])",
         [op1.auth_user_id, op2.auth_user_id],

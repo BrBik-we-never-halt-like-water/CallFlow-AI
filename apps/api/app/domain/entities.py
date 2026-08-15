@@ -68,6 +68,14 @@ class Disposition(str, Enum):
     SKIPPED = "skipped"
 
 
+# The two dispositions that read as "needs a person" everywhere in the
+# product - the same grouping `lib/lamp.ts`'s `flare` state already uses on
+# the frontend. Kept here, not just on the frontend, because Phase 2 of the
+# role-based UI roadmap persists a real `escalations` row for exactly this
+# set - the two must never drift apart.
+NEEDS_A_PERSON_DISPOSITIONS = frozenset({Disposition.ESCALATED, Disposition.UNREACHABLE})
+
+
 class Contact(BaseModel):
     name: str
     phone: str

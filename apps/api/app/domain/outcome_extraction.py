@@ -10,7 +10,6 @@ from __future__ import annotations
 from typing import Any
 
 from app.domain.entities import AttemptSummary, CallOutcome
-from app.domain.safety import mask
 from app.domain.triage import triage
 
 JsonObject = dict[str, Any]
@@ -205,47 +204,6 @@ def _resolve_outcome(
     return triage(resolved, escalate_on_negative=escalate_on_negative)
 
 
-def base_outcome_from_webhook_payload(call: JsonObject) -> CallOutcome | None:
-    """Reconstructs the same `base` `CallOutcome` shape `CampaignRunner.run_one()`
-    builds from its live `Contact`/`Campaign`, but from a raw webhook payload
-    alone - the receiver has no `Contact`/`Campaign` object, only what CALL-E
-    echoes back in `metadata` plus the call's own `recipients[]`.
-
-    Returns `None` if the payload doesn't carry what a call placed by
-    `CampaignRunner` always includes (`metadata.contact_name`/`campaign_id`,
-    at least one recipient/attempt with a `phone`) - a call placed some other
-    way, or a shape this defensive check doesn't expect. No leading
-    underscore, unlike this module's other private helpers - the webhook
-    route imports it directly, the same way tests already import
-    `_extract_result`/`_extract_transcript`.
-    """
-    metadata = call.get("metadata")
-    if not isinstance(metadata, dict):
-        return None
-    contact_name = metadata.get("contact_name")
-    campaign_id = metadata.get("campaign_id")
-    if not contact_name or not campaign_id:
-        return None
-
-    recipients = call.get("recipients")
-    if not isinstance(recipients, list) or not recipients:
-        return None
-    first = recipients[0]
-    if not isinstance(first, dict):
-        return None
-    attempts = first.get("attempts")
-    attempt = _final_attempt(attempts) if isinstance(attempts, list) else None
-    phone = attempt.get("phone") if isinstance(attempt, dict) else None
-    if not phone:
-        return None
-
-    return CallOutcome(
-        contact_name=str(contact_name),
-        phone_masked=mask(str(phone)),
-        campaign_id=str(campaign_id),
-    )
-
-
 __all__ = [
     "_extract_attempts",
     "_extract_result",
@@ -253,5 +211,4 @@ __all__ = [
     "_final_attempt",
     "_has_transcript",
     "_resolve_outcome",
-    "base_outcome_from_webhook_payload",
 ]

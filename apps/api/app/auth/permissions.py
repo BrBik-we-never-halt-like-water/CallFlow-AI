@@ -43,12 +43,20 @@ class Permission(str, enum.Enum):
 
     ESCALATIONS_READ = "escalations:read"
     ESCALATIONS_RESOLVE = "escalations:resolve"
+    # Handing an escalation to a specific teammate. Distinct from resolve -
+    # admin/owner only, same reasoning as team:set_role: deciding *who* is
+    # responsible for something is a heavier action than acting on your own.
+    ESCALATIONS_ASSIGN = "escalations:assign"
 
     SAFETY_READ = "safety:read"
     SAFETY_WRITE = "safety:write"
 
     BILLING_READ = "billing:read"
     BILLING_WRITE = "billing:write"
+    # Setting a teammate's slice of the org's existing daily budget - a
+    # narrower, admin-grantable action than BILLING_WRITE (owner-only:
+    # upgrading/downgrading the plan itself).
+    CREDITS_WRITE = "credits:write"
 
     API_KEYS_READ = "api_keys:read"
     API_KEYS_WRITE = "api_keys:write"
@@ -57,6 +65,13 @@ class Permission(str, enum.Enum):
     INTEGRATIONS_WRITE = "integrations:write"
 
     AUDIT_READ = "audit:read"
+
+    # Requesting a teammate's campaign/escalation. Not viewer - a read-only
+    # role has nothing to do with a decision this consequential. Approving/
+    # rejecting a request needs no separate permission: it's gated by
+    # actually owning the resource (RLS + an explicit check in the route),
+    # available to whichever role that happens to be, not a fixed set.
+    SHARING_REQUEST = "sharing:request"
 
 
 _READ_ONLY = frozenset(
@@ -82,6 +97,7 @@ _OPERATOR = _READ_ONLY | {
     Permission.CONTACTS_WRITE,
     Permission.SUPPRESSIONS_ADD,
     Permission.ESCALATIONS_RESOLVE,
+    Permission.SHARING_REQUEST,
 }
 
 _ADMIN = _OPERATOR | {
@@ -98,6 +114,8 @@ _ADMIN = _OPERATOR | {
     Permission.AUDIT_READ,
     Permission.BILLING_READ,
     Permission.RUNS_READ_TEAM,
+    Permission.ESCALATIONS_ASSIGN,
+    Permission.CREDITS_WRITE,
 }
 
 _OWNER = _ADMIN | {

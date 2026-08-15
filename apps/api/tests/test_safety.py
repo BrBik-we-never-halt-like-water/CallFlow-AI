@@ -84,6 +84,23 @@ def test_gate_respects_allowlist(monkeypatch: pytest.MonkeyPatch) -> None:
     assert safety.check_dial_allowed("+15555550199", 0).allowed is True
 
 
+def test_gate_ignores_credits_when_no_per_teammate_ceiling_is_set() -> None:
+    # `None` means "nobody has ever set this caller's allocation" - the
+    # org-wide daily budget is the only gate in that case, not zero calls.
+    result = check_dial_allowed("+15555550100", 0, credits_remaining=None)
+    assert result.allowed is True
+
+
+def test_gate_rejects_when_credits_are_exhausted() -> None:
+    result = check_dial_allowed("+15555550100", 0, credits_remaining=0)
+    assert result.allowed is False
+    assert "credit" in result.reason
+
+
+def test_gate_allows_when_credits_remain() -> None:
+    assert check_dial_allowed("+15555550100", 0, credits_remaining=1).allowed is True
+
+
 def test_resolve_safety_settings_falls_back_when_org_never_configured() -> None:
     """`None` (no `org_safety_settings` row at all) means "use the deployment
     default" - the one case this function is actually meant to fall back on."""

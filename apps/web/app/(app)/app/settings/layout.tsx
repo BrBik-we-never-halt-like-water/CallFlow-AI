@@ -3,18 +3,36 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/cn';
+import { useSession } from '@/lib/hooks/use-session';
 
 const TABS = [
-  { slug: 'safety', label: 'Safety' },
-  { slug: 'api-keys', label: 'API keys' },
-  { slug: 'integrations', label: 'Integrations' },
-  { slug: 'billing', label: 'Billing' },
-];
+  { slug: 'safety', label: 'Safety', permission: 'safety:read' },
+  { slug: 'api-keys', label: 'API keys', permission: 'api_keys:read' },
+  { slug: 'integrations', label: 'Integrations', permission: 'integrations:read' },
+  { slug: 'billing', label: 'Billing', permission: 'billing:read' },
+] as const;
 
 export default function SettingsLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   const pathname = usePathname() ?? '';
+  const session = useSession();
+  // While the session is still resolving, show every tab rather than
+  // narrowing to none and then snapping wider a moment later - the
+  // permission check below is a convenience for the nav, not the guard
+  // (each page gates its own content), so a one-frame "too wide" beats a
+  // visible layout shift. Billing is reachable without `billing:read` too -
+  // the user menu's "My credits" link sends operator/viewer straight to
+  // /app/settings/billing, which renders its own honest placeholder there
+  // rather than the org's real plan/usage.
+  const tabs =
+    session.status === 'signed-in'
+      ? TABS.filter(
+          (tab) =>
+            session.profile.permissions.includes(tab.permission) ||
+            tab.slug === 'billing',
+        )
+      : TABS;
 
   return (
     <div className="flex flex-col gap-6">
@@ -36,7 +54,7 @@ export default function SettingsLayout({
         className="-mb-px overflow-x-auto border-b border-rule"
       >
         <ul className="flex min-w-max gap-1">
-          {TABS.map((tab) => {
+          {tabs.map((tab) => {
             const href = `/app/settings/${tab.slug}`;
             const active = pathname === href;
             return (

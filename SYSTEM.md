@@ -103,7 +103,8 @@ What a user can actually do, which endpoint it hits, and what survives a restart
 | **Contacts (in a run)**           | Paste, CSV drop, manual grid entry, per-row E.164 validation, remove-all-invalid                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | none - client-side only, sent inline with the run                                                                                 | ❌ never stored                                                                                                                                                                     |
 | **Runs**                          | Start (always live), watch live, open a call's transcript, export CSV                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | `POST /api/v1/runs`, `GET /api/v1/runs`, `GET /api/v1/runs/{id}`                                                                  | ✅ org-scoped Postgres, updated as each call resolves                                                                                                                               |
 | **Safety guards**                 | View and edit this org's own overrides (per-run ceiling, rate limit, daily budget, allowlist); enforced server-side per dial                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | `GET/PATCH /api/v1/safety`                                                                                                        | ✅ org-scoped Postgres row (`org_safety_settings`), falls back to deployment env vars when unset                                                                                    |
-| **Escalations**                   | Filter by reason/campaign/age, sort oldest-first, open transcript, mark resolved                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | none - derived client-side from `GET /api/v1/runs/{id}`                                                                           | ❌ resolution is component state, lost on navigate                                                                                                                                  |
+| **Escalations**                   | Filter by reason/campaign/age, sort oldest-first, open transcript, assign to a teammate (admin/owner), mark resolved - live-synced across teammates                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | `GET /api/v1/escalations`, `POST .../assign`, `POST .../resolve`                                                                  | ✅ org-scoped Postgres row (`escalations`), one per escalating call outcome; Realtime-pushed to every signed-in teammate                                                            |
+| **Sharing** (Phase 4)              | Operator: browse a name-only, org-wide directory of teammates' campaigns/open escalations, request access/to help (with an optional message). Owner of a resource: approve (clones the campaign, or hands off the escalation) or reject, from the Organisation page's "Sharing" tab - live-synced across teammates                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | `GET .../campaigns/directory`, `GET .../escalations/directory`, `GET/POST /api/v1/share-requests`, `POST .../{id}/approve\|reject` | ✅ org-scoped Postgres row (`share_requests`); Realtime-pushed to requester and owner                                                                                              |
 | **Contacts list**                 | Search, view call history                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | none - derived from run outcomes                                                                                                  | ❌                                                                                                                                                                                  |
 | **Suppression list**              | View, add, and remove (owner-only) - org-wide, checked before every dial                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | `GET/POST /api/v1/suppressions`, `DELETE /api/v1/suppressions/{id}`                                                               | ✅ org-scoped Postgres row; the same table `check_dial_allowed()` checks (see §7)                                                                                                   |
 | **Calling window / retry policy** | Edit per campaign                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | none                                                                                                                              | ⚠️ `localStorage`, never sent to the API, not enforced                                                                                                                              |
@@ -116,6 +117,7 @@ What a user can actually do, which endpoint it hits, and what survives a restart
 | **API keys**                      | Create (full key shown once), list (name, prefix, last used, created), revoke                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | `GET/POST /api/v1/api-keys`, `DELETE /api/v1/api-keys/{id}`                                                                       | ✅ org-scoped Postgres row; only a SHA-256 hash is ever stored. **The key itself authenticates** - see §5                                                                           |
 | **Integrations**                  | Connect/update/disconnect org-owned Twilio or Plivo credentials                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | `GET/PUT/DELETE /api/v1/integrations/providers/{provider}`                                                                        | ✅ credential storage is real, encrypted at rest (Fernet). ⚠️ Actually placing a call over a connected number is separate, not-yet-built work - the UI says so via `NotWiredNotice` |
 | **Billing**                       | View the current plan and today's real usage against the daily budget                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | `GET /api/v1/me` (`plan_id`), `GET /api/health` (`limits`)                                                                        | ✅ plan name and usage are real. ❌ No payment processor - upgrading/downgrading is not wired                                                                                       |
+| **Per-teammate credits**          | Admin/owner set a daily call allocation per teammate (Team pane); anyone sees their own allocation + today's real usage (Settings → Billing's "My credits"). **1 credit = 1 connected call** - enforced per dial, layered on top of the org-wide daily budget                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | `GET/PATCH .../members/{id}/credits`, `GET .../members/me/credits`, `GET .../team-performance`                                    | ✅ org-scoped Postgres row (`member_credit_allocations`); `used_today` is a real live query counting only connected calls, not the org-wide limiter's in-process counter. ✅ Enforced at dial time (`check_dial_allowed`'s `credits_remaining`) - a teammate with no allocation row set is ungated by this check entirely, per `ISSUES.md` iteration 30 |
 | **Numbers, notifications**        | UI renders; actions explain they are not connected                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | none                                                                                                                              | ❌ not wired                                                                                                                                                                        |
 
 Legend: ✅ persists · ⚠️ persists locally/partially · ❌ lost on restart or never stored.
@@ -433,6 +435,25 @@ the run composer both render the goal preview locally via `renderGoalPreview` in
 `lib/campaign-fields.ts` rather than calling this endpoint; `api.preview` exists in
 `lib/api.ts` with no caller.
 
+### `GET /api/v1/campaigns/directory`
+
+Any org member - no special permission beyond being signed in. Role-based UI roadmap,
+**Phase 4 (peer-to-peer sharing)**: name + owner only, org-wide, so an operator whose
+`campaigns_select` RLS narrows them to their own rows (Phase 1) can still see *what
+exists* to request without seeing its goal template, extraction fields, or any content.
+Backed by the `SECURITY DEFINER` SQL function `public.list_campaign_directory()`
+(migration `202608101100`), which bypasses that same RLS narrowing on purpose - the whole
+point of a directory is showing rows the caller's own `SELECT` policy would otherwise hide.
+
+```json
+[
+  { "id": "holiday-enquiry-follow-up", "name": "Holiday enquiry follow-up", "owner_user_id": "2c7e1a4b-...", "owner_name": "Aditi Rao" }
+]
+```
+
+_Used by:_ the Campaigns page's "Team campaigns" directory panel (operators only) - filters
+out rows the caller already owns, then offers "Request access" per remaining row.
+
 ### `POST /api/v1/runs`
 
 Requires `Permission.RUNS_START`. **Every run dials for real - there is no `dry_run`
@@ -517,8 +538,10 @@ the starting member has since been removed from the org (`ON DELETE SET NULL`).
 
 Requires `Permission.RUNS_READ_TEAM` (owner, admin, viewer - **not** operator: their own
 runs are already covered by `runs:read`, and `runs_select` would otherwise just silently
-narrow this query to their own row anyway). Call volume grouped by teammate, for the
-admin/owner dashboard's per-teammate breakdown chart - no frontend consumer yet.
+narrow this query to their own row anyway). Call volume grouped by teammate. Superseded
+as the dashboard's actual data source by the richer `GET /api/v1/organisations/me/team-
+performance` below (added for the role-based UI roadmap's Phase 5) - kept as-is, unused
+by the frontend, rather than removed, since nothing about it is wrong.
 
 ```json
 [
@@ -577,7 +600,178 @@ Two subtleties in `stats`, both deliberate:
 
 `runs_repo.append_outcome` upserts on `(run_id, contact_name, phone_masked)` - a real
 Postgres `on conflict … do update`, so one call produces one row across all its status
-transitions rather than a row per change.
+transitions rather than a row per change. It now returns the row's `id` (previously
+write-only), which is what lets a real `escalations` row (below) reference a specific
+call outcome.
+
+### `GET /api/v1/escalations`
+
+Requires `Permission.ESCALATIONS_READ` (every role). Real, persisted "needs a person"
+items - `public.escalations`, one row per call outcome whose disposition is `escalated`
+or `unreachable` (`domain/entities.NEEDS_A_PERSON_DISPOSITIONS`), inserted by
+`runs.py`'s/`webhooks.py`'s outcome-resolution call sites, not a trigger. RLS narrows the
+result to what the caller's role and assignments actually allow - the response shape is a
+superset of an `Outcome` (contact, transcript, disposition, sentiment, ...) plus:
+
+```json
+{
+  "id": "b7e2...",
+  "escalation_status": "open",
+  "assigned_to": null,
+  "assigned_to_name": null,
+  "assigned_by": null,
+  "assigned_by_name": null,
+  "resolved_by": null,
+  "resolved_by_name": null,
+  "resolved_at": null
+}
+```
+
+### `GET /api/v1/escalations/directory`
+
+Requires `Permission.SHARING_REQUEST` (operator, admin, owner - not viewer). Stricter than
+the campaign directory above, deliberately: this one surfaces which customers are
+currently frustrated org-wide (contact name + campaign + owner), not just a resource name.
+Only **open** escalations - a resolved one has nothing left to request. Backed by
+`public.list_escalation_directory()` (`SECURITY DEFINER`, migration `202608101100`).
+
+```json
+[
+  { "id": "b7e2...", "contact_name": "Rohan Mehta", "campaign_name": "Holiday enquiry follow-up", "owner_user_id": "2c7e1a4b-...", "owner_name": "Aditi Rao" }
+]
+```
+
+_Used by:_ the Escalations page's "Team escalations" directory panel - "Request to help"
+per row not already assigned to the caller.
+
+### `POST /api/v1/escalations/{id}/assign`
+
+Requires `Permission.ESCALATIONS_ASSIGN` (owner, admin only). Body `{"user_id": "..."}`.
+→ `204`, or `400` if that user isn't a member of this organisation, or `404` if RLS
+doesn't let this caller touch that row at all (not just "not found" - the same response
+either way, by design: it doesn't reveal which case it was).
+
+### `POST /api/v1/escalations/{id}/resolve`
+
+Requires `Permission.ESCALATIONS_RESOLVE` (every role except viewer). → `204`, or `404`
+if the escalation doesn't exist, is already resolved, or RLS doesn't let this caller
+touch it (an operator can only resolve their own run's escalations or ones assigned to
+them - enforced by RLS, not just the permission check).
+
+### `GET /api/v1/share-requests`
+
+Any org member - RLS (`share_requests_select`, migration `202608101100`) does the actual
+narrowing: rows this caller sent, rows directed at them to decide, or every row if
+admin/owner. Own sent requests and requests to decide come back in one list; the frontend
+splits them into "Requests you've sent" / "Waiting on you" by comparing `requested_by`/
+`owner_user_id` against the caller's own id.
+
+```json
+{
+  "id": "9f3c...", "resource_type": "campaign", "resource_id": "holiday-enquiry-follow-up",
+  "resource_name": "Holiday enquiry follow-up", "status": "pending", "message": "Can I take this over while Aditi's on leave?",
+  "created_at": "2026-08-10T09:00:00Z", "decided_at": null,
+  "requested_by": "7b1e...", "requested_by_name": "Rohan Mehta",
+  "owner_user_id": "2c7e1a4b-...", "owner_name": "Aditi Rao"
+}
+```
+
+`resource_name` is `null` whenever this connection's own RLS can't resolve the underlying
+resource - always true for a requester's own *sent, still-pending* row (their
+`campaigns_select`/escalation RLS can't see a campaign they don't own yet), non-null once
+they're viewing it as the owner deciding on it, or after approval flips ownership.
+
+### `POST /api/v1/share-requests`
+
+Requires `Permission.SHARING_REQUEST` (operator, admin, owner - not viewer). Body
+`{"resource_type": "campaign" | "escalation", "resource_id": "...", "message": "..." }`
+(`message` optional, ≤280 chars). The owner is resolved **server-side** via
+`public.resolve_resource_owner()` - never trusted from the client, since the whole reason
+this flow exists is that the requester's own RLS scope can't see the resource (or its
+owner) to check this themselves.
+
+→ `201` the created request · `400` unknown `resource_type`, non-UUID escalation
+`resource_id`, or requesting a resource the caller already owns · `404` no such resource
+in this organisation · `409` a pending request for this exact resource already exists
+(`share_requests_one_pending_idx`, a partial unique index - resolved requests don't block
+a fresh one).
+
+### `POST /api/v1/share-requests/{id}/approve` · `POST /api/v1/share-requests/{id}/reject`
+
+No extra permission beyond being signed in - deciding is gated by actually owning the
+resource (`share_requests_update`'s RLS: `owner_user_id = self`), re-checked explicitly in
+the handler for a clear 403 instead of a bare RLS no-op. → `204` no body.
+
+**Approving** re-resolves the resource's *current* owner before granting (ownership can
+drift between request and decision - ISSUES.md #86); if it moved, the request is
+auto-rejected with "Ownership of this changed since the request was made" instead of
+silently overriding whoever holds it now. Otherwise the pending→approved transition
+(`WHERE status = 'pending'`, race-safe against a second concurrent decision) commits
+**before** the grant, not after, so two concurrent approvals can't both perform the grant:
+
+- **campaign**: clones it - a new id, `created_by = requester`, independent from that
+  point on (edits after this never write back to the original). Goes through the
+  `SECURITY DEFINER` function `clone_campaign_for_share()` (migration `202608101200`), not
+  a plain insert - see `ISSUES.md` #85 for why a plain insert fails under RLS for any
+  non-admin/owner approver.
+- **escalation**: reassigns it (`assigned_to = requester`, via `escalations_repo.assign()`)
+  - a hand-off, not a clone, since there's only one real underlying event. → `404` if the
+  escalation was resolved or deleted in the meantime.
+
+→ `400` if already decided · `403` not the owner · `404` unknown request · `409` decided
+by someone else in the same instant, or ownership drifted (see above).
+
+_Used by:_ the Organisation page's "Sharing" tab, live-synced via Supabase Realtime
+(`share_requests` is in the `supabase_realtime` publication, migration `202608101130`).
+
+### `GET /api/v1/organisations/me/team-performance`
+
+Requires `Permission.RUNS_READ_TEAM` (owner, admin, viewer). One row per teammate:
+calls, run-status breakdown, open escalations, and credits - the dashboard's "Team
+performance" panel's one data source.
+
+```json
+[
+  {
+    "user_id": "2c7e1a4b-...",
+    "name": "Aditi Rao",
+    "avatar_url": "https://.../avatar.png",
+    "total_runs": 12,
+    "runs_active": 1,
+    "runs_completed": 10,
+    "runs_failed": 1,
+    "total_calls": 34,
+    "calls_closed": 20,
+    "open_escalations": 2,
+    "daily_allocation": 50,
+    "credits_used_today": 7
+  }
+]
+```
+
+`credits_used_today` is a real, live SQL count against `call_outcomes`/`runs` scoped to
+that teammate and today - correct across restarts and replicas, unlike the org-wide
+`used_today` in `GET /api/v1/safety` (§7's own documented limitation - an in-process
+sliding window). `daily_allocation` of `0` means nobody has set one for that teammate yet.
+
+### `GET /api/v1/organisations/me/members/me/credits`
+
+No permission beyond being signed in - RLS on `member_credit_allocations` already scopes
+this to the caller's own row. `{"daily_allocation": 50, "used_today": 7}` - `used_today`
+counts only *connected* calls (`upper(status) = 'COMPLETED'`), the same number
+`check_dial_allowed()` enforces against, not merely attempted ones. Backs Settings →
+Billing's "My credits" view for anyone without `billing:read`.
+
+### `PATCH /api/v1/organisations/me/members/{user_id}/credits`
+
+Requires `Permission.CREDITS_WRITE` (owner, admin). Body `{"daily_allocation": 50}`
+(`>= 0`). → `204`, or `404` if that user isn't a member. **Enforced at dial time** as of
+`ISSUES.md` iteration 30: `POST /api/v1/runs` resolves the caller's own ceiling once per
+run and `domain/safety.py::check_dial_allowed()`'s `credits_remaining` param denies a
+dial once it's exhausted - layered *on top of* the org-wide `daily_budget`, which still
+applies regardless of any individual allocation. A teammate with no row at all
+(`credits_repo.get_enforced_ceiling()` returns `None`) is not gated by this check -
+only an admin/owner explicitly setting one (including to `0`) turns it on for them.
 
 ### What the API does **not** have
 
@@ -730,6 +924,7 @@ started run and a ringing phone.
 | Allowlist                   | empty (inactive), or an org's own override                 | `CALLFLOW_ALLOWLIST`, editable per org via `PATCH /api/v1/safety`                             |
 | Per-organisation rate limit | 5 per 3600s, or an org's own override                      | `rate_limit.py`, keyed by `org_id` - **not** IP (`ISSUES.md` #32)                             |
 | Daily budget                | 20, or an org's own override                               | `CALLFLOW_DAILY_BUDGET`, keyed by `org_id` - one organisation can no longer exhaust another's |
+| Per-teammate daily credits  | unset (no per-teammate ceiling; org-wide budget is the only gate) | `member_credit_allocations.daily_allocation`, editable admin/owner via `PATCH .../members/{id}/credits`. **1 credit = 1 connected call** - a dial that never rings through doesn't spend one (`ISSUES.md` iteration 30) |
 | Owner bypass                | off                                                        | `X-CallFlow-Owner-Key` header lifts rate limits only                                          |
 | Phone masking               | always                                                     | `safety.mask` + `lib/format/phone.ts`                                                         |
 
@@ -761,7 +956,7 @@ check · consent flag.
 
 - **`(marketing)`** - `/`, `/pricing`, `/solutions/[vertical]` (4 static), `/trust`, `/about`, `/demo`, `/status`, `/maintenance`, `/docs` + 8 MDX pages
 - **`(auth)`** - `/login`, `/signup`, `/forgot-password`, `/reset-password`, `/verify-email`, `/accept-invite/[token]`
-- **`(app)/app`** - dashboard (`/app`), `campaigns` + `new` + `[id]`, `runs` + `new` + `[id]`, `escalations`, `contacts`, `profile`, `organisation` + `new`, `settings` + 4 panes (`safety`, `api-keys`, `integrations`, `billing`). Organisation and Team are their own route, `/app/organisation` (`Suspense`-wrapped for `useSearchParams()`, `?tab=team` selects the Team pane) - not a dialog and not a Settings pane; `/app/settings` and `/app/settings/team` both redirect to `/app/settings/safety` so pre-existing generic "Settings" links still resolve; "Organisation" lives in the account menu (`user-menu.tsx`'s dropdown) and, as of the dark-theme-pivot foundation task, also as a direct link in the sidebar's footer section (`app-shell.tsx`'s `AppSidebar`, below the five-item primary nav list) - it and Settings are lower-frequency than those five, so neither joins `PRIMARY_NAV_ITEMS` itself; the footer is a second path to the same three destinations (Profile/Organisation/Settings), not a replacement for the account menu, since the sidebar disappears below `lg` and the account menu is mobile's only way to reach them (or to sign out). Creating a second organisation is a dedicated two-step page, `/app/organisation/new` (name, then an optional logo - logo upload has to be a second step because Storage RLS scopes the upload path by `org_id`, which doesn't exist until the create call returns). There is no `/app/welcome` - the mandatory org-setup step + its skippable profile follow-up are **not routes at all**; `OnboardingGate` renders them as a modal over whatever page is active (see §3/§12), specifically to avoid the two-independent-`useSession()`-instances bug a page-per-step version had (`ISSUES.md`)
+- **`(app)/app`** - dashboard (`/app`), `campaigns` + `new` + `[id]`, `runs` + `new` + `[id]`, `escalations`, `contacts`, `profile`, `organisation` + `new`, `settings` + 4 panes (`safety`, `api-keys`, `integrations`, `billing`). Organisation and Team are their own route, `/app/organisation` (`Suspense`-wrapped for `useSearchParams()`, `?tab=team`/`?tab=sharing` select the Team/Sharing panes - Phase 4 added the third tab) - not a dialog and not a Settings pane; `/app/settings` and `/app/settings/team` both redirect to `/app/settings/safety` so pre-existing generic "Settings" links still resolve; "Organisation" lives in the account menu (`user-menu.tsx`'s dropdown) and, as of the dark-theme-pivot foundation task, also as a direct link in the sidebar's footer section (`app-shell.tsx`'s `AppSidebar`, below the five-item primary nav list) - it and Settings are lower-frequency than those five, so neither joins `PRIMARY_NAV_ITEMS` itself; the footer is a second path to the same three destinations (Profile/Organisation/Settings), not a replacement for the account menu, since the sidebar disappears below `lg` and the account menu is mobile's only way to reach them (or to sign out). Creating a second organisation is a dedicated two-step page, `/app/organisation/new` (name, then an optional logo - logo upload has to be a second step because Storage RLS scopes the upload path by `org_id`, which doesn't exist until the create call returns). There is no `/app/welcome` - the mandatory org-setup step + its skippable profile follow-up are **not routes at all**; `OnboardingGate` renders them as a modal over whatever page is active (see §3/§12), specifically to avoid the two-independent-`useSession()`-instances bug a page-per-step version had (`ISSUES.md`)
 - **Generated** - `icon.svg`, `apple-icon`, `opengraph-image`, `manifest.webmanifest`, `not-found` (`error.tsx` is a boundary, not a routed page)
 
 ### Design layer - `app/globals.css`
@@ -801,7 +996,7 @@ Named animations: `relay-settle` (the signature lamp flicker), `relay-glow`, `la
 | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `api.ts`                                   | Typed fetch client + all response types. Rejects unreachable internal hosts                                                                                                          |
 | `lamp.ts`                                  | Disposition → lamp mapping, `countLamps`, `describeStrip` (the a11y summary)                                                                                                         |
-| `app-store.tsx`                            | `AppStoreProvider` - hydrates up to 10 recent runs, derives escalations/outcomes                                                                                                     |
+| `app-store.tsx`                            | `AppStoreProvider` - hydrates up to 10 recent runs (derives `outcomes`); fetches real `escalations` from `GET /api/v1/escalations`, kept live via Realtime                            |
 | `format/phone.ts`                          | **The single masking implementation.** `maskPhone`, `isE164`, `normalisePhone`                                                                                                       |
 | `format/index.ts`                          | Duration, currency, percent, timestamp, age, `humaniseKey`                                                                                                                           |
 | `campaign-fields.ts`                       | 5 editor field types → 4 wire types; JSON Schema preview; goal rendering                                                                                                             |
@@ -813,6 +1008,8 @@ Named animations: `relay-settle` (the signature lamp flicker), `relay-glow`, `la
 | `cn.ts`                                    | `clsx` + `tailwind-merge`                                                                                                                                                            |
 | `hooks/use-connection.ts`                  | Loads health + campaigns on mount; 2 quick retries at 1.5s absorb a blip. No cold-start wake logic - the VM deploy is always on, so a failure here means something is actually wrong |
 | `hooks/use-run-poll.ts`                    | 2.5s run polling + debounced `aria-live` announcement                                                                                                                                |
+| `hooks/use-org-realtime.ts`                | Generic `useOrgRealtime(table, orgId, onChange)` - Supabase Realtime (`postgres_changes`, filtered by org) for any table in the `supabase_realtime` publication. Replaces the earlier escalations-only hook; also backs the Sharing tab's live updates on `public.share_requests`                |
+| `hooks/use-permission.ts`                  | `usePermission(permission)` / `useRole()` - thin wrappers over `useSession()`, the one place pages read `profile.permissions`/`profile.active.role` instead of inlining the check    |
 | `hooks/use-external-store.ts`              | `useSyncExternalStore` over `localStorage` and `matchMedia`                                                                                                                          |
 | `hooks/use-org-scoped-effect.ts`           | `useEffect`, structurally forced to re-run when the active organisation changes - the standard pattern for org-scoped data fetching, used by 9 fetch sites                           |
 | `hooks/use-reveal.ts`, `use-typewriter.ts` | Scroll reveal, hero typing                                                                                                                                                           |
@@ -870,7 +1067,7 @@ Named animations: `relay-settle` (the signature lamp flicker), `relay-glow`, `la
 | `roi-calculator.tsx`                      | Leads with **hours**, not money                                                                                                                                                                                                                             |
 | `final-cta.tsx`                           | Closing card with grid backdrop                                                                                                                                                                                                                             |
 
-**`app/` (15)** - dashboard. **`dry-run-switch.tsx` is deleted** - there is nothing left to
+**`app/` (16)** - dashboard. **`dry-run-switch.tsx` is deleted** - there is nothing left to
 switch; every run composer and the welcome flow start a real run directly.
 **`prewarm.tsx` is also deleted**, along with the `/api/wake` route handler it fired - the
 deployment is a single always-on VM, not a cold-starting free tier, so there is nothing
@@ -883,7 +1080,7 @@ left to pre-warm (`hooks/use-connection.ts` below no longer has wake/retry logic
 | `campaign-card.tsx`        | Card with field tags and last-run mini strip                                                                                                                                                                                                                                                                                                                      |
 | `contact-grid.tsx`         | Spreadsheet grid, paste, CSV drop, per-row inline errors                                                                                                                                                                                                                                                                                                          |
 | `safety-bar.tsx`           | Guard chips with popovers; `guardsFromSafety()`, reading this org's real `GET /api/v1/safety` values, not just the deployment defaults                                                                                                                                                                                                                            |
-| `escalation-card.tsx`      | Worklist item with typed reasoning chain                                                                                                                                                                                                                                                                                                                          |
+| `escalation-card.tsx`      | Worklist item with typed reasoning chain; real assign (teammate picker, admin/owner)/resolve against `GET/POST /api/v1/escalations/*`                                                                                                                                                                                                                            |
 | `transcript-view.tsx`      | Conversation left, typed result + triage chain right                                                                                                                                                                                                                                                                                                              |
 | `masked-phone.tsx`         | Masked by default; **no prop to disable masking**                                                                                                                                                                                                                                                                                                                 |
 | `connection-banner.tsx`    | Silent unless the service genuinely doesn't respond - no cold-start sequence to play                                                                                                                                                                                                                                                                              |
@@ -893,6 +1090,7 @@ left to pre-warm (`hooks/use-connection.ts` below no longer has wake/retry logic
 | `overview-org-section.tsx` | `TeamControls` - the dashboard's team summary popover. Its "Manage" link goes to `/app/organisation?tab=team`, not a dialog                                                                                                                                                                                                                                       |
 | `invite-dialog.tsx`        | Email + role "invite a teammate" dialog, shared by `/app/organisation`'s Team pane and the dashboard's team popover                                                                                                                                                                                                                                               |
 | `welcome-modal.tsx`        | `WelcomeModal` - one-time dismissible dialog naming the org + role, shown after a freshly-accepted invitation. Reads/clears a `localStorage` flag (`PENDING_WELCOME_KEY`) written by `accept-invite/[token]` right before it redirects to `/app`; mounted once, as a sibling of `AppShell`                                                                     |
+| `share-request-dialog.tsx` | `ShareRequestDialog` - Phase 4. Title/copy vary by `resourceType` ("Request access" for a campaign, "Request to help" for an escalation), optional 280-char message, `POST /api/v1/share-requests`. Reused by both directory panels below                                                                                                                       |
 
 **`layout/` (11)**
 
@@ -915,16 +1113,17 @@ and `ViewTransitions` as siblings.
 
 | Page                                               | Actions                                                                                                                                                                                    | Hits                                                                                            |
 | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------- |
-| `/app` (Dashboard)                                 | View volume/disposition/outcome-distribution summaries, open a recent run, resolve an escalation inline (local, unpersisted - reassignment is a stub toast, not wired up at all), navigate | `GET /api/v1/runs`, `GET /api/v1/runs/{id}`                                                     |
+| `/app` (Dashboard)                                 | View volume/disposition/outcome-distribution summaries, a "Needs a person" preview, "Team performance" (admin/owner/viewer), open a recent run, navigate                                   | `GET /api/v1/runs`, `GET /api/v1/runs/{id}`, `GET /api/v1/organisations/me/team-performance`     |
 | Org-setup modal (any `/app/*` page, not a route)   | Confirm the org's real name - the one mandatory, non-skippable step - then a skippable name + avatar step                                                                                  | `POST /api/v1/organisations/me/complete-onboarding`, `PATCH /api/v1/me`                         |
-| `/app/campaigns`                                   | Filter all/template/custom, duplicate, delete, run                                                                                                                                         | `GET`/`DELETE /api/v1/campaigns`                                                                |
+| `/app/campaigns`                                   | Filter all/template/custom, duplicate, delete, run. Operators additionally see a "Team campaigns" directory (name + owner only) with a "Request access" action per row                    | `GET`/`DELETE /api/v1/campaigns`, `GET .../directory`, `POST /api/v1/share-requests`             |
 | `/app/campaigns/new`, `/[id]`                      | Edit name/goal/fields/region/language/window/retry, preview with a different contact (rendered locally, not via the API), save                                                             | `POST /api/v1/campaigns`                                                                        |
 | `/app/runs`                                        | Sort, paginate, change page size, export CSV, open run                                                                                                                                     | `GET /api/v1/runs`                                                                              |
 | `/app/runs/new`                                    | Paste/import/edit contacts, remove invalid, pick campaign, preview the goal (rendered locally), start - **no dry-run toggle; Start run always dials**                                      | `POST /api/v1/runs`                                                                             |
-| `/app/runs/[id]`                                   | Watch lamps settle, pause updates, stop (updates only), open transcript sheet                                                                                                              | `GET /api/v1/runs/{id}` every 2.5s                                                              |
-| `/app/escalations`                                 | Filter reason/campaign, sort oldest/newest, open transcript, call back / reassign / mark resolved                                                                                          | derived; no endpoint                                                                            |
-| `/app/contacts`                                    | Search, view call counts, suppress a number, remove suppression                                                                                                                            | `localStorage` only - disconnected from the real `suppressions` table the dial path checks (§7) |
+| `/app/runs/[id]`                                   | Watch lamps settle, pause updates (browser polling only), cancel the run for real (stops the next contact from being dialled, not one already in conversation), open transcript in a centered dialog. No "Guards for this run" display and no visible run id anywhere on the page as of it-17 (`ISSUES.md`) - the run id is still the URL segment and still round-trips through the API | `GET /api/v1/runs/{id}` every 2.5s, `POST /api/v1/runs/{id}/cancel`                                                              |
+| `/app/escalations`                                 | Filter reason/campaign, sort oldest/newest, open transcript in a centered dialog, call back myself, reassign (admin/owner), mark resolved - live-synced across teammates. Renders 20 at a time behind an `IntersectionObserver` sentinel (client-side only - the full list is already in memory, there is no server-side pagination API for this view). Operators/admins/owners with `sharing:request` additionally see a "Team escalations" directory with a "Request to help" action per open row not already theirs | `GET /api/v1/escalations`, `POST .../assign`, `POST .../resolve`, `GET .../directory`, `POST /api/v1/share-requests` |
+| `/app/contacts`                                    | Search, sort, paginate, export CSV (via the shared `DataTable`, same component `/app/runs` uses), suppress a number, remove suppression. Suppression list is real-API-backed (`GET`/`POST`/`DELETE /api/v1/suppressions*`), not `localStorage` - the previous note here was stale | `GET /api/v1/runs`, `GET`/`POST /api/v1/suppressions`, `DELETE /api/v1/suppressions/{id}`        |
 | `/app/settings` (Organisation), `/team`, `/safety` | Rename/re-logo the org, invite/remove/re-role teammates, read the safety guards                                                                                                            | `PATCH /api/v1/organisations/me`, `.../members`, `.../invitations`, `GET /api/health`           |
+| `/app/organisation?tab=sharing`                    | "Waiting on you" (approve/reject requests directed at you) and "Requests you've sent" (status only) - live-synced across teammates                                                        | `GET /api/v1/share-requests`, `POST .../{id}/approve`, `POST .../{id}/reject`                    |
 | `/app/settings/api-keys`                           | Create (full key shown exactly once), list (prefix, last used, created), revoke                                                                                                            | `GET`/`POST /api/v1/api-keys`, `DELETE /api/v1/api-keys/{id}`                                   |
 | `/app/settings/integrations`                       | Connect, update, or disconnect Twilio/Plivo credentials                                                                                                                                    | `GET`/`PUT`/`DELETE /api/v1/integrations/providers/{provider}`                                  |
 | `/app/settings/billing`                            | View the current plan and today's real usage - no upgrade flow                                                                                                                             | `GET /api/v1/me`, `GET /api/health`                                                             |
@@ -1086,16 +1285,16 @@ neither is present.
 | F20     | Call execution                                          | ❌ Not built | **No call can be placed.** CALL-E's dial/poll loop and its webhook receiver are both deleted; `CampaignRunner.run_one()` returns an explicit `provider_unavailable` failure for every contact that clears the safety gate. LiveKit `CreateSIPParticipant` origination lands in P1-T6. No billable flag or provider cost recorded either way                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | F21     | Typed extraction                                        | ✅         | Native `result_schema`, no transcript scraping. Not validated against the schema on return                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | F22     | Triage engine                                           | ✅         | Pure, precedence-ordered, 14 tests. No custom org rules                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| F23     | Escalation queue                                        | ⚠️ Partial | Full worklist UI; resolution is not persisted, no assignment or SLA                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| F23     | Escalation queue                                        | ⚠️ Partial | Full worklist UI backed by a real, persisted `escalations` table - assign (admin/owner) and resolve both survive a reload, Realtime-pushed to every teammate. Peer-to-peer "request to help" (role-based UI roadmap Phase 4) layers on top. Still no SLA/ageing alerts                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | F24     | Retry orchestration                                     | ❌         | `RETRY` disposition is produced but nothing acts on it                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | F25     | Transcripts, recordings                                 | ❌         | Transcript held in memory on the outcome; no R2                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | F26     | Analytics                                               | ⚠️ Partial | Dashboard stats computed client-side; no rollups or campaign comparison                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| F27     | Realtime                                                | ⚠️ Partial | 2.5s polling with debounced announcements; no Supabase Realtime                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| F27     | Realtime                                                | ⚠️ Partial | Runs/dashboard still 2.5s/4s polling. Escalations and share requests are the exception: Supabase Realtime (`postgres_changes`, `lib/hooks/use-org-realtime.ts` - now generic, any table in the `supabase_realtime` publication) - an assignment, resolution, or share decision reaches every signed-in teammate live                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | F28–F31 | Inbound, scheduling, WhatsApp, CRM                      | ❌         | WhatsApp env vars read but unused                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | F32     | Outbound webhooks                                       | ❌         | UI + docs describe them; no implementation                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | F33     | Public API, keys                                        | ⚠️ Partial | **API keys are now real** - `GET/POST /api/v1/api-keys`, `DELETE .../{id}`; only a SHA-256 hash is stored, and the key actually authenticates (`current_user()`'s `cfk_…` path). No published API docs beyond this reference, no per-key rate limits or scopes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | F34     | Exports                                                 | ⚠️ Partial | Client-side CSV from the visible table                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| F35–F41 | Plans, credits, payments, invoicing, dunning, referrals | ⚠️ Partial | `organisations.plan_id` (real, default `'free'`) and today's real usage are now surfaced honestly at Settings → Billing, ending in a `NotWiredNotice` about no payment processor. `lib/pricing.ts` itself is still presentation only, all prices `null`. No credit ledger, payments, invoicing, dunning, or referrals                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| F35–F41 | Plans, credits, payments, invoicing, dunning, referrals | ⚠️ Partial | `organisations.plan_id` (real, default `'free'`) and today's real usage are now surfaced honestly at Settings → Billing, ending in a `NotWiredNotice` about no payment processor. Per-teammate daily credits are real and **enforced** at dial time (§7, `ISSUES.md` iteration 30), not just displayed. `lib/pricing.ts` itself is still presentation only, all prices `null`. No credit ledger, payments, invoicing, dunning, or referrals                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | F42     | AI disclosure, consent                                  | ⚠️ Partial | Disclosure is _copy_ in built-in goals and settings UI. **Not enforced in a compiler** - a goal can be saved without one                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | F43     | Retention, subject rights                               | ❌         |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | F44     | Regional compliance                                     | ⚠️ Partial | Region/language fields exist; no per-region rules                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |

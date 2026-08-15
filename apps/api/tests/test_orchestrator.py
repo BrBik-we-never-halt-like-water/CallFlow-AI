@@ -228,6 +228,40 @@ async def test_ceiling_holds_under_concurrent_dialing(monkeypatch: pytest.Monkey
     assert len(blocked) == 3
 
 
+async def test_credits_already_used_before_this_run_count_toward_the_ceiling() -> None:
+    # Purely a pre-dial gate check - never reaches origination, so this holds
+    # regardless of what places the call.
+    runner = CampaignRunner(credit_ceiling=1, credits_used_before_run=1)
+    result = await runner.run_one(TRAVEL_DISCOVERY, Contact(name="A", phone="+15555550100"))
+    assert result.status == "BLOCKED"
+    assert result.disposition is Disposition.SKIPPED
+    assert "credit" in (result.disposition_reason or "")
+
+
+async def test_a_stubbed_call_releases_its_reserved_credit_for_the_next_contact() -> None:
+    # A credit is only ever actually spent by a connected call - while
+    # origination is stubbed, nothing ever connects, so a ceiling of 1 must
+    # not block a second contact once the first's reservation is handed back.
+    # Regression coverage for the release that has to happen on the stub path
+    # now that there is no post-dial code left to do it (P1-T7 restores a
+    # real connected case for this rule once LiveKit lands).
+    runner = CampaignRunner(credit_ceiling=1, credits_used_before_run=0)
+
+    first = await runner.run_one(TRAVEL_DISCOVERY, Contact(name="A", phone="+15555550100"))
+    second = await runner.run_one(TRAVEL_DISCOVERY, Contact(name="B", phone="+15555550101"))
+
+    # Both are Disposition.SKIPPED - a gate block and a stubbed dial share
+    # that disposition, so only `status` tells "never reached the stub"
+    # (BLOCKED_STATUS) apart from "reached it and failed honestly" (this).
+    assert first.status == STUBBED_DIAL_STATUS, "the call itself was never blocked"
+    assert second.status == STUBBED_DIAL_STATUS, "the released credit was not reusable"
+
+
+async def test_an_unanswered_call_is_not_credited_as_connected() -> None:
+    result = await CampaignRunner().run_one(TRAVEL_DISCOVERY, Contact(name="A", phone="+15555550100"))
+    assert result.answered is False
+
+
 async def test_run_preserves_input_order_regardless_of_completion_order() -> None:
     runner = CampaignRunner(max_concurrent_calls=5)
     contacts = [Contact(name=f"C{i}", phone=f"+155555501{i:02d}") for i in range(5)]
