@@ -134,12 +134,12 @@ export function StatusBoard() {
         />
         <Row
           label="Live calling"
-          lamp={health?.api_key_configured ? "jade" : "flare"}
-          value={health?.api_key_configured ? "Available" : "Unavailable"}
+          lamp={health?.calling_available ? "jade" : "flare"}
+          value={health?.calling_available ? "Available" : "Unavailable"}
           detail={
-            health?.api_key_configured
-              ? "A Voice API key is configured, so runs can dial."
-              : "No Voice API key configured on this deployment. Runs can't place calls."
+            health?.calling_available
+              ? "A voice provider is connected, so runs can dial."
+              : "Calling is not available yet - the voice platform migration is in progress. Runs can't place calls."
           }
         />
         <Row
