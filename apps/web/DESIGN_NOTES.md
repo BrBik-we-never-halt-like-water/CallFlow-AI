@@ -1226,3 +1226,92 @@ invisible because the outer deck section carries the slack.)
 `HOLD` 8s -> 6.5s, cycle 31.2s -> 26.7s. §22 had raised it from 5s because a
 formation arrived and moved again before the eye settled; 8s overshot into waiting.
 `MORPH` stays at 2.4s - the travel was never the part that felt wrong.
+
+## 24. Answer first, evidence on request - making `/trust` glanceable without deleting it
+
+### Finding the page rather than guessing at it
+
+Words per page, paragraph counts, and the longest single paragraph - because a
+page can hold a lot of words and still glance fine if they arrive in short
+labelled chunks, and reads as a wall when single paragraphs run long:
+
+| page | words | paragraphs | over 30 words | height |
+| ---- | ----- | ---------- | ------------- | ------ |
+| `/trust` | 1097 | 43 | **17** | 5354px |
+| `/` | 1039 | 53 | 2 | 7262px |
+| `/docs/writing-a-good-goal` | 928 | 47 | 7 | 4676px |
+| `/about` | 301 | 8 | 4 | 2166px |
+
+`/` has almost as many words as `/trust` and is not the problem: they are spread
+across eight one-screen decks in short chunks, and only two paragraphs run over
+thirty words. `/trust` put 1,100 words in one narrow column. Word count alone
+would have sent this change to the wrong page.
+
+The docs are left alone deliberately. People arrive at reference material *to*
+read it; shortening `/docs/writing-a-good-goal` would make it worse at its job,
+not better.
+
+### The trade the page could not make
+
+`/trust` has two readers who want opposite things. A buyer wants to know in five
+seconds whether opt-outs are permanent. A data-protection reviewer wants the
+paragraph that says exactly how, and treats missing detail as a red flag - §the
+page's own docstring is right that dressing this up as marketing makes them trust
+it less. Serving the first by deleting the second's material would be the wrong
+trade on the one page where being complete *is* the claim, and it would mean
+quietly editing what the product promises.
+
+So the page keeps every word and changes what is on screen by default. Each
+section now leads with an `answer` - one line, body-large, full-strength text -
+and the paragraphs sit behind a disclosure as its evidence. Collapsed, the page
+is eight headings and eight answers: **1097 visible words -> 389, 5354px ->
+3775px, four sections per screen instead of one.** Expanded, it is the document
+it was.
+
+Two sentences did come out, both duplicates: "calling-hour restrictions are not
+enforced by the product" appeared in the India note *and* the US note, and the
+sub-processor paragraph repeated the DPA section's own promise about the named
+list. The calling-hours fact is now in the section's always-visible answer, which
+is where a fact that important belongs - `ISSUES.md` #20 is about surfaces
+implying that guard is real, and burying the correction twice in prose was part
+of the problem.
+
+### Native `<details>`, animated - not an accordion component
+
+The disclosure is a real `<details>`, and the reason is not brevity:
+
+- find-in-page expands a closed `<details>` to reveal a match, so Ctrl+F still
+  finds "Suppression survives contact re-imports" on the page that hides it
+- the content stays in the DOM for crawlers, for Reader mode, and for the
+  compliance reviewer who prints the page
+- keyboard and screen-reader behaviour arrive correct without an `aria-expanded`
+  being written by hand
+
+A hand-built accordion gives up all four to gain an animation. So animate the
+native one instead: `::details-content` with `interpolate-size: allow-keywords`,
+which is what lets a height transition to `auto` rather than to a number nobody
+can know in advance. Where either is unsupported the panel simply snaps open,
+which is what it did before.
+
+Two things this needed that are easy to miss:
+
+- **`prefers-reduced-motion` does not reach it.** The blanket `*`,
+  `*::before`, `*::after` rule does not match `::details-content` - the panel
+  measured a 0.24s transition under `reduce` until it was named explicitly.
+- **A `<details>` cannot be opened by `:target`.** The table of contents exists
+  because this page is read by someone hunting one answer far more often than
+  top to bottom, so landing them on a folded section would make the collapse cost
+  the exact reader it was meant to serve. `OpenOnHash` is the one thing here that
+  genuinely needs script: it opens the targeted section and re-anchors, because
+  the browser's own scroll ran against the collapsed height.
+
+Verified: keyboard-focusable and Enter-toggled, detail text present in the DOM
+while collapsed, panel transition 0.001s under reduced motion, and a `#retention`
+deep link landing open with its heading at the top of the viewport.
+
+### Why nothing decorative was added
+
+The ask allowed for new motion "if needed". The disclosure is the motion, and it
+does work - it tells you the panel is a panel and where it came from. Anything
+beyond that would have added content to pages the same request asked to thin out;
+a page does not become more glanceable by gaining an animation to look at.

@@ -37,18 +37,16 @@ export default function AboutPage() {
           complaint rather than a conversation.
         </p>
         <p className="text-body text-text-dim">
-          The people who feel this hardest are not developers. They are recruiting
-          coordinators, clinic managers, admissions teams, and agency owners — the
-          person who owns a spreadsheet of numbers and is judged on what happens to it.
-          They are choosing between hiring another tele-caller and finding another way,
-          and almost every tool aimed at them is sold to their engineering team instead.
+          The people who feel that hardest are not developers — they are recruiting
+          coordinators, clinic managers, admissions teams and agency owners, judged on
+          what happens to a spreadsheet of numbers. Almost every tool aimed at them is
+          sold to their engineering team instead.
         </p>
         <p className="text-body text-text-dim">
-          So this is built as an operations tool, not an API with a dashboard bolted on.
-          You write the goal in plain English, you see exactly what each contact would
-          hear before anything is dialled, and every call comes back as typed fields you
-          can act on. The calls that need judgement reach a person. The rest close
-          themselves.
+          So this is an operations tool, not an API with a dashboard bolted on. You
+          write the goal in plain English, see what each contact would hear before
+          anything is dialled, and get typed fields back. Calls that need judgement
+          reach a person; the rest close themselves.
         </p>
       </div>
 

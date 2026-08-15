@@ -1940,6 +1940,70 @@ button[data-menu][data-state='open']:focus-visible {
 }
 
 /* --------------------------------------------------------------------------
+   Disclosure - a native <details> that opens smoothly.
+
+   Native rather than a React accordion, and the reason is not brevity: find-in-
+   page expands a closed <details> to reveal a match, the content stays in the
+   DOM for crawlers and for Reader mode, and keyboard and screen-reader
+   behaviour arrive correct without an aria attribute being written. A hand-
+   built accordion gives up all four to gain an animation - so animate the
+   native one instead.
+
+   `::details-content` is what makes that possible; `interpolate-size` is what
+   lets a height animate to `auto` rather than to a number nobody can know in
+   advance. Where either is unsupported the disclosure simply snaps open, which
+   is what it did before.
+   -------------------------------------------------------------------------- */
+
+:root {
+  interpolate-size: allow-keywords;
+}
+
+.disclosure > summary {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: fit-content;
+  cursor: pointer;
+  list-style: none;
+  color: var(--text-mute);
+  transition: color var(--dur-micro) var(--ease-out);
+}
+
+.disclosure > summary::-webkit-details-marker {
+  display: none;
+}
+
+.disclosure > summary:hover {
+  color: var(--text);
+}
+
+/* The chevron is the affordance, so it has to move with the panel rather than
+   after it. */
+.disclosure > summary .disclosure-caret {
+  transition: transform var(--dur-base) var(--ease-out);
+}
+
+.disclosure[open] > summary .disclosure-caret {
+  transform: rotate(90deg);
+}
+
+.disclosure::details-content {
+  block-size: 0;
+  overflow: hidden;
+  opacity: 0;
+  transition:
+    block-size var(--dur-base) var(--ease-out),
+    opacity var(--dur-base) var(--ease-out),
+    content-visibility var(--dur-base) allow-discrete;
+}
+
+.disclosure[open]::details-content {
+  block-size: auto;
+  opacity: 1;
+}
+
+/* --------------------------------------------------------------------------
    Reduced motion. Durations collapse and transforms are removed. Lamps still
    change colour - they simply stop flickering. Parallax is switched off
    entirely by the components that use it.
@@ -1958,6 +2022,17 @@ button[data-menu][data-state='open']:focus-visible {
   .reveal {
     opacity: 1;
     transform: none;
+  }
+
+  /* `*`, `*::before` and `*::after` do not reach `::details-content`, so the
+     blanket rule above misses the one panel on the site whose whole job is to
+     grow. Measured at 0.24s under reduce before this was added. */
+  .disclosure::details-content {
+    transition-duration: 1ms !important;
+  }
+
+  .disclosure > summary .disclosure-caret {
+    transition-duration: 1ms !important;
   }
 
   .lamp-settle {
