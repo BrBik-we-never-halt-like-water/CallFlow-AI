@@ -176,6 +176,11 @@ def upgrade() -> None:
     op.create_table(
         "telephony_provisioning",
         sa.Column("id", sa.UUID(), server_default=sa.text("gen_random_uuid()"), nullable=False),
+        # "The newest attempt for this agent" is what the status poll asks, and
+        # `created_at` cannot answer it: `now()` is the transaction timestamp, so
+        # two attempts can share one, and `id` is a random uuid that carries no
+        # order at all. An identity column is the only monotonic thing here.
+        sa.Column("seq", sa.BigInteger(), sa.Identity(always=True), nullable=False),
         sa.Column("voice_agent_id", sa.UUID(), nullable=False),
         sa.Column("org_id", sa.UUID(), nullable=False),
         sa.Column("status", sa.Text(), server_default=sa.text("'pending'"), nullable=False),
@@ -219,11 +224,13 @@ def upgrade() -> None:
     op.create_index(
         "telephony_provisioning_org_idx", "telephony_provisioning", ["org_id"], schema="public"
     )
-    # The provisioning-status poll reads the newest attempt for one agent.
+    # The provisioning-status poll reads the newest attempt for one agent, so
+    # the index carries the ordering column too and the lookup is a backwards
+    # index scan rather than a sort.
     op.create_index(
         "telephony_provisioning_agent_idx",
         "telephony_provisioning",
-        ["voice_agent_id"],
+        ["voice_agent_id", sa.text("seq desc")],
         schema="public",
     )
 

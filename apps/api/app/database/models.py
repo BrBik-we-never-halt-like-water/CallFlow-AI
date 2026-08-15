@@ -18,6 +18,7 @@ from sqlalchemy import (
     DateTime,
     Enum,
     ForeignKey,
+    Identity,
     Index,
     String,
     Text,
@@ -357,12 +358,15 @@ class TelephonyProvisioning(TimestampedMixin, Base):
             name="telephony_provisioning_status_check",
         ),
         Index("telephony_provisioning_org_idx", "org_id"),
-        Index("telephony_provisioning_agent_idx", "voice_agent_id"),
+        Index("telephony_provisioning_agent_idx", "voice_agent_id", text("seq desc")),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
     )
+    # Monotonic, unlike `created_at` (transaction time, so it ties) and `id`
+    # (a random uuid). The only column that can answer "which attempt is newest".
+    seq: Mapped[int] = mapped_column(BigInteger, Identity(always=True), nullable=False)
     voice_agent_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("voice_agents.id", ondelete="CASCADE"), nullable=False
     )
