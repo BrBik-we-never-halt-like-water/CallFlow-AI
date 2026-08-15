@@ -135,6 +135,15 @@ class Config:
     livekit_api_key: str = field(default_factory=lambda: os.getenv("LIVEKIT_API_KEY", ""))
     livekit_api_secret: str = field(default_factory=lambda: os.getenv("LIVEKIT_API_SECRET", ""))
 
+    # Shared secret the voice runtime presents when it reports a finished call.
+    # That worker is a separate process with no Supabase session, so this is the
+    # entire trust boundary on `/internal/v1/*` - a caller who knows it can write
+    # a transcript against any run. Empty ⇒ the endpoint refuses every request,
+    # failing closed rather than open, same as `owner_key`/`resend_api_key`.
+    internal_api_secret: str = field(
+        default_factory=lambda: os.getenv("CALLFLOW_INTERNAL_API_SECRET", "")
+    )
+
     # Symmetric key for org-owned third-party provider credentials (Twilio/Plivo
     # auth tokens). Same sensitivity class as SUPABASE_SECRET_KEY - never enters
     # the database, only this process's environment. A Fernet key: 32 url-safe

@@ -93,8 +93,16 @@ async def _run_and_persist(
     with CallContext(run_id=run_id, org_id=str(org_id)):
         try:
             await runner.run(campaign, contacts, on_progress=on_progress)
+            # Deliberately not `finish_run()`. Origination returns when a call
+            # is answered, not when it ends, so at this point conversations are
+            # still running - closing the run here would show it completed
+            # while its own rows still read "In conversation…". Whichever
+            # worker callback settles the last contact closes it instead
+            # (`finish_if_all_settled`). This still handles the case where every
+            # contact was blocked or failed to dial: those settle immediately,
+            # so the check below closes the run right away.
             async with database.as_user(auth_user_id) as conn:
-                await runs_repo.finish_run(conn, run_id)
+                await runs_repo.finish_if_all_settled(conn, run_id)
         except Exception as exc:
             log.exception("run %s failed", run_id)
             async with database.as_user(auth_user_id) as conn:

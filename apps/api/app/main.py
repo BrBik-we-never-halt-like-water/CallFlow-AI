@@ -13,6 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.v1.routes.api_keys import router as api_keys_router
 from app.api.v1.routes.campaigns import router as campaigns_router
 from app.api.v1.routes.integrations import router as integrations_router
+from app.api.v1.routes.internal import router as internal_router
 from app.api.v1.routes.invitations import router as invitations_router
 from app.api.v1.routes.organisations import router as organisations_router
 from app.api.v1.routes.profile import router as profile_router
@@ -73,6 +74,8 @@ app.include_router(safety_router)
 app.include_router(suppressions_router)
 app.include_router(api_keys_router)
 app.include_router(integrations_router)
+# Not a public API - the voice runtime's callback, guarded by a shared secret.
+app.include_router(internal_router)
 
 
 @app.get("/")

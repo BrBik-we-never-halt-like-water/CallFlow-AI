@@ -354,11 +354,18 @@ class CampaignRunner:
         # outside CallFlow's own redaction (CLAUDE.md non-negotiable #5). The
         # worker POSTs its result back keyed on `run_id`, and the API maps that
         # to the contact from its own records.
+        # `contact_name` + `phone_masked` are how the worker's callback addresses
+        # the row this call already created: `call_outcomes` is keyed on
+        # (run_id, contact_name, phone_masked), so without them the completion
+        # would insert a second row beside the in-flight one instead of
+        # resolving it. The masked form is safe to send - it is the same value
+        # the product displays, and masking is the guarantee (CLAUDE.md #4).
         metadata: JsonObject = {
             "goal": goal,
             "campaign_id": campaign.id,
             "campaign_name": campaign.name,
             "contact_name": contact.name,
+            "phone_masked": mask(contact.phone),
             "result_schema": self.result_schema,
             "language": contact.language or campaign.language,
             **contact.context,

@@ -104,6 +104,38 @@ async def finish_run(conn: asyncpg.Connection, run_id: str, error: str | None = 
     )
 
 
+async def finish_if_all_settled(conn: asyncpg.Connection, run_id: str) -> bool:
+    """Mark the run completed only once every contact has actually settled.
+
+    Origination returns when a call is *answered*, not when it ends, so the
+    background task that started the run finishes long before the conversations
+    do. Marking the run completed there would show a finished run alongside rows
+    still reading "In conversation…" - a success state for something that has
+    not happened (CLAUDE.md non-negotiable #9). Instead each worker callback
+    asks this, and whichever one settles the last contact closes the run.
+
+    Idempotent by the `finished_at is null` guard, and safe under the
+    concurrent callbacks a multi-contact run produces: the `update` is a single
+    statement, so two callbacks racing cannot both see an unfinished run and
+    both write. Returns whether *this* call was the one that closed it.
+    """
+    row = await conn.fetchrow(
+        """
+        update public.runs r
+           set status = 'completed', finished_at = now()
+         where r.id = $1
+           and r.finished_at is null
+           and (
+             select count(*) from public.call_outcomes o
+              where o.run_id = r.id and o.disposition <> 'in_flight'
+           ) >= r.total
+        returning r.id
+        """,
+        run_id,
+    )
+    return row is not None
+
+
 async def lookup_owner_for_webhook(conn: asyncpg.Connection, run_id: str) -> asyncpg.Record | None:
     """Unauthenticated resolution, via the SECURITY DEFINER
     `lookup_run_owner_for_webhook` function - the CALL-E webhook receiver has
