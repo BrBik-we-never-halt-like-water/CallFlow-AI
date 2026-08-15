@@ -22,6 +22,9 @@ import pytest
 import pytest_asyncio
 
 from app.core.config import config
+from app.database.repositories import (
+    ai_provider_credentials as ai_provider_credentials_repo,
+)
 from app.database.repositories import campaigns as campaigns_repo
 from app.database.repositories import credits as credits_repo
 from app.database.repositories import escalations as escalations_repo
@@ -29,6 +32,7 @@ from app.database.repositories import invitations as invitations_repo
 from app.database.repositories import organisations as org_repo
 from app.database.repositories import runs as runs_repo
 from app.database.repositories import sharing as sharing_repo
+from app.database.repositories import voice_agents as voice_agents_repo
 from app.domain.api_keys import generate_api_key, hash_api_key
 
 pytestmark = [
@@ -2208,5 +2212,229 @@ async def test_operator_cannot_insert_a_share_request_on_someone_elses_behalf(
     await db.execute(
         "delete from auth.users where id = any($1::uuid[])",
         [op1.auth_user_id, op2.auth_user_id],
+    )
+    await db.execute("delete from public.organisations where deleted_at is not null")
+
+
+# --- Agentic tab: voice agents + AI provider credentials (migration
+# `a1c48e7f2b93`) -------------------------------------------------------------
+#
+# `voice_agents` is deliberately org-wide readable (`voice_agents_select` is
+# plain `is_org_member`, not per-creator like `campaigns`) because an agent
+# configuration is org infrastructure any teammate needs to see to run or
+# share a campaign against it. Write is operator+ (day-to-day, same tier as
+# campaigns); delete is admin/owner only. `ai_provider_credentials` is a real
+# costed vendor secret, so every operation - including plain read - is
+# admin/owner only, a stricter shape than any other table these tests cover.
+
+
+async def _insert_voice_agent(
+    db: asyncpg.Connection, *, org_id: uuid.UUID, created_by: uuid.UUID, name: str = "Test Agent"
+) -> asyncpg.Record:
+    return await voice_agents_repo.create_agent(
+        db,
+        org_id=org_id,
+        created_by=created_by,
+        name=name,
+        kind="custom",
+        stt_provider="sarvam",
+        tts_provider="sarvam",
+        llm_provider="openrouter",
+        llm_model="openai/gpt-4o",
+        voice_id="anushka",
+        system_prompt="Be helpful.",
+        prebuilt_persona=None,
+        telephony_provider="twilio",
+    )
+
+
+async def test_voice_agents_are_invisible_across_tenants(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    a, b = tenants
+
+    async with db.transaction():
+        await _as_user(db, a.auth_user_id)
+        created = await _insert_voice_agent(db, org_id=a.org_id, created_by=a.user_id)
+
+    async with db.transaction():
+        await _as_user(db, b.auth_user_id)
+        rows = await voice_agents_repo.list_org_agents(db, b.org_id)
+        fetched = await voice_agents_repo.get_org_agent(db, b.org_id, created["id"])
+    assert rows == [], "tenant b can see tenant a's voice agent"
+    assert fetched is None, "tenant b fetched tenant a's voice agent by id"
+
+    await _as_postgres(db)
+    await db.execute("delete from public.voice_agents where org_id = $1", a.org_id)
+
+
+async def test_ai_provider_credentials_are_invisible_across_tenants_for_agents(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    a, b = tenants
+
+    async with db.transaction():
+        await _as_user(db, a.auth_user_id)
+        await ai_provider_credentials_repo.upsert(
+            db,
+            org_id=a.org_id,
+            created_by=a.user_id,
+            provider="sarvam",
+            label="Tenant A key",
+            api_key_encrypted="enc-tenant-a",
+        )
+
+    async with db.transaction():
+        await _as_user(db, b.auth_user_id)
+        rows = await ai_provider_credentials_repo.list_for_org(db, b.org_id)
+        fetched = await ai_provider_credentials_repo.get_credential(db, b.org_id, "sarvam")
+    assert rows == [], "tenant b can see tenant a's ai provider credential"
+    assert fetched is None, "tenant b fetched tenant a's credential by provider"
+
+    await _as_postgres(db)
+    await db.execute("delete from public.ai_provider_credentials where org_id = $1", a.org_id)
+
+
+async def test_voice_agents_are_org_wide_readable_not_per_creator(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    """The deliberate contrast with campaigns/runs (per-creator visibility
+    silo, migration `202608092000`): any org member, including a viewer,
+    must see an agent created by someone else entirely. A regression here -
+    accidentally narrowing this to per-creator - would be a silent behavior
+    change nothing else in this suite would catch."""
+    a, _ = tenants
+    await _as_postgres(db)
+
+    operator = await _create_tenant(db, "agents-read-operator")
+    viewer = await _create_tenant(db, "agents-read-viewer")
+    await _seat(db, a.org_id, operator, "operator")
+    await _seat(db, a.org_id, viewer, "viewer")
+
+    async with db.transaction():
+        await _as_user(db, a.auth_user_id)
+        created = await _insert_voice_agent(db, org_id=a.org_id, created_by=a.user_id)
+
+    for member in (operator, viewer):
+        async with db.transaction():
+            await _as_user(db, member.auth_user_id)
+            rows = await voice_agents_repo.list_org_agents(db, a.org_id)
+        assert [r["id"] for r in rows] == [created["id"]], (
+            f"member {member.user_id} cannot see an agent created by another org member"
+        )
+
+    await _as_postgres(db)
+    await db.execute("delete from public.voice_agents where org_id = $1", a.org_id)
+    await db.execute(
+        "delete from auth.users where id = any($1::uuid[])",
+        [operator.auth_user_id, viewer.auth_user_id],
+    )
+    await db.execute("delete from public.organisations where deleted_at is not null")
+
+
+async def test_only_operator_or_above_can_create_voice_agents_and_only_admin_or_above_can_delete(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    a, _ = tenants
+    await _as_postgres(db)
+
+    viewer = await _create_tenant(db, "agents-write-viewer")
+    operator = await _create_tenant(db, "agents-write-operator")
+    await _seat(db, a.org_id, viewer, "viewer")
+    await _seat(db, a.org_id, operator, "operator")
+
+    with pytest.raises(asyncpg.exceptions.InsufficientPrivilegeError):
+        async with db.transaction():
+            await _as_user(db, viewer.auth_user_id)
+            await _insert_voice_agent(db, org_id=a.org_id, created_by=viewer.user_id)
+
+    async with db.transaction():
+        await _as_user(db, operator.auth_user_id)
+        created = await _insert_voice_agent(
+            db, org_id=a.org_id, created_by=operator.user_id, name="Operator Agent"
+        )
+    assert created is not None, "operator could not create a voice agent"
+
+    # RLS's `voice_agents_delete` policy is a `USING` clause (admin/owner
+    # only) - same shape as `test_admin_cannot_demote_an_owner_via_direct_update`
+    # above: it filters the row out of the delete rather than raising, so an
+    # operator's delete is silently a no-op, not a rejection.
+    async with db.transaction():
+        await _as_user(db, operator.auth_user_id)
+        deleted = await voice_agents_repo.delete_agent(db, a.org_id, created["id"])
+    assert deleted is None, "operator deleted a voice agent - delete should be admin/owner only"
+
+    await _as_postgres(db)
+    still_there = await db.fetchval(
+        "select exists(select 1 from public.voice_agents where id = $1)", created["id"]
+    )
+    assert still_there, "the voice agent was actually deleted by an operator"
+
+    await db.execute("delete from public.voice_agents where org_id = $1", a.org_id)
+    await db.execute(
+        "delete from auth.users where id = any($1::uuid[])",
+        [viewer.auth_user_id, operator.auth_user_id],
+    )
+    await db.execute("delete from public.organisations where deleted_at is not null")
+
+
+async def test_ai_provider_credentials_are_admin_or_owner_only_even_for_read(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    """Stricter than every other table in this suite: even a plain read is
+    admin/owner only, because a vendor API key is a real, costed secret
+    (migration `a1c48e7f2b93`). The read side fails the same way any other
+    `select` RLS policy does - silently filtered to nothing, no exception -
+    while the write side raises, same as
+    `test_only_owner_or_admin_can_write_provider_credentials` above for the
+    telephony-credentials table."""
+    a, _ = tenants
+    await _as_postgres(db)
+
+    admin = await _create_tenant(db, "creds-admin")
+    operator = await _create_tenant(db, "creds-operator")
+    await _seat(db, a.org_id, admin, "admin")
+    await _seat(db, a.org_id, operator, "operator")
+
+    async with db.transaction():
+        await _as_user(db, admin.auth_user_id)
+        await ai_provider_credentials_repo.upsert(
+            db,
+            org_id=a.org_id,
+            created_by=admin.user_id,
+            provider="sarvam",
+            label="Admin key",
+            api_key_encrypted="enc-admin-key",
+        )
+
+    async with db.transaction():
+        await _as_user(db, operator.auth_user_id)
+        rows = await ai_provider_credentials_repo.list_for_org(db, a.org_id)
+        fetched = await ai_provider_credentials_repo.get_credential(db, a.org_id, "sarvam")
+    assert rows == [], "operator can read the org's ai provider credentials"
+    assert fetched is None, "operator can fetch the org's ai provider credential directly"
+
+    with pytest.raises(asyncpg.exceptions.InsufficientPrivilegeError):
+        async with db.transaction():
+            await _as_user(db, operator.auth_user_id)
+            await ai_provider_credentials_repo.upsert(
+                db,
+                org_id=a.org_id,
+                created_by=operator.user_id,
+                provider="deepgram",
+                label="Operator key",
+                api_key_encrypted="enc-operator-key",
+            )
+
+    async with db.transaction():
+        await _as_user(db, admin.auth_user_id)
+        rows = await ai_provider_credentials_repo.list_for_org(db, a.org_id)
+    assert {r["provider"] for r in rows} == {"sarvam"}, "admin cannot read the org's credentials"
+
+    await _as_postgres(db)
+    await db.execute("delete from public.ai_provider_credentials where org_id = $1", a.org_id)
+    await db.execute(
+        "delete from auth.users where id = any($1::uuid[])",
+        [admin.auth_user_id, operator.auth_user_id],
     )
     await db.execute("delete from public.organisations where deleted_at is not null")
