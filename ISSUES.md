@@ -3658,6 +3658,70 @@ not the sequence that is convenient to automate.
 
 **Depends on:** the theme system (`#87`, `#88` are the same feature's other two defects).
 
+## Iteration 24 - 2026-08-15 · platform pivot, phase A0 (CALL-E removal)
+
+### #77 - CALL-E removed outright; nothing can place a call until LiveKit origination lands
+
+**S2 · DELIBERATE · api + web · `apps/api/app/integrations/voice/engine.py`, `apps/api/app/api/v1/routes/webhooks.py`, `apps/api/app/services/campaign_runner.py`, `apps/api/app/core/config.py`, `apps/api/app/main.py`, `apps/web/lib/api.ts`**
+
+Not a bug - a planned, breaking removal, recorded here because it changes behaviour a user
+can see and because the next person to read `SYSTEM.md` needs to know why calling is dark.
+
+`PLATFORM_PIVOT_PLAN.md` replaces the single managed CALL-E vendor with a BYO-telephony
+stack (LiveKit as the media/SIP substrate, the org's own Twilio/Plivo as carrier,
+OpenRouter as the metered LLM marketplace). Step one is deleting CALL-E for real rather
+than wrapping it, so the codebase never carries two half-live providers at once. Deleted:
+`engine.py` (the vendor SDK boundary), `webhooks.py` (its terminal-event receiver), the
+`calle-ai` dependency, the `CALLE_*`/`CALLFLOW_WEBHOOK_SECRET` settings, the
+`GET /api/v1/runs/{run_id}/calls/{provider_call_id}/events` proxy, and four test files
+totalling ~680 lines (`test_engine.py`, `test_webhooks.py`, `test_run_events.py`,
+`test_live_progress.py`).
+
+**Impact.** No call can be placed. `CampaignRunner.run_one()` returns
+`status=FAILED, error=provider_unavailable, disposition=SKIPPED` for every contact that
+clears the safety gate, with the reason "Calling is not available yet - the voice platform
+migration is in progress." A run therefore still starts, still consumes this
+organisation's rate-limit window, and still writes one honest failure row per contact.
+Rejecting the run up front instead belongs with the "this campaign needs a voice agent
+with a connected number" check that `RUNBOOK_ARBAAZ_PART_2.md` owns, and is deliberately
+not done here.
+
+The safety gate itself is untouched and still runs first, so the allowlist, per-run
+ceiling, suppression check and rate limiter all keep behaving exactly as they will once
+dialling is back - the guards were never CALL-E's.
+
+**Fix.** Origination returns in `RUNBOOK_HET_PART_1.md` P1-T6 (LiveKit
+`CreateSIPParticipant`), with the trunk provisioning that precedes it in P1-T5. The
+retry-classification vocabulary is deliberately preserved: `DialFailure` and
+`_RETRYABLE_FAILURES` stay, and P1-T6 maps LiveKit/Twilio/Plivo errors onto that same
+enum rather than inventing a second failure taxonomy.
+
+Two collateral changes worth naming, since neither is in the runbook's own task list:
+
+- `GET /api/health` reported `api_key_configured`, a field named after a vendor key that
+  no longer exists. It is now `calling_available`, hard-coded `false`. The three frontend
+  readers (`lib/api.ts`, the run-start blocker, the `/status` board) follow it, so both
+  surfaces say "unavailable" rather than silently reading `undefined` as falsy and
+  happening to be right by accident.
+- `routes/campaigns.py` imported `render_goal` *through* `campaign_runner.py`, which only
+  re-exported it. That indirection died with the stub, so it now imports from
+  `app/domain/goal_rendering.py` directly.
+
+**Verified.** `ruff check app tests` clean; `pytest -q` 163 passed / 0 failed / 39 skipped
+(was 28 failed / 150 passed before the test rewrite); `app.main` imports and serves 25
+endpoints with no `webhooks`/`events` route in the OpenAPI schema; `pip install -e .[dev]`
+resolves with no `calle-ai`; web `type-check` and `lint` clean.
+
+Of the 28 broken tests, the vendor-agnostic ones were **repointed, not skipped** - the
+check-and-reserve ceiling, the suppression block, the concurrency semaphore, run ordering,
+the progress hook, and all four idempotency-key tests are still green. The idempotency
+tests now assert against `_idempotency_key()` directly instead of observing a fake
+gateway, and the concurrency tests patch `run_one` rather than faking a provider, so both
+now test our own logic without a vendor in the loop at all. Only the genuine dial/poll
+tests were removed; `RUNBOOK_HET_PART_1.md` P1-T7 rewrites them against the LiveKit client.
+
+**Blocks:** every other CallFlow feature that needs a live call. **Depends on:** nothing.
+
 ## Template for the next iteration
 
 ```

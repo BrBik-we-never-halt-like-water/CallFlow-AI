@@ -1,7 +1,16 @@
-"""Orchestrator behaviour: every run dials for real, guarded by the safety gate."""
+"""Orchestrator behaviour: every run dials for real, guarded by the safety gate.
 
-import threading
-import time
+Origination itself is stubbed while the voice platform migrates off CALL-E, so
+the dial/poll tests that used to live here are gone rather than skipped - the
+code under test was deleted with `engine.py`, and P1-T7 rewrites them against
+the LiveKit client. Everything that survives here is vendor-agnostic on
+purpose: the safety gate, the check-and-reserve ceiling, the suppression
+check, the concurrency semaphore, idempotency keys, and the pure extraction
+helpers. None of those depend on who places the call, and all of them must
+keep passing across the migration.
+"""
+
+import asyncio
 from typing import Any
 
 import pytest
@@ -17,106 +26,11 @@ from app.domain.outcome_extraction import (
 )
 from app.services.campaign_runner import CampaignRunner
 
-
-class ExplodingGateway:
-    """Fails loudly if a guarded call reaches the gateway at all."""
-
-    def __getattr__(self, name: str) -> Any:
-        raise AssertionError(f"a blocked contact must not call gateway.{name}")
-
-
-class FakeGateway:
-    """Completes a call immediately with a canned structured result."""
-
-    def start_call(self, **_: Any) -> dict[str, Any]:
-        return {"id": "call_test123", "status": "queued"}
-
-    def get_call(self, call_id: str) -> dict[str, Any]:
-        return {
-            "id": call_id,
-            "status": "completed",
-            "structured_result": {
-                "outcome": "interested",
-                "sentiment": "positive",
-                "frustration_signals": False,
-                "summary": "Wants a Bali package.",
-            },
-        }
-
-
-class RecordingGateway(FakeGateway):
-    """A `FakeGateway` that also remembers every `idempotency_key` it was asked
-    to dial with, in call order."""
-
-    def __init__(self) -> None:
-        self.idempotency_keys: list[str] = []
-
-    def start_call(self, **kwargs: Any) -> dict[str, Any]:
-        self.idempotency_keys.append(kwargs["idempotency_key"])
-        return super().start_call(**kwargs)
-
-
-class ConcurrencyTrackingGateway(FakeGateway):
-    """Records the peak number of `start_call`s in flight at once, to prove
-    `run()` actually overlaps contacts rather than dialling one at a time.
-
-    The delay is a real `time.sleep()`, not `asyncio.sleep()` - it runs
-    inside the worker thread `asyncio.to_thread` dispatches to, so the
-    `_no_real_sleep` fixture (which only patches the event-loop sleep between
-    polls) does not affect it, and concurrent calls genuinely overlap in
-    wall-clock time.
-    """
-
-    def __init__(self) -> None:
-        self._lock = threading.Lock()
-        self._in_flight = 0
-        self.peak_in_flight = 0
-
-    def start_call(self, **_: Any) -> dict[str, Any]:
-        with self._lock:
-            self._in_flight += 1
-            self.peak_in_flight = max(self.peak_in_flight, self._in_flight)
-        time.sleep(0.05)
-        with self._lock:
-            self._in_flight -= 1
-        return {"id": "call_test", "status": "completed"}
-
-
-class NoAnswerGateway(FakeGateway):
-    """Completes a call that never connected. `"failed"` - not a literal
-    "no_answer" - is the realistic payload: CALL-E's documented task-level
-    `CallStatus` enum (CALLE.md) is only `queued/in_progress/completed/
-    failed/canceled`, no finer "why" at this level (that detail lives in
-    `failure_code`/`failure_message`, unused by a clean poll like this)."""
-
-    def get_call(self, call_id: str) -> dict[str, Any]:
-        return {"id": call_id, "status": "failed"}
-
-
-class FlakyThenConnectsGateway(FakeGateway):
-    """The first call placed never connects; every call after that does -
-    for proving a released credit reservation is actually usable again by a
-    later contact in the same run."""
-
-    def __init__(self) -> None:
-        self._calls = 0
-
-    def start_call(self, **kwargs: Any) -> dict[str, Any]:
-        self._calls += 1
-        return {"id": f"call_{self._calls}", "status": "queued"}
-
-    def get_call(self, call_id: str) -> dict[str, Any]:
-        if call_id == "call_1":
-            return {"id": call_id, "status": "failed"}
-        return super().get_call(call_id)
-
-
-@pytest.fixture(autouse=True)
-def _no_real_sleep(monkeypatch: pytest.MonkeyPatch) -> None:
-    async def _instant(_seconds: float) -> None:
-        return None
-
-    monkeypatch.setattr("app.services.campaign_runner.asyncio.sleep", _instant)
+# What `run_one()` returns for any contact that clears the safety gate while
+# origination is stubbed out. Distinct from a gate block by `status`, not by
+# disposition - both are SKIPPED, because in neither case did a phone ring.
+STUBBED_DIAL_STATUS = "FAILED"
+BLOCKED_STATUS = "BLOCKED"
 
 
 def test_render_goal_substitutes_contact_fields() -> None:
@@ -139,98 +53,21 @@ def test_invalid_phone_rejected_at_model_level() -> None:
         Contact(name="Bad", phone="5555550100")
 
 
-async def test_call_completes_and_masks_the_phone() -> None:
-    runner = CampaignRunner(gateway=FakeGateway())  # type: ignore[arg-type]
+async def test_a_contact_that_clears_the_gate_reports_an_honest_failure() -> None:
+    """No provider exists, so a contact past the safety gate must come back as
+    an explicit failure with a reason a human can act on - never a success and
+    never a silent no-op (CLAUDE.md non-negotiable #9)."""
+    runner = CampaignRunner()
     contact = Contact(name="Aditi", phone="+15555550100", context={"enquiry_note": "Bali"})
 
     result = await runner.run_one(TRAVEL_DISCOVERY, contact)
 
-    assert result.disposition is Disposition.AUTO_CLOSED
-    assert result.run_id == "call_test123"
+    assert result.status == STUBBED_DIAL_STATUS
+    assert result.error == "provider_unavailable"
+    assert result.disposition is Disposition.SKIPPED
+    assert "not available yet" in (result.disposition_reason or "")
+    # Masking is a guarantee that does not depend on who places the call.
     assert "5555550" not in result.phone_masked
-
-
-class FailingGateway:
-    """Raises the given engine error the moment a call is placed."""
-
-    def __init__(self, exc: Exception) -> None:
-        self._exc = exc
-
-    def start_call(self, **_: Any) -> dict[str, Any]:
-        raise self._exc
-
-
-async def test_rate_limited_error_is_classified_as_retryable() -> None:
-    from app.integrations.voice.engine import EngineAPIError
-
-    exc = EngineAPIError(code="rate_limit_exceeded", message="slow down", status_code=429)
-    runner = CampaignRunner(gateway=FailingGateway(exc))  # type: ignore[arg-type]
-    result = await runner.run_one(TRAVEL_DISCOVERY, Contact(name="A", phone="+15555550100"))
-
-    assert result.disposition is Disposition.RETRY
-    assert result.error == "rate_limited"
-
-
-async def test_invalid_number_error_is_not_retryable() -> None:
-    from app.integrations.voice.engine import EngineAPIError
-
-    exc = EngineAPIError(code="invalid_phone", message="bad number", status_code=422)
-    runner = CampaignRunner(gateway=FailingGateway(exc))  # type: ignore[arg-type]
-    result = await runner.run_one(TRAVEL_DISCOVERY, Contact(name="A", phone="+15555550100"))
-
-    assert result.disposition is Disposition.UNREACHABLE
-    assert result.error == "invalid_number"
-
-
-async def test_unmapped_engine_error_fails_closed_to_internal() -> None:
-    """A future engine error code this codebase doesn't know about yet must
-    never be treated as a known-safe, retryable failure."""
-    from app.integrations.voice.engine import EngineAPIError
-
-    exc = EngineAPIError(code="a_brand_new_code_from_the_future", message="?", status_code=500)
-    runner = CampaignRunner(gateway=FailingGateway(exc))  # type: ignore[arg-type]
-    result = await runner.run_one(TRAVEL_DISCOVERY, Contact(name="A", phone="+15555550100"))
-
-    assert result.disposition is Disposition.UNREACHABLE
-    assert result.error == "internal"
-
-
-async def test_non_engine_exception_still_fails_closed() -> None:
-    runner = CampaignRunner(gateway=FailingGateway(ConnectionError("dns lookup failed")))  # type: ignore[arg-type]
-    result = await runner.run_one(TRAVEL_DISCOVERY, Contact(name="A", phone="+15555550100"))
-
-    assert result.disposition is Disposition.UNREACHABLE
-    assert result.error == "internal"
-    # The raw exception string must never reach a user-facing field - only the
-    # server log (log.exception, not asserted here) gets the real detail.
-    assert "dns lookup failed" not in (result.disposition_reason or "")
-
-
-async def test_poll_timeout_is_classified_as_retryable_not_a_raw_message(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    import dataclasses
-
-    from app.services import campaign_runner as runner_module
-
-    class TimingOutGateway:
-        def start_call(self, **_: Any) -> dict[str, Any]:
-            return {"id": "call_test123", "status": "queued"}
-
-        def get_call(self, call_id: str) -> dict[str, Any]:
-            return {"id": call_id, "status": "queued"}
-
-    monkeypatch.setattr(
-        runner_module,
-        "config",
-        dataclasses.replace(runner_module.config, poll_timeout_seconds=0),
-    )
-    runner = CampaignRunner(gateway=TimingOutGateway())  # type: ignore[arg-type]
-    result = await runner.run_one(TRAVEL_DISCOVERY, Contact(name="A", phone="+15555550100"))
-
-    assert result.disposition is Disposition.RETRY
-    assert result.error == "timed_out"
-    assert "did not finish" not in (result.disposition_reason or "")
 
 
 async def test_ceiling_blocks_further_calls(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -239,83 +76,68 @@ async def test_ceiling_blocks_further_calls(monkeypatch: pytest.MonkeyPatch) -> 
     from app.domain import safety
 
     # Config is frozen, so swap in a replaced copy rather than mutating it.
-    monkeypatch.setattr(
-        safety, "config", dataclasses.replace(safety.config, max_calls_per_run=0)
-    )
-    runner = CampaignRunner(gateway=ExplodingGateway())  # type: ignore[arg-type]
+    monkeypatch.setattr(safety, "config", dataclasses.replace(safety.config, max_calls_per_run=0))
+    runner = CampaignRunner()
     result = await runner.run_one(TRAVEL_DISCOVERY, Contact(name="A", phone="+15555550100"))
-    assert result.status == "BLOCKED"
+    assert result.status == BLOCKED_STATUS
     assert result.disposition is Disposition.SKIPPED
 
 
-async def test_idempotency_key_is_stable_across_retries_of_the_same_run_and_contact() -> None:
+def test_idempotency_key_is_stable_across_retries_of_the_same_run_and_contact() -> None:
     # The entire point of Idempotency-Key: a retry of the same logical attempt
-    # (same run, same contact) must reuse the same key, so CALL-E can
+    # (same run, same contact) must reuse the same key, so the provider can
     # recognise a duplicate instead of placing a second real call (#54).
-    gateway = RecordingGateway()
-    runner = CampaignRunner(gateway=gateway, run_id="run_abc123")  # type: ignore[arg-type]
+    # Asserted against the key builder directly rather than through a fake
+    # provider - the key is ours, and must survive swapping who dials.
+    runner = CampaignRunner(run_id="run_abc123")
     contact = Contact(name="A", phone="+15555550100")
 
-    await runner.run_one(TRAVEL_DISCOVERY, contact)
-    await runner.run_one(TRAVEL_DISCOVERY, contact)
-
-    assert len(gateway.idempotency_keys) == 2
-    assert gateway.idempotency_keys[0] == gateway.idempotency_keys[1]
+    assert runner._idempotency_key(TRAVEL_DISCOVERY, contact) == runner._idempotency_key(
+        TRAVEL_DISCOVERY, contact
+    )
 
 
-async def test_idempotency_key_differs_across_different_runs_for_the_same_contact() -> None:
+def test_idempotency_key_differs_across_different_runs_for_the_same_contact() -> None:
     # An old run's key must never be replayable against a new one.
     contact = Contact(name="A", phone="+15555550100")
 
-    gateway_1 = RecordingGateway()
-    await CampaignRunner(gateway=gateway_1, run_id="run_one").run_one(  # type: ignore[arg-type]
-        TRAVEL_DISCOVERY, contact
-    )
-    gateway_2 = RecordingGateway()
-    await CampaignRunner(gateway=gateway_2, run_id="run_two").run_one(  # type: ignore[arg-type]
-        TRAVEL_DISCOVERY, contact
-    )
+    one = CampaignRunner(run_id="run_one")._idempotency_key(TRAVEL_DISCOVERY, contact)
+    two = CampaignRunner(run_id="run_two")._idempotency_key(TRAVEL_DISCOVERY, contact)
 
-    assert gateway_1.idempotency_keys[0] != gateway_2.idempotency_keys[0]
+    assert one != two
 
 
-async def test_idempotency_key_never_contains_the_raw_phone_number() -> None:
-    gateway = RecordingGateway()
-    runner = CampaignRunner(gateway=gateway, run_id="run_abc123")  # type: ignore[arg-type]
-    await runner.run_one(TRAVEL_DISCOVERY, Contact(name="A", phone="+15555550100"))
+def test_idempotency_key_never_contains_the_raw_phone_number() -> None:
+    runner = CampaignRunner(run_id="run_abc123")
+    key = runner._idempotency_key(TRAVEL_DISCOVERY, Contact(name="A", phone="+15555550100"))
 
-    assert "5555550100" not in gateway.idempotency_keys[0]
+    assert "5555550100" not in key
 
 
-async def test_idempotency_key_falls_back_to_a_fresh_one_without_a_run_id() -> None:
+def test_idempotency_key_falls_back_to_a_fresh_one_without_a_run_id() -> None:
     # No real run means no stable job identity to key off of - not idempotent,
     # but no worse than the behaviour this replaces.
-    gateway = RecordingGateway()
-    runner = CampaignRunner(gateway=gateway)  # type: ignore[arg-type]
+    runner = CampaignRunner()
     contact = Contact(name="A", phone="+15555550100")
 
-    await runner.run_one(TRAVEL_DISCOVERY, contact)
-    await runner.run_one(TRAVEL_DISCOVERY, contact)
-
-    assert gateway.idempotency_keys[0] != gateway.idempotency_keys[1]
+    assert runner._idempotency_key(TRAVEL_DISCOVERY, contact) != runner._idempotency_key(
+        TRAVEL_DISCOVERY, contact
+    )
 
 
 async def test_suppressed_number_is_blocked() -> None:
     from app.domain.safety import phone_hash
 
     contact = Contact(name="A", phone="+15555550100")
-    runner = CampaignRunner(
-        gateway=ExplodingGateway(),  # type: ignore[arg-type]
-        suppressed_hashes=frozenset({phone_hash(contact.phone)}),
-    )
+    runner = CampaignRunner(suppressed_hashes=frozenset({phone_hash(contact.phone)}))
     result = await runner.run_one(TRAVEL_DISCOVERY, contact)
-    assert result.status == "BLOCKED"
+    assert result.status == BLOCKED_STATUS
     assert result.disposition is Disposition.SKIPPED
     assert "suppression" in (result.disposition_reason or "")
 
 
 async def test_run_processes_every_contact() -> None:
-    runner = CampaignRunner(gateway=FakeGateway())  # type: ignore[arg-type]
+    runner = CampaignRunner()
     contacts = [
         Contact(name="A", phone="+15555550100"),
         Contact(name="B", phone="+15555550101"),
@@ -323,142 +145,125 @@ async def test_run_processes_every_contact() -> None:
     assert len(await runner.run(TRAVEL_DISCOVERY, contacts)) == 2
 
 
-async def test_progress_hook_fires_per_contact() -> None:
-    """Each contact fires at least once - a "dialing" event, then the
-    resolved outcome - in that relative order *for that contact*. Contacts
-    now dial concurrently, so the two contacts' events can interleave with
-    each other; only each contact's own event order is guaranteed."""
-    seen: list[tuple[str, Disposition]] = []
-    runner = CampaignRunner(gateway=FakeGateway())  # type: ignore[arg-type]
+async def test_progress_hook_fires_once_per_contact() -> None:
+    """`run()` must report every contact's resolved outcome through the hook,
+    which is how the dashboard row gets written at all. The extra in-flight
+    event a live call also emits comes back with origination (P1-T6)."""
+    seen: list[tuple[str, str]] = []
+    runner = CampaignRunner()
 
     async def on_progress(outcome: Any) -> None:
-        seen.append((outcome.contact_name, outcome.disposition))
+        seen.append((outcome.contact_name, outcome.status))
 
     await runner.run(
         TRAVEL_DISCOVERY,
         [Contact(name="A", phone="+15555550100"), Contact(name="B", phone="+15555550101")],
         on_progress=on_progress,
     )
-    for name in ("A", "B"):
-        events = [disposition for contact_name, disposition in seen if contact_name == name]
-        assert events == [Disposition.IN_FLIGHT, Disposition.AUTO_CLOSED]
+    assert sorted(seen) == [("A", STUBBED_DIAL_STATUS), ("B", STUBBED_DIAL_STATUS)]
+
+
+class _ConcurrencyProbe:
+    """Stands in for `run_one` to observe how many contacts `run()` has in
+    flight at once. Patched onto the instance rather than faking a provider:
+    the semaphore lives in `run()` and is ours, so this stays true no matter
+    who ends up placing the call.
+    """
+
+    def __init__(self, runner: CampaignRunner) -> None:
+        self._real = runner.run_one
+        self.in_flight = 0
+        self.peak_in_flight = 0
+
+    async def __call__(self, *args: Any, **kwargs: Any) -> CallOutcome:
+        self.in_flight += 1
+        self.peak_in_flight = max(self.peak_in_flight, self.in_flight)
+        try:
+            await asyncio.sleep(0.02)
+            return await self._real(*args, **kwargs)
+        finally:
+            self.in_flight -= 1
 
 
 async def test_run_dials_contacts_concurrently_not_one_at_a_time() -> None:
-    gateway = ConcurrencyTrackingGateway()
-    runner = CampaignRunner(gateway=gateway, max_concurrent_calls=3)  # type: ignore[arg-type]
+    runner = CampaignRunner(max_concurrent_calls=3)
+    probe = _ConcurrencyProbe(runner)
+    runner.run_one = probe  # type: ignore[method-assign]
     contacts = [Contact(name=f"C{i}", phone=f"+155555501{i:02d}") for i in range(5)]
 
     await runner.run(TRAVEL_DISCOVERY, contacts)
 
-    assert gateway.peak_in_flight > 1
+    assert probe.peak_in_flight > 1
 
 
 async def test_run_never_exceeds_the_configured_concurrency_limit() -> None:
-    gateway = ConcurrencyTrackingGateway()
-    runner = CampaignRunner(gateway=gateway, max_concurrent_calls=2)  # type: ignore[arg-type]
+    runner = CampaignRunner(max_concurrent_calls=2)
+    probe = _ConcurrencyProbe(runner)
+    runner.run_one = probe  # type: ignore[method-assign]
     contacts = [Contact(name=f"C{i}", phone=f"+155555501{i:02d}") for i in range(6)]
 
     await runner.run(TRAVEL_DISCOVERY, contacts)
 
-    assert gateway.peak_in_flight <= 2
+    assert probe.peak_in_flight <= 2
 
 
 async def test_ceiling_holds_under_concurrent_dialing(monkeypatch: pytest.MonkeyPatch) -> None:
     # The check-and-reserve race this guards against only shows up under
-    # real concurrency - a sequential loop could never over-admit.
+    # real concurrency - a sequential loop could never over-admit. Split on
+    # `status`, not disposition: a gate block and a stubbed dial are both
+    # SKIPPED, so only the status tells them apart.
     import dataclasses
 
     from app.domain import safety
 
     monkeypatch.setattr(safety, "config", dataclasses.replace(safety.config, max_calls_per_run=2))
-    runner = CampaignRunner(gateway=FakeGateway(), max_concurrent_calls=5)  # type: ignore[arg-type]
+    runner = CampaignRunner(max_concurrent_calls=5)
     contacts = [Contact(name=f"C{i}", phone=f"+155555501{i:02d}") for i in range(5)]
 
     outcomes = await runner.run(TRAVEL_DISCOVERY, contacts)
 
-    blocked = [o for o in outcomes if o.disposition is Disposition.SKIPPED]
-    admitted = [o for o in outcomes if o.disposition is not Disposition.SKIPPED]
+    blocked = [o for o in outcomes if o.status == BLOCKED_STATUS]
+    admitted = [o for o in outcomes if o.status != BLOCKED_STATUS]
     assert len(admitted) == 2
     assert len(blocked) == 3
 
 
-async def test_no_credit_ceiling_means_only_the_org_wide_budget_applies() -> None:
-    # `credit_ceiling` defaults to `None` - nobody has set this teammate's
-    # allocation, so nothing about credits should block them here.
-    runner = CampaignRunner(gateway=FakeGateway())  # type: ignore[arg-type]
-    contacts = [Contact(name=f"C{i}", phone=f"+155555501{i:02d}") for i in range(3)]
-    outcomes = await runner.run(TRAVEL_DISCOVERY, contacts)
-    assert all(o.answered for o in outcomes)
-
-
-async def test_credit_ceiling_blocks_the_next_contact_once_a_call_connects() -> None:
-    runner = CampaignRunner(  # type: ignore[arg-type]
-        gateway=FakeGateway(), credit_ceiling=1, credits_used_before_run=0
-    )
-
-    first = await runner.run_one(TRAVEL_DISCOVERY, Contact(name="A", phone="+15555550100"))
-    second = await runner.run_one(TRAVEL_DISCOVERY, Contact(name="B", phone="+15555550101"))
-
-    assert first.answered
-    assert second.status == "BLOCKED"
-    assert second.disposition is Disposition.SKIPPED
-    assert "credit" in (second.disposition_reason or "")
-
-
 async def test_credits_already_used_before_this_run_count_toward_the_ceiling() -> None:
-    runner = CampaignRunner(  # type: ignore[arg-type]
-        gateway=ExplodingGateway(), credit_ceiling=1, credits_used_before_run=1
-    )
+    # Purely a pre-dial gate check - never reaches origination, so this holds
+    # regardless of what places the call.
+    runner = CampaignRunner(credit_ceiling=1, credits_used_before_run=1)
     result = await runner.run_one(TRAVEL_DISCOVERY, Contact(name="A", phone="+15555550100"))
     assert result.status == "BLOCKED"
     assert result.disposition is Disposition.SKIPPED
     assert "credit" in (result.disposition_reason or "")
 
 
-async def test_a_call_that_never_connects_does_not_spend_a_credit() -> None:
-    # A credit is only ever actually spent by a connected call - a dial that
-    # never rings through must give its reservation back so a later contact
-    # in the same run can still use it.
-    runner = CampaignRunner(  # type: ignore[arg-type]
-        gateway=FlakyThenConnectsGateway(), credit_ceiling=1, credits_used_before_run=0
-    )
+async def test_a_stubbed_call_releases_its_reserved_credit_for_the_next_contact() -> None:
+    # A credit is only ever actually spent by a connected call - while
+    # origination is stubbed, nothing ever connects, so a ceiling of 1 must
+    # not block a second contact once the first's reservation is handed back.
+    # Regression coverage for the release that has to happen on the stub path
+    # now that there is no post-dial code left to do it (P1-T7 restores a
+    # real connected case for this rule once LiveKit lands).
+    runner = CampaignRunner(credit_ceiling=1, credits_used_before_run=0)
 
     first = await runner.run_one(TRAVEL_DISCOVERY, Contact(name="A", phone="+15555550100"))
     second = await runner.run_one(TRAVEL_DISCOVERY, Contact(name="B", phone="+15555550101"))
 
-    assert not first.answered
-    assert first.disposition is not Disposition.SKIPPED, "the call itself was never blocked"
-    assert second.disposition is not Disposition.SKIPPED, "the released credit was not reusable"
-    assert second.answered
+    # Both are Disposition.SKIPPED - a gate block and a stubbed dial share
+    # that disposition, so only `status` tells "never reached the stub"
+    # (BLOCKED_STATUS) apart from "reached it and failed honestly" (this).
+    assert first.status == STUBBED_DIAL_STATUS, "the call itself was never blocked"
+    assert second.status == STUBBED_DIAL_STATUS, "the released credit was not reusable"
 
 
 async def test_an_unanswered_call_is_not_credited_as_connected() -> None:
-    runner = CampaignRunner(gateway=NoAnswerGateway())  # type: ignore[arg-type]
-    result = await runner.run_one(TRAVEL_DISCOVERY, Contact(name="A", phone="+15555550100"))
+    result = await CampaignRunner().run_one(TRAVEL_DISCOVERY, Contact(name="A", phone="+15555550100"))
     assert result.answered is False
 
 
-async def test_credit_ceiling_holds_under_concurrent_dialing() -> None:
-    # Same shape as test_ceiling_holds_under_concurrent_dialing - the
-    # check-and-reserve race only shows up under real concurrency, and
-    # FakeGateway always connects, so every reservation here is a real spend.
-    runner = CampaignRunner(  # type: ignore[arg-type]
-        gateway=FakeGateway(), max_concurrent_calls=5, credit_ceiling=2, credits_used_before_run=0
-    )
-    contacts = [Contact(name=f"C{i}", phone=f"+155555501{i:02d}") for i in range(5)]
-
-    outcomes = await runner.run(TRAVEL_DISCOVERY, contacts)
-
-    connected = [o for o in outcomes if o.answered]
-    blocked = [o for o in outcomes if o.disposition is Disposition.SKIPPED]
-    assert len(connected) == 2
-    assert len(blocked) == 3
-
-
 async def test_run_preserves_input_order_regardless_of_completion_order() -> None:
-    gateway = ConcurrencyTrackingGateway()
-    runner = CampaignRunner(gateway=gateway, max_concurrent_calls=5)  # type: ignore[arg-type]
+    runner = CampaignRunner(max_concurrent_calls=5)
     contacts = [Contact(name=f"C{i}", phone=f"+155555501{i:02d}") for i in range(5)]
 
     outcomes = await runner.run(TRAVEL_DISCOVERY, contacts)
@@ -750,159 +555,3 @@ def test_resolve_outcome_defaults_confidence_and_evidence_when_absent() -> None:
     assert resolved.attempts == []
 
 
-async def test_run_one_surfaces_the_real_transcript() -> None:
-    """End-to-end: `run_one` must actually thread `_extract_transcript`'s output
-    into the `CallOutcome`, using a payload shaped like CALL-E's real response
-    rather than the flat shape the old, broken extractor expected."""
-
-    class TranscriptGateway:
-        def start_call(self, **_: Any) -> dict[str, Any]:
-            return {"id": "call_test123", "status": "queued"}
-
-        def get_call(self, call_id: str) -> dict[str, Any]:
-            return {
-                "id": call_id,
-                "status": "completed",
-                "structured_result": {"outcome": "interested"},
-                "recipients": [
-                    {
-                        "status": "completed",
-                        "attempts": [
-                            _attempt(
-                                "completed",
-                                [
-                                    {"offset_seconds": 0, "speaker": "bot", "text": "Hello!"},
-                                    {"offset_seconds": 2, "speaker": "user", "text": "Hi."},
-                                ],
-                            )
-                        ],
-                    }
-                ],
-            }
-
-    runner = CampaignRunner(gateway=TranscriptGateway())  # type: ignore[arg-type]
-    result = await runner.run_one(TRAVEL_DISCOVERY, Contact(name="Aditi", phone="+15555550100"))
-
-    assert result.transcript == "bot: Hello!\nuser: Hi."
-    assert result.disposition is Disposition.AUTO_CLOSED
-
-
-async def test_one_transient_poll_failure_does_not_fail_the_call() -> None:
-    """A single flaky HTTP call mid-poll must not end the whole call as FAILED
-    when the actual phone conversation goes on to complete successfully."""
-    from app.integrations.voice.engine import EngineAPIError
-
-    class FlakyThenOkGateway:
-        def __init__(self) -> None:
-            self._polls = 0
-
-        def start_call(self, **_: Any) -> dict[str, Any]:
-            return {"id": "call_test123", "status": "queued"}
-
-        def get_call(self, call_id: str) -> dict[str, Any]:
-            self._polls += 1
-            if self._polls == 1:
-                raise EngineAPIError(code="provider_unavailable", message="hiccup", status_code=503)
-            return {
-                "id": call_id,
-                "status": "completed",
-                "structured_result": {"outcome": "interested"},
-            }
-
-    runner = CampaignRunner(gateway=FlakyThenOkGateway())  # type: ignore[arg-type]
-    result = await runner.run_one(TRAVEL_DISCOVERY, Contact(name="A", phone="+15555550100"))
-
-    assert result.disposition is Disposition.AUTO_CLOSED
-    assert result.error is None
-    assert result.extracted.get("outcome") == "interested"
-
-
-@pytest.mark.parametrize("code", ["internal_error", "not_found", "call_not_ready"])
-async def test_previously_unretryable_poll_codes_no_longer_fail_a_completing_call(code: str) -> None:
-    """`internal_error`, `not_found` (the classic read-after-write race right
-    after creation), and `call_not_ready` (literally "not ready yet, check
-    again") all fall through classify_error's unmapped-code default to
-    DialFailure.INTERNAL - which the dial-time `_RETRYABLE_FAILURES` set
-    excludes on purpose. A GET poll is a different question: none of these
-    three should abandon a call that goes on to complete successfully."""
-    from app.integrations.voice.engine import EngineAPIError
-
-    class FlakyThenOkGateway:
-        def __init__(self) -> None:
-            self.polls = 0
-
-        def start_call(self, **_: Any) -> dict[str, Any]:
-            return {"id": "call_test123", "status": "queued"}
-
-        def get_call(self, call_id: str) -> dict[str, Any]:
-            self.polls += 1
-            if self.polls == 1:
-                raise EngineAPIError(code=code, message="transient", status_code=500)
-            return {
-                "id": call_id,
-                "status": "completed",
-                "structured_result": {"outcome": "interested"},
-            }
-
-    runner = CampaignRunner(gateway=FlakyThenOkGateway())  # type: ignore[arg-type]
-    result = await runner.run_one(TRAVEL_DISCOVERY, Contact(name="A", phone="+15555550100"))
-
-    assert result.disposition is Disposition.AUTO_CLOSED
-    assert result.error is None
-
-
-async def test_repeated_transient_poll_failures_eventually_time_out_as_retryable(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """A connection that never recovers must not retry forever - it's bounded
-    by the existing overall poll deadline, and ends up in the same RETRY
-    bucket as any other poll timeout, not a hard failure. A small positive
-    timeout (rather than 0) is used so the loop actually runs several
-    iterations - and therefore several retries - before the deadline hits,
-    proving the retry path is bounded rather than skipped altogether."""
-    import dataclasses
-
-    from app.integrations.voice.engine import EngineConnectionError
-    from app.services import campaign_runner as runner_module
-
-    monkeypatch.setattr(
-        runner_module, "config", dataclasses.replace(runner_module.config, poll_timeout_seconds=0.2)
-    )
-
-    class AlwaysFlakyGateway:
-        def __init__(self) -> None:
-            self.polls = 0
-
-        def start_call(self, **_: Any) -> dict[str, Any]:
-            return {"id": "call_test123", "status": "queued"}
-
-        def get_call(self, call_id: str) -> dict[str, Any]:
-            self.polls += 1
-            raise EngineConnectionError("connection refused")
-
-    gateway = AlwaysFlakyGateway()
-    runner = CampaignRunner(gateway=gateway)  # type: ignore[arg-type]
-    result = await runner.run_one(TRAVEL_DISCOVERY, Contact(name="A", phone="+15555550100"))
-
-    assert gateway.polls > 1  # actually retried, not just a single failed attempt
-    assert result.disposition is Disposition.RETRY
-    assert result.error == "timed_out"
-
-
-async def test_non_retryable_poll_failure_fails_the_call_immediately() -> None:
-    """A poll failure the taxonomy classifies as permanent (not a transient
-    network blip) must not be swallowed and retried for the full timeout."""
-    from app.integrations.voice.engine import EngineAPIError
-
-    class AlwaysUnauthorizedGateway:
-        def start_call(self, **_: Any) -> dict[str, Any]:
-            return {"id": "call_test123", "status": "queued"}
-
-        def get_call(self, call_id: str) -> dict[str, Any]:
-            raise EngineAPIError(code="unauthorized", message="key revoked", status_code=401)
-
-    runner = CampaignRunner(gateway=AlwaysUnauthorizedGateway())  # type: ignore[arg-type]
-    result = await runner.run_one(TRAVEL_DISCOVERY, Contact(name="A", phone="+15555550100"))
-
-    assert result.disposition is Disposition.UNREACHABLE
-    assert result.error == "unauthorized"

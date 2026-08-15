@@ -1,67 +1,43 @@
 """Campaign orchestration: contacts in, typed outcomes out.
 
 Flow per contact:
-    safety gate -> render goal -> engine create
-                -> poll to terminal -> extract typed result -> triage
+    safety gate -> render goal -> originate call
+                -> extract typed result -> triage
 
-Only the orchestration itself lives here - I/O, concurrency, the safety
-gate, polling. The pure extraction/triage logic each contact's terminal
-payload goes through is `app/domain/outcome_extraction.py` (shared with the
-webhook receiver, `api/v1/routes/webhooks.py`); goal-template rendering is
+Only the orchestration itself lives here - I/O, concurrency, the safety gate.
+The pure extraction/triage logic each contact's terminal payload goes through
+is `app/domain/outcome_extraction.py`; goal-template rendering is
 `app/domain/goal_rendering.py`. Split out of one file per CLAUDE.md's
 Single-Responsibility guidance - none of that logic does any I/O, so it
 belongs in `domain/`, not here.
+
+The origination step is currently a stub: CALL-E has been removed and the
+LiveKit replacement lands in RUNBOOK_HET_PART_1.md P1-T6. Until then every
+contact returns an explicit failure - see `run_one()`.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
-import time
 import uuid
 from collections.abc import Awaitable, Callable, Iterable
 from typing import Any
 
 from app.core.config import config
-from app.core.logging import CallContext
 from app.domain.entities import CallOutcome, Campaign, Contact, DialFailure, Disposition
-from app.domain.goal_rendering import render_goal
-from app.domain.outcome_extraction import _resolve_outcome
 from app.domain.safety import check_dial_allowed, mask, phone_hash
-from app.integrations.voice.engine import (
-    TERMINAL,
-    EngineAPIError,
-    EngineConnectionError,
-    EngineGateway,
-    EngineTimeoutError,
-    classify_error,
-)
 
 # Failures worth trying again, not treating as "this number doesn't work": the
-# engine, or its downstream carrier, said this is a transient condition rather
-# than something wrong with the number or the request itself. This set governs
-# dial-time decisions (start_call, and a non-retryable poll failure) - a fresh
-# call attempt against a number/request that's genuinely invalid or blocked
-# should not be retried, per CLAUDE.md's fail-closed rule for anything that
-# spends a credit or places a call.
+# carrier said this is a transient condition rather than something wrong with
+# the number or the request itself. A fresh call attempt against a
+# number/request that's genuinely invalid or blocked should not be retried, per
+# CLAUDE.md's fail-closed rule for anything that spends a credit or places a
+# call. Nothing populates this yet - P1-T6 maps LiveKit/Twilio/Plivo errors
+# onto `DialFailure` and restores the classification that fed it.
 _RETRYABLE_FAILURES = frozenset(
     {DialFailure.RATE_LIMITED, DialFailure.PROVIDER_UNAVAILABLE, DialFailure.TIMED_OUT}
 )
-
-# A GET poll is a different question from "safe to dial again": it's an
-# idempotent read of a call that's already in flight, not a safety/credit/
-# permission decision, so CLAUDE.md's fail-closed rule doesn't apply to it the
-# way it does to _RETRYABLE_FAILURES above. Abandoning a live, possibly-already
-# -completed call because one status check hit `internal_error`, `not_found`
-# (the classic read-after-write race right after creation), or `call_not_ready`
-# is the lossy choice, not the conservative one - all three fall through
-# `classify_error`'s unmapped-code default to DialFailure.INTERNAL today, and
-# would otherwise sit outside _RETRYABLE_FAILURES. So every failure is worth
-# retrying here except one this account cannot recover from by waiting:
-# UNAUTHORIZED (covers both the engine's `unauthorized` and `forbidden` codes) -
-# if the credentials are bad, no amount of polling fixes that, and burning the
-# rest of the timeout on it delays the operator finding out.
-_POLL_RETRYABLE_FAILURES = frozenset(DialFailure) - {DialFailure.UNAUTHORIZED}
 
 log = logging.getLogger("app.services.campaign_runner")
 
@@ -69,25 +45,11 @@ JsonObject = dict[str, Any]
 ProgressHook = Callable[[CallOutcome], Awaitable[None]]
 
 
-def _live_label(status: str) -> str:
-    """Human-readable text for an in-flight call status."""
-    return {
-        "queued": "Queued with the voice engine…",
-        "scheduled": "Scheduled…",
-        "dialing": "Dialing…",
-        "ringing": "Ringing…",
-        "in_progress": "In conversation…",
-        "connected": "In conversation…",
-    }.get(status, f"{status.replace('_', ' ').capitalize()}…")
-
-
 class CampaignRunner:
     def __init__(
         self,
-        gateway: EngineGateway | None = None,
         *,
         result_schema: JsonObject | None = None,
-        webhook_url: str | None = None,
         suppressed_hashes: frozenset[str] = frozenset(),
         max_calls_per_run: int | None = None,
         allowlist: frozenset[str] | None = None,
@@ -97,8 +59,6 @@ class CampaignRunner:
         credits_used_before_run: int = 0,
     ) -> None:
         self.result_schema = result_schema
-        self.webhook_url = webhook_url
-        self._gateway = gateway
         self._calls_made = 0
         # Guards the check-and-reserve in `run_one()` (see its own comment) -
         # dialling itself still runs concurrently; only that brief moment is
@@ -131,12 +91,6 @@ class CampaignRunner:
         self._max_concurrent_calls = (
             max_concurrent_calls if max_concurrent_calls is not None else config.max_concurrent_calls
         )
-
-    @property
-    def gateway(self) -> EngineGateway:
-        if self._gateway is None:
-            self._gateway = EngineGateway()
-        return self._gateway
 
     async def run(
         self,
@@ -199,76 +153,6 @@ class CampaignRunner:
                 outcomes.append(result)
         return outcomes
 
-    async def _poll_until_done(
-        self,
-        call_id: str,
-        *,
-        on_status: ProgressHook | None,
-        base: CallOutcome,
-    ) -> JsonObject:
-        """Poll a call to completion, reporting each status change.
-
-        The SDK's own `wait_for_result` blocks silently. Polling here lets the
-        dashboard show `queued → ringing → in_progress` while the call happens,
-        instead of a frozen spinner until it ends. The SDK itself is a blocking
-        client, so each poll runs in a worker thread rather than on the event
-        loop - otherwise one in-flight call would stall every other request.
-
-        At 2s between polls and up to `poll_timeout_seconds` (900s by default),
-        a single call can make on the order of 450 HTTP requests just to watch
-        it finish. A poll failing doesn't mean the phone call failed - CALL-E
-        keeps running the conversation regardless of whether we can currently
-        reach `GET /v1/calls/{id}` - so one flaky request must not end the
-        whole loop the way any other unhandled exception here would. Each
-        failure is classified with `_POLL_RETRYABLE_FAILURES` (deliberately
-        wider than `_RETRYABLE_FAILURES` - see its own comment for why a GET
-        poll gets a different, more forgiving answer than a dial decision):
-        retryable ones are logged and the loop tries again next tick; anything
-        still classified as non-retryable (an outright auth failure - polling
-        can't recover from that) is re-raised immediately rather than spending
-        the rest of the timeout on something that cannot succeed. No separate
-        consecutive-failure counter is needed for the retryable path - the
-        existing `deadline` is already a firm 900s ceiling, not an unbounded
-        retry.
-        """
-        deadline = time.monotonic() + config.poll_timeout_seconds
-        last_status = ""
-
-        while time.monotonic() < deadline:
-            try:
-                call = await asyncio.to_thread(self.gateway.get_call, call_id)
-            except (EngineAPIError, EngineTimeoutError, EngineConnectionError) as exc:
-                failure = classify_error(exc)
-                if failure not in _POLL_RETRYABLE_FAILURES:
-                    raise
-                log.warning(
-                    "transient poll failure for call %s: %s - retrying", call_id, failure.value
-                )
-                await asyncio.sleep(2.0)
-                continue
-
-            status = str(call.get("status", "")).lower()
-
-            if status in TERMINAL:
-                return call
-
-            if status and status != last_status and on_status is not None:
-                last_status = status
-                await on_status(
-                    base.model_copy(
-                        update={
-                            "status": status.upper(),
-                            "run_id": call_id,
-                            "disposition": Disposition.IN_FLIGHT,
-                            "disposition_reason": _live_label(status),
-                        }
-                    )
-                )
-
-            await asyncio.sleep(2.0)
-
-        raise TimeoutError(f"Call {call_id} did not finish within the timeout.")
-
     def _idempotency_key(self, campaign: Campaign, contact: Contact) -> str:
         """A retry of the *same* logical attempt must reuse the same key -
         that's the entire point of `Idempotency-Key`: if the create-call
@@ -304,8 +188,6 @@ class CampaignRunner:
             phone_masked=mask(contact.phone),
             campaign_id=campaign.id,
         )
-
-        goal = render_goal(campaign, contact)
 
         # --- Safety gate: fails closed, runs before anything can dial. ------
         # Checking `self._calls_made` and reserving a slot by incrementing it
@@ -346,121 +228,32 @@ class CampaignRunner:
                 }
             )
 
-        # Plain, vendor-neutral shape - the engine's `metadata` field is a fully
-        # free-form bag with no required namespacing (confirmed against the
-        # generated SDK model), so nothing above `engine.py` needs a
-        # vendor-flavoured key to satisfy it. `run_id` is included so the
-        # webhook receiver (`api/v1/routes/webhooks.py`) can tell which run a
-        # terminal event belongs to once CALL-E echoes this back - omitted
-        # when there's no real run to attribute it to (ad hoc use, tests).
-        metadata: JsonObject = {
-            "campaign_id": campaign.id,
-            "campaign_name": campaign.name,
-            "contact_name": contact.name,
-            **contact.context,
-        }
-        if self._run_id is not None:
-            metadata["run_id"] = self._run_id
-
-        try:
-            created = await asyncio.to_thread(
-                self.gateway.start_call,
-                task=goal,
-                phone=contact.phone,
-                result_schema=self.result_schema,
-                metadata=metadata,
-                webhook_url=self.webhook_url,
-                idempotency_key=self._idempotency_key(campaign, contact),
-                region=contact.region or campaign.region,
-                language=contact.language or campaign.language,
-            )
-
-            call_id = str(created.get("id", ""))
-
-            # Surface the row as soon as the call is placed. Otherwise the
-            # dashboard shows nothing for the whole call - which reads as a
-            # hang when a conversation runs for minutes.
-            if on_status is not None:
-                await on_status(
-                    base.model_copy(
-                        update={
-                            "status": str(created.get("status", "queued")).upper(),
-                            "run_id": call_id,
-                            "disposition": Disposition.IN_FLIGHT,
-                            "disposition_reason": "Dialing…",
-                        }
-                    )
-                )
-
-            with CallContext(call_id=call_id):
-                final = await self._poll_until_done(call_id, on_status=on_status, base=base)
-
-        except (EngineAPIError, EngineTimeoutError, EngineConnectionError) as exc:
-            # Classified against the engine's own documented error taxonomy
-            # (CALLE.md §4), not left as a raw exception string - so an operator
-            # can tell "this number is bad, stop trying" apart from "we're rate
-            # limited, this will work on retry" instead of both reading as the
-            # same generic failure. `EngineConnectionError` (raised by the SDK
-            # when a request fails before any response arrives) is included
-            # here too - without it, a dropped connection during `start_call`
-            # would fall through to the generic `except Exception` below and
-            # be misclassified as a non-retryable internal error instead of
-            # the transient, worth-retrying failure it actually is.
-            failure = classify_error(exc)
-            log.exception("call failed for %s: %s", mask(contact.phone), failure.value)
-            retryable = failure in _RETRYABLE_FAILURES
-            outcome = base.model_copy(
-                update={
-                    "status": "FAILED",
-                    "error": failure.value,
-                    "disposition": Disposition.RETRY if retryable else Disposition.UNREACHABLE,
-                    "disposition_reason": (
-                        f"Worth retrying - {failure.value.replace('_', ' ')}."
-                        if retryable
-                        else f"Call could not be completed: {failure.value.replace('_', ' ')}."
-                    ),
-                }
-            )
-        except TimeoutError:
-            # Raised by _poll_until_done itself when the call never reached a
-            # terminal status in time - not an engine error, so it can't go
-            # through classify_error(), but it's the same "transient, worth
-            # trying again" shape as PROVIDER_UNAVAILABLE/RATE_LIMITED.
-            log.exception("poll timed out for %s", mask(contact.phone))
-            outcome = base.model_copy(
-                update={
-                    "status": "FAILED",
-                    "error": DialFailure.TIMED_OUT.value,
-                    "disposition": Disposition.RETRY,
-                    "disposition_reason": "Worth retrying - timed out waiting for a result.",
-                }
-            )
-        except Exception:  # network error, or anything else unclassified
-            # The exception's own message is logged (log.exception captures it
-            # in full) but never interpolated into a user-facing field - unlike
-            # a vendor error's DialFailure.value, a raw exception string is
-            # untrusted content that can carry hostnames, URLs, or other
-            # internal detail through to whoever views this run or escalation.
-            log.exception("call failed for %s", mask(contact.phone))
-            outcome = base.model_copy(
-                update={
-                    "status": "FAILED",
-                    "error": DialFailure.INTERNAL.value,
-                    "disposition": Disposition.UNREACHABLE,
-                    "disposition_reason": "Call could not be completed due to an internal error.",
-                }
-            )
-        else:
-            outcome = _resolve_outcome(base, final, escalate_on_negative=campaign.escalate_on_negative)
+        # Real origination lands in P1-T6 (LiveKit CreateSIPParticipant). Until
+        # then this fails loudly rather than reporting anything that did not
+        # happen - CLAUDE.md non-negotiable #9. The safety gate above still runs
+        # first and still reserves a slot, so the guards stay exercised and the
+        # blocked/allowed split keeps behaving exactly as it will once dialling
+        # is back.
+        log.info("dial skipped for %s - no voice provider configured", mask(contact.phone))
 
         # A credit is only ever actually spent by a connected call (CLAUDE.md
-        # money/credit non-negotiable, applied here even though credits
-        # aren't currency: fail closed, but never charge for something that
-        # didn't happen). Every non-connected path above reserved a slot
-        # before knowing that - hand it back now so a later contact in this
-        # same run can use it.
-        if reserved_credit and not outcome.answered:
+        # money/credit non-negotiable, applied here even though credits aren't
+        # currency). This stub never connects, so any slot reserved above must
+        # be handed back immediately - otherwise every contact in a run with a
+        # credit ceiling set would permanently burn a credit it never spent,
+        # eventually blocking every later contact for a reason that never
+        # actually happened.
+        if reserved_credit:
             async with self._calls_made_lock:
                 self._credits_reserved -= 1
 
-        return outcome
+        return base.model_copy(
+            update={
+                "status": "FAILED",
+                "error": DialFailure.PROVIDER_UNAVAILABLE.value,
+                "disposition": Disposition.SKIPPED,
+                "disposition_reason": (
+                    "Calling is not available yet - the voice platform migration is in progress."
+                ),
+            }
+        )

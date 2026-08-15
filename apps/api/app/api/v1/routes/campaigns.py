@@ -16,8 +16,8 @@ from app.database.repositories import sharing as sharing_repo
 from app.domain.campaigns import BUILT_IN_IDS, FIELD_TYPES, REGISTRY, SCHEMAS, slugify
 from app.domain.entities import Campaign as CampaignEntity
 from app.domain.entities import Contact
+from app.domain.goal_rendering import render_goal
 from app.domain.result_schemas import build_result_schema
-from app.services.campaign_runner import render_goal
 
 router = APIRouter(prefix="/api/v1/campaigns", tags=["campaigns"])
 

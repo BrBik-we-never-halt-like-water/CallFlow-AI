@@ -87,8 +87,8 @@ function RunComposer() {
         ? 'Add at least one contact.'
         : 'Every row has a problem. Fix one, or remove the invalid rows.';
     }
-    if (!health?.api_key_configured) {
-      return "No Voice API key is configured - calls can't be placed yet.";
+    if (!health?.calling_available) {
+      return 'Calling is not available yet - the voice platform migration is in progress.';
     }
     if (overCeiling) {
       return `This run has ${validRows.length} contacts but the per-run ceiling is ${ceiling}. Raise the ceiling in Settings → Safety, or remove some rows.`;
