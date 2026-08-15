@@ -57,6 +57,29 @@ async def upsert(
     )
 
 
+async def get_for_provider(
+    conn: asyncpg.Connection, org_id: UUID, provider: str
+) -> asyncpg.Record | None:
+    """One provider's row, *including* the ciphertext.
+
+    Separate from `list_for_org` on purpose: that one deliberately never
+    selects the encrypted columns, because it feeds a settings page that has no
+    business holding a secret it will not use. This one exists for the call
+    paths that genuinely have to authenticate with the vendor, and the caller
+    decrypts (`app/core/crypto.py`) - this module still only ever sees
+    ciphertext.
+    """
+    return await conn.fetchrow(
+        """
+        select provider, label, identifier_encrypted, secret_encrypted, phone_number
+        from public.provider_credentials
+        where org_id = $1 and provider = $2
+        """,
+        org_id,
+        provider,
+    )
+
+
 async def remove(conn: asyncpg.Connection, org_id: UUID, provider: str) -> str | None:
     return await conn.fetchval(
         "delete from public.provider_credentials where org_id = $1 and provider = $2 returning provider",

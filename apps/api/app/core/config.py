@@ -141,6 +141,23 @@ class Config:
         default_factory=lambda: os.getenv("LIVEKIT_AGENT_NAME", "callflow-voice")
     )
 
+    # --- OpenRouter: the metered LLM marketplace ------------------------------
+    # CallFlow's *management* key, used to issue one metered key per
+    # organisation. Not an org's own credential - it is the key that mints
+    # theirs - so it is a platform setting and never a `provider_credentials`
+    # row. Empty ⇒ no organisation key can be issued, and provisioning says so
+    # rather than failing at the first LLM call.
+    openrouter_management_key: str = field(
+        default_factory=lambda: os.getenv("OPENROUTER_MANAGEMENT_KEY", "")
+    )
+    # Default spend ceiling, in USD, for a newly issued organisation key. `0`
+    # means unlimited, which is a deliberate choice rather than a default: an
+    # unmetered key on a per-token marketplace is how one runaway campaign
+    # becomes CallFlow's bill.
+    openrouter_default_limit_usd: float = field(
+        default_factory=lambda: float(os.getenv("OPENROUTER_DEFAULT_LIMIT_USD", "25") or 0)
+    )
+
     # Shared secret the voice runtime presents when it reports a finished call.
     # That worker is a separate process with no Supabase session, so this is the
     # entire trust boundary on `/internal/v1/*` - a caller who knows it can write
