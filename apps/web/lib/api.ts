@@ -351,6 +351,104 @@ export interface ProviderCredentialInput {
   label?: string;
 }
 
+export type AiProvider =
+  | 'sarvam'
+  | 'deepgram'
+  | 'elevenlabs'
+  | 'openai'
+  | 'openrouter';
+
+export interface AiProviderCredential {
+  provider: AiProvider;
+  label: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AiProviderCredentialInput {
+  api_key: string;
+  label?: string;
+}
+
+/** Same two vendors as `Provider` - named separately because a voice agent's
+ *  telephony assignment is its own concept from the integrations-tab
+ *  credential, not because the value set differs. */
+export type TelephonyProvider = Provider;
+
+export interface ProviderCatalogEntry {
+  id: string;
+  category: 'stt' | 'tts' | 'llm';
+  name: string;
+  vendor: string;
+  cost_note: string;
+  latency_note: string;
+  quality_note: string;
+  preview_available: boolean;
+  voice_options: string[];
+  connected: boolean;
+}
+
+export interface TelephonyOption {
+  provider: TelephonyProvider;
+  connected: boolean;
+  phone_number_masked: string | null;
+}
+
+export interface ProviderCatalog {
+  stt: ProviderCatalogEntry[];
+  tts: ProviderCatalogEntry[];
+  llm: ProviderCatalogEntry[];
+  telephony: TelephonyOption[];
+}
+
+export interface VoiceAgentDraft {
+  name: string;
+  kind?: 'custom' | 'prebuilt';
+  stt_provider?: string | null;
+  tts_provider?: string | null;
+  llm_provider?: string | null;
+  llm_model?: string | null;
+  voice_id?: string | null;
+  system_prompt?: string | null;
+  prebuilt_persona?: string | null;
+  telephony_provider?: TelephonyProvider | null;
+}
+
+export interface VoiceAgent {
+  id: string;
+  org_id: string;
+  name: string;
+  kind: 'custom' | 'prebuilt';
+  stt_provider: string | null;
+  tts_provider: string | null;
+  llm_provider: string | null;
+  llm_model: string | null;
+  voice_id: string | null;
+  system_prompt: string | null;
+  prebuilt_persona: string | null;
+  telephony_provider: TelephonyProvider | null;
+  created_at: string;
+  created_by: string | null;
+  created_by_name: string | null;
+  created_by_avatar_url: string | null;
+}
+
+export interface VoicePreviewRequest {
+  provider: string;
+  kind: 'stt' | 'tts';
+  text?: string;
+  voice_id?: string;
+  audio_base64?: string;
+  language?: string;
+}
+
+export interface VoicePreviewResult {
+  available: boolean;
+  reason: string | null;
+  audio_base64: string | null;
+  transcript: string | null;
+}
+
 /**
  * Bearer token + active-org header for the authenticated endpoints.
  *
@@ -603,4 +701,35 @@ export const api = {
     authReq<void>(`/api/v1/integrations/providers/${provider}`, {
       method: 'DELETE',
     }),
+
+  // --- voice agents + ai providers (Agentic tab) ----------------------------
+  listVoiceAgents: () => authReq<VoiceAgent[]>('/api/v1/voice-agents'),
+  createVoiceAgent: (draft: VoiceAgentDraft) =>
+    authReq<VoiceAgent>('/api/v1/voice-agents', {
+      method: 'POST',
+      body: JSON.stringify(draft),
+    }),
+  updateVoiceAgent: (id: string, draft: VoiceAgentDraft) =>
+    authReq<VoiceAgent>(`/api/v1/voice-agents/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(draft),
+    }),
+  deleteVoiceAgent: (id: string) =>
+    authReq<void>(`/api/v1/voice-agents/${id}`, { method: 'DELETE' }),
+  voiceProviderCatalog: () =>
+    authReq<ProviderCatalog>('/api/v1/voice-agents/providers'),
+  previewVoice: (body: VoicePreviewRequest) =>
+    authReq<VoicePreviewResult>('/api/v1/voice-agents/preview', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  listAiProviderCredentials: () =>
+    authReq<AiProviderCredential[]>('/api/v1/ai-providers'),
+  connectAiProvider: (provider: AiProvider, body: AiProviderCredentialInput) =>
+    authReq<AiProviderCredential>(`/api/v1/ai-providers/${provider}`, {
+      method: 'PUT',
+      body: JSON.stringify(body),
+    }),
+  disconnectAiProvider: (provider: AiProvider) =>
+    authReq<void>(`/api/v1/ai-providers/${provider}`, { method: 'DELETE' }),
 };
