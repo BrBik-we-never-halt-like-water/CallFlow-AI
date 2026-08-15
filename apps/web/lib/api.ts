@@ -249,7 +249,31 @@ export interface Suppression {
   suppressed_at: string;
 }
 
-export type Provider = 'twilio' | 'plivo';
+/** Whatever the API's catalogue says it supports - not a hard-coded pair.
+ * The list used to live here *and* on the server; the two drifting is how a
+ * provider becomes selectable in the UI and unstorable by the API. */
+export type Provider = string;
+
+/** What the credential is for. Mirrors `voice_agents`' own columns, so an
+ * organisation can see it needs one of each before a call is possible. */
+export type ProviderRole = 'telephony' | 'speech' | 'intelligence';
+
+/** How a vendor lets you connect. Only some host a login - a "Connect with X"
+ * button on a vendor that offers none would be a success state for something
+ * that never happens. */
+export type ConnectMethod = 'oauth' | 'api_key';
+
+export interface ProviderSpec {
+  id: Provider;
+  name: string;
+  role: ProviderRole;
+  connect: ConnectMethod;
+  summary: string;
+  /** Null for a vendor with a single secret and no account identifier. */
+  identifier_label: string | null;
+  secret_label: string;
+  docs_url: string;
+}
 
 export interface ProviderCredential {
   provider: Provider;
@@ -260,7 +284,7 @@ export interface ProviderCredential {
 }
 
 export interface ProviderCredentialInput {
-  identifier: string;
+  identifier?: string;
   secret: string;
   phone_number?: string;
   label?: string;
@@ -454,8 +478,18 @@ export const api = {
     authReq<void>(`/api/v1/suppressions/${id}`, { method: 'DELETE' }),
 
   // --- integrations ----------------------------------------------------------
+  listProviderCatalogue: () =>
+    authReq<ProviderSpec[]>('/api/v1/integrations/catalogue'),
   listProviderCredentials: () =>
     authReq<ProviderCredential[]>('/api/v1/integrations/providers'),
+  exchangeOAuthCode: (
+    provider: Provider,
+    body: { code: string; code_verifier?: string },
+  ) =>
+    authReq<ProviderCredential>(
+      `/api/v1/integrations/providers/${provider}/oauth/exchange`,
+      { method: 'POST', body: JSON.stringify(body) },
+    ),
   connectProvider: (provider: Provider, body: ProviderCredentialInput) =>
     authReq<ProviderCredential>(`/api/v1/integrations/providers/${provider}`, {
       method: 'PUT',
