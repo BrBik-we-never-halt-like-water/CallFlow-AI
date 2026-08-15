@@ -153,7 +153,11 @@ export interface Limits {
 
 export interface Health {
   ok: boolean;
-  api_key_configured: boolean;
+  /** Whether this deployment can actually place a call. False for the whole
+   * voice-platform migration - CALL-E is removed and LiveKit origination is
+   * not wired up yet - so every surface must say so rather than offering a
+   * Start button that cannot work. */
+  calling_available: boolean;
   max_calls_per_run: number;
   allowlist_active: boolean;
   limits?: Limits;
