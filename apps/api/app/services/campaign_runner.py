@@ -1,19 +1,25 @@
 """Campaign orchestration: contacts in, typed outcomes out.
 
 Flow per contact:
-    safety gate -> render goal -> originate call
-                -> extract typed result -> triage
+    safety gate -> render goal -> originate call -> report in flight
 
 Only the orchestration itself lives here - I/O, concurrency, the safety gate.
-The pure extraction/triage logic each contact's terminal payload goes through
-is `app/domain/outcome_extraction.py`; goal-template rendering is
-`app/domain/goal_rendering.py`. Split out of one file per CLAUDE.md's
-Single-Responsibility guidance - none of that logic does any I/O, so it
-belongs in `domain/`, not here.
+Goal-template rendering is `app/domain/goal_rendering.py`; the pure
+extraction/triage logic is `app/domain/outcome_extraction.py`. Split out of one
+file per CLAUDE.md's Single-Responsibility guidance - none of that logic does
+any I/O, so it belongs in `domain/`, not here.
 
-The origination step is currently a stub: CALL-E has been removed and the
-LiveKit replacement lands in RUNBOOK_HET_PART_1.md P1-T6. Until then every
-contact returns an explicit failure - see `run_one()`.
+**A run no longer ends here.** CALL-E was a request/response engine that could
+be polled to completion, so `run_one()` used to return a finished, triaged
+outcome. LiveKit is not: origination puts a caller and an agent worker into a
+room, and the conversation then happens somewhere this process is not. So
+`run_one()` returns once the call is *answered*, reporting IN_FLIGHT, and the
+worker POSTs the transcript and terminal status back when the call actually
+ends (RUNBOOK_HET_PART_1.md P1-T4). Extraction and triage move to that callback.
+
+That is a real behavioural change, not an implementation detail: anything
+reading a run's outcomes must expect IN_FLIGHT rows that resolve later, rather
+than every row being terminal the moment `run()` returns.
 """
 
 from __future__ import annotations
@@ -21,28 +27,41 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
-from collections.abc import Awaitable, Callable, Iterable
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterable
+from contextlib import asynccontextmanager
 from typing import Any
 
 from app.core.config import config
 from app.domain.entities import CallOutcome, Campaign, Contact, DialFailure, Disposition
+from app.domain.goal_rendering import render_goal
 from app.domain.safety import check_dial_allowed, mask, phone_hash
+from app.integrations.livekit.client import EngineError, LiveKitGateway, classify_error
 
 # Failures worth trying again, not treating as "this number doesn't work": the
 # carrier said this is a transient condition rather than something wrong with
 # the number or the request itself. A fresh call attempt against a
 # number/request that's genuinely invalid or blocked should not be retried, per
 # CLAUDE.md's fail-closed rule for anything that spends a credit or places a
-# call. Nothing populates this yet - P1-T6 maps LiveKit/Twilio/Plivo errors
-# onto `DialFailure` and restores the classification that fed it.
+# call.
+#
+# BUSY and NO_ANSWER belong here for the obvious reason: the number is fine and
+# the person simply wasn't available, which is the textbook case for calling
+# back rather than giving up on them.
 _RETRYABLE_FAILURES = frozenset(
-    {DialFailure.RATE_LIMITED, DialFailure.PROVIDER_UNAVAILABLE, DialFailure.TIMED_OUT}
+    {
+        DialFailure.RATE_LIMITED,
+        DialFailure.PROVIDER_UNAVAILABLE,
+        DialFailure.TIMED_OUT,
+        DialFailure.BUSY,
+        DialFailure.NO_ANSWER,
+    }
 )
 
 log = logging.getLogger("app.services.campaign_runner")
 
 JsonObject = dict[str, Any]
 ProgressHook = Callable[[CallOutcome], Awaitable[None]]
+GatewayFactory = Callable[[], LiveKitGateway]
 
 
 class CampaignRunner:
@@ -55,8 +74,20 @@ class CampaignRunner:
         allowlist: frozenset[str] | None = None,
         run_id: str | None = None,
         max_concurrent_calls: int | None = None,
+        trunk_id: str | None = None,
+        gateway_factory: GatewayFactory | None = None,
     ) -> None:
         self.result_schema = result_schema
+        # The verified LiveKit outbound trunk this run dials through - resolved
+        # by the caller from the campaign's voice agent, the same way the
+        # allowlist and suppression set are resolved once and passed in rather
+        # than looked up per contact. `None` means no number is connected, and
+        # every contact is refused with that reason rather than dialled.
+        self._trunk_id = trunk_id
+        self._gateway_factory = gateway_factory or LiveKitGateway
+        # Held open for the length of a `run()` so one batch shares a single
+        # aiohttp session instead of opening one per contact.
+        self._gateway: LiveKitGateway | None = None
         self._calls_made = 0
         # Guards the check-and-reserve in `run_one()` (see its own comment) -
         # dialling itself still runs concurrently; only that brief moment is
@@ -75,6 +106,26 @@ class CampaignRunner:
         self._max_concurrent_calls = (
             max_concurrent_calls if max_concurrent_calls is not None else config.max_concurrent_calls
         )
+
+    @asynccontextmanager
+    async def _open_gateway(self) -> AsyncIterator[None]:
+        """Hold one LiveKit session open for the block, if there is anything to dial.
+
+        A no-op when no trunk is connected: constructing a gateway would raise
+        on missing credentials, and refusing the whole run for that would hide
+        the more useful per-contact "no number is connected" reason behind a
+        configuration error.
+        """
+        if self._trunk_id is None:
+            yield
+            return
+
+        self._gateway = self._gateway_factory()
+        try:
+            async with self._gateway:
+                yield
+        finally:
+            self._gateway = None
 
     async def run(
         self,
@@ -105,18 +156,22 @@ class CampaignRunner:
         async def _dial(contact: Contact) -> CallOutcome:
             # `on_progress` doubles as the live-status sink so an in-flight
             # call is visible while it happens, not only once it ends. Held
-            # only around the dial/poll itself, not the final progress
-            # write below - that's our own DB, not CALL-E, and doesn't need
-            # to compete for the same concurrency budget.
+            # only around origination, not the final progress write below -
+            # that's our own database, and doesn't need to compete for the
+            # same concurrency budget as the carrier.
             async with semaphore:
                 outcome = await self.run_one(campaign, contact, on_status=on_progress)
             if on_progress:
                 await on_progress(outcome)
             return outcome
 
-        results = await asyncio.gather(
-            *(_dial(contact) for contact in contact_list), return_exceptions=True
-        )
+        # One session for the whole batch. Opening a gateway per contact would
+        # mean an aiohttp session per call, and `wait_until_answered` holds each
+        # one open for the length of a ring.
+        async with self._open_gateway():
+            results = await asyncio.gather(
+                *(_dial(contact) for contact in contact_list), return_exceptions=True
+            )
 
         outcomes: list[CallOutcome] = []
         for contact, result in zip(contact_list, results, strict=True):
@@ -203,21 +258,126 @@ class CampaignRunner:
                 }
             )
 
-        # Real origination lands in P1-T6 (LiveKit CreateSIPParticipant). Until
-        # then this fails loudly rather than reporting anything that did not
-        # happen - CLAUDE.md non-negotiable #9. The safety gate above still runs
-        # first and still reserves a slot, so the guards stay exercised and the
-        # blocked/allowed split keeps behaving exactly as it will once dialling
-        # is back.
-        log.info("dial skipped for %s - no voice provider configured", mask(contact.phone))
+        if self._trunk_id is None:
+            log.info("dial refused for %s - no connected number", mask(contact.phone))
+            return base.model_copy(
+                update={
+                    "status": "FAILED",
+                    "error": DialFailure.PROVIDER_UNAVAILABLE.value,
+                    "disposition": Disposition.SKIPPED,
+                    "disposition_reason": (
+                        "This campaign has no connected number to call from. "
+                        "Connect one to its voice agent, then start the run again."
+                    ),
+                }
+            )
+
+        room = self._room_name(contact)
+        # The rendered goal is what the agent worker is told to accomplish. It
+        # is built here, where the campaign and contact are both in hand, and
+        # travels to the worker as room metadata.
+        goal = render_goal(campaign, contact)
+
+        try:
+            created = await self._originate(contact=contact, campaign=campaign, room=room, goal=goal)
+        except EngineError as exc:
+            failure = classify_error(exc)
+            # `mask()` on the phone and `failure.value` rather than the
+            # exception text: a vendor message can carry the dialled number or
+            # internal hostnames, and this string reaches a user-facing field.
+            log.warning("call failed for %s: %s", mask(contact.phone), failure.value)
+            retryable = failure in _RETRYABLE_FAILURES
+            return base.model_copy(
+                update={
+                    "status": "FAILED",
+                    "error": failure.value,
+                    "disposition": Disposition.RETRY if retryable else Disposition.UNREACHABLE,
+                    "disposition_reason": (
+                        f"Worth retrying - {failure.value.replace('_', ' ')}."
+                        if retryable
+                        else f"Call could not be completed: {failure.value.replace('_', ' ')}."
+                    ),
+                }
+            )
+        except Exception:
+            # The exception's own message is logged in full but never
+            # interpolated into a user-facing field - unlike a DialFailure
+            # value, a raw exception string is untrusted content.
+            log.exception("call failed for %s", mask(contact.phone))
+            return base.model_copy(
+                update={
+                    "status": "FAILED",
+                    "error": DialFailure.INTERNAL.value,
+                    "disposition": Disposition.UNREACHABLE,
+                    "disposition_reason": "Call could not be completed due to an internal error.",
+                }
+            )
+
+        # Answered, not finished. The worker is in the room having the
+        # conversation and will POST the transcript and terminal status back
+        # when it ends (P1-T4); this row stays IN_FLIGHT until it does.
         return base.model_copy(
             update={
-                "status": "FAILED",
-                "error": DialFailure.PROVIDER_UNAVAILABLE.value,
-                "disposition": Disposition.SKIPPED,
-                "disposition_reason": (
-                    "Calling is not available yet - the voice platform migration is in progress."
-                ),
+                "status": "IN_PROGRESS",
+                "run_id": created["sip_call_id"] or created["participant_id"],
+                "disposition": Disposition.IN_FLIGHT,
+                "disposition_reason": "In conversation…",
             }
         )
+
+    def _room_name(self, contact: Contact) -> str:
+        """The room the caller and the agent worker both join.
+
+        Built from the run id and a hash of the number, never the number
+        itself: a room name reaches LiveKit's logs, dashboards, and webhooks,
+        all outside CallFlow's redaction (CLAUDE.md non-negotiable #5). It is
+        deterministic so a retry of the same (run, contact) lands in the same
+        room rather than starting a second conversation beside the first.
+        """
+        scope = self._run_id or "adhoc"
+        return f"call-{scope}-{phone_hash(contact.phone)[:12]}"
+
+    async def _originate(
+        self, *, contact: Contact, campaign: Campaign, room: str, goal: str
+    ) -> JsonObject:
+        """Place the call, using the batch's gateway or a private one.
+
+        `run_one()` is called directly as well as through `run()`, so it cannot
+        assume the batch session exists.
+        """
+        assert self._trunk_id is not None  # guarded by the caller
+        identity = f"contact-{phone_hash(contact.phone)[:12]}"
+
+        # What the worker needs to hold the conversation and to attribute the
+        # result. Deliberately no phone number: participant metadata is visible
+        # to everything in the room and reaches LiveKit's logs and webhooks,
+        # outside CallFlow's own redaction (CLAUDE.md non-negotiable #5). The
+        # worker POSTs its result back keyed on `run_id`, and the API maps that
+        # to the contact from its own records.
+        metadata: JsonObject = {
+            "goal": goal,
+            "campaign_id": campaign.id,
+            "campaign_name": campaign.name,
+            "contact_name": contact.name,
+            "result_schema": self.result_schema,
+            "language": contact.language or campaign.language,
+            **contact.context,
+        }
+        if self._run_id is not None:
+            metadata["run_id"] = self._run_id
+
+        kwargs: JsonObject = {
+            "trunk_id": self._trunk_id,
+            "phone": contact.phone,
+            "room_name": room,
+            "participant_identity": identity,
+            "metadata": metadata,
+            "max_call_duration_seconds": int(config.poll_timeout_seconds),
+        }
+
+        if self._gateway is not None:
+            return await self._gateway.start_call(**kwargs)
+
+        async with self._gateway_factory() as gateway:
+            return await gateway.start_call(**kwargs)
 

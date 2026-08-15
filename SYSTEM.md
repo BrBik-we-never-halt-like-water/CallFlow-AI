@@ -170,17 +170,23 @@ build base outcome (masked phone)
                                            here too now - the caller resolves the org's
                                            real suppressions table once per run and passes
                                            the verdict in (domain/ does no I/O, by design)
-  → [origination: STUBBED]                returns FAILED / provider_unavailable / SKIPPED
-                                           until P1-T6 wires LiveKit CreateSIPParticipant
-  → _extract_result() / _extract_transcript()   (unreached while the stub is in place)
-  → triage() → return
+  → LiveKitGateway.start_call()           one shared session per batch; wait_until_answered,
+                                           so a busy/unreachable number is distinguishable
+  → return IN_FLIGHT                      the call is answered, NOT finished
+  ... the worker holds the conversation, then POSTs the transcript back (P1-T4)
+  → _extract_result() / triage()          run against that callback, not here
 ```
 
-**No call can currently be placed.** CALL-E's dial/poll loop was deleted (`ISSUES.md`
-#77) and `run_one()` returns an explicit `provider_unavailable` failure for every contact
-that clears the safety gate. The gate itself still runs first and still reserves its slot,
-so the allowlist, per-run ceiling, suppression check and rate limiter behave exactly as
-they will once dialling returns.
+**A run no longer ends when `run()` returns.** CALL-E was request/response and could be
+polled to completion; LiveKit is not. Origination puts the caller and an agent worker into
+a room and returns once the call is *answered*, so `run_one()` reports `IN_FLIGHT` and the
+worker POSTs the transcript and terminal status back when the conversation actually ends.
+Anything reading a run's outcomes must expect rows that resolve later rather than every row
+being terminal immediately.
+
+A campaign whose voice agent has no connected number is refused per contact with that
+reason - `run_one()` takes its `trunk_id` from the caller, the same way the allowlist and
+suppression set are resolved once per run and passed in.
 
 The failure taxonomy that survives is `DialFailure`, and `integrations/livekit/client.py`'s
 `classify_error()` is what will populate it: a `TwirpError`'s upstream SIP status is

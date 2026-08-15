@@ -21,6 +21,7 @@ exists, rather than inventing a parallel one.
 
 from __future__ import annotations
 
+import json as _json
 import logging
 from typing import Any, Protocol, Self
 
@@ -266,7 +267,9 @@ class LiveKitGateway:
         room_name: str,
         participant_identity: str,
         participant_name: str | None = None,
+        metadata: dict[str, Any] | None = None,
         wait_until_answered: bool = True,
+        max_call_duration_seconds: int | None = None,
     ) -> dict[str, Any]:
         """Place one outbound call into `room_name`.
 
@@ -279,6 +282,16 @@ class LiveKitGateway:
         the same name can be handed to the agent worker's dispatch - the worker
         and the caller have to agree on it, and inventing it in two places is
         how they stop agreeing.
+
+        `metadata` is how the worker learns what this call is for - the rendered
+        goal, the campaign, the contact's own context. It is JSON-encoded onto
+        the participant. **It must never carry the dialled number**: participant
+        metadata is visible to everything in the room and reaches LiveKit's own
+        logs and webhooks, all outside CallFlow's redaction filter.
+
+        `max_call_duration_seconds` is a hard ceiling the carrier enforces even
+        if the worker hangs - without it, a wedged agent bills for a call that
+        never ends.
         """
         request = _vendor_api.CreateSIPParticipantRequest(
             sip_trunk_id=trunk_id,
@@ -286,8 +299,11 @@ class LiveKitGateway:
             room_name=room_name,
             participant_identity=participant_identity,
             participant_name=participant_name or participant_identity,
+            participant_metadata=_json.dumps(metadata) if metadata else "",
             wait_until_answered=wait_until_answered,
         )
+        if max_call_duration_seconds is not None:
+            request.max_call_duration.FromSeconds(max_call_duration_seconds)
         info = await self._sip.create_sip_participant(request)
         return {
             "participant_id": str(getattr(info, "participant_id", "") or ""),

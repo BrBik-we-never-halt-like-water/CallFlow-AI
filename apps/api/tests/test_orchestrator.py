@@ -1,22 +1,23 @@
 """Orchestrator behaviour: every run dials for real, guarded by the safety gate.
 
-Origination itself is stubbed while the voice platform migrates off CALL-E, so
-the dial/poll tests that used to live here are gone rather than skipped - the
-code under test was deleted with `engine.py`, and P1-T7 rewrites them against
-the LiveKit client. Everything that survives here is vendor-agnostic on
-purpose: the safety gate, the check-and-reserve ceiling, the suppression
-check, the concurrency semaphore, idempotency keys, and the pure extraction
-helpers. None of those depend on who places the call, and all of them must
-keep passing across the migration.
+Origination goes through `LiveKitGateway`, which these tests supply as a stub -
+the gateway's own translation of arguments and errors is covered in
+`test_livekit_client.py`, so what is under test here is the orchestration: the
+safety gate, the check-and-reserve ceiling, the suppression check, the
+concurrency semaphore, idempotency keys, and what a failure becomes.
+
+A runner with no `trunk_id` cannot dial at all and refuses every contact with
+that reason, which is also the default in most tests below - they are asserting
+guards that run *before* origination and should not need a fake carrier to do it.
 """
 
 import asyncio
-from typing import Any
+from typing import Any, Self
 
 import pytest
 
 from app.domain.campaigns import TRAVEL_DISCOVERY
-from app.domain.entities import CallOutcome, Contact, Disposition
+from app.domain.entities import CallOutcome, Contact, DialFailure, Disposition
 from app.domain.goal_rendering import render_goal
 from app.domain.outcome_extraction import (
     _extract_attempts,
@@ -24,13 +25,52 @@ from app.domain.outcome_extraction import (
     _extract_transcript,
     _resolve_outcome,
 )
+from app.integrations.livekit.client import EngineError
 from app.services.campaign_runner import CampaignRunner
 
-# What `run_one()` returns for any contact that clears the safety gate while
-# origination is stubbed out. Distinct from a gate block by `status`, not by
-# disposition - both are SKIPPED, because in neither case did a phone ring.
-STUBBED_DIAL_STATUS = "FAILED"
+# A contact that clears the gate but cannot be dialled comes back FAILED; one
+# the gate stops comes back BLOCKED. Both are SKIPPED - in neither case did a
+# phone ring - so only `status` tells them apart.
+UNDIALLABLE_STATUS = "FAILED"
 BLOCKED_STATUS = "BLOCKED"
+TRUNK = "ST_test_trunk"
+
+
+class StubGateway:
+    """Stands in for `LiveKitGateway`, recording what it was asked to dial."""
+
+    def __init__(self, fail_with: Exception | None = None) -> None:
+        self.calls: list[dict[str, Any]] = []
+        self.closed = False
+        self._fail_with = fail_with
+
+    async def __aenter__(self) -> Self:
+        return self
+
+    async def __aexit__(self, *_exc: object) -> None:
+        self.closed = True
+
+    async def start_call(self, **kwargs: Any) -> dict[str, Any]:
+        self.calls.append(kwargs)
+        if self._fail_with is not None:
+            raise self._fail_with
+        return {
+            "participant_id": "PA_1",
+            "participant_identity": kwargs["participant_identity"],
+            "room_name": kwargs["room_name"],
+            "sip_call_id": "SCL_1",
+        }
+
+
+def _dialling_runner(gateway: StubGateway | None = None, **kwargs: Any) -> tuple[CampaignRunner, StubGateway]:
+    stub = gateway or StubGateway()
+    runner = CampaignRunner(trunk_id=TRUNK, gateway_factory=lambda: stub, **kwargs)
+    return runner, stub
+
+
+def _twirp(code: str, *, sip_status: int | None = None) -> EngineError:
+    metadata = {} if sip_status is None else {"sip_status_code": str(sip_status)}
+    return EngineError(code, "stub failure", status=500, metadata=metadata)
 
 
 def test_render_goal_substitutes_contact_fields() -> None:
@@ -53,21 +93,168 @@ def test_invalid_phone_rejected_at_model_level() -> None:
         Contact(name="Bad", phone="5555550100")
 
 
-async def test_a_contact_that_clears_the_gate_reports_an_honest_failure() -> None:
-    """No provider exists, so a contact past the safety gate must come back as
-    an explicit failure with a reason a human can act on - never a success and
-    never a silent no-op (CLAUDE.md non-negotiable #9)."""
+async def test_a_campaign_with_no_connected_number_is_refused_with_that_reason() -> None:
+    """Never a silent no-op, and never a generic complaint: the reason names the
+    thing the operator has to go and do (CLAUDE.md non-negotiable #9, §5)."""
     runner = CampaignRunner()
     contact = Contact(name="Aditi", phone="+15555550100", context={"enquiry_note": "Bali"})
 
     result = await runner.run_one(TRAVEL_DISCOVERY, contact)
 
-    assert result.status == STUBBED_DIAL_STATUS
+    assert result.status == UNDIALLABLE_STATUS
     assert result.error == "provider_unavailable"
     assert result.disposition is Disposition.SKIPPED
-    assert "not available yet" in (result.disposition_reason or "")
+    assert "no connected number" in (result.disposition_reason or "")
     # Masking is a guarantee that does not depend on who places the call.
     assert "5555550" not in result.phone_masked
+
+
+async def test_an_answered_call_is_reported_in_flight_not_finished() -> None:
+    """LiveKit is not request/response: origination returns when the call is
+    answered, and the worker reports the transcript later. A terminal status
+    here would be claiming an outcome nobody has yet."""
+    runner, _ = _dialling_runner()
+    contact = Contact(name="Aditi", phone="+15555550100")
+
+    result = await runner.run_one(TRAVEL_DISCOVERY, contact)
+
+    assert result.status == "IN_PROGRESS"
+    assert result.disposition is Disposition.IN_FLIGHT
+    assert result.run_id == "SCL_1"
+
+
+async def test_the_dial_carries_the_rendered_goal_to_the_worker() -> None:
+    """The worker has no database access - the goal reaches it as metadata or
+    it has nothing to talk about."""
+    runner, stub = _dialling_runner(run_id="run_abc")
+    contact = Contact(name="Aditi", phone="+15555550100", context={"enquiry_note": "Bali"})
+
+    await runner.run_one(TRAVEL_DISCOVERY, contact)
+
+    metadata = stub.calls[0]["metadata"]
+    assert "Aditi" in metadata["goal"]
+    assert "Bali" in metadata["goal"]
+    assert metadata["campaign_id"] == TRAVEL_DISCOVERY.id
+    assert metadata["run_id"] == "run_abc"
+
+
+async def test_no_phone_number_ever_reaches_room_name_identity_or_metadata() -> None:
+    """All three cross into LiveKit's logs, dashboards and webhooks, outside
+    CallFlow's redaction filter (CLAUDE.md non-negotiable #5)."""
+    runner, stub = _dialling_runner(run_id="run_abc")
+    contact = Contact(name="Aditi", phone="+15555550100", context={"note": "call back"})
+
+    await runner.run_one(TRAVEL_DISCOVERY, contact)
+
+    call = stub.calls[0]
+    leaked = "5555550100"
+    assert leaked not in call["room_name"]
+    assert leaked not in call["participant_identity"]
+    assert leaked not in str(call["metadata"])
+    # The number itself still has to reach the carrier, of course.
+    assert call["phone"] == "+15555550100"
+
+
+async def test_the_room_name_is_stable_for_the_same_run_and_contact() -> None:
+    """A retry must land in the same room rather than opening a second
+    conversation beside the first."""
+    runner, stub = _dialling_runner(run_id="run_abc", max_calls_per_run=5)
+    contact = Contact(name="Aditi", phone="+15555550100")
+
+    await runner.run_one(TRAVEL_DISCOVERY, contact)
+    await runner.run_one(TRAVEL_DISCOVERY, contact)
+
+    assert stub.calls[0]["room_name"] == stub.calls[1]["room_name"]
+
+
+async def test_two_contacts_get_different_rooms() -> None:
+    runner, stub = _dialling_runner(run_id="run_abc", max_calls_per_run=5)
+
+    await runner.run_one(TRAVEL_DISCOVERY, Contact(name="A", phone="+15555550100"))
+    await runner.run_one(TRAVEL_DISCOVERY, Contact(name="B", phone="+15555550101"))
+
+    assert stub.calls[0]["room_name"] != stub.calls[1]["room_name"]
+
+
+async def test_a_call_carries_a_hard_duration_ceiling() -> None:
+    """Enforced by the carrier, so a wedged worker cannot bill for a call that
+    never ends."""
+    runner, stub = _dialling_runner()
+    await runner.run_one(TRAVEL_DISCOVERY, Contact(name="A", phone="+15555550100"))
+
+    assert stub.calls[0]["max_call_duration_seconds"] > 0
+
+
+@pytest.mark.parametrize(
+    "sip_status,expected_error,retryable",
+    [
+        (486, DialFailure.BUSY, True),
+        (480, DialFailure.NO_ANSWER, True),
+        (404, DialFailure.INVALID_NUMBER, False),
+        (403, DialFailure.UNAUTHORIZED, False),
+    ],
+)
+async def test_a_carrier_failure_is_classified_not_swallowed(
+    sip_status: int, expected_error: DialFailure, retryable: bool
+) -> None:
+    """The point of the taxonomy: an operator can tell "call them back later"
+    apart from "this number is wrong", instead of both reading as one failure."""
+    runner, _ = _dialling_runner(StubGateway(fail_with=_twirp("internal", sip_status=sip_status)))
+
+    result = await runner.run_one(TRAVEL_DISCOVERY, Contact(name="A", phone="+15555550100"))
+
+    assert result.status == "FAILED"
+    assert result.error == expected_error.value
+    assert result.disposition is (Disposition.RETRY if retryable else Disposition.UNREACHABLE)
+
+
+async def test_a_vendor_error_message_never_reaches_a_user_facing_field() -> None:
+    """A vendor string can carry the dialled number or internal hostnames."""
+    exc = EngineError(
+        "internal", "call to +15555550100 via sip.internal.example failed", status=500
+    )
+    runner, _ = _dialling_runner(StubGateway(fail_with=exc))
+
+    result = await runner.run_one(TRAVEL_DISCOVERY, Contact(name="A", phone="+15555550100"))
+
+    assert "5555550100" not in (result.disposition_reason or "")
+    assert "sip.internal.example" not in (result.disposition_reason or "")
+
+
+async def test_a_non_vendor_exception_still_fails_closed() -> None:
+    runner, _ = _dialling_runner(StubGateway(fail_with=ConnectionError("dns lookup failed")))
+
+    result = await runner.run_one(TRAVEL_DISCOVERY, Contact(name="A", phone="+15555550100"))
+
+    assert result.error == DialFailure.INTERNAL.value
+    assert result.disposition is Disposition.UNREACHABLE
+    assert "dns lookup failed" not in (result.disposition_reason or "")
+
+
+async def test_a_blocked_contact_is_never_dialled() -> None:
+    """The gate runs before origination, so a suppressed number must not reach
+    the carrier at all - not merely be discarded afterwards."""
+    from app.domain.safety import phone_hash
+
+    contact = Contact(name="A", phone="+15555550100")
+    runner, stub = _dialling_runner(suppressed_hashes=frozenset({phone_hash(contact.phone)}))
+
+    result = await runner.run_one(TRAVEL_DISCOVERY, contact)
+
+    assert result.status == BLOCKED_STATUS
+    assert stub.calls == []
+
+
+async def test_one_session_is_shared_across_a_whole_batch() -> None:
+    """A gateway per contact would mean an aiohttp session per call, each held
+    open for the length of a ring."""
+    runner, stub = _dialling_runner(max_calls_per_run=5)
+    contacts = [Contact(name=f"C{i}", phone=f"+155555501{i:02d}") for i in range(4)]
+
+    await runner.run(TRAVEL_DISCOVERY, contacts)
+
+    assert len(stub.calls) == 4
+    assert stub.closed is True
 
 
 async def test_ceiling_blocks_further_calls(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -160,7 +347,7 @@ async def test_progress_hook_fires_once_per_contact() -> None:
         [Contact(name="A", phone="+15555550100"), Contact(name="B", phone="+15555550101")],
         on_progress=on_progress,
     )
-    assert sorted(seen) == [("A", STUBBED_DIAL_STATUS), ("B", STUBBED_DIAL_STATUS)]
+    assert sorted(seen) == [("A", UNDIALLABLE_STATUS), ("B", UNDIALLABLE_STATUS)]
 
 
 class _ConcurrencyProbe:
