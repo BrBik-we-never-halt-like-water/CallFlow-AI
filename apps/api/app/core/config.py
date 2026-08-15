@@ -140,6 +140,13 @@ class Config:
     livekit_agent_name: str = field(
         default_factory=lambda: os.getenv("LIVEKIT_AGENT_NAME", "callflow-voice")
     )
+    # The project's SIP host (e.g. abc123.sip.livekit.cloud), which every
+    # carrier is told to send inbound calls to. A property of the LiveKit
+    # project, not of any one trunk, which is why it is configuration rather
+    # than something provisioning discovers.
+    livekit_sip_host: str = field(
+        default_factory=lambda: os.getenv("LIVEKIT_SIP_HOST", "").removeprefix("sip:").rstrip("/")
+    )
 
     # --- OpenRouter: the metered LLM marketplace ------------------------------
     # CallFlow's *management* key, used to issue one metered key per

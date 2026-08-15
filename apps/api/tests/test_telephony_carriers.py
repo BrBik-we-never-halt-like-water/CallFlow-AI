@@ -87,7 +87,7 @@ async def test_twilio_configures_the_trunk_before_attaching_the_number() -> None
         account_sid="AC123", auth_token="tok", client=_client(recorder)
     ) as carrier:
         result = await carrier.configure_number(
-            phone_number_sid="PN123",
+            number_ref="PN123",
             livekit_sip_host=LIVEKIT_HOST,
             label="Org A",
             auth_username="u",
@@ -97,9 +97,10 @@ async def test_twilio_configures_the_trunk_before_attaching_the_number() -> None
     assert "/Trunks" in recorder.paths[0]
     assert recorder.paths[-1].endswith("/PhoneNumbers")
     assert result.provider == "twilio"
-    # Twilio has no termination domain; branching on the provider name instead
-    # of on this being None is what this field exists to prevent.
-    assert result.termination_domain is None
+    # Twilio's trunk domain is what LiveKit's outbound trunk dials, so it fills
+    # the same slot Plivo's termination domain does - the provisioning workflow
+    # gets one uniform marker instead of branching on the provider name.
+    assert result.termination_domain == "org-a.pstn.twilio.com"
 
 
 async def test_twilio_sends_the_livekit_uri_with_a_transport() -> None:
@@ -108,7 +109,7 @@ async def test_twilio_sends_the_livekit_uri_with_a_transport() -> None:
         account_sid="AC123", auth_token="tok", client=_client(recorder)
     ) as carrier:
         await carrier.configure_number(
-            phone_number_sid="PN123",
+            number_ref="PN123",
             livekit_sip_host=LIVEKIT_HOST,
             label="Org A",
             auth_username="u",
@@ -128,7 +129,7 @@ async def test_twilio_creates_outbound_credentials() -> None:
         account_sid="AC123", auth_token="tok", client=_client(recorder)
     ) as carrier:
         await carrier.configure_number(
-            phone_number_sid="PN123",
+            number_ref="PN123",
             livekit_sip_host=LIVEKIT_HOST,
             label="Org A",
             auth_username="lk-user",
@@ -170,7 +171,7 @@ async def test_a_twilio_error_surfaces_the_vendors_own_message() -> None:
     ) as carrier:
         with pytest.raises(CarrierError) as caught:
             await carrier.configure_number(
-                phone_number_sid="bad",
+                number_ref="bad",
                 livekit_sip_host=LIVEKIT_HOST,
                 label="Org A",
                 auth_username="u",
@@ -194,7 +195,7 @@ async def test_an_unreachable_twilio_says_so_rather_than_raising_a_transport_err
         async with carrier:
             with pytest.raises(CarrierError) as caught:
                 await carrier.configure_number(
-                    phone_number_sid="PN123",
+                    number_ref="PN123",
                     livekit_sip_host=LIVEKIT_HOST,
                     label="Org A",
                     auth_username="u",
@@ -212,7 +213,7 @@ async def test_plivo_registers_the_uri_before_the_trunk_that_points_at_it() -> N
     recorder = Recorder()
     async with PlivoCarrier(auth_id="MA123", auth_token="tok", client=_client(recorder)) as carrier:
         result = await carrier.configure_number(
-            phone_number="+15555550100",
+            number_ref="+15555550100",
             livekit_sip_host=LIVEKIT_HOST,
             label="Org A",
             auth_username="u",
@@ -230,7 +231,7 @@ async def test_plivo_defaults_to_tls_and_always_sends_a_transport() -> None:
     recorder = Recorder()
     async with PlivoCarrier(auth_id="MA123", auth_token="tok", client=_client(recorder)) as carrier:
         await carrier.configure_number(
-            phone_number="+15555550100",
+            number_ref="+15555550100",
             livekit_sip_host=LIVEKIT_HOST,
             label="Org A",
             auth_username="u",
@@ -253,7 +254,7 @@ async def test_plivo_returns_a_termination_domain_for_outbound() -> None:
     )
     async with PlivoCarrier(auth_id="MA123", auth_token="tok", client=_client(recorder)) as carrier:
         result = await carrier.configure_number(
-            phone_number="+15555550100",
+            number_ref="+15555550100",
             livekit_sip_host=LIVEKIT_HOST,
             label="Org A",
             auth_username="u",
@@ -277,7 +278,7 @@ async def test_plivo_falls_back_to_the_conventional_termination_domain() -> None
     )
     async with PlivoCarrier(auth_id="MA123", auth_token="tok", client=_client(recorder)) as carrier:
         result = await carrier.configure_number(
-            phone_number="+15555550100",
+            number_ref="+15555550100",
             livekit_sip_host=LIVEKIT_HOST,
             label="Org A",
             auth_username="u",
@@ -299,7 +300,7 @@ async def test_a_plivo_error_surfaces_the_vendors_own_message() -> None:
     async with PlivoCarrier(auth_id="MA123", auth_token="tok", client=_client(recorder)) as carrier:
         with pytest.raises(CarrierError) as caught:
             await carrier.configure_number(
-                phone_number="+15555550100",
+                number_ref="+15555550100",
                 livekit_sip_host=LIVEKIT_HOST,
                 label="Org A",
                 auth_username="u",

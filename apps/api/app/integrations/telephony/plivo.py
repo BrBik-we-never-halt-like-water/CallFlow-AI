@@ -92,7 +92,7 @@ class PlivoCarrier:
     async def configure_number(
         self,
         *,
-        phone_number: str,
+        number_ref: str,
         livekit_sip_host: str,
         label: str,
         auth_username: str,
@@ -100,6 +100,10 @@ class PlivoCarrier:
         transport: str = DEFAULT_TRANSPORT,
     ) -> CarrierTrunk:
         """Point a Plivo number at LiveKit, both directions.
+
+        `number_ref` is the E.164 number itself - Plivo addresses numbers
+        directly, unlike Twilio's SID. Named uniformly across the adapters so
+        the provisioning workflow does not branch on the provider.
 
         The number is associated last, for the same reason as Twilio: until
         then nothing about live traffic has changed, so a failure part-way
@@ -142,7 +146,7 @@ class PlivoCarrier:
         )
 
         await self._post(
-            f"Number/{phone_number.lstrip('+')}/",
+            f"Number/{number_ref.lstrip('+')}/",
             {"app_type": "trunk", "trunk_id": inbound_id},
             action="attach the phone number to the trunk",
         )

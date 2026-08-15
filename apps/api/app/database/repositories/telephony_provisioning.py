@@ -146,6 +146,57 @@ async def record_livekit_ids(
     )
 
 
+async def record_error(
+    conn: asyncpg.Connection, attempt_id: UUID, last_error: str
+) -> asyncpg.Record | None:
+    """Note why a step failed **without** ending the attempt.
+
+    The distinction matters: a step that fails part-way through leaves real
+    LiveKit objects behind, and the attempt has to stay resumable so a retry
+    with the same key can skip them. Marking it terminal here would make the
+    only safe path - resuming - illegal, and the next attempt would orphan
+    whatever the first one created (`PLATFORM_PIVOT_PLAN.md` ADR-4: the row
+    "stays provisioning with last_error set").
+
+    `failed` is for an attempt nobody will resume - see `supersede_unfinished`.
+    """
+    return await conn.fetchrow(
+        f"""
+        update public.telephony_provisioning set last_error = $2
+        where id = $1
+        returning {_COLUMNS}
+        """,
+        attempt_id,
+        last_error,
+    )
+
+
+async def supersede_unfinished(
+    conn: asyncpg.Connection, voice_agent_id: UUID, *, except_id: UUID
+) -> int:
+    """Close out older attempts when a fresh one starts.
+
+    "Try again" begins a new attempt rather than reviving the stuck one, so the
+    previous attempts have to reach a terminal state or the agent accumulates
+    rows that look live forever. Their `last_error` is left untouched - it is
+    the record of what actually went wrong, and overwriting it with
+    "superseded" would throw away the only useful diagnostic.
+    """
+    rows = await conn.fetch(
+        """
+        update public.telephony_provisioning
+           set status = 'failed'
+         where voice_agent_id = $1
+           and id <> $2
+           and status in ('pending', 'provisioning')
+        returning id
+        """,
+        voice_agent_id,
+        except_id,
+    )
+    return len(rows)
+
+
 async def set_status(
     conn: asyncpg.Connection,
     attempt_id: UUID,

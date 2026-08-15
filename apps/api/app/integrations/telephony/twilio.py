@@ -97,13 +97,18 @@ class TwilioCarrier:
     async def configure_number(
         self,
         *,
-        phone_number_sid: str,
+        number_ref: str,
         livekit_sip_host: str,
         label: str,
         auth_username: str,
         auth_password: str,
     ) -> CarrierTrunk:
         """Point a Twilio number at LiveKit, both directions.
+
+        `number_ref` is the Twilio **Phone Number SID** (`PN…`), not the number
+        itself - Twilio addresses numbers by SID. Named uniformly across the
+        adapters so the provisioning workflow does not branch on the provider;
+        each adapter documents what its own carrier expects.
 
         Ordered so the trunk exists before anything is attached to it, and the
         number is associated *last* - until that final step nothing about the
@@ -151,7 +156,7 @@ class TwilioCarrier:
 
         await self._post(
             f"{_TRUNKING}/Trunks/{trunk_sid}/PhoneNumbers",
-            {"PhoneNumberSid": phone_number_sid},
+            {"PhoneNumberSid": number_ref},
             action="attach the phone number to the trunk",
         )
 
@@ -159,12 +164,16 @@ class TwilioCarrier:
         return CarrierTrunk(
             provider="twilio",
             trunk_id=trunk_sid,
-            # Twilio has no termination domain to hand back - the trunk's own
-            # domain is what LiveKit dials out through.
-            termination_domain=None,
+            # Twilio has no separately-named "termination domain" the way Plivo
+            # does, but the trunk's own domain plays exactly that role: it is the
+            # address LiveKit's outbound trunk dials. Returning it here rather
+            # than leaving the field None keeps the provisioning workflow from
+            # branching on the provider name, and gives it one uniform marker
+            # for "the carrier half is done".
+            termination_domain=domain,
             auth_username=auth_username,
             auth_password=auth_password,
-            details={"domain": domain, "credential_list_sid": credential_list_sid},
+            details={"credential_list_sid": credential_list_sid},
         )
 
     @staticmethod
