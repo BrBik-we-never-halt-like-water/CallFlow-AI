@@ -11,6 +11,7 @@ Skipped when DATABASE_URL is unset - see `tests/local_postgres/README.md`.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import uuid
 from collections.abc import AsyncIterator
@@ -111,6 +112,21 @@ def _carrier_factory(fail: bool = False) -> Any:
 @pytest.fixture(autouse=True)
 def _reset_carrier_calls() -> None:
     StubCarrier.calls = []
+
+
+@pytest.fixture(autouse=True)
+def _credentials_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`_sip_auth` derives the trunk password from this, and refuses without it.
+
+    Set here rather than relying on a developer's `.env`, so the suite behaves
+    the same in CI - and so the one test that asserts the refusal has to opt
+    out explicitly rather than passing by accident.
+    """
+    from app.services import number_provisioning as service
+
+    monkeypatch.setattr(
+        service, "config", dataclasses.replace(config, provider_credentials_key="test-key")
+    )
 
 
 @pytest_asyncio.fixture
@@ -388,3 +404,20 @@ async def test_a_missing_sip_host_is_refused_with_where_to_find_it(
 
     assert "LIVEKIT_SIP_HOST" in str(caught.value)
     assert "LiveKit project's SIP settings" in str(caught.value)
+
+
+async def test_an_unset_credentials_key_refuses_rather_than_deriving_a_guessable_password(
+    db: asyncpg.Connection, agent: Agent, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A constant fallback would make every deployment that forgot this key
+    derive the same SIP password from the same attempt id - on a trunk that can
+    place real calls, and it would work, so nothing would ever reveal it."""
+    from app.services import number_provisioning as service
+
+    monkeypatch.setattr(
+        service, "config", dataclasses.replace(config, provider_credentials_key="")
+    )
+    with pytest.raises(ProvisioningRefused) as caught:
+        await _connect(db, agent, "k-nokey")
+
+    assert "PROVIDER_CREDENTIALS_KEY" in str(caught.value)

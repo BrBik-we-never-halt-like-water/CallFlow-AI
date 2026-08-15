@@ -70,9 +70,20 @@ def _sip_auth(idempotency_key: str) -> tuple[str, str]:
     Keyed on `provider_credentials_key`, the server-held secret whose entire
     job is protecting provider credentials, so the derived password is not
     guessable from the attempt id alone.
+
+    Refuses rather than falling back to a constant when that key is unset. A
+    fallback would make every deployment that forgot to set it derive the same
+    password from the same attempt id - which is a guessable SIP credential on
+    a trunk that can place real calls, and it would work, so nothing would ever
+    reveal the problem (CLAUDE.md non-negotiable #2: fail closed).
     """
+    if not config.provider_credentials_key:
+        raise ProvisioningRefused(
+            "PROVIDER_CREDENTIALS_KEY is not set, and it is what makes this trunk's SIP "
+            "password unguessable. Generate one before connecting a number."
+        )
     digest = hmac.new(
-        config.provider_credentials_key.encode() or b"callflow-unconfigured",
+        config.provider_credentials_key.encode(),
         idempotency_key.encode(),
         hashlib.sha256,
     ).hexdigest()
