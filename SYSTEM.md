@@ -117,6 +117,7 @@ What a user can actually do, which endpoint it hits, and what survives a restart
 | **Integrations**                  | Connect/update/disconnect org-owned Twilio or Plivo credentials                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | `GET/PUT/DELETE /api/v1/integrations/providers/{provider}`                                                                        | ✅ credential storage is real, encrypted at rest (Fernet). ⚠️ Actually placing a call over a connected number is separate, not-yet-built work - the UI says so via `NotWiredNotice` |
 | **Billing**                       | View the current plan and today's real usage against the daily budget                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | `GET /api/v1/me` (`plan_id`), `GET /api/health` (`limits`)                                                                        | ✅ plan name and usage are real. ❌ No payment processor - upgrading/downgrading is not wired                                                                                       |
 | **Numbers, notifications**        | UI renders; actions explain they are not connected                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | none                                                                                                                              | ❌ not wired                                                                                                                                                                        |
+| **Team chat**                     | Channels and DMs between teammates in one organisation - not contact-facing SMS/WhatsApp. Search organisation members, create a channel (named, any number of teammates) or a DM - `create_channel()` is idempotent for a DM (migration `b3f7d2a891c5`): the same pair of people always converges on the same channel, race-safe via a partial unique index on `channels(org_id, dm_pair)`, not just app-level dedup - list conversations with per-conversation unread counts plus a dedicated cheap `GET .../unread-count` for the nav badge, read (cursor-paginated, tie-broken by `before_id` so an exact-timestamp collision can't skip a message)/send/edit/soft-delete messages, view a conversation's members, add/remove members, rename a channel, mark read on open, live updates via Supabase Realtime (`channels`/`messages`/`channel_members`, each its own subscription - `ISSUES.md` #83). Each conversation has a real URL, `/app/chat/{id}`. Visibility is `channel_members` membership (RLS) **and current organisation membership** - `channels_select`/`channel_members_select`/`messages_select`/`messages_insert` all require `is_org_member(...)` in addition to `is_channel_member(...)`, so a `channel_members` row left over from before someone left the organisation no longer keeps their access - or their visibility into who else is in the channel - alive on its own; rename/remove authorisation is the channel's creator or an org owner/admin, enforced in `channels_update`/`channel_members_delete`, not the route - the creator branch of both carries the identical live-membership requirement, so a departed former creator is no longer treated as an authorised one. `remove_member()` (leaving your own org) also clears the departing user's `channel_members` rows for that org in the same transaction, as a data-hygiene complement - not the security boundary, which is the RLS change (`ISSUES.md` #88/#89). Every rejection `create_channel()` itself can raise (a cross-org member id, a malformed DM) surfaces as a clean 400 (`ValueError` from the repository), not a 500 - `ISSUES.md` #85                                                                                                                                                                                                                                                                                                                                                                                        | `GET/POST /api/v1/channels`, `GET /api/v1/channels/unread-count`, `GET/PATCH /api/v1/channels/{id}`, `POST .../members`, `DELETE .../members/{user_id}`, `POST .../read`, `GET/POST .../messages`, `PATCH/DELETE .../messages/{id}` | ✅ org-scoped Postgres (`channels`, `channel_members`, `messages`), migration `b3f7d2a891c5`                                                                                        |
 
 Legend: ✅ persists · ⚠️ persists locally/partially · ❌ lost on restart or never stored.
 
@@ -143,6 +144,8 @@ Legend: ✅ persists · ⚠️ persists locally/partially · ❌ lost on restart
 | `database/repositories/safety_settings.py`      | An org's own safety-guard overrides, raw asyncpg                                                                                                                                                                                                                                                                                                     | `get_for_org()`, `upsert()`                                                                                   |
 | `database/repositories/api_keys.py`             | Org-scoped API key CRUD, raw asyncpg. RLS restricts every query to owner/admin                                                                                                                                                                                                                                                                       | `list_for_org()`, `create()`, `revoke()`                                                                      |
 | `database/repositories/provider_credentials.py` | Org-owned Twilio/Plivo credential storage, raw asyncpg. Only ever sees ciphertext - encryption happens in the route layer                                                                                                                                                                                                                            | `list_for_org()`, `upsert()`, `remove()`                                                                      |
+| `database/repositories/channels.py`             | Internal team chat: channel CRUD + group management, raw asyncpg. `create_channel()` calls the `SECURITY DEFINER` SQL function of the same name (migration `b3f7d2a891c5`) rather than a two-step insert, avoiding the `RETURNING`-before-membership-exists race `create_organisation()` already fixed once; for a `dm` it's also idempotent and race-safe (same migration - `channels.dm_pair` plus a partial unique index), and the repository wrapper converts every rejection the SQL function can raise (`RaiseError`) into a plain `ValueError`, so a bad request 400s instead of 500ing (`ISSUES.md` #85). Every `_CHANNEL_COLUMNS` read (`list_my_channels`/`get_channel`) carries a correlated `unread_count` subquery against the caller's own `channel_members.last_read_at`; `total_unread_count()` is a separate, cheaper single-join aggregate for the nav badge specifically, deliberately not `sum()` over the per-channel query - that one pays for every channel's full member list and was being re-run on every Realtime event for every open tab in the organisation (`ISSUES.md` #86). `add_member()`/`remove_member()` are plain insert/delete - safe without a definer function since neither asks for its own row back via `RETURNING`; `add_member()` still wraps its insert in a nested `SAVEPOINT`, since `channel_members.org_id` means the insert can fail its `WITH CHECK` the same way `send_message()` always could. `rename_channel()`/`mark_read()` are plain `UPDATE`s, authorised entirely by `channels_update`/`channel_members_update`                | `create_channel()`, `list_my_channels()`, `get_channel()`, `total_unread_count()`, `add_member()`, `remove_member()`, `rename_channel()`, `mark_read()` |
+| `database/repositories/messages.py`             | Internal team chat: message list/send/edit/delete, raw asyncpg. RLS (`messages_select`/`messages_insert`/`messages_update`) does the actual per-channel-membership and per-sender narrowing. `list_messages()` takes a `before`/`before_id`/`limit` cursor against `messages_channel_created_idx`, always returning oldest-first regardless of pagination - `before_id` breaks a tie when two messages share the exact same `created_at` (transaction-start time, so two genuinely concurrent sends can collide), which a bare `created_at <` cursor would otherwise silently skip one side of (`ISSUES.md` #87). `send_message()` catches a `WITH CHECK` failure (non-member posting) inside a nested `SAVEPOINT`, returning `None` instead of letting it abort the outer request transaction - same pattern `invitations_repo.accept()` uses. `edit_message()`/`delete_message()` (soft delete, `deleted_at`) both scope their `UPDATE` to `sender_id = $2` as a first filter, with `messages_update`'s RLS policy as the actual guard | `list_messages()`, `send_message()`, `edit_message()`, `delete_message()`                                     |
 | `domain/entities.py`                            | Pydantic domain types and terminal-status sets. **No `dry_run` field anywhere**                                                                                                                                                                                                                                                                      | `Contact`, `Campaign`, `CallOutcome`, `Sentiment`, `Disposition`, `DialFailure`                               |
 | `domain/safety.py`                              | Pre-dial gate and phone masking. No I/O                                                                                                                                                                                                                                                                                                              | `is_e164()`, `mask()`, `phone_hash()`, `check_dial_allowed()`, `EffectiveSafety`, `resolve_safety_settings()` |
 | `domain/triage.py`                              | Pure disposition decision from typed fields only                                                                                                                                                                                                                                                                                                     | `triage()`, `needs_human()`                                                                                   |
@@ -157,6 +160,7 @@ Legend: ✅ persists · ⚠️ persists locally/partially · ❌ lost on restart
 | `api/v1/routes/api_keys.py`                     | `/api/v1/api-keys` - list/create/revoke, org-scoped, owner/admin only                                                                                                                                                                                                                                                                                | `router`                                                                                                      |
 | `api/v1/routes/integrations.py`                 | `/api/v1/integrations/providers/{provider}` - connect (upsert)/list/disconnect, owner/admin only                                                                                                                                                                                                                                                     | `router`                                                                                                      |
 | `api/v1/routes/webhooks.py`                     | `/api/v1/webhooks/calle/{secret}` - CALL-E's terminal-event webhook, the fast path (polling stays the backstop). No signed-in user; resolves identity via `database.anonymous()` + the `lookup_run_owner_for_webhook` SECURITY DEFINER function (migration `202608091200`), then writes through the ordinary `database.as_user()` path as the run's own starter | `router`                                                                                                      |
+| `api/v1/routes/messages.py`                     | Internal team chat - `/api/v1/channels` + 7 sub-routes (unread-count, get/rename one channel, add/remove a member, mark read, list/send/edit/delete messages). `MESSAGES_READ`/`MESSAGES_SEND` only gate breadth (can this role use chat, can it post); per-conversation visibility is `channel_members` membership via RLS, and who may rename/remove-someone-else is the channel's creator or an org owner/admin, enforced in `channels_update`/`channel_members_delete` - neither is a role check in this file (see §5). `create_channel` catches `ValueError` from the repository and turns it into a 400, rather than letting a cross-org member id or a malformed DM 500                                                                                                  | `router`                                                                                                      |
 | `integrations/voice/protocol.py`                | The `VoiceProvider` structural protocol every voice adapter conforms to - CALL-E is still the only one (`VOICE_AGENT_PLATFORM.md` P1)                                                                                                                                                                                                                | `VoiceProvider`, `VoiceCapability`, `NotImplementedForProvider`                                               |
 | `integrations/voice/engine.py`                  | **The only vendor-SDK boundary**, aliased on import. Conforms to `VoiceProvider`: `supports()` declares structured-extraction/live-events only, `cancel_call()` raises (the SDK has none). `classify_error()` maps the engine's own error codes onto the internal `DialFailure` taxonomy (`ISSUES.md` #37), unmapped codes fail closed to `INTERNAL` | `EngineGateway`, `EngineAPIError`, `TERMINAL`, `classify_error`                                               |
 
@@ -595,6 +599,176 @@ Two subtleties in `stats`, both deliberate:
 Postgres `on conflict … do update`, so one call produces one row across all its status
 transitions rather than a row per change.
 
+### `GET /api/v1/channels`
+
+Requires `Permission.MESSAGES_READ` (every role, including viewer). RLS
+(`channels_select`) narrows the result to channels/DMs the caller is actually a
+*current* member of - `is_channel_member(id) and is_org_member(org_id)`, not
+`is_channel_member(id)` alone, since migration `b3f7d2a891c5` - **or** any
+channel in their org if they're an owner/admin (moderation - migration
+`b3f7d2a891c5`; `messages_select` has no matching branch, so this never
+extends to reading a channel's messages).
+`unread_count` is a correlated subquery against the caller's own
+`channel_members.last_read_at` - it excludes the caller's own sends and
+resets to 0 after `POST .../read`.
+
+```json
+[
+  {
+    "id": "e1c2...",
+    "kind": "channel",
+    "name": "launch-team",
+    "created_by": "2c7e...",
+    "member_ids": ["2c7e...", "9a1f..."],
+    "unread_count": 3,
+    "created_at": "2026-08-10T09:00:00Z"
+  }
+]
+```
+
+### `POST /api/v1/channels`
+
+Requires `Permission.MESSAGES_SEND` (operator and above). Body: `kind`
+(`"channel"`/`"dm"`), `name` (required for `channel`, ignored for `dm` - `400`
+if a channel has no name), `member_ids` (the other initial members; the caller
+is seated automatically - for a `dm`, `member_ids` must be exactly one id,
+and not the caller's own). Goes through the `SECURITY DEFINER`
+`create_channel()` function (migration `b3f7d2a891c5`), not a two-step insert -
+see `database/repositories/channels.py`'s row above for why. → `201`, same
+shape as the list above. For a `dm`, idempotent (migration `b3f7d2a891c5`):
+calling this twice for the same two people returns the *same* channel,
+race-safe against two simultaneous calls (a partial unique index on
+`channels(org_id, dm_pair)` is the actual guard, not just an
+exists-check-then-insert). → `400`, not `500`, for anything `create_channel()`
+itself rejects - a `dm` with the wrong member count, a self-DM, or a member id
+from another organisation (`ISSUES.md` #85).
+
+### `GET /api/v1/channels/unread-count`
+
+Requires `Permission.MESSAGES_READ`. `{"unread_count": 3}` - the total across
+every conversation the caller is in. Deliberately not derived from `GET
+/channels` (which the nav badge would otherwise have to call on every
+Realtime event, for every open tab in the organisation, paying for that
+endpoint's per-channel member-list aggregation just to sum one field back
+out) - `channels_repo.total_unread_count()` is a single join with no per-row
+fan-out (`ISSUES.md` #86).
+
+### `GET /api/v1/channels/{id}`
+
+Requires `Permission.MESSAGES_READ`. A single channel, same shape as one item
+of the list above. → `404` if the id doesn't exist *or* RLS hides it - the two
+are indistinguishable on purpose, so a channel id from another organisation
+typed directly into the URL bar (`/app/chat/{id}`) never confirms whether it
+exists at all.
+
+### `PATCH /api/v1/channels/{id}`
+
+Requires `Permission.MESSAGES_SEND`. Body: `{"name": "..."}` (1-80 chars). →
+`400` for a DM (only named channels can be renamed). → `403` if the caller is
+neither a *current-org-member* creator nor an org owner/admin - a former
+creator who has since left the organisation no longer qualifies, since
+migration `b3f7d2a891c5` added `is_org_member(org_id)` to the creator branch
+- `channels_update`'s RLS
+enforces this, not the route; the permission dependency only gates that the
+caller can use chat at all. → `200`, same shape as the list above.
+
+### `POST /api/v1/channels/{id}/members`
+
+Requires `Permission.MESSAGES_SEND`. Body: `{"user_id": "..."}`. → `204`. →
+`403` if the caller isn't a member of `{id}`, or if `user_id` isn't a member
+of the caller's own organisation - `channel_members_insert`'s RLS, not a route
+check (adding someone from a different org is rejected here the same way
+`create_channel()`'s own `member_ids` already is).
+
+### `DELETE /api/v1/channels/{id}/members/{user_id}`
+
+Requires `Permission.MESSAGES_READ` (every role) - leaving a channel has to
+work for a viewer too. → `204`. → `403` unless the caller is removing
+themself, or is the channel's creator or an org owner/admin removing someone
+else - `channel_members_delete`'s RLS.
+
+### `POST /api/v1/channels/{id}/read`
+
+Requires `Permission.MESSAGES_READ`. No body. Bumps the caller's own
+`channel_members.last_read_at` to now - `channel_members_update`'s
+`user_id = current_user_id()` check is what keeps this from ever touching
+someone else's row. → `204`. Called by the frontend whenever a conversation is
+opened, and again on any Realtime `messages` event while it's still open.
+
+### `GET /api/v1/channels/{id}/messages`
+
+Requires `Permission.MESSAGES_READ`. RLS (`messages_select`) returns nothing
+for a channel the caller isn't a member of, regardless of role - there is
+**no** admin/owner branch on this policy (deliberately unlike `channels_select`
+above: admins/owners can moderate a channel's existence and membership, never
+its contents). Oldest-first, soft-deleted rows excluded. Cursor pagination:
+`?before=<ISO 8601 timestamp>&before_id=<uuid>&limit=<1-200, default 50>` -
+`before`/`before_id` are the `created_at`/`id` of the oldest message already
+loaded; the response is always oldest-first regardless of whether a cursor
+was supplied, on `messages_channel_created_idx` (`channel_id, created_at`).
+`before_id` is optional but should always be sent alongside `before` - it
+breaks a tie when two messages share the exact same `created_at`
+(transaction-start time, so genuinely concurrent sends can collide), which a
+bare `created_at <` comparison would otherwise resolve by silently dropping
+whichever tied message doesn't make the earlier page (`ISSUES.md` #87).
+
+```json
+[
+  {
+    "id": "9f3a...",
+    "channel_id": "e1c2...",
+    "sender_id": "2c7e...",
+    "sender_name": "Aditi Rao",
+    "body": "call went well",
+    "created_at": "2026-08-10T09:05:00Z",
+    "edited_at": null
+  }
+]
+```
+
+### `POST /api/v1/channels/{id}/messages`
+
+Requires `Permission.MESSAGES_SEND`. Body: `{"body": "..."}` (1-4000 chars). →
+`201`, same shape as one item above. → `403` if the caller isn't a member of
+`{id}` - `messages_insert`'s RLS check failing, caught in the repository (a
+nested `SAVEPOINT`, not a bare `try`/`except` - see `messages.py`'s row above)
+so it surfaces as a clean denial rather than an aborted-transaction `500`.
+
+### `PATCH /api/v1/channels/{id}/messages/{message_id}`
+
+Requires `Permission.MESSAGES_SEND`. Body: `{"body": "..."}`. → `200`, same
+shape as one item above, with `edited_at` now set. → `403` unless the caller
+is the message's own sender - `messages_update`'s RLS. Builds its response
+from the caller's own `CurrentUser.name` rather than the updated row (which
+has no `sender_name` - its `UPDATE ... RETURNING` has no join to `users`,
+unlike the list endpoint above - `ISSUES.md` #84).
+
+### `DELETE /api/v1/channels/{id}/messages/{message_id}`
+
+Requires `Permission.MESSAGES_SEND`. Soft delete (`messages.deleted_at`, never
+a real `DELETE`) - the row stops appearing in `GET .../messages` immediately
+after, on every connection, since that query already filters
+`deleted_at is null`. → `204`. → `403` unless the caller is the sender.
+
+**Realtime.** `channels`/`channel_members`/`messages` are all in the
+`supabase_realtime` Postgres publication (added by the migration itself, since
+the migration role already owns that publication on this project - no
+`SUPABASE_SETUP.md` manual step needed). The frontend's `useOrgRealtime()`
+hook (`lib/hooks/use-org-realtime.ts`) subscribes per table, per call site
+(each gets its own `useId()`-suffixed channel name - two callers sharing one
+name broke each other, `ISSUES.md` #83); its `org_id` filter is a bandwidth
+optimisation only - RLS on `channels_select`/`messages_select` is what
+actually gates which Postgres Changes events a given caller receives at all.
+`chat-shell.tsx` and `use-chat-unread.ts` (the nav badge) each hold their own
+independent subscriptions to the same tables. The hook debounces its own
+callback (300ms, trailing) so a burst of events coalesces into one refetch,
+and passes the changed row's payload through rather than firing a bare
+trigger - `chat-shell.tsx`'s message and `channel_members` subscriptions use
+that to skip a refetch of the open conversation when the event was actually
+about a *different* one, instead of re-fetching (and, for messages,
+re-marking-read) on every send anywhere in the organisation the caller
+happens to belong to (`ISSUES.md` #86).
+
 ### What the API does **not** have
 
 No `Idempotency-Key` header · no cursor pagination · no RFC 9457 problem details (errors
@@ -777,7 +951,7 @@ check · consent flag.
 
 - **`(marketing)`** - `/`, `/pricing`, `/solutions/[vertical]` (4 static), `/trust`, `/about`, `/demo`, `/status`, `/maintenance`, `/docs` + 8 MDX pages
 - **`(auth)`** - `/login`, `/signup`, `/forgot-password`, `/reset-password`, `/verify-email`, `/accept-invite/[token]`
-- **`(app)/app`** - dashboard (`/app`), `campaigns` + `new` + `[id]`, `runs` + `new` + `[id]`, `escalations`, `contacts`, `profile`, `organisation` + `new`, `settings` + 4 panes (`safety`, `api-keys`, `integrations`, `billing`). Organisation and Team are their own route, `/app/organisation` (`Suspense`-wrapped for `useSearchParams()`, `?tab=team` selects the Team pane) - not a dialog and not a Settings pane; `/app/settings` and `/app/settings/team` both redirect to `/app/settings/safety` so pre-existing generic "Settings" links still resolve; "Organisation" lives in the account menu (`user-menu.tsx`'s dropdown) and, as of the dark-theme-pivot foundation task, also as a direct link in the sidebar's footer section (`app-shell.tsx`'s `AppSidebar`, below the five-item primary nav list) - it and Settings are lower-frequency than those five, so neither joins `PRIMARY_NAV_ITEMS` itself; the footer is a second path to the same three destinations (Profile/Organisation/Settings), not a replacement for the account menu, since the sidebar disappears below `lg` and the account menu is mobile's only way to reach them (or to sign out). Creating a second organisation is a dedicated two-step page, `/app/organisation/new` (name, then an optional logo - logo upload has to be a second step because Storage RLS scopes the upload path by `org_id`, which doesn't exist until the create call returns). There is no `/app/welcome` - the mandatory org-setup step + its skippable profile follow-up are **not routes at all**; `OnboardingGate` renders them as a modal over whatever page is active (see §3/§12), specifically to avoid the two-independent-`useSession()`-instances bug a page-per-step version had (`ISSUES.md`)
+- **`(app)/app`** - dashboard (`/app`), `campaigns` + `new` + `[id]`, `runs` + `new` + `[id]`, `escalations`, `contacts`, `chat` + `[id]` (internal team chat - channels/DMs, §3/§5; `chat-shell.tsx` is the shared component both the list-only and per-conversation routes render, parameterised by `channelId`, so a conversation has a real, shareable/refreshable URL), `profile`, `organisation` + `new`, `settings` + 4 panes (`safety`, `api-keys`, `integrations`, `billing`). Organisation and Team are their own route, `/app/organisation` (`Suspense`-wrapped for `useSearchParams()`, `?tab=team` selects the Team pane) - not a dialog and not a Settings pane; `/app/settings` and `/app/settings/team` both redirect to `/app/settings/safety` so pre-existing generic "Settings" links still resolve; "Organisation" lives in the account menu (`user-menu.tsx`'s dropdown) and, as of the dark-theme-pivot foundation task, also as a direct link in the sidebar's footer section (`app-shell.tsx`'s `AppSidebar`, below the primary nav list) - it and Settings are lower-frequency than the rest of that list, so neither joins `PRIMARY_NAV_ITEMS` itself (Chat does - unlike Organisation/Settings, it's a working feature someone checks often); the footer is a second path to the same three destinations (Profile/Organisation/Settings), not a replacement for the account menu, since the sidebar disappears below `lg` and the account menu is mobile's only way to reach them (or to sign out). Creating a second organisation is a dedicated two-step page, `/app/organisation/new` (name, then an optional logo - logo upload has to be a second step because Storage RLS scopes the upload path by `org_id`, which doesn't exist until the create call returns). There is no `/app/welcome` - the mandatory org-setup step + its skippable profile follow-up are **not routes at all**; `OnboardingGate` renders them as a modal over whatever page is active (see §3/§12), specifically to avoid the two-independent-`useSession()`-instances bug a page-per-step version had (`ISSUES.md`)
 - **Generated** - `icon.svg`, `apple-icon`, `opengraph-image`, `manifest.webmanifest`, `not-found` (`error.tsx` is a boundary, not a routed page)
 
 ### Design layer - `app/globals.css`
@@ -831,6 +1005,8 @@ Named animations: `relay-settle` (the signature lamp flicker), `relay-glow`, `la
 | `hooks/use-run-poll.ts`                    | 2.5s run polling + debounced `aria-live` announcement                                                                                                                                |
 | `hooks/use-external-store.ts`              | `useSyncExternalStore` over `localStorage` and `matchMedia`                                                                                                                          |
 | `hooks/use-org-scoped-effect.ts`           | `useEffect`, structurally forced to re-run when the active organisation changes - the standard pattern for org-scoped data fetching, used by 9 fetch sites                           |
+| `hooks/use-org-realtime.ts`                | `useOrgRealtime(table, orgId, onChange)` - generic Supabase Postgres Changes subscription, org-filtered. Fires `onChange()` (a refetch) on any event RLS lets through; the `org_id` filter is bandwidth-only, not the security boundary. Each call site gets its own `useId()`-suffixed channel name - `supabase-js` dedupes `.channel(name)` by name, so two callers watching the same table with the old deterministic name silently broke each other (`ISSUES.md` #83) |
+| `hooks/use-chat-unread.ts`                 | `useChatUnreadCount()` - total unread messages across every conversation, for the "Chat" nav badge. Its own small fetch + three `useOrgRealtime` subscriptions rather than reading `AppStoreProvider`, so a mistake here can't regress the dashboard/runs/escalations that store already powers |
 | `hooks/use-reveal.ts`, `use-typewriter.ts` | Scroll reveal, hero typing                                                                                                                                                           |
 
 ### `components/` - all 66 files
@@ -1011,13 +1187,14 @@ CORS also always allows `localhost:3000` plus a regex for `*.onrender.com` / `*.
 
 ## 11. Testing, CI, deployment
 
-**Tests** - 242 collected across 16 files (verified via `pytest --collect-only -q`).
+**Tests** - 264 collected across 17 files (verified via `pytest --collect-only -q`).
 `pytest -q`, `ruff check app tests`. The per-file table below reflects the files this and
 the preceding few iterations touched most directly; some untouched files' counts may lag.
 
 | File                           | Tests | Covers                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | ------------------------------ | ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `test_rls_isolation.py`        | 39    | Cross-tenant isolation against the real database - signup trigger, org/user/membership/suppression invisibility, forged-org-id insert rejected, anon sees nothing, `postgres` bypass, account-deletion cascade + slug reuse, API-key resolution (matches owning tenant, revoked, live-membership), provider credentials (invisible cross-tenant, owner/admin-only write). **Cross-role:** the admin-to-owner grant guard - granted-role and target-role checks on `memberships_update`/`_insert`/`_delete` and `invitations_insert`, the invitee-cannot-mutate-their-own-invitation-role and invitation-cannot-seat-someone-else guards, and real (non-mocked) invitation creation/refresh through `org_repo.create_invitation()` proving the `SECURITY DEFINER` upsert fix actually works end to end (15 tests) - `ISSUES.md` #43/#44. **Same-org, cross-member:** two operators in one org - neither sees the other's campaign, run, or call outcome; admin and viewer see both; `summarize_by_member()` reflects the caller's own RLS scope, not just whoever's logged in (4 tests) - `ISSUES.md` #64. **First-time acceptance:** a genuine brand-new signup (real `auth.users` insert, real trigger, their own auto-created org) accepting a real invitation end to end, and an expired invitation correctly rejected (2 tests) - the previously-nonexistent coverage that would have caught `ISSUES.md` #68. **Remove-and-reassign, new this phase:** an admin removing a teammate reassigns their in-org data and deletes their account while leaving their unrelated other-org data untouched, and a same-rank operator cannot call the removal function directly (2 tests). Skipped when `DATABASE_URL` is unset |
+| `test_rls_isolation.py`        | 73    | Cross-tenant isolation against the real database - signup trigger, org/user/membership/suppression invisibility, forged-org-id insert rejected, anon sees nothing, `postgres` bypass, account-deletion cascade + slug reuse, API-key resolution (matches owning tenant, revoked, live-membership), provider credentials (invisible cross-tenant, owner/admin-only write). **Cross-role:** the admin-to-owner grant guard - granted-role and target-role checks on `memberships_update`/`_insert`/`_delete` and `invitations_insert`, the invitee-cannot-mutate-their-own-invitation-role and invitation-cannot-seat-someone-else guards, and real (non-mocked) invitation creation/refresh through `org_repo.create_invitation()` proving the `SECURITY DEFINER` upsert fix actually works end to end (15 tests) - `ISSUES.md` #43/#44. **Same-org, cross-member:** two operators in one org - neither sees the other's campaign, run, or call outcome; admin and viewer see both; `summarize_by_member()` reflects the caller's own RLS scope, not just whoever's logged in (4 tests) - `ISSUES.md` #64. **First-time acceptance:** a genuine brand-new signup (real `auth.users` insert, real trigger, their own auto-created org) accepting a real invitation end to end, and an expired invitation correctly rejected (2 tests) - the previously-nonexistent coverage that would have caught `ISSUES.md` #68. **Remove-and-reassign, new this phase:** an admin removing a teammate reassigns their in-org data and deletes their account while leaving their unrelated other-org data untouched, and a same-rank operator cannot call the removal function directly (2 tests). **Team chat, new this phase (8 tests):** cross-tenant channel/message invisibility; `create_channel()` seats the creator atomically and rejects a `member_ids` entry outside the organisation with no orphaned `channels` row; a same-org non-member sees a channel in neither the list nor its messages; an admin sees `channel_members` for a channel they aren't in but not its `messages` (no admin/owner branch on that policy, deliberately); `channel_members_insert` rejects a non-member adding anyone, allows an existing member to add another org member, and rejects seating a user id from a different organisation entirely - the cross-tenant seating hole `is_user_org_member()` closes (migration `b3f7d2a891c5`). **Also new this phase:** a caller whose email doesn't match a pending invitation's target still gets a clean `None` from `invitations_repo.accept()` on a *second* call in the same transaction, not `InFailedSqlTransactionError` - pins the `SAVEPOINT` fix for `ISSUES.md` #78 (checked directly against the pre-fix code, which fails this test); and a real, non-mocked `messages_repo.send_message()` call actually succeeds and persists the right `org_id` - pins the fix for `ISSUES.md` #79 (also checked directly against the pre-fix code). **Teams-parity round (11 tests):** member search never crosses organisations; `add_member()`/`get_channel()`/`list_messages()`/`send_message()` all reject a different organisation through the real repository functions, not just raw SQL; a full rename/remove authorisation matrix (creator yes, org admin/owner yes even for a channel they never joined, a plain member no) against both `channels_update` and `channel_members_delete`; `channels_update` cannot be used to move a channel to another org (column-level grant, not just the policy); only a message's sender can edit or soft-delete it; unread counts exclude the reader's own sends and reset on `mark_read()`; cursor pagination returns oldest-first pages with no gap or overlap - `ISSUES.md` #81/#82. **Deep-audit round (8 tests):** `create_channel()` is idempotent for a `dm` through the repository itself, not just the raw SQL function, and two genuinely concurrent calls (two physical connections, `asyncio.gather`) converge on one channel rather than each merely not erroring; a `dm` with the wrong member count or aimed at the caller's own id is rejected with no orphaned channel; a member id from another organisation now raises `ValueError` through the repository (not a raw `asyncpg` error); the `channels(org_id, dm_pair)` partial unique index rejects a duplicate as a direct insert too, proving it's a real constraint and not just application logic; `total_unread_count()` matches the sum of `list_my_channels()`'s per-row counts and is scoped to the caller's own organisation even if the wrong `org_id` is passed in (RLS, not the parameter, is the actual boundary); and forcing three messages onto one identical `created_at` proves `before_id` stops `list_messages()` from skipping or repeating one - `ISSUES.md` #85/#86/#87. **Org-departure round (4 tests):** an active member's full read/send/rename access is unaffected by the tightened policies; a departed member - identical identity, `channel_members` row deliberately left stale - loses `channels_select`/`messages_select`/`messages_insert`; a departed creator can no longer rename their old channel or remove another member from it via the creator branch; `org_repo.remove_member()` actually clears the stale `channel_members` rows it leaves behind - `ISSUES.md` #88. **Follow-up (1 test):** a departed member - identical identity, stale row left in place - can no longer read `channel_members` either, closing the one policy the previous round's own migration deliberately deferred - `ISSUES.md` #89. Skipped when `DATABASE_URL` is unset |
+| `test_messages_routes.py`      | 3     | `edit_message`'s route, not its repository or RLS - pins `ISSUES.md` #84 (the route called `_message_json()`, written for `list_messages()`'s joined rows, on `edit_message()`'s un-joined `UPDATE ... RETURNING`, `KeyError`-ing on every real edit; no repo-level or RLS test touches the route at all, which is why nothing else caught it). **Deep-audit round:** `create_channel`'s route turns a repository `ValueError` into a clean `400`, not a `500`; `get_unread_count` returns the repository's value unmodified - `ISSUES.md` #85/#86 |
 | `test_safety.py`               | 22    | E.164, masking, gate decisions                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | `test_orchestrator.py`         | 18    | Goal rendering, the async dial pipeline, ceiling + suppression gating, extraction shapes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | `test_organisations_routes.py` | 18    | The admin-to-owner grant guard's API layer, called through the real route handlers directly - `ISSUES.md` #43                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |

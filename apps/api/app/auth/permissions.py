@@ -58,6 +58,9 @@ class Permission(str, enum.Enum):
 
     AUDIT_READ = "audit:read"
 
+    MESSAGES_READ = "messages:read"
+    MESSAGES_SEND = "messages:send"
+
 
 _READ_ONLY = frozenset(
     {
@@ -69,6 +72,11 @@ _READ_ONLY = frozenset(
         Permission.SUPPRESSIONS_READ,
         Permission.ESCALATIONS_READ,
         Permission.SAFETY_READ,
+        # Opening the chat surface at all is a breadth question, the same as
+        # viewing the dashboard - every role gets it, including viewer. Which
+        # conversations a caller actually sees is governed by `channel_members`
+        # membership (RLS), not by role - see repositories/channels.py.
+        Permission.MESSAGES_READ,
     }
 )
 
@@ -82,6 +90,9 @@ _OPERATOR = _READ_ONLY | {
     Permission.CONTACTS_WRITE,
     Permission.SUPPRESSIONS_ADD,
     Permission.ESCALATIONS_RESOLVE,
+    # Viewer stays read-only everywhere else in the product - chat shouldn't
+    # be the one exception.
+    Permission.MESSAGES_SEND,
 }
 
 _ADMIN = _OPERATOR | {

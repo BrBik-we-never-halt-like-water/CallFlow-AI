@@ -86,16 +86,29 @@ async def delete_active(conn: asyncpg.Connection, org_id: UUID) -> None:
     )
 
 
-async def list_members(conn: asyncpg.Connection, org_id: UUID) -> list[asyncpg.Record]:
+async def list_members(
+    conn: asyncpg.Connection, org_id: UUID, *, search: str | None = None
+) -> list[asyncpg.Record]:
+    """`search` matches name or email, case-insensitive, substring - used by the
+    chat member picker as well as the Team page. Always scoped by `org_id`
+    (server-controlled, never client input) and backstopped by RLS
+    (`memberships_select`), so a search term can narrow the result but never
+    reach outside the caller's own organisation."""
     return await conn.fetch(
         """
         select u.id as user_id, u.name, u.email, u.avatar_url, m.role, m.joined_at
         from public.memberships m
         join public.users u on u.id = m.user_id
         where m.org_id = $1
+          and (
+            $2::text is null
+            or u.name ilike '%' || $2 || '%'
+            or u.email ilike '%' || $2 || '%'
+          )
         order by m.joined_at
         """,
         org_id,
+        search,
     )
 
 
@@ -140,9 +153,24 @@ async def set_member_role(
 
 
 async def remove_member(conn: asyncpg.Connection, org_id: UUID, user_id: UUID) -> None:
-    """Leaving your own organisation - membership only, nothing else. Never
-    call this for removing someone else; see `remove_teammate_and_reassign_data`."""
+    """Leaving your own organisation. Also clears the caller's own
+    `channel_members` rows for this org's channels, in the same transaction -
+    data hygiene (an honest member list/count for whoever's left, not a
+    phantom departed member), not the actual security boundary: chat RLS no
+    longer trusts a `channel_members` row on its own, so this cleanup is a
+    complement, not what makes departure safe.
+    `channel_members_delete`'s own `user_id = current_user_id()` branch is
+    unconditional, so this delete succeeds under the caller's ordinary
+    RLS-scoped connection - no privileged escapes needed. Never call this for
+    removing someone else; see `remove_teammate_and_reassign_data`, which
+    deletes the whole account and cascades through `channel_members` via the
+    FK chain instead."""
     async with conn.transaction():
+        await conn.execute(
+            "delete from public.channel_members where org_id = $1 and user_id = $2",
+            org_id,
+            user_id,
+        )
         await conn.execute(
             "delete from public.memberships where org_id = $1 and user_id = $2", org_id, user_id
         )

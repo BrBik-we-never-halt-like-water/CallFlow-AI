@@ -12,6 +12,7 @@ why CI, which sets no database, never exercises any of this.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import uuid
 from collections.abc import AsyncIterator
@@ -22,7 +23,9 @@ import pytest
 import pytest_asyncio
 
 from app.core.config import config
+from app.database.repositories import channels as channels_repo
 from app.database.repositories import invitations as invitations_repo
+from app.database.repositories import messages as messages_repo
 from app.database.repositories import organisations as org_repo
 from app.database.repositories import runs as runs_repo
 from app.domain.api_keys import generate_api_key, hash_api_key
@@ -231,10 +234,25 @@ async def test_cannot_update_another_tenants_organisation(
 async def test_anonymous_sees_nothing(
     db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
 ) -> None:
+    """This migration's own `GRANTS` block never grants `anon` anything on
+    these tables ("anon gets nothing: every read here requires a signed-in
+    user") - so a bare local Postgres, provisioned purely from our own
+    migrations (e.g. `supabase start`), denies the query outright, `permission
+    denied` before RLS is ever consulted. A Supabase-hosted project layers its
+    own platform-default grants underneath, so the identical query there
+    returns zero rows via RLS instead of erroring. Both outcomes prove the
+    same thing - anon cannot read a row - so this accepts either rather than
+    assuming one specific enforcement mechanism; a permission-denied error is
+    caught inside its own nested transaction (a `SAVEPOINT`) so the loop can
+    still reach the next table without the outer transaction aborting."""
     async with db.transaction():
         await db.execute("select set_config('role', 'anon', true)")
         for table in ("organisations", "users", "memberships", "suppressions"):
-            count = await db.fetchval(f"select count(*) from public.{table}")
+            try:
+                async with db.transaction():
+                    count = await db.fetchval(f"select count(*) from public.{table}")
+            except asyncpg.exceptions.InsufficientPrivilegeError:
+                continue
             assert count == 0, f"anon can read public.{table}"
 
 
@@ -1422,6 +1440,57 @@ async def test_an_expired_invitation_cannot_be_accepted(
     await db.execute("delete from public.organisations where deleted_at is not null")
 
 
+async def test_accept_by_the_wrong_email_returns_none_without_aborting_the_transaction(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    """`has_valid_invitation()` matches on the *caller's* own email, not the
+    token alone - a signed-in user who isn't the invitee fails that check, and
+    the INSERT raises `InsufficientPrivilegeError`. Before wrapping that INSERT
+    in a nested transaction (a `SAVEPOINT`, same fix as `messages_repo.send_message()`
+    needed), catching the error without rolling back to one left the whole
+    request transaction aborted: the very next statement on the same
+    connection - here, a second `accept()` call in the same transaction, as a
+    retried request would issue - would itself raise
+    `InFailedSqlTransactionError` instead of ever reaching its own clean
+    `None`. That second call is the actual regression check, not the first."""
+    a, _ = tenants
+    await _as_postgres(db)
+
+    invited_email = f"invited-{uuid.uuid4().hex[:8]}@example.com"
+    token = uuid.uuid4().hex
+    await db.execute(
+        """
+        insert into public.invitations (org_id, email, role, token, invited_by, expires_at)
+        values ($1, $2, 'operator', $3, $4, now() + interval '7 days')
+        """,
+        a.org_id,
+        invited_email,
+        token,
+        a.user_id,
+    )
+
+    wrong_person = await _create_tenant(db, "accept-wrong-email")
+
+    async with db.transaction():
+        await _as_user(db, wrong_person.auth_user_id)
+        first = await invitations_repo.accept(db, token)
+        assert first is None, "accept() succeeded for a caller whose email doesn't match"
+
+        # Would raise InFailedSqlTransactionError here before the SAVEPOINT fix -
+        # the prior INSERT's error would still have the transaction aborted.
+        second = await invitations_repo.accept(db, token)
+        assert second is None
+
+    await _as_postgres(db)
+    still_pending = await db.fetchval(
+        "select accepted_at is null from public.invitations where token = $1", token
+    )
+    assert still_pending, "the invitation was mutated despite both accept() calls failing"
+    await db.execute("delete from public.invitations where token = $1", token)
+    await db.execute("delete from auth.users where id = $1", wrong_person.auth_user_id)
+    await db.execute("delete from public.organisations where deleted_at is not null")
+
+
 # --- Remove a teammate: data reassignment + full account deletion (migration
 # `202608092600`) -------------------------------------------------------------
 #
@@ -1523,3 +1592,1350 @@ async def test_an_operator_cannot_call_remove_member_and_reassign_data_directly(
         [op1.auth_user_id, op2.auth_user_id],
     )
     await db.execute("delete from public.organisations where deleted_at is not null")
+
+
+# --- Internal team chat: channels, membership, messages (migration
+# `b3f7d2a891c5`, RUNBOOK_JATIN_PART_3.md) -----------------------------------
+#
+# `channels_select`/`messages_select` are both plain `is_channel_member(id)` -
+# no admin/owner branch on `messages_select`, deliberately, so an org's
+# admin/owner can administer channel *membership* without that also handing
+# them a back door into every DM's contents. `channel_members_select` is the
+# one policy with a second branch (`has_org_role` owner/admin), which is what
+# these tests pin as two separate claims rather than one.
+
+
+async def _create_channel(
+    db: asyncpg.Connection,
+    *,
+    creator: Tenant,
+    org_id: uuid.UUID,
+    kind: str = "channel",
+    name: str | None = "general",
+    member_ids: list[uuid.UUID] | None = None,
+) -> uuid.UUID:
+    async with db.transaction():
+        await _as_user(db, creator.auth_user_id)
+        return await db.fetchval(
+            "select public.create_channel($1, $2, $3, $4)",
+            org_id,
+            kind,
+            name,
+            member_ids or [],
+        )
+
+
+async def test_org_b_member_cannot_see_org_a_channels_or_messages(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    a, b = tenants
+    channel_id = await _create_channel(db, creator=a, org_id=a.org_id)
+    await _as_postgres(db)
+    await db.execute(
+        "insert into public.messages (org_id, channel_id, sender_id, body) values ($1, $2, $3, 'hi')",
+        a.org_id,
+        channel_id,
+        a.user_id,
+    )
+
+    async with db.transaction():
+        await _as_user(db, b.auth_user_id)
+        channels = await db.fetch("select id from public.channels where org_id = $1", a.org_id)
+        messages = await db.fetch(
+            "select id from public.messages where channel_id = $1", channel_id
+        )
+    assert channels == [], "tenant b can see tenant a's channel"
+    assert messages == [], "tenant b can see tenant a's messages"
+
+    await _as_postgres(db)
+    await db.execute("delete from public.channels where org_id = $1", a.org_id)
+
+
+async def test_channel_creation_seats_creator_as_member_atomically(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    """Uses `kind="channel"`, not `"dm"` - a channel has no member-count
+    requirement, so this stays a pure test of atomic seating. A `dm` does
+    have one, covered by its own tests below instead."""
+    a, _ = tenants
+    channel_id = await _create_channel(db, creator=a, org_id=a.org_id, kind="channel", name=None)
+
+    await _as_postgres(db)
+    members = await db.fetch(
+        "select user_id from public.channel_members where channel_id = $1", channel_id
+    )
+    assert [m["user_id"] for m in members] == [a.user_id]
+
+    await db.execute("delete from public.channels where id = $1", channel_id)
+
+
+async def test_owner_can_send_a_real_message_through_the_repository(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    """Real (non-mocked) call through `messages_repo.send_message()` - the
+    coverage gap every other chat test in this file left open, since they all
+    insert `messages` directly via SQL (with `org_id` supplied by hand) rather
+    than through the repository's own `INSERT`. Caught for real by manually
+    driving the live API end to end: `messages.org_id` is `NOT NULL`, and the
+    repository's `INSERT` never listed it as a column, so every real call to
+    `POST /api/v1/channels/{id}/messages` 500'd with a `NotNullViolationError`
+    that no RLS-focused test here would ever have exercised."""
+    a, _ = tenants
+    channel_id = await _create_channel(db, creator=a, org_id=a.org_id, name="repo-send")
+
+    async with db.transaction():
+        await _as_user(db, a.auth_user_id)
+        row = await messages_repo.send_message(
+            db, org_id=a.org_id, channel_id=channel_id, sender_id=a.user_id, body="hello"
+        )
+
+    assert row is not None
+    assert row["channel_id"] == channel_id
+    assert row["sender_id"] == a.user_id
+    assert row["body"] == "hello"
+
+    await _as_postgres(db)
+    stored_org_id = await db.fetchval(
+        "select org_id from public.messages where id = $1", row["id"]
+    )
+    assert stored_org_id == a.org_id
+    await db.execute("delete from public.channels where id = $1", channel_id)
+
+
+async def test_create_channel_rejects_a_member_id_outside_the_organisation_and_leaves_no_orphaned_channel(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    """`create_channel()` is SECURITY DEFINER - it bypasses `channel_members_insert`'s
+    RLS entirely, so an outsider in `member_ids` has to be rejected inside the
+    function itself, before either insert runs (this migration's docstring)."""
+    a, b = tenants
+
+    before = await db.fetchval(
+        "select count(*) from public.channels where org_id = $1", a.org_id
+    )
+
+    with pytest.raises(asyncpg.exceptions.RaiseError):
+        await _create_channel(db, creator=a, org_id=a.org_id, member_ids=[b.user_id])
+
+    await _as_postgres(db)
+    after = await db.fetchval("select count(*) from public.channels where org_id = $1", a.org_id)
+    assert after == before, "a rejected create_channel() call left an orphaned channels row"
+
+
+async def test_non_member_cannot_see_a_channel_in_their_list_or_its_messages(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    a, _ = tenants
+    await _as_postgres(db)
+
+    creator = await _create_tenant(db, "chat-creator")
+    outsider = await _create_tenant(db, "chat-outsider")
+    await _seat(db, a.org_id, creator, "operator")
+    await _seat(db, a.org_id, outsider, "operator")
+
+    channel_id = await _create_channel(db, creator=creator, org_id=a.org_id, name="private-ish")
+    await _as_postgres(db)
+    await db.execute(
+        "insert into public.messages (org_id, channel_id, sender_id, body) values ($1, $2, $3, 'secret')",
+        a.org_id,
+        channel_id,
+        creator.user_id,
+    )
+
+    async with db.transaction():
+        await _as_user(db, outsider.auth_user_id)
+        channels = await db.fetch("select id from public.channels where id = $1", channel_id)
+        messages = await db.fetch(
+            "select id from public.messages where channel_id = $1", channel_id
+        )
+    assert channels == [], "a non-member sees a channel they aren't in"
+    assert messages == [], "a non-member sees messages from a channel they aren't in"
+
+    await _as_postgres(db)
+    await db.execute("delete from public.channels where org_id = $1", a.org_id)
+    await db.execute(
+        "delete from auth.users where id = any($1::uuid[])",
+        [creator.auth_user_id, outsider.auth_user_id],
+    )
+    await db.execute("delete from public.organisations where deleted_at is not null")
+
+
+async def test_admin_can_see_channel_membership_but_not_messages_for_a_channel_they_are_not_in(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    """`channel_members_select` has an owner/admin branch; `messages_select` does
+    not, deliberately - proving the second half is the one that actually matters."""
+    a, _ = tenants
+    await _as_postgres(db)
+
+    creator = await _create_tenant(db, "chat-admin-visible-creator")
+    admin = await _create_tenant(db, "chat-admin")
+    await _seat(db, a.org_id, creator, "operator")
+    await _seat(db, a.org_id, admin, "admin")
+
+    channel_id = await _create_channel(db, creator=creator, org_id=a.org_id, name="admin-blind-spot")
+    await _as_postgres(db)
+    await db.execute(
+        "insert into public.messages (org_id, channel_id, sender_id, body) values ($1, $2, $3, 'private')",
+        a.org_id,
+        channel_id,
+        creator.user_id,
+    )
+
+    async with db.transaction():
+        await _as_user(db, admin.auth_user_id)
+        members = await db.fetch(
+            "select user_id from public.channel_members where channel_id = $1", channel_id
+        )
+        messages = await db.fetch(
+            "select id from public.messages where channel_id = $1", channel_id
+        )
+    assert [m["user_id"] for m in members] == [creator.user_id], (
+        "admin cannot see membership of a channel they aren't in"
+    )
+    assert messages == [], "admin can read messages from a channel they aren't a member of"
+
+    await _as_postgres(db)
+    await db.execute("delete from public.channels where org_id = $1", a.org_id)
+    await db.execute(
+        "delete from auth.users where id = any($1::uuid[])",
+        [creator.auth_user_id, admin.auth_user_id],
+    )
+    await db.execute("delete from public.organisations where deleted_at is not null")
+
+
+async def test_channel_members_insert_non_member_cannot_add_self_or_anyone(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    a, _ = tenants
+    await _as_postgres(db)
+
+    creator = await _create_tenant(db, "chat-insert-creator")
+    outsider = await _create_tenant(db, "chat-insert-outsider")
+    third = await _create_tenant(db, "chat-insert-third")
+    await _seat(db, a.org_id, creator, "operator")
+    await _seat(db, a.org_id, outsider, "operator")
+    await _seat(db, a.org_id, third, "operator")
+
+    channel_id = await _create_channel(db, creator=creator, org_id=a.org_id, name="add-guard")
+
+    with pytest.raises(asyncpg.exceptions.InsufficientPrivilegeError):
+        async with db.transaction():
+            await _as_user(db, outsider.auth_user_id)
+            await db.execute(
+                "insert into public.channel_members (channel_id, user_id, org_id) values ($1, $2, $3)",
+                channel_id,
+                outsider.user_id,
+                a.org_id,
+            )
+
+    with pytest.raises(asyncpg.exceptions.InsufficientPrivilegeError):
+        async with db.transaction():
+            await _as_user(db, outsider.auth_user_id)
+            await db.execute(
+                "insert into public.channel_members (channel_id, user_id, org_id) values ($1, $2, $3)",
+                channel_id,
+                third.user_id,
+                a.org_id,
+            )
+
+    await _as_postgres(db)
+    await db.execute("delete from public.channels where org_id = $1", a.org_id)
+    await db.execute(
+        "delete from auth.users where id = any($1::uuid[])",
+        [creator.auth_user_id, outsider.auth_user_id, third.auth_user_id],
+    )
+    await db.execute("delete from public.organisations where deleted_at is not null")
+
+
+async def test_channel_members_insert_existing_member_can_add_another_org_member(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    a, _ = tenants
+    await _as_postgres(db)
+
+    creator = await _create_tenant(db, "chat-add-creator")
+    newcomer = await _create_tenant(db, "chat-add-newcomer")
+    await _seat(db, a.org_id, creator, "operator")
+    await _seat(db, a.org_id, newcomer, "operator")
+
+    channel_id = await _create_channel(db, creator=creator, org_id=a.org_id, name="add-ok")
+
+    async with db.transaction():
+        await _as_user(db, creator.auth_user_id)
+        await db.execute(
+            "insert into public.channel_members (channel_id, user_id, org_id) values ($1, $2, $3)",
+            channel_id,
+            newcomer.user_id,
+            a.org_id,
+        )
+
+    await _as_postgres(db)
+    seated = await db.fetchval(
+        "select exists(select 1 from public.channel_members where channel_id = $1 and user_id = $2)",
+        channel_id,
+        newcomer.user_id,
+    )
+    assert seated, "an existing member could not add another org member"
+
+    await db.execute("delete from public.channels where org_id = $1", a.org_id)
+    await db.execute(
+        "delete from auth.users where id = any($1::uuid[])",
+        [creator.auth_user_id, newcomer.auth_user_id],
+    )
+    await db.execute("delete from public.organisations where deleted_at is not null")
+
+
+async def test_channel_members_insert_rejects_seating_a_non_org_member(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    """The cross-tenant seating hole: without `is_user_org_member()` on the
+    target row's own `user_id`, an existing member could hand an outsider
+    `is_channel_member()` - and with it, `channels_select`/`messages_select`
+    access to this org's channel - by seating a user id from a different
+    organisation entirely. `channel_members_insert`'s `WITH CHECK` must reject
+    that at the database layer, not just rely on the frontend only ever
+    offering org members as options."""
+    a, b = tenants
+    await _as_postgres(db)
+
+    creator = await _create_tenant(db, "chat-seat-guard-creator")
+    await _seat(db, a.org_id, creator, "operator")
+
+    channel_id = await _create_channel(db, creator=creator, org_id=a.org_id, name="seat-guard")
+
+    with pytest.raises(asyncpg.exceptions.InsufficientPrivilegeError):
+        async with db.transaction():
+            await _as_user(db, creator.auth_user_id)
+            await db.execute(
+                "insert into public.channel_members (channel_id, user_id, org_id) values ($1, $2, $3)",
+                channel_id,
+                b.user_id,
+                a.org_id,
+            )
+
+    await _as_postgres(db)
+    seated = await db.fetchval(
+        "select exists(select 1 from public.channel_members where channel_id = $1 and user_id = $2)",
+        channel_id,
+        b.user_id,
+    )
+    assert not seated, "an outsider from a different organisation was seated in the channel"
+
+    await db.execute("delete from public.channels where org_id = $1", a.org_id)
+    await db.execute("delete from auth.users where id = $1", creator.auth_user_id)
+    await db.execute("delete from public.organisations where deleted_at is not null")
+
+
+# --- Teams-parity follow-up: member search, group management (rename/add/
+# remove), read state, message edit/delete, pagination - every one of these
+# re-verified specifically for cross-organisation rejection, per the brief's
+# explicit priority. `channel_members.org_id` denormalises `channels.org_id`
+# the same way `messages.org_id` already does, so every raw INSERT into it
+# above was updated to supply it too - a NOT NULL violation would otherwise
+# mask whatever RLS behaviour a test was actually trying to isolate.
+
+
+async def test_search_members_never_returns_results_from_another_organisation(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    """`org_repo.list_members(search=...)` is scoped by `org_id` (server-
+    controlled from the caller's own `CurrentUser`, never client input) before
+    the search term is even applied - so a search term that matches someone
+    real, in a real org, still returns nothing if that person is in a
+    different organisation than the caller's own."""
+    a, b = tenants
+    await _as_postgres(db)
+
+    unique = uuid.uuid4().hex[:8]
+    b_only = await _create_tenant(db, f"search-only-in-b-{unique}")
+    await _seat(db, b.org_id, b_only, "operator")
+    b_only_name = await db.fetchval(
+        "select name from public.users where id = $1", b_only.user_id
+    )
+    assert b_only_name is not None
+
+    async with db.transaction():
+        await _as_user(db, a.auth_user_id)
+        rows = await org_repo.list_members(db, a.org_id, search=b_only_name)
+    assert rows == [], "a search from org A returned a member who only exists in org B"
+
+    async with db.transaction():
+        await _as_user(db, b.auth_user_id)
+        rows = await org_repo.list_members(db, b.org_id, search=b_only_name)
+    assert [r["user_id"] for r in rows] == [b_only.user_id]
+
+    await _as_postgres(db)
+    await db.execute("delete from auth.users where id = $1", b_only.auth_user_id)
+    await db.execute("delete from public.organisations where deleted_at is not null")
+
+
+async def test_add_member_repo_rejects_a_user_from_a_different_organisation(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    """The real repository function, not raw SQL - `channels_repo.add_member()`
+    must surface the same rejection `channel_members_insert`'s RLS enforces,
+    as `False`, not an unhandled exception."""
+    a, b = tenants
+    await _as_postgres(db)
+
+    creator = await _create_tenant(db, "add-repo-creator")
+    await _seat(db, a.org_id, creator, "operator")
+    channel_id = await _create_channel(db, creator=creator, org_id=a.org_id, name="add-repo")
+
+    async with db.transaction():
+        await _as_user(db, creator.auth_user_id)
+        ok = await channels_repo.add_member(
+            db, org_id=a.org_id, channel_id=channel_id, user_id=b.user_id
+        )
+    assert ok is False, "add_member() reported success adding an outsider from another org"
+
+    await _as_postgres(db)
+    seated = await db.fetchval(
+        "select exists(select 1 from public.channel_members where channel_id = $1 and user_id = $2)",
+        channel_id,
+        b.user_id,
+    )
+    assert not seated
+
+    await db.execute("delete from public.channels where org_id = $1", a.org_id)
+    await db.execute("delete from auth.users where id = $1", creator.auth_user_id)
+    await db.execute("delete from public.organisations where deleted_at is not null")
+
+
+async def test_add_member_repo_allows_an_existing_member_to_add_a_teammate(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    a, _ = tenants
+    await _as_postgres(db)
+
+    creator = await _create_tenant(db, "add-repo-ok-creator")
+    teammate = await _create_tenant(db, "add-repo-ok-teammate")
+    await _seat(db, a.org_id, creator, "operator")
+    await _seat(db, a.org_id, teammate, "operator")
+    channel_id = await _create_channel(db, creator=creator, org_id=a.org_id, name="add-repo-ok")
+
+    async with db.transaction():
+        await _as_user(db, creator.auth_user_id)
+        ok = await channels_repo.add_member(
+            db, org_id=a.org_id, channel_id=channel_id, user_id=teammate.user_id
+        )
+    assert ok is True
+
+    await _as_postgres(db)
+    org_id_stored = await db.fetchval(
+        "select org_id from public.channel_members where channel_id = $1 and user_id = $2",
+        channel_id,
+        teammate.user_id,
+    )
+    assert org_id_stored == a.org_id, "the new row's org_id wasn't populated to the channel's own org"
+
+    await db.execute("delete from public.channels where org_id = $1", a.org_id)
+    await db.execute(
+        "delete from auth.users where id = any($1::uuid[])",
+        [creator.auth_user_id, teammate.auth_user_id],
+    )
+    await db.execute("delete from public.organisations where deleted_at is not null")
+
+
+async def test_get_channel_and_list_messages_repos_see_nothing_across_organisations(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    """The exact repository calls the `GET /channels/{id}` and `GET
+    .../messages` routes make, called directly as a member of the *other*
+    organisation - proves a channel id reached directly (not from the
+    caller's own list) resolves to nothing, which is what lets the route
+    turn this into a clean 404 rather than leaking cross-org data."""
+    a, b = tenants
+    channel_id = await _create_channel(db, creator=a, org_id=a.org_id)
+    await _as_postgres(db)
+    await db.execute(
+        "insert into public.messages (org_id, channel_id, sender_id, body) values ($1, $2, $3, 'x')",
+        a.org_id,
+        channel_id,
+        a.user_id,
+    )
+
+    async with db.transaction():
+        await _as_user(db, b.auth_user_id)
+        channel_row = await channels_repo.get_channel(db, channel_id)
+        message_rows = await messages_repo.list_messages(db, channel_id)
+
+    assert channel_row is None, "get_channel() resolved a channel from a different organisation"
+    assert message_rows == [], "list_messages() returned rows from a different organisation's channel"
+
+    await _as_postgres(db)
+    await db.execute("delete from public.channels where org_id = $1", a.org_id)
+
+
+async def test_send_message_repo_rejects_a_channel_in_another_organisation(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    a, b = tenants
+    channel_id = await _create_channel(db, creator=a, org_id=a.org_id)
+
+    async with db.transaction():
+        await _as_user(db, b.auth_user_id)
+        row = await messages_repo.send_message(
+            db, org_id=b.org_id, channel_id=channel_id, sender_id=b.user_id, body="intrusion"
+        )
+    assert row is None, "send_message() let a caller post into another organisation's channel"
+
+    await _as_postgres(db)
+    count = await db.fetchval(
+        "select count(*) from public.messages where channel_id = $1", channel_id
+    )
+    assert count == 0
+
+    await db.execute("delete from public.channels where org_id = $1", a.org_id)
+
+
+async def test_channels_update_rename_matrix(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    """Creator renames: allowed. An org admin who isn't even a member of the
+    channel: allowed (moderation, matching `channel_members_select`'s existing
+    owner/admin branch). A plain member who neither created it nor holds
+    owner/admin: rejected."""
+    a, _ = tenants
+    await _as_postgres(db)
+
+    creator = await _create_tenant(db, "rename-creator")
+    member = await _create_tenant(db, "rename-member")
+    admin = await _create_tenant(db, "rename-admin")
+    await _seat(db, a.org_id, creator, "operator")
+    await _seat(db, a.org_id, member, "operator")
+    await _seat(db, a.org_id, admin, "admin")
+    channel_id = await _create_channel(
+        db, creator=creator, org_id=a.org_id, name="original-name", member_ids=[member.user_id]
+    )
+
+    async with db.transaction():
+        await _as_user(db, member.auth_user_id)
+        rejected = await channels_repo.rename_channel(db, channel_id=channel_id, name="hijacked")
+    assert rejected is None, "a plain member (not the creator, not an admin) renamed the channel"
+
+    async with db.transaction():
+        await _as_user(db, admin.auth_user_id)
+        by_admin = await channels_repo.rename_channel(
+            db, channel_id=channel_id, name="renamed-by-admin"
+        )
+    assert by_admin is not None and by_admin["name"] == "renamed-by-admin"
+
+    async with db.transaction():
+        await _as_user(db, creator.auth_user_id)
+        by_creator = await channels_repo.rename_channel(
+            db, channel_id=channel_id, name="renamed-by-creator"
+        )
+    assert by_creator is not None and by_creator["name"] == "renamed-by-creator"
+
+    await _as_postgres(db)
+    await db.execute("delete from public.channels where org_id = $1", a.org_id)
+    await db.execute(
+        "delete from auth.users where id = any($1::uuid[])",
+        [creator.auth_user_id, member.auth_user_id, admin.auth_user_id],
+    )
+    await db.execute("delete from public.organisations where deleted_at is not null")
+
+
+async def test_channels_update_cannot_be_used_to_move_a_channel_to_another_organisation(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    """`channels_update` only grants `authenticated` UPDATE on the `name`
+    column - a direct attempt to rewrite `org_id` must fail at the privilege
+    layer, before RLS is even consulted, regardless of who the caller is."""
+    a, _ = tenants
+    channel_id = await _create_channel(db, creator=a, org_id=a.org_id, name="immovable")
+
+    with pytest.raises(asyncpg.exceptions.InsufficientPrivilegeError):
+        async with db.transaction():
+            await _as_user(db, a.auth_user_id)
+            await db.execute(
+                "update public.channels set org_id = gen_random_uuid() where id = $1", channel_id
+            )
+
+    await _as_postgres(db)
+    await db.execute("delete from public.channels where org_id = $1", a.org_id)
+
+
+async def test_channel_members_delete_leave_creator_remove_and_admin_moderate(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    """Four claims in one channel: a plain member can leave voluntarily; a
+    plain member cannot remove *another* member; the creator can remove a
+    member; an org admin can remove a member from a channel they aren't even
+    in themselves."""
+    a, _ = tenants
+    await _as_postgres(db)
+
+    creator = await _create_tenant(db, "remove-creator")
+    victim = await _create_tenant(db, "remove-victim")
+    bystander = await _create_tenant(db, "remove-bystander")
+    leaver = await _create_tenant(db, "remove-leaver")
+    admin = await _create_tenant(db, "remove-admin")
+    for tenant in (creator, victim, bystander, leaver):
+        await _seat(db, a.org_id, tenant, "operator")
+    await _seat(db, a.org_id, admin, "admin")
+
+    channel_id = await _create_channel(
+        db,
+        creator=creator,
+        org_id=a.org_id,
+        name="remove-matrix",
+        member_ids=[victim.user_id, bystander.user_id, leaver.user_id],
+    )
+
+    # A plain member cannot remove someone else.
+    async with db.transaction():
+        await _as_user(db, bystander.auth_user_id)
+        blocked = await channels_repo.remove_member(
+            db, channel_id=channel_id, user_id=victim.user_id
+        )
+    assert blocked is False, "a plain member removed another member"
+
+    # Leaving voluntarily always works.
+    async with db.transaction():
+        await _as_user(db, leaver.auth_user_id)
+        left = await channels_repo.remove_member(
+            db, channel_id=channel_id, user_id=leaver.user_id
+        )
+    assert left is True
+
+    # The creator can remove someone else.
+    async with db.transaction():
+        await _as_user(db, creator.auth_user_id)
+        removed_by_creator = await channels_repo.remove_member(
+            db, channel_id=channel_id, user_id=victim.user_id
+        )
+    assert removed_by_creator is True
+
+    # An org admin, not even a member of this channel, can moderate it.
+    async with db.transaction():
+        await _as_user(db, admin.auth_user_id)
+        removed_by_admin = await channels_repo.remove_member(
+            db, channel_id=channel_id, user_id=bystander.user_id
+        )
+    assert removed_by_admin is True
+
+    await _as_postgres(db)
+    remaining = await db.fetch(
+        "select user_id from public.channel_members where channel_id = $1", channel_id
+    )
+    assert {r["user_id"] for r in remaining} == {creator.user_id}
+
+    await db.execute("delete from public.channels where org_id = $1", a.org_id)
+    await db.execute(
+        "delete from auth.users where id = any($1::uuid[])",
+        [t.auth_user_id for t in (creator, victim, bystander, leaver, admin)],
+    )
+    await db.execute("delete from public.organisations where deleted_at is not null")
+
+
+async def test_messages_update_only_the_sender_can_edit_or_delete(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    a, _ = tenants
+    await _as_postgres(db)
+
+    sender = await _create_tenant(db, "edit-sender")
+    other = await _create_tenant(db, "edit-other")
+    await _seat(db, a.org_id, sender, "operator")
+    await _seat(db, a.org_id, other, "operator")
+    channel_id = await _create_channel(
+        db, creator=sender, org_id=a.org_id, name="edit-guard", member_ids=[other.user_id]
+    )
+
+    async with db.transaction():
+        await _as_user(db, sender.auth_user_id)
+        sent = await messages_repo.send_message(
+            db, org_id=a.org_id, channel_id=channel_id, sender_id=sender.user_id, body="original"
+        )
+    assert sent is not None
+
+    # A different member cannot edit or delete someone else's message.
+    async with db.transaction():
+        await _as_user(db, other.auth_user_id)
+        blocked_edit = await messages_repo.edit_message(
+            db, message_id=sent["id"], sender_id=other.user_id, body="tampered"
+        )
+        blocked_delete = await messages_repo.delete_message(
+            db, message_id=sent["id"], sender_id=other.user_id
+        )
+    assert blocked_edit is None, "a non-sender edited someone else's message"
+    assert blocked_delete is False, "a non-sender deleted someone else's message"
+
+    # The sender can edit their own message.
+    async with db.transaction():
+        await _as_user(db, sender.auth_user_id)
+        edited = await messages_repo.edit_message(
+            db, message_id=sent["id"], sender_id=sender.user_id, body="edited for real"
+        )
+    assert edited is not None
+    assert edited["body"] == "edited for real"
+    assert edited["edited_at"] is not None
+
+    # The sender can soft-delete their own message, and it disappears from reads.
+    async with db.transaction():
+        await _as_user(db, sender.auth_user_id)
+        deleted = await messages_repo.delete_message(
+            db, message_id=sent["id"], sender_id=sender.user_id
+        )
+        remaining = await messages_repo.list_messages(db, channel_id)
+    assert deleted is True
+    assert remaining == [], "a soft-deleted message still appears in list_messages()"
+
+    await _as_postgres(db)
+    still_in_db = await db.fetchval(
+        "select deleted_at is not null from public.messages where id = $1", sent["id"]
+    )
+    assert still_in_db, "delete_message() should soft-delete, not hard-delete, the row"
+
+    await db.execute("delete from public.channels where org_id = $1", a.org_id)
+    await db.execute(
+        "delete from auth.users where id = any($1::uuid[])",
+        [sender.auth_user_id, other.auth_user_id],
+    )
+    await db.execute("delete from public.organisations where deleted_at is not null")
+
+
+async def test_unread_count_excludes_own_messages_and_resets_on_mark_read(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    a, _ = tenants
+    await _as_postgres(db)
+
+    alice = await _create_tenant(db, "unread-alice")
+    bob = await _create_tenant(db, "unread-bob")
+    await _seat(db, a.org_id, alice, "operator")
+    await _seat(db, a.org_id, bob, "operator")
+    channel_id = await _create_channel(
+        db, creator=alice, org_id=a.org_id, name="unread-check", member_ids=[bob.user_id]
+    )
+
+    async def channel_row_for(tenant: Tenant) -> asyncpg.Record:
+        async with db.transaction():
+            await _as_user(db, tenant.auth_user_id)
+            rows = await channels_repo.list_my_channels(db, a.org_id)
+        return next(r for r in rows if r["id"] == channel_id)
+
+    # Nothing sent yet - both start at zero.
+    assert (await channel_row_for(bob))["unread_count"] == 0
+
+    async with db.transaction():
+        await _as_user(db, alice.auth_user_id)
+        await messages_repo.send_message(
+            db, org_id=a.org_id, channel_id=channel_id, sender_id=alice.user_id, body="one"
+        )
+        await messages_repo.send_message(
+            db, org_id=a.org_id, channel_id=channel_id, sender_id=alice.user_id, body="two"
+        )
+
+    # Alice sent them - her own unread count must not count her own sends.
+    assert (await channel_row_for(alice))["unread_count"] == 0
+    # Bob hasn't read yet - both of Alice's messages are unread for him.
+    assert (await channel_row_for(bob))["unread_count"] == 2
+
+    async with db.transaction():
+        await _as_user(db, bob.auth_user_id)
+        await channels_repo.mark_read(db, channel_id=channel_id, user_id=bob.user_id)
+
+    assert (await channel_row_for(bob))["unread_count"] == 0, "mark_read() didn't clear the count"
+
+    async with db.transaction():
+        await _as_user(db, alice.auth_user_id)
+        await messages_repo.send_message(
+            db, org_id=a.org_id, channel_id=channel_id, sender_id=alice.user_id, body="three"
+        )
+    assert (await channel_row_for(bob))["unread_count"] == 1, "a message after mark_read wasn't counted"
+
+    await db.execute("delete from public.channels where org_id = $1", a.org_id)
+    await db.execute(
+        "delete from auth.users where id = any($1::uuid[])",
+        [alice.auth_user_id, bob.auth_user_id],
+    )
+    await db.execute("delete from public.organisations where deleted_at is not null")
+
+
+# --- DM dedup and hardening --------------------------------------------------
+
+
+async def test_create_channel_dm_is_idempotent_and_reuses_the_existing_channel(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    """CLAUDE.md's idempotency non-negotiable, applied to `POST /channels`:
+    starting a DM with the same teammate twice must be the same conversation,
+    not two. Goes through `channels_repo.create_channel()` itself, not the
+    raw SQL function `_create_channel()` uses - this is the path that has to
+    stay idempotent, not just the database underneath it."""
+    a, _ = tenants
+    teammate = await _create_tenant(db, "dm-idempotent")
+    await _seat(db, a.org_id, teammate, "operator")
+
+    async with db.transaction():
+        await _as_user(db, a.auth_user_id)
+        first_id = await channels_repo.create_channel(
+            db, org_id=a.org_id, kind="dm", name=None, member_ids=[teammate.user_id]
+        )
+    async with db.transaction():
+        await _as_user(db, a.auth_user_id)
+        second_id = await channels_repo.create_channel(
+            db, org_id=a.org_id, kind="dm", name=None, member_ids=[teammate.user_id]
+        )
+
+    assert first_id == second_id, "two create_channel() calls for the same pair made two channels"
+
+    await _as_postgres(db)
+    channel_count = await db.fetchval(
+        "select count(*) from public.channels where id = $1", first_id
+    )
+    assert channel_count == 1
+    member_rows = await db.fetch(
+        "select user_id from public.channel_members where channel_id = $1", first_id
+    )
+    assert {r["user_id"] for r in member_rows} == {a.user_id, teammate.user_id}
+
+    await db.execute("delete from public.channels where id = $1", first_id)
+
+
+async def test_create_channel_dm_rejects_wrong_member_count_and_self_dm(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    a, _ = tenants
+    teammate = await _create_tenant(db, "dm-shape")
+    await _seat(db, a.org_id, teammate, "operator")
+
+    async def attempt(member_ids: list[uuid.UUID]) -> None:
+        async with db.transaction():
+            await _as_user(db, a.auth_user_id)
+            await channels_repo.create_channel(
+                db, org_id=a.org_id, kind="dm", name=None, member_ids=member_ids
+            )
+
+    with pytest.raises(ValueError, match="exactly one other member"):
+        await attempt([])
+    with pytest.raises(ValueError, match="exactly one other member"):
+        await attempt([teammate.user_id, a.user_id])
+    with pytest.raises(ValueError, match="cannot start a direct message with yourself"):
+        await attempt([a.user_id])
+
+    await _as_postgres(db)
+    orphaned = await db.fetchval(
+        "select count(*) from public.channels where org_id = $1 and kind = 'dm'", a.org_id
+    )
+    assert orphaned == 0, "a rejected dm left a channel behind"
+
+
+async def test_create_channel_repo_turns_a_cross_org_member_into_a_value_error(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    """Regression for the audit's finding: `create_channel()`'s own
+    org-membership guard was never caught anywhere between the database and
+    the HTTP response, so a member id from another organisation 500'd
+    instead of failing cleanly. The rejection itself already worked (no
+    channel was ever created) - only the shape of the failure was wrong."""
+    a, b = tenants
+
+    with pytest.raises(ValueError, match="not members of this organisation"):
+        async with db.transaction():
+            await _as_user(db, a.auth_user_id)
+            await channels_repo.create_channel(
+                db, org_id=a.org_id, kind="channel", name="cross-org", member_ids=[b.user_id]
+            )
+
+    await _as_postgres(db)
+    leaked = await db.fetchval(
+        "select count(*) from public.channels where org_id = $1 and name = 'cross-org'", a.org_id
+    )
+    assert leaked == 0
+
+
+async def test_channels_dm_pair_unique_index_rejects_a_duplicate_at_the_database_level(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    """Proves the guard is a real constraint, not just create_channel()'s own
+    application logic - a direct insert (as `postgres`, bypassing RLS
+    entirely) for a pair that already has a channel still can't succeed."""
+    a, _ = tenants
+    teammate = await _create_tenant(db, "dm-unique")
+    await _seat(db, a.org_id, teammate, "operator")
+
+    async with db.transaction():
+        await _as_user(db, a.auth_user_id)
+        channel_id = await channels_repo.create_channel(
+            db, org_id=a.org_id, kind="dm", name=None, member_ids=[teammate.user_id]
+        )
+
+    await _as_postgres(db)
+    pair = sorted([a.user_id, teammate.user_id])
+    with pytest.raises(asyncpg.exceptions.UniqueViolationError):
+        await db.execute(
+            """
+            insert into public.channels (org_id, kind, name, created_by, dm_pair)
+            values ($1, 'dm', null, $2, $3)
+            """,
+            a.org_id,
+            a.user_id,
+            pair,
+        )
+
+    await db.execute("delete from public.channels where id = $1", channel_id)
+
+
+async def test_concurrent_dm_creation_from_two_connections_converges_on_one_channel(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    """The real concurrency case the unique index exists for: two requests
+    for the same pair landing at the database at the same instant (two
+    browser tabs, or two people both clicking "message" on each other).
+    Uses two independent physical connections - a single shared connection
+    can't actually race itself - and asserts they converge on one row rather
+    than each merely not erroring."""
+    a, _ = tenants
+    teammate = await _create_tenant(db, "dm-concurrent")
+    await _seat(db, a.org_id, teammate, "operator")
+
+    conn_a = await asyncpg.connect(config.database_url, timeout=30)
+    conn_b = await asyncpg.connect(config.database_url, timeout=30)
+    try:
+        # `_as_user()`'s set_config(..., true) is LOCAL to the transaction it
+        # runs in - it has to share one with the create_channel() call itself,
+        # or it resets before that call ever sees it (the same reason every
+        # other identity switch in this file happens inside `db.transaction()`).
+        async def create_as(conn: asyncpg.Connection) -> uuid.UUID:
+            async with conn.transaction():
+                await _as_user(conn, a.auth_user_id)
+                return await conn.fetchval(
+                    "select public.create_channel($1, 'dm', null, $2)",
+                    a.org_id,
+                    [teammate.user_id],
+                )
+
+        results = await asyncio.gather(create_as(conn_a), create_as(conn_b))
+        assert results[0] == results[1], "two concurrent dm creations did not converge"
+
+        await _as_postgres(conn_a)
+        rows = await conn_a.fetch(
+            "select id from public.channels where org_id = $1 and dm_pair = $2",
+            a.org_id,
+            sorted([a.user_id, teammate.user_id]),
+        )
+        assert len(rows) == 1, "concurrent creation left more than one channel for the pair"
+        await conn_a.execute("delete from public.channels where id = $1", rows[0]["id"])
+    finally:
+        await conn_a.close()
+        await conn_b.close()
+
+
+async def test_total_unread_count_matches_the_sum_of_per_channel_counts(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    a, _ = tenants
+    alice, bob = a, await _create_tenant(db, "total-unread")
+    await _seat(db, a.org_id, bob, "operator")
+
+    channel_id = await _create_channel(db, creator=alice, org_id=a.org_id, name="total-unread-ch")
+    async with db.transaction():
+        # Alice, not Bob - channel_members_insert requires the *inserter* to
+        # already be a member (`is_channel_member`), so Bob can't seat himself
+        # into a channel he isn't in yet, same as the live API would reject it.
+        await _as_user(db, alice.auth_user_id)
+        added = await channels_repo.add_member(
+            db, org_id=a.org_id, channel_id=channel_id, user_id=bob.user_id
+        )
+    assert added
+    for body in ("one", "two", "three"):
+        async with db.transaction():
+            await _as_user(db, alice.auth_user_id)
+            await messages_repo.send_message(
+                db, org_id=a.org_id, channel_id=channel_id, sender_id=alice.user_id, body=body
+            )
+
+    async with db.transaction():
+        await _as_user(db, bob.auth_user_id)
+        total = await channels_repo.total_unread_count(db, a.org_id)
+        channels = await channels_repo.list_my_channels(db, a.org_id)
+    assert total == 3
+    assert total == sum(c["unread_count"] for c in channels)
+
+    async with db.transaction():
+        await _as_user(db, bob.auth_user_id)
+        await channels_repo.mark_read(db, channel_id=channel_id, user_id=bob.user_id)
+        assert await channels_repo.total_unread_count(db, a.org_id) == 0
+
+    await _as_postgres(db)
+    await db.execute("delete from public.channels where org_id = $1", a.org_id)
+
+
+async def test_total_unread_count_is_scoped_to_the_callers_own_organisation(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    """Cross-org isolation for the new endpoint: RLS, not the `org_id`
+    parameter, is what actually confines this - passing the *other*
+    organisation's id still returns 0, since RLS never exposes org b's
+    `channel_members`/`messages` rows to a user seated only in org a."""
+    a, b = tenants
+    a_channel = await _create_channel(db, creator=a, org_id=a.org_id, name="a-unread")
+    b_channel = await _create_channel(db, creator=b, org_id=b.org_id, name="b-unread")
+    await _as_postgres(db)
+    await db.execute(
+        "insert into public.messages (org_id, channel_id, sender_id, body) values ($1, $2, $3, 'hi')",
+        b.org_id,
+        b_channel,
+        b.user_id,
+    )
+
+    async with db.transaction():
+        await _as_user(db, a.auth_user_id)
+        assert await channels_repo.total_unread_count(db, a.org_id) == 0
+        # Even a caller that (by bug or malice) passes org b's id gets nothing -
+        # RLS, not this parameter, is the actual boundary.
+        assert await channels_repo.total_unread_count(db, b.org_id) == 0
+
+    await _as_postgres(db)
+    await db.execute("delete from public.channels where id = any($1::uuid[])", [a_channel, b_channel])
+
+
+async def test_pagination_returns_pages_oldest_first_with_no_gap_or_overlap(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    a, _ = tenants
+    channel_id = await _create_channel(db, creator=a, org_id=a.org_id, name="paginated")
+
+    # Each send gets its own transaction, deliberately - now() is the
+    # *transaction's* start time in Postgres, not wall-clock-per-statement, so
+    # five sends inside one shared transaction would all land on the same
+    # created_at and make the page boundaries undefined. A real request is
+    # always its own transaction (database.as_user() opens one per call),
+    # which is what this reproduces.
+    bodies = [f"msg-{i:02d}" for i in range(5)]
+    for body in bodies:
+        async with db.transaction():
+            await _as_user(db, a.auth_user_id)
+            await messages_repo.send_message(
+                db, org_id=a.org_id, channel_id=channel_id, sender_id=a.user_id, body=body
+            )
+
+    async with db.transaction():
+        await _as_user(db, a.auth_user_id)
+        first_page = await messages_repo.list_messages(db, channel_id, limit=2)
+        assert [m["body"] for m in first_page] == ["msg-03", "msg-04"], (
+            "the most recent page (no cursor) should be the newest 2, oldest-first"
+        )
+
+        second_page = await messages_repo.list_messages(
+            db, channel_id, before=first_page[0]["created_at"], limit=2
+        )
+        assert [m["body"] for m in second_page] == ["msg-01", "msg-02"]
+
+        third_page = await messages_repo.list_messages(
+            db, channel_id, before=second_page[0]["created_at"], limit=2
+        )
+        assert [m["body"] for m in third_page] == ["msg-00"], "the oldest page should have exactly 1 left"
+
+    await _as_postgres(db)
+    await db.execute("delete from public.channels where org_id = $1", a.org_id)
+
+
+# --- org-membership is a hard boundary for chat, even with a stale
+# channel_members row --------------------------------------------------------
+
+
+async def test_active_member_has_full_chat_access(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    """The baseline the rest of this section is contrasted against: a genuine,
+    currently-seated org member can see the channel, read its messages, send
+    a new one, and (as its creator) rename it - all through RLS, no admin
+    role needed. Confirms the tightened policies didn't cost a live member
+    anything."""
+    a, _ = tenants
+    teammate = await _create_tenant(db, "active-member")
+    await _seat(db, a.org_id, teammate, "operator")
+    channel_id = await _create_channel(db, creator=teammate, org_id=a.org_id, name="active-member-ch")
+
+    async with db.transaction():
+        await _as_user(db, teammate.auth_user_id)
+        seen = await db.fetchrow("select id from public.channels where id = $1", channel_id)
+        assert seen is not None, "an active member could not see their own channel"
+
+        sent = await messages_repo.send_message(
+            db, org_id=a.org_id, channel_id=channel_id, sender_id=teammate.user_id, body="hello"
+        )
+        assert sent is not None, "an active member could not send a message"
+
+        rows = await messages_repo.list_messages(db, channel_id)
+        assert [r["body"] for r in rows] == ["hello"], "an active member could not read messages"
+
+        renamed = await channels_repo.rename_channel(db, channel_id=channel_id, name="renamed-ok")
+        assert renamed is not None, "an active member (and creator) could not rename their channel"
+
+    await _as_postgres(db)
+    await db.execute("delete from public.channels where id = $1", channel_id)
+
+
+async def test_departed_org_member_loses_chat_rls_access_even_with_a_stale_channel_members_row(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    """The exact lifecycle the audit's re-evaluation traced live in a real
+    browser: a member reads and sends normally, leaves the organisation, and
+    - using the identical identity, not a new one, and with their
+    `channel_members` row deliberately left in place (a plain `memberships`
+    delete, not `org_repo.remove_member()`, so this isolates the RLS boundary
+    itself from the cleanup in the next test) - loses read and write access.
+    This is also the correct proxy for "Realtime would stop delivering" and
+    "PostgREST would stop answering": both authorise off exactly these
+    policies, with no FastAPI layer involved, so a role-switch to the same
+    identity is the same authorisation check either of them would run."""
+    a, _ = tenants
+    teammate = await _create_tenant(db, "departs-org")
+    await _seat(db, a.org_id, teammate, "operator")
+    channel_id = await _create_channel(db, creator=teammate, org_id=a.org_id, name="departure-check")
+
+    async with db.transaction():
+        await _as_user(db, teammate.auth_user_id)
+        await messages_repo.send_message(
+            db, org_id=a.org_id, channel_id=channel_id, sender_id=teammate.user_id, body="still here"
+        )
+        assert (
+            await db.fetchrow("select id from public.channels where id = $1", channel_id)
+        ) is not None, "sanity check: the active member should see their own channel"
+
+    # Leave the organisation the way the real self-leave endpoint's underlying
+    # delete does - membership only. The channel_members row is deliberately
+    # left behind, exactly as it would be before this task's cleanup fix, to
+    # prove the RLS policies themselves (not the cleanup) are what closes this.
+    await _as_postgres(db)
+    await db.execute(
+        "delete from public.memberships where org_id = $1 and user_id = $2", a.org_id, teammate.user_id
+    )
+    stale_row = await db.fetchrow(
+        "select 1 from public.channel_members where channel_id = $1 and user_id = $2",
+        channel_id,
+        teammate.user_id,
+    )
+    assert stale_row is not None, "test setup error: the channel_members row should still be there"
+
+    async with db.transaction():
+        await _as_user(db, teammate.auth_user_id)
+        assert not await db.fetchval("select public.is_org_member($1)", a.org_id)
+        assert await db.fetchval("select public.is_channel_member($1)", channel_id), (
+            "test setup error: the stale row should still make is_channel_member() true"
+        )
+
+        assert (
+            await db.fetchrow("select id from public.channels where id = $1", channel_id)
+        ) is None, "a departed member can still see their old channel (channels_select)"
+        assert (
+            await db.fetch("select id from public.messages where channel_id = $1", channel_id)
+        ) == [], "a departed member can still read their old channel's messages (messages_select)"
+
+    with pytest.raises(asyncpg.exceptions.InsufficientPrivilegeError):
+        async with db.transaction():
+            await _as_user(db, teammate.auth_user_id)
+            await db.execute(
+                "insert into public.messages (org_id, channel_id, sender_id, body) values ($1, $2, $3, 'ghost')",
+                a.org_id,
+                channel_id,
+                teammate.user_id,
+            )
+
+    await _as_postgres(db)
+    await db.execute("delete from public.channels where id = $1", channel_id)
+
+
+async def test_departed_channel_creator_can_no_longer_rename_or_moderate(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    """The second, independent instance of the same root cause:
+    `channel_created_by(id) = current_user_id()` used to keep authorising a
+    creator's moderation actions with no regard for whether they were still
+    in the organisation at all."""
+    a, _ = tenants
+    creator = await _create_tenant(db, "departs-as-creator")
+    other = await _create_tenant(db, "other-member")
+    await _seat(db, a.org_id, creator, "operator")
+    await _seat(db, a.org_id, other, "operator")
+    channel_id = await _create_channel(
+        db, creator=creator, org_id=a.org_id, name="creator-departure-check", member_ids=[other.user_id]
+    )
+
+    async with db.transaction():
+        await _as_user(db, creator.auth_user_id)
+        renamed = await channels_repo.rename_channel(db, channel_id=channel_id, name="renamed-while-in")
+        assert renamed is not None, "sanity check: the active creator should be able to rename"
+
+    await _as_postgres(db)
+    await db.execute(
+        "delete from public.memberships where org_id = $1 and user_id = $2", a.org_id, creator.user_id
+    )
+
+    async with db.transaction():
+        await _as_user(db, creator.auth_user_id)
+        assert (
+            await db.fetchval("select public.channel_created_by($1)", channel_id) == creator.user_id
+        ), "test setup error: created_by should still point at the departed user"
+
+        no_longer_renamed = await channels_repo.rename_channel(
+            db, channel_id=channel_id, name="should-not-apply"
+        )
+        assert no_longer_renamed is None, (
+            "a departed creator can still rename their old channel (channels_update)"
+        )
+
+        removed = await channels_repo.remove_member(db, channel_id=channel_id, user_id=other.user_id)
+        assert removed is False, (
+            "a departed creator can still remove another member from their old channel "
+            "(channel_members_delete)"
+        )
+
+    await _as_postgres(db)
+    still_there = await db.fetchval(
+        "select count(*) from public.channel_members where channel_id = $1 and user_id = $2",
+        channel_id,
+        other.user_id,
+    )
+    assert still_there == 1, "the other member should not actually have been removed"
+    await db.execute("delete from public.channels where id = $1", channel_id)
+
+
+async def test_departed_member_can_no_longer_read_channel_membership_via_a_stale_row(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    """`channel_members_select`'s `is_channel_member` branch had no live
+    org-membership check - the one policy the previous RLS fix didn't touch,
+    confirmed exploitable live via direct PostgREST (the RLS audit's own
+    follow-up). Same identity throughout, stale row deliberately
+    left in place - a plain `memberships` delete, not `org_repo.remove_member()`,
+    which would also clean the row up and mask exactly what this test needs to
+    isolate: whether the *policy* itself, not the cleanup, is what closes this."""
+    a, _ = tenants
+    teammate = await _create_tenant(db, "cm-select-departs")
+    await _seat(db, a.org_id, teammate, "operator")
+    channel_id = await _create_channel(db, creator=teammate, org_id=a.org_id, name="cm-select-check")
+
+    async with db.transaction():
+        await _as_user(db, teammate.auth_user_id)
+        members = await db.fetch(
+            "select user_id from public.channel_members where channel_id = $1", channel_id
+        )
+    assert [m["user_id"] for m in members] == [teammate.user_id], (
+        "sanity check: an active member should see channel_members for their own channel"
+    )
+
+    await _as_postgres(db)
+    await db.execute(
+        "delete from public.memberships where org_id = $1 and user_id = $2", a.org_id, teammate.user_id
+    )
+    stale_row = await db.fetchval(
+        "select count(*) from public.channel_members where channel_id = $1 and user_id = $2",
+        channel_id,
+        teammate.user_id,
+    )
+    assert stale_row == 1, "test setup error: the channel_members row should still be there"
+
+    async with db.transaction():
+        await _as_user(db, teammate.auth_user_id)
+        assert not await db.fetchval("select public.is_org_member($1)", a.org_id)
+        assert await db.fetchval("select public.is_channel_member($1)", channel_id), (
+            "test setup error: the stale row should still make is_channel_member() true"
+        )
+        after = await db.fetch(
+            "select user_id from public.channel_members where channel_id = $1", channel_id
+        )
+    assert after == [], (
+        "a departed member can still read channel_members through the stale row "
+        "(channel_members_select's is_channel_member branch has no org-membership check)"
+    )
+
+    await _as_postgres(db)
+    await db.execute("delete from public.channels where id = $1", channel_id)
+
+
+async def test_remove_member_repo_also_clears_the_departed_users_channel_members_rows(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    """The self-leave cleanup this task adds: data hygiene (an honest member
+    list for whoever's left), not the security boundary - the previous two
+    tests already prove RLS holds even without it. `org_repo.remove_member()`
+    is the real function the self-leave route calls, exercised directly."""
+    a, _ = tenants
+    teammate = await _create_tenant(db, "leaves-cleanly")
+    await _seat(db, a.org_id, teammate, "operator")
+    channel_id = await _create_channel(db, creator=teammate, org_id=a.org_id, name="leave-cleanup-check")
+
+    await _as_postgres(db)
+    before = await db.fetchval(
+        "select count(*) from public.channel_members where org_id = $1 and user_id = $2",
+        a.org_id,
+        teammate.user_id,
+    )
+    assert before == 1
+
+    async with db.transaction():
+        await _as_user(db, teammate.auth_user_id)
+        await org_repo.remove_member(db, a.org_id, teammate.user_id)
+
+    await _as_postgres(db)
+    after_members = await db.fetchval(
+        "select count(*) from public.channel_members where org_id = $1 and user_id = $2",
+        a.org_id,
+        teammate.user_id,
+    )
+    after_membership = await db.fetchval(
+        "select count(*) from public.memberships where org_id = $1 and user_id = $2",
+        a.org_id,
+        teammate.user_id,
+    )
+    assert after_members == 0, "remove_member() left a stale channel_members row behind"
+    assert after_membership == 0, "remove_member() didn't remove the membership itself"
+
+    await db.execute("delete from public.channels where id = $1", channel_id)
+
+
+async def test_pagination_with_identical_timestamps_uses_id_as_a_tiebreaker(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    """`created_at` is transaction-start time, not per-statement - two
+    messages committed by genuinely concurrent requests can land on the
+    exact same timestamp. Without `before_id` as a tiebreaker, a bare
+    `created_at < cursor` can silently skip whichever of a tied pair doesn't
+    make the earlier page. Forces the tie directly (three messages sharing
+    one timestamp) rather than relying on real concurrency to reproduce it."""
+    a, _ = tenants
+    channel_id = await _create_channel(db, creator=a, org_id=a.org_id, name="tied-timestamps")
+
+    await _as_postgres(db)
+    same_instant = datetime.now(UTC)
+    for body in ("tied-0", "tied-1", "tied-2"):
+        await db.execute(
+            """
+            insert into public.messages (org_id, channel_id, sender_id, body, created_at)
+            values ($1, $2, $3, $4, $5)
+            """,
+            a.org_id,
+            channel_id,
+            a.user_id,
+            body,
+            same_instant,
+        )
+
+    async with db.transaction():
+        await _as_user(db, a.auth_user_id)
+        seen: list[str] = []
+        cursor_created_at = None
+        cursor_id = None
+        for _ in range(4):  # 3 messages, one per page, plus one page proving nothing is left
+            page = await messages_repo.list_messages(
+                db, channel_id, before=cursor_created_at, before_id=cursor_id, limit=1
+            )
+            if not page:
+                break
+            seen = [m["body"] for m in page] + seen
+            cursor_created_at = page[0]["created_at"]
+            cursor_id = page[0]["id"]
+        assert sorted(seen) == ["tied-0", "tied-1", "tied-2"], (
+            "a tied timestamp caused list_messages() to skip or repeat a message"
+        )
+
+    await _as_postgres(db)
+    await db.execute("delete from public.channels where org_id = $1", a.org_id)

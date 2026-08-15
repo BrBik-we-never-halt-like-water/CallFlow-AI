@@ -10,7 +10,7 @@ from typing import Annotated
 from uuid import UUID
 
 import asyncpg
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
 from app.auth.dependencies import CurrentUser, RequirePermission, current_user
@@ -212,9 +212,10 @@ async def delete_active(
 @router.get("/me/members", response_model=TeamOut)
 async def list_team(
     user: Annotated[CurrentUser, Depends(RequirePermission(Permission.TEAM_READ))],
+    q: Annotated[str | None, Query(max_length=120)] = None,
 ) -> TeamOut:
     async with database.as_user(user.auth_user_id) as conn:
-        members = await org_repo.list_members(conn, user.org_id)
+        members = await org_repo.list_members(conn, user.org_id, search=q)
         pending = await org_repo.list_pending_invitations(conn, user.org_id)
     return TeamOut(
         members=[
