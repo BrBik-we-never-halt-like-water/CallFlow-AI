@@ -142,8 +142,8 @@ export function Listening({ className }: { className?: string }) {
             The line never goes quiet.
           </h2>
           <p className="measure text-body-l text-text-dim">
-            Calls keep landing while you are reading this. Each one resolves into
-            typed fields on its own, and only the ones that asked for a person
+            Calls keep landing while you read this. Each resolves into typed
+            fields on its own; only the ones that asked for a person
             ever reach your team.
           </p>
           <p

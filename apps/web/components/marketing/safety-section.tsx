@@ -27,34 +27,34 @@ const GUARDS: { icon: Icon; name: string; behaviour: string; value?: string; det
     icon: CheckCircleIcon,
     name: "Validation first",
     behaviour: "Before any dial",
-    detail: "Every run validates rows and walks the gates before dialling; a failing row is skipped and says why.",
+    detail: "Rows are checked and gates walked before anything dials. A failing row says why.",
   },
   {
     icon: ListChecksIcon,
     name: "Allowlist",
     behaviour: "Fails closed",
     value: "1 number",
-    detail: "With anything on it, those are the only numbers that can be reached. Everything else is skipped.",
+    detail: "With anything on it, nothing else can be reached.",
   },
   {
     icon: GaugeIcon,
     name: "Per-run ceiling",
     behaviour: "Hard stop",
     value: "25 / run",
-    detail: "A run can't place more calls than the ceiling. It stops and tells you, however long the list.",
+    detail: "A run stops at the ceiling and tells you, however long the list.",
   },
   {
     icon: TimerIcon,
     name: "Rate limit",
     behaviour: "Paced",
     value: "2 / hour",
-    detail: "Calls go out at a set rate per hour, so a run reaches people at a human rhythm.",
+    detail: "A set rate per hour, so calls land at a human rhythm.",
   },
   {
     icon: ProhibitIcon,
     name: "Suppression list",
     behaviour: "Permanent, global",
-    detail: "Anyone who opts out is added automatically and never dialled again, by any campaign.",
+    detail: "An opt-out is added automatically and never dialled again, by any campaign.",
   },
 ];
 
@@ -88,7 +88,7 @@ export function SafetySection() {
       <Reveal>
         <SectionHeading
           title="The guards fail closed."
-          sub="Real calls go out, so every guard is on by default — and visible right where you start a run."
+          sub="Real calls go out, so every guard is on by default."
         />
       </Reveal>
 
@@ -127,7 +127,7 @@ export function SafetySection() {
         <div className="card-raised p-6 sm:p-7">
           <h3 className="text-h4 font-medium text-text">When a guard trips, it says so.</h3>
           <p className="mt-1.5 text-small text-text-dim">
-            The run keeps going where it safely can — the row is skipped, not the list.
+            The row is skipped, not the list.
           </p>
 
           <ul className="mt-5 flex flex-col gap-2.5">

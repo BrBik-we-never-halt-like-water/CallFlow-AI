@@ -60,7 +60,7 @@ export function Steps() {
       <Reveal>
         <SectionHeading
           title="Watch one contact become a triaged result."
-          sub="One row, four forms — her validated row, the campaign goal, her live call, and the typed result your team actually reads. Every frame is the real product UI."
+          sub="Four frames, one contact — and every frame is the real product UI."
         />
       </Reveal>
 

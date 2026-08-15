@@ -22,7 +22,7 @@ const CAPABILITIES: { icon: Icon; title: string; body: string; proof: ReactNode 
   {
     icon: SlidersIcon,
     title: "Goal-driven, not scripted",
-    body: "Write the objective in plain English. The agent adapts when people go off-script.",
+    body: "Write the objective in plain English. It adapts when people go off-script.",
     proof: (
       <span className="flex flex-col gap-1.5 font-mono text-data text-text-mute">
         <span>
@@ -38,7 +38,7 @@ const CAPABILITIES: { icon: Icon; title: string; body: string; proof: ReactNode 
   {
     icon: TableIcon,
     title: "Typed results, not transcripts",
-    body: "Every call returns schema-validated data — outcome, sentiment, and your own fields.",
+    body: "Outcome, sentiment, and your own fields — schema-validated.",
     proof: (
       <span className="flex flex-col gap-1.5">
         <ProofField k="outcome" v={<Tag mono={false}>rebooked</Tag>} />
@@ -50,7 +50,7 @@ const CAPABILITIES: { icon: Icon; title: string; body: string; proof: ReactNode 
   {
     icon: UserSoundIcon,
     title: "Knows when to back off",
-    body: "Frustration and opt-outs reach a person; bad timing is queued for a polite retry.",
+    body: "Frustration and opt-outs reach a person. Bad timing gets a polite retry.",
     proof: (
       <span className="flex flex-col gap-2 text-small text-text-mute">
         <ProofLamp color="var(--lamp-jade)" label="closed itself — no one reads it" />
@@ -62,7 +62,7 @@ const CAPABILITIES: { icon: Icon; title: string; body: string; proof: ReactNode 
   {
     icon: ShieldCheckIcon,
     title: "Safe by default",
-    body: "An allowlist and a per-run ceiling stop accidental calls. Every run validates first.",
+    body: "An allowlist and a per-run ceiling stop accidental calls.",
     proof: (
       <span className="flex flex-col gap-1.5">
         <span className="flex flex-wrap gap-1.5">
@@ -112,7 +112,7 @@ export function CapabilityGrid() {
       <Reveal>
         <SectionHeading
           title="An operations layer, not a robocall dialler."
-          sub="The difference between a tool your team keeps and one they abandon in a fortnight."
+          sub="The difference between a tool a team keeps and one they abandon."
         />
       </Reveal>
 

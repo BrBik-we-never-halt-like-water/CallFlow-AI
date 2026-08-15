@@ -18,8 +18,8 @@ export function ProblemCompare() {
           A completed call tells you nothing.
         </h2>
         <p className="text-body-l text-text-dim">
-          The same call, the moment it ends — scored by hand on the left, understood by
-          CallFlow on the right.
+          The same call, the moment it ends — by hand on the left, by CallFlow on
+          the right.
         </p>
       </Reveal>
 

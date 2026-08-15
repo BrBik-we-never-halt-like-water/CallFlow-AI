@@ -18,7 +18,7 @@ export function VerticalStrip() {
       <Reveal>
         <SectionHeading
           title="Teams that live on the phone."
-          sub="One engine — the goal and result schema already written for how your team works."
+          sub="One engine. The goal and schema come written for your team."
         />
       </Reveal>
 

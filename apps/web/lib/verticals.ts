@@ -54,7 +54,7 @@ export const VERTICALS: Vertical[] = [
     metricLabel: 'Time to first interview',
     metric: 'Screen 200 candidates in a night, not a fortnight',
     pain: [
-      'A coordinator spends most of a week reaching a shortlist of two hundred, and half of them never pick up on the first try.',
+      'A week of dialling a shortlist of two hundred, and half never pick up.',
       'The same five questions get asked in every call, then typed into the ATS from memory an hour later.',
       'By the time the good candidates are screened, the best of them have accepted somewhere else.',
     ],
@@ -132,7 +132,7 @@ If at any point they sound frustrated, ask to speak to a person, or ask you to s
     metricLabel: 'Recovered bookings per month',
     metric: 'Turn a no-show list into a filled diary',
     pain: [
-      'Every no-show is a paid-for slot that earned nothing, and nobody has time to chase them.',
+      'Every no-show is a paid slot that earned nothing, and nobody chases them.',
       'Confirmation calls land in the same hours as walk-ins, so the front desk is choosing between the phone and the person in front of them.',
       'When someone does answer, the available slots have to be read out from a screen the caller is also trying to use.',
     ],
@@ -203,7 +203,7 @@ If they sound distressed or frustrated, or ask for a person, stop and hand off t
     metricLabel: 'Enquiries reached within 48 hours',
     metric: 'Every enquiry called back, not just the recent ones',
     pain: [
-      'Enquiries arrive in bursts around deadlines, and the team can only call back the newest ones.',
+      'Enquiries burst around deadlines, and only the newest get called back.',
       'The questions are the same every time - fees, start dates, entry requirements, hostel - but the answers still need a person.',
       'A student who enquired ten days ago has usually already applied somewhere that called them back on day one.',
     ],
@@ -277,7 +277,7 @@ If they sound frustrated, ask for a person, or ask not to be called again, stop 
     metricLabel: 'Cost per qualified conversation',
     metric: 'Call every lead in minutes, qualify before a rep is spent',
     pain: [
-      'Inbound leads go cold in under an hour, and nobody is free the moment one lands.',
+      'Inbound leads go cold in an hour, and nobody is free when one lands.',
       'Reps spend their most expensive hours discovering that a lead had no budget and no authority.',
       'The notes that do get typed up are inconsistent, so nobody trusts the pipeline numbers.',
     ],

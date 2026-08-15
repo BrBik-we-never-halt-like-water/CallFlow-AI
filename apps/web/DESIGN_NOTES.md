@@ -1315,3 +1315,34 @@ The ask allowed for new motion "if needed". The disclosure is the motion, and it
 does work - it tells you the panel is a panel and where it came from. Anything
 beyond that would have added content to pages the same request asked to thin out;
 a page does not become more glanceable by gaining an animation to look at.
+
+## 25. The home page's copy, cut where it repeated the thing above it
+
+§24 went to `/trust` on a word count. The page that actually needed thinning was
+the home page - not because it had the most words, but because of *where* they
+sat. Listing every run of copy on it, longest first, made the pattern obvious:
+almost every long line was a full sentence restating a label directly above it.
+
+- **The guards** (208 words, the heaviest section). Each guard already carries a
+  name, a setting and a behaviour - "Rate limit · 2 / hour · PACED" - and then
+  spent eighteen words saying it again in prose. Five times. The details are now
+  eight to twelve words each and add what the label cannot.
+- **The verticals** (179). Four problem lines at 16-23 words, each wrapping to two
+  lines in a row that is otherwise scannable. Now one line apiece.
+- **The section subs.** `Steps` led with 29 words listing the four frames the
+  reader was about to be shown; the compare section explained left and right in
+  20; the safety sub used its second clause to say the guards were visible
+  elsewhere. All of them were captioning something already on screen.
+
+931 words down from 1,039, and the number that matters more: **no paragraph on the
+home page runs over thirty words now**, where the longest was 37. The eight
+one-screen decks are unchanged in structure - this took nothing out of them but
+sentences that were carrying a label's weight for the second time.
+
+One line went back after the cut. "Why a team keeps this one" was short and said
+nothing; the point of that section is a comparison, so it reads "the difference
+between a tool a team keeps and one they abandon" - eleven words instead of
+fifteen, with the contrast intact. Brevity that costs the idea is not a saving.
+
+`lib/verticals.ts`'s `pain[0]` is shared with the solutions pages, where the same
+lines are the "what this costs you today" list, so both got shorter together.
