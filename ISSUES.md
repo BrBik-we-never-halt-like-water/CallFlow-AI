@@ -130,6 +130,8 @@ exist in this repo**; `SYSTEM.md` §12 is the closest real gap map until it's wr
 | [#100](#100--cursor-pagination-could-silently-skip-or-repeat-a-message-under-an-exact-timestamp-tie)                               | S3  | Cursor pagination could silently skip or repeat a message under an exact-timestamp tie                                | backend        | it-34 | **FIXED**        |
 | [#101](#101--chat-rls-treated-channel_memberscreated_by-as-permanent-never-re-checking-current-organisation-membership)            | S1  | Chat RLS treated `channel_members`/`created_by` as permanent, never re-checking current organisation membership       | database       | it-35 | **FIXED**        |
 | [#102](#102--channel_members_select-s-member-branch-had-no-live-organisation-membership-check)                                     | S2  | `channel_members_select`'s member branch had no live organisation-membership check                                    | database       | it-36 | **FIXED**        |
+| [#103](#103--opening-a-different-conversation-remounted-the-whole-chat-page)                                                       | S2  | Opening a different conversation remounted the whole chat page                                                        | web            | it-37 | **FIXED**        |
+| [#104](#104--the-message-pane-never-auto-scrolled-to-the-newest-message)                                                           | S3  | The message pane never auto-scrolled to the newest message                                                            | web            | it-37 | **FIXED**        |
 
 ---
 
@@ -4185,6 +4187,79 @@ untouched.
   same stale row, same subscription, never reloaded - produced zero delivered frames.
 
 **Depends on / Blocks:** Iteration 35 #101.
+
+## Iteration 37 - 2026-08-16 · chat page: search-to-DM, a persistent list pane, and @mentions
+
+Landed three requested features on `/app/chat` (inline organisation-member search to start a DM
+directly from the list, the channel list and an open conversation visible side by side instead of
+the conversation as a full-screen modal, and Teams-style `@mention` autocomplete/highlighting scoped
+to a conversation's own members) - the group-creation dialog was left untouched by request. Restructuring
+the page to a persistent two-pane layout surfaced both bugs below, live, before either shipped.
+
+### #103 - Opening a different conversation remounted the whole chat page
+
+**S2 · FIXED · web · `apps/web/app/(app)/app/chat/`**
+
+The two-pane layout's whole point is that the channel list, its search box, and an open conversation
+stay on screen together so a person can switch between conversations directly. The first shape of
+this (a `chat/[id]/page.tsx` dynamic route, `channelId` passed down as a prop) defeated that on its
+own: Next.js remounts a `[id]/page.tsx` on every change to its own dynamic segment - by design, not a
+framework bug, since a detail page is often meant to treat a new param as a fresh identity - which
+wiped the channel list, the search box, and every other bit of `ChatShell`'s state on every single
+click between conversations.
+
+**Impact, confirmed live** by the person testing it, mid-session: switching conversations visibly
+re-rendered the entire section - list, header, composer - rather than only the conversation content,
+which is the opposite of what a persistent list pane is for.
+
+**Fix.** The open conversation now lives in a query param (`/app/chat?c={id}`) on one stable page
+rather than a route segment, so there is no dynamic-segment identity for Next to remount on. Reading
+that query param still requires `useSearchParams()`, which Next.js requires to sit under a
+`<Suspense>` boundary - and a Suspense boundary is itself torn down and rebuilt on navigation, which
+would have reintroduced the identical remount if `ChatShell` read it directly. It's isolated instead
+in a small stateless leaf (`ChannelIdSync`) that does nothing but report the current id upward via an
+effect; that leaf remounting on every navigation is harmless, since it holds no state of its own.
+
+**Verified live**, end to end (Playwright against the local dev stack): a `window`-level marker set
+before switching conversations was confirmed to survive the switch (proving the navigation itself is
+a soft client transition, not a full reload) together with a mount/unmount instrumentation effect on
+`ChatShell` confirming it mounts exactly once across an arbitrary number of conversation switches -
+list state (an in-progress search box value) and the rendered channel buttons were confirmed intact
+after switching conversations twice. `npm run build` (which prerenders and would fail immediately if
+`useSearchParams()` were not correctly boundaried) passes.
+
+### #104 - The message pane never auto-scrolled to the newest message
+
+**S3 · FIXED · web · `apps/web/app/(app)/app/chat/chat-shell.tsx`**
+
+The previous full-screen-modal conversation view had no fixed height, so the page (and, incidentally,
+whatever was newest) was usually already in view. Giving the conversation its own bounded,
+independently-scrollable pane - required for the list and the conversation to be visible together,
+`#103`'s whole point - removed that incidental behaviour without replacing it: nothing set `scrollTop`
+on open, on send, or on a live message arriving, so the newest content could sit below the fold with
+no indication anything had changed.
+
+**Impact, confirmed live** via a screenshot taken immediately after sending a message in a conversation
+with enough history to overflow the pane: the composer cleared (confirming the send succeeded) but the
+just-sent message was not visible without the reader scrolling down manually.
+
+**Fix.** A `useLayoutEffect` keyed on the open conversation and its message list sets the pane's
+`scrollTop` to its `scrollHeight` after every render, except when the render was triggered by
+`loadOlderMessages()` paging in history - that one case anchors the scroll position to what was
+already on screen instead, or paging in older messages would otherwise yank the reader back down to
+the bottom they were trying to scroll away from. Ship order mattered here: a later change gave the
+loading state a minimum-visible floor (`useMinVisible`, so a fast/cached fetch doesn't flash a loader
+for under a second) which decoupled *when data arrives* from *when it actually reaches the DOM* -
+the auto-scroll effect's dependency list has to include that loader's own visibility, or it fires
+too early, against content that has not been rendered yet.
+
+**Verified live**, in a viewport short enough to force real overflow (confirmed via `scrollHeight >
+clientHeight` on the actual message-pane element, not assumed): before the fix, `scrollTop` sat at `0`
+after opening a conversation with overflowing history; after the fix, `scrollTop` reads exactly
+`scrollHeight - clientHeight` (bottom) both on opening a conversation and immediately after sending a
+new message into it.
+
+**Depends on / Blocks:** Iteration 37 #103 (same restructure exposed both).
 
 ## Template for the next iteration
 

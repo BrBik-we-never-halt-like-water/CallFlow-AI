@@ -2,6 +2,6 @@
 
 import { ChatShell } from './chat-shell';
 
-export default function ChatIndexPage() {
-  return <ChatShell channelId={null} />;
+export default function ChatPage() {
+  return <ChatShell />;
 }
