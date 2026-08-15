@@ -158,8 +158,8 @@ Legend: ✅ persists · ⚠️ persists locally/partially · ❌ lost on restart
 | `api/v1/routes/safety.py`                       | `/api/v1/safety` - get/patch this org's own safety-guard overrides, plus live `used_today` from the org-keyed limiter                                                                                                                                                                                                                                | `router`                                                                                                      |
 | `api/v1/routes/api_keys.py`                     | `/api/v1/api-keys` - list/create/revoke, org-scoped, owner/admin only                                                                                                                                                                                                                                                                                | `router`                                                                                                      |
 | `api/v1/routes/integrations.py`                 | `/api/v1/integrations/providers/{provider}` - connect (upsert)/list/disconnect, owner/admin only                                                                                                                                                                                                                                                     | `router`                                                                                                      |
-| `integrations/voice/protocol.py`                | The `VoiceProvider` structural protocol every voice adapter conforms to - CALL-E is still the only one (`VOICE_AGENT_PLATFORM.md` P1)                                                                                                                                                                                                                | `VoiceProvider`, `VoiceCapability`, `NotImplementedForProvider`                                               |
-| `integrations/voice/protocol.py`                | The `VoiceProvider` protocol and its `VoiceCapability` set. **No implementation exists** - CALL-E was removed and the LiveKit client that replaces it is not built yet (`RUNBOOK_HET_PART_1.md` P1-T5/P1-T6). Kept as the shape those adapters are meant to fit | `VoiceProvider`, `VoiceCapability` |
+| `integrations/livekit/client.py`                | **The only LiveKit SDK import**, aliased on the way in. Owns inbound/outbound trunk creation, dispatch rules, and `CreateSIPParticipant`. `classify_error()` maps a `TwirpError` onto `DialFailure`, preferring the upstream SIP status (486 -> busy) over the transport code and failing closed to `INTERNAL` for anything unmapped. Async - the SDK is aiohttp-based, so call sites must NOT wrap it in `asyncio.to_thread` the way CALL-E's blocking client needed | `LiveKitGateway`, `classify_error()`, `EngineError`, `SipTransport` |
+| `integrations/voice/protocol.py`                | The `VoiceProvider` protocol and its `VoiceCapability` set. **Nothing implements it** - CALL-E was removed and `livekit/client.py` deliberately does not conform to it yet, because a protocol shaped around one deleted vendor is not evidence of the right shape. Settle it once a second carrier proves the real one | `VoiceProvider`, `VoiceCapability`, `NotImplementedForProvider` |
 
 **Per-contact pipeline** (`CampaignRunner.run_one`, in `services/campaign_runner.py`):
 
@@ -170,29 +170,28 @@ build base outcome (masked phone)
                                            here too now - the caller resolves the org's
                                            real suppressions table once per run and passes
                                            the verdict in (domain/ does no I/O, by design)
-  → gateway.start_call()   [asyncio.to_thread]   idempotency key per attempt
-  → on_status(IN_FLIGHT)                  row appears immediately, persisted via append_outcome
-  → _poll_until_done()     [asyncio.to_thread per poll]   2s interval, reports each status change
-  → _extract_result() / _extract_transcript()
+  → [origination: STUBBED]                returns FAILED / provider_unavailable / SKIPPED
+                                           until P1-T6 wires LiveKit CreateSIPParticipant
+  → _extract_result() / _extract_transcript()   (unreached while the stub is in place)
   → triage() → return
 ```
 
-A failed `EngineAPIError`/`EngineTimeoutError` doesn't fall through to a generic catch -
-`classify_error()` maps it onto `DialFailure` first, and only `rate_limited`,
-`provider_unavailable`, and `timed_out` become `Disposition.RETRY`; everything else
-(`invalid_number`, `insufficient_balance`, `policy_violation`, `unauthorized`, and any
-unmapped engine code) becomes `Disposition.UNREACHABLE` (`ISSUES.md` #37). An
-unclassified exception (network error, anything outside the engine's own error types)
-still falls through to a final `except Exception`, storing `DialFailure.INTERNAL` rather
-than the raw exception string.
+**No call can currently be placed.** CALL-E's dial/poll loop was deleted (`ISSUES.md`
+#77) and `run_one()` returns an explicit `provider_unavailable` failure for every contact
+that clears the safety gate. The gate itself still runs first and still reserves its slot,
+so the allowlist, per-run ceiling, suppression check and rate limiter behave exactly as
+they will once dialling returns.
 
-Every run dials for real - there is no branch that skips the network call. The SDK's own
-client is blocking, so every call into it runs in a worker thread; otherwise one in-flight
-call would stall the event loop for every other request.
+The failure taxonomy that survives is `DialFailure`, and `integrations/livekit/client.py`'s
+`classify_error()` is what will populate it: a `TwirpError`'s upstream SIP status is
+preferred over its transport code (486 → `busy`, not `internal`), and anything unmapped
+fails closed to `INTERNAL`, which is deliberately *not* retryable. Only `rate_limited`,
+`provider_unavailable`, `timed_out`, `busy` and `no_answer` become `Disposition.RETRY`;
+everything else becomes `Disposition.UNREACHABLE` (`ISSUES.md` #37).
 
-`_extract_result` tries `result`, `structured_result`, `results`, `output`, `data`, then
-`recipients[0].result` - the payload shape has moved across engine versions, so it probes
-known candidates rather than assuming one.
+Unlike CALL-E's blocking client, the LiveKit SDK is aiohttp-based and must be awaited
+directly - the `asyncio.to_thread` wrapping every old call site is gone and must not come
+back.
 
 ---
 
@@ -694,6 +693,14 @@ so every outcome reaching this function came from a real call.)
 `Disposition`: `in_flight`, `auto_closed`, `escalated`, `retry`, `unreachable`, `skipped`
 `Sentiment`: `positive`, `neutral`, `negative`, `unknown`
 Run `status`: `running`, `completed`, `failed`
+`DialFailure`: `invalid_number`, `rate_limited`, `insufficient_balance`, `policy_violation`,
+`unauthorized`, `provider_unavailable`, `timed_out`, `busy`, `no_answer`, `internal` -
+vendor-neutral, and the only vocabulary retry policy keys off. `busy`/`no_answer` were added
+when SIP became the transport: a carrier reports 486 and 480 distinctly, and folding either
+into `provider_unavailable` would tell an operator CallFlow broke when the person was simply
+on another call. Stored as plain text, so extending it needs no migration.
+`ProvisioningStatus` (`domain/provisioning.py`): `pending`, `provisioning`, `verified`,
+`failed` - one-way, no edge out of a terminal state
 
 ### Disposition → lamp (`web/lib/lamp.ts`)
 
@@ -968,6 +975,9 @@ Supabase/database/email settings that back auth and persistence (`SUPABASE_URL`,
 | `CALLFLOW_ALLOWLIST`                         | empty   | Comma-separated E.164. Non-empty ⇒ only these dialable                                                                                                                                                                                         |
 | `CALLFLOW_CORS_ORIGINS`                      | empty   | Extra browser origins; bare hostnames get `https://`                                                                                                                                                                                           |
 | `CALLFLOW_LOG_FORMAT`                        | `text`  | `text` (human-readable, local dev) or `json` (one object per line, for a log aggregator) - see `core/logging.py`                                                                                                                               |
+| `LIVEKIT_URL`                                | `""`    | CallFlow's own LiveKit Cloud project (ap-south). Empty ⇒ `LiveKitGateway` refuses to construct |
+| `LIVEKIT_API_KEY`                            | `""`    | As above |
+| `LIVEKIT_API_SECRET`                         | `""`    | As above |
 | `CALLFLOW_PUBLIC_API_URL`                    | `""`    | This API's own publicly-reachable base URL. Read by nothing today; kept for the voice runtime's transcript callback (`RUNBOOK_HET_PART_1.md` P1-T4)                                                                                                                 |
 | `CALLFLOW_RATE_LIMIT_CALLS`                  | `5`     | Live calls per IP per window                                                                                                                                                                                                                   |
 | `CALLFLOW_RATE_LIMIT_WINDOW`                 | `3600`  | Window, seconds                                                                                                                                                                                                                                |
@@ -999,6 +1009,7 @@ the preceding few iterations touched most directly; some untouched files' counts
 
 | File                           | Tests | Covers                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | ------------------------------ | ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `test_livekit_client.py`       | 35    | The LiveKit boundary against a stub client - no account needed, and none should be: these assert the translation, not the network. Request shaping (numbers, allowed addresses, explicit SIP transport, individual dispatch rule, `wait_until_answered`), the aiohttp session closed on both the happy and raising paths, and the full error mapping including SIP-status-beats-transport-code, unmapped-fails-closed, junk metadata, and a check that every `DialFailure` member is reachable from some vendor error |
 | `test_provisioning_state.py`   | 23    | The provisioning state machine, exhaustive over the whole 4x4 status grid - every declared move allowed, every other rejected, terminal states final, and the error message naming the legal alternatives. Pure, so this runs in CI |
 | `test_telephony_provisioning_repo.py` | 12 | The repository against a real database: a replayed idempotency key returns the original attempt rather than a second row and carries back its recorded trunk ids, a new key starts a fresh attempt without disturbing the failed one's `last_error`, per-step writes don't blank earlier steps, an illegal transition raises instead of writing, another org's attempt is invisible to `set_status`, and `latest_for_agent` is stable across repeated polls. Skipped when `DATABASE_URL` is unset |
 | `test_rls_isolation.py`        | 49    | Cross-tenant isolation against the real database - signup trigger, org/user/membership/suppression invisibility, forged-org-id insert rejected, anon sees nothing, `postgres` bypass, account-deletion cascade + slug reuse, API-key resolution (matches owning tenant, revoked, live-membership), provider credentials (invisible cross-tenant, owner/admin-only write). **Cross-role:** the admin-to-owner grant guard - granted-role and target-role checks on `memberships_update`/`_insert`/`_delete` and `invitations_insert`, the invitee-cannot-mutate-their-own-invitation-role and invitation-cannot-seat-someone-else guards, and real (non-mocked) invitation creation/refresh through `org_repo.create_invitation()` proving the `SECURITY DEFINER` upsert fix actually works end to end (15 tests) - `ISSUES.md` #43/#44. **Same-org, cross-member:** two operators in one org - neither sees the other's campaign, run, or call outcome; admin and viewer see both; `summarize_by_member()` reflects the caller's own RLS scope, not just whoever's logged in (4 tests) - `ISSUES.md` #64. **First-time acceptance:** a genuine brand-new signup (real `auth.users` insert, real trigger, their own auto-created org) accepting a real invitation end to end, and an expired invitation correctly rejected (2 tests) - the previously-nonexistent coverage that would have caught `ISSUES.md` #68. **Remove-and-reassign, new this phase:** an admin removing a teammate reassigns their in-org data and deletes their account while leaving their unrelated other-org data untouched, and a same-rank operator cannot call the removal function directly (2 tests). **Platform pivot, new this phase:** `voice_agents` and `telephony_provisioning` invisible cross-tenant, forged-org-id insert rejected on both, another tenant's agent not updatable, a provisioning row not deletable by anyone (the missing delete *grant*, which a future policy edit cannot undo), the same idempotency key rejected as a second attempt while a different key is allowed, a credential in use by an agent not deletable (ON DELETE RESTRICT), and the widened `provider_credentials` check accepting `openrouter` while still rejecting blank (10 tests). Skipped when `DATABASE_URL` is unset - see `tests/local_postgres/README.md` to run them |

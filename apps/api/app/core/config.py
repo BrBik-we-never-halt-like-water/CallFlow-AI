@@ -126,6 +126,15 @@ class Config:
         default_factory=lambda: os.getenv("SITE_URL", "http://localhost:3000").rstrip("/")
     )
 
+    # --- LiveKit: the media/SIP substrate ------------------------------------
+    # CallFlow's own LiveKit Cloud project, not an org's credential: every
+    # organisation's calls run through it, on their own carrier trunks. Empty
+    # key/secret ⇒ `LiveKitGateway` refuses to construct rather than failing at
+    # the first API call, same spirit as the old `require_api_key()`.
+    livekit_url: str = field(default_factory=lambda: os.getenv("LIVEKIT_URL", "").rstrip("/"))
+    livekit_api_key: str = field(default_factory=lambda: os.getenv("LIVEKIT_API_KEY", ""))
+    livekit_api_secret: str = field(default_factory=lambda: os.getenv("LIVEKIT_API_SECRET", ""))
+
     # Symmetric key for org-owned third-party provider credentials (Twilio/Plivo
     # auth tokens). Same sensitivity class as SUPABASE_SECRET_KEY - never enters
     # the database, only this process's environment. A Fernet key: 32 url-safe
