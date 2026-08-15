@@ -12,19 +12,17 @@ import { Reveal } from "@/components/ui/reveal";
 /**
  * Safety, shown rather than described.
  *
- * The active guards are shown as a panel of real settings — the exact values a
- * run enforces — above a glossary that explains each guard. One guard could be
- * switched off in the product, and the design's whole claim is that an unguarded
- * configuration looks uncomfortable; here every guard is on, which is the point.
+ * Every guard is on: one could be switched off in the product, and the design's
+ * whole claim is that an unguarded configuration looks uncomfortable.
+ *
+ * This was two bands - a strip of three settings cards above a glossary
+ * explaining five guards - which made the reader compare "Allowlist / 1 number"
+ * against "Allowlist / Fails closed" and work out that they were the same guard
+ * twice. The settings are now the `value` on the three entries that have one,
+ * so the concrete number sits with the sentence that explains it.
  */
 
-const ACTIVE_GUARDS: { icon: Icon; label: string; value: string; note: string }[] = [
-  { icon: ListChecksIcon, label: "Allowlist", value: "1 number", note: "only these dial" },
-  { icon: GaugeIcon, label: "Per-run ceiling", value: "25 / run", note: "then it stops" },
-  { icon: TimerIcon, label: "Rate limit", value: "2 / hour", note: "paced, not bursty" },
-];
-
-const GUARDS_EXPLAINED: { icon: Icon; name: string; behaviour: string; detail: string }[] = [
+const GUARDS: { icon: Icon; name: string; behaviour: string; value?: string; detail: string }[] = [
   {
     icon: CheckCircleIcon,
     name: "Validation first",
@@ -35,18 +33,21 @@ const GUARDS_EXPLAINED: { icon: Icon; name: string; behaviour: string; detail: s
     icon: ListChecksIcon,
     name: "Allowlist",
     behaviour: "Fails closed",
+    value: "1 number",
     detail: "With anything on it, those are the only numbers that can be reached. Everything else is skipped.",
   },
   {
     icon: GaugeIcon,
     name: "Per-run ceiling",
     behaviour: "Hard stop",
+    value: "25 / run",
     detail: "A run can't place more calls than the ceiling. It stops and tells you, however long the list.",
   },
   {
     icon: TimerIcon,
     name: "Rate limit",
     behaviour: "Paced",
+    value: "2 / hour",
     detail: "Calls go out at a set rate per hour, so a run reaches people at a human rhythm.",
   },
   {
@@ -92,35 +93,8 @@ export function SafetySection() {
       </Reveal>
 
       <Reveal delayMs={80} className="mt-(--deck-gap)">
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          {ACTIVE_GUARDS.map((guard) => {
-            const GuardIcon = guard.icon;
-            return (
-              <div
-                key={guard.label}
-                className="card-raised flex items-start gap-3 p-4"
-              >
-                <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-surface-sunken text-text-dim">
-                  <GuardIcon aria-hidden weight="light" className="size-5" />
-                </span>
-                <div className="min-w-0">
-                  <span className="block text-label uppercase tracking-[0.12em] text-text-mute">
-                    {guard.label}
-                  </span>
-                  <span className="mt-1 block font-mono text-data tabular-nums text-text">
-                    {guard.value}
-                  </span>
-                  <span className="mt-0.5 block text-label text-text-mute">{guard.note}</span>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </Reveal>
-
-      <Reveal delayMs={120} className="mt-(--deck-gap)">
         <dl className="grid gap-x-8 gap-y-(--deck-gap) border-t border-rule pt-(--deck-gap) sm:grid-cols-2 lg:grid-cols-3">
-          {GUARDS_EXPLAINED.map((guard) => {
+          {GUARDS.map((guard) => {
             const GuardIcon = guard.icon;
             return (
               <div key={guard.name} className="flex gap-3">
@@ -130,6 +104,15 @@ export function SafetySection() {
                 <div className="flex flex-col gap-1.5">
                   <dt className="flex flex-wrap items-baseline gap-2">
                     <span className="text-h4 font-medium text-text">{guard.name}</span>
+                    {/* A chip, not bare text: name, setting and behaviour are
+                        three different kinds of thing on one line, and without
+                        an edge the middle one reads as part of whichever
+                        neighbour the eye reaches first. */}
+                    {guard.value ? (
+                      <span className="rounded bg-surface-sunken px-1.5 py-0.5 font-mono text-label tabular-nums text-text-dim">
+                        {guard.value}
+                      </span>
+                    ) : null}
                     <span className="eyebrow text-text-mute">{guard.behaviour}</span>
                   </dt>
                   <dd className="text-small text-text-dim">{guard.detail}</dd>
@@ -140,7 +123,7 @@ export function SafetySection() {
         </dl>
       </Reveal>
 
-      <Reveal delayMs={160} className="mt-(--deck-gap)">
+      <Reveal delayMs={120} className="mt-(--deck-gap)">
         <div className="card-raised p-6 sm:p-7">
           <h3 className="text-h4 font-medium text-text">When a guard trips, it says so.</h3>
           <p className="mt-1.5 text-small text-text-dim">

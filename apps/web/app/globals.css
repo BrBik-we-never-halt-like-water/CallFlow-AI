@@ -176,11 +176,21 @@
      1.125 -> 1.1875), because the headings growing without the paragraphs
      following just moves the imbalance down a level. `--t-small` and below are
      deliberately unchanged: those are metadata, data cells and labels, where
-     16px is already the ceiling before a table stops reading as a table. */
-  --t-display-xl: clamp(3rem, 6.4vw, 5.25rem);
-  --t-display-l: clamp(2.5rem, 4.6vw, 3.75rem);
-  --t-h2: clamp(2rem, 3.4vw, 3rem);
-  --t-h3: clamp(1.375rem, 1.9vw, 1.75rem);
+     16px is already the ceiling before a table stops reading as a table.
+
+     **Second pass, after the density cut.** The three display steps go up
+     again - h2 3rem -> 3.5rem at the cap, display-l 3.75 -> 4.25, display-xl
+     5.25 -> 6 - because a section heading was reading as a large label rather
+     than as the one thing on the screen. This is only affordable *because*
+     content came out of two sections in the same change: type this size and the
+     previous amount of copy would have overrun the one-screen budget every deck
+     section is built around. Size and density are one decision, not two. h3
+     follows so the gap to h2 stays proportional; body and below are unchanged,
+     because the point is the top of the ramp, not all of it. */
+  --t-display-xl: clamp(3.25rem, 7.1vw, 6rem);
+  --t-display-l: clamp(2.75rem, 5.2vw, 4.25rem);
+  --t-h2: clamp(2.25rem, 3.9vw, 3.5rem);
+  --t-h3: clamp(1.5rem, 2.05vw, 1.875rem);
   --t-h4: clamp(1.0625rem, 1.2vw, 1.1875rem);
   --t-body-l: 1.1875rem;
   --t-body: 1.0625rem;

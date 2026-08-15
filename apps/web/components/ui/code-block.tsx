@@ -52,7 +52,13 @@ export function CodeBlock({
           className={cn(
             'overflow-x-auto p-3 font-mono text-data text-text',
             copyable && 'pr-12',
-            maxHeight && `${maxHeight} overflow-y-auto`,
+            // The fade is the only thing that says "there is more". A capped
+            // block otherwise ends on a hard edge mid-token, which reads as
+            // truncated output rather than as a scroll region - and the
+            // scrollbar it would rely on is an overlay that appears only once
+            // you have already scrolled.
+            maxHeight &&
+              `${maxHeight} overflow-y-auto [mask-image:linear-gradient(to_bottom,#000_calc(100%-2.5rem),transparent)]`,
           )}
         >
           <code>{language === 'json' ? <Json code={code} /> : code}</code>

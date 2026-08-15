@@ -1153,3 +1153,76 @@ pushes most of the fade off-canvas and leaves the rest as a short dissolve at th
 The two standing formations are taller as well (`GRID_HEIGHT` 2.6, `WAVE_HEIGHT` 2.7, from
 1.55 and 2.1), which fills the frame vertically and - because more particles now fall off
 the top and bottom and get culled - costs nothing.
+
+## 23. Density and scale are one decision: cut two sections, raise the display steps
+
+The ask was three things - less on the crowded pages, bigger headlines, a shorter
+beat between hero formations. The first two are the same decision. A deck section
+is built to hold one screen, so type size and content volume trade directly
+against each other: raising the ramp without taking something out just moves the
+overflow somewhere else, and every "make it bigger" that ships alone comes back
+later as "it spills".
+
+### Finding the crowded sections, rather than guessing
+
+Crowding was measured, not eyeballed: for every marketing section, its height
+against the one-screen budget (viewport minus header), plus its card count and
+word count. Two results stood out against a page where everything else was
+comfortably *under* budget:
+
+| section | height | over budget |
+| ------- | ------ | ----------- |
+| `/solutions/*` "The exact goal, and the exact fields it returns" | 1537-1650px | +85% to +98% |
+| everything else on `/`, `/about`, `/trust`, `/demo` | 178-832px | under |
+
+That is the whole answer to "which pages are over-crowded". `/trust` looks dense -
+nine sections of prose - but every one of them fits, and cutting compliance copy
+is not a design call to make unilaterally.
+
+### Both cuts were duplication, not content
+
+**The solutions artefact** rendered the result schema twice: the JSON object, then
+a field list underneath repeating each key, type and description. `schemaToJson`
+writes `field.description` straight into the schema, so the second list was the
+first one's strings, word for word. Two renderings of one thing is not
+thoroughness - it is the reader checking whether they differ. Deleted.
+
+That left the JSON still running ~1000px against the goal template's ~510 beside
+it, so the schema alone set the band's height. It is now capped with a scroll, and
+`CodeBlock` grows a bottom mask when `maxHeight` is set: a capped block otherwise
+ends on a hard edge mid-token, which reads as truncated output rather than as a
+scroll region - and the scrollbar it would rely on is an overlay that appears only
+after you have already scrolled. 1650px -> 842px, and nothing was removed.
+
+**The home safety section** was two bands: a strip of three settings cards
+(Allowlist / 1 number, Per-run ceiling / 25 per run, Rate limit / 2 per hour)
+directly above a five-item glossary whose first three entries were those same
+three guards in prose. The reader's job was to work out that "Allowlist · 1
+number" and "Allowlist · Fails closed" were one guard, twice. The settings are now
+the `value` on the three entries that have one, in a chip - name, setting and
+behaviour are three different kinds of thing on one line, and without an edge the
+middle one attaches itself to whichever neighbour the eye reaches first. Five
+guards, one band, every number still on the page.
+
+### The ramp
+
+`--t-h2` 3rem -> 3.5rem at the cap, `--t-display-l` 3.75 -> 4.25, `--t-display-xl`
+5.25 -> 6, with `--t-h3` following so the gap to h2 stays proportional. Body and
+below are unchanged: the point is the top of the ramp, not all of it. §20 already
+made every step fluid, which is what lets these move as one thing rather than
+opening a gap between the display sizes and the headings under them.
+
+The hero headline now sets in three lines rather than two at 1440px, which is the
+change: it stops being a sentence at the top of a page and becomes the page.
+
+Verified across seven viewports from 1920x1080 to 390x844: no section's content
+overflows its box, no horizontal scroll, and above the 850px flow threshold every
+deck section still fits one screen. (A constant ~13px overrun reported on the
+nested inner sections is pre-existing - identical at HEAD before this change, and
+invisible because the outer deck section carries the slack.)
+
+### The hero beat
+
+`HOLD` 8s -> 6.5s, cycle 31.2s -> 26.7s. §22 had raised it from 5s because a
+formation arrived and moved again before the eye settled; 8s overshot into waiting.
+`MORPH` stays at 2.4s - the travel was never the part that felt wrong.

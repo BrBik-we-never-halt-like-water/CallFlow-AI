@@ -114,25 +114,17 @@ export default async function SolutionPage({
 
           <div className="flow-seam-l flex min-w-0 flex-col gap-4 lg:pl-12">
             <Eyebrow as="span">Result schema</Eyebrow>
-            <CodeBlock bare code={schemaToJson(vertical.schema)} />
-            <ul className="flex flex-col gap-3 pt-2">
-              {vertical.schema.map((field) => (
-                <li
-                  key={field.key}
-                  className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5"
-                >
-                  <code className="font-mono text-data font-medium text-text">
-                    {field.key}
-                  </code>
-                  <span className="font-mono text-label uppercase tracking-[0.14em] text-text-mute">
-                    {field.type}
-                  </span>
-                  <span className="w-full text-small text-text-dim">
-                    {field.description}
-                  </span>
-                </li>
-              ))}
-            </ul>
+            {/* The JSON is the whole glossary. A field list used to follow it
+                here, and every line of it - key, type, description - was already
+                in the object directly above, word for word: `schemaToJson`
+                writes each field's `description` straight into the schema. Two
+                renderings of one thing is not thoroughness, it is the reader
+                checking whether they differ. */}
+            {/* Capped so the schema stops setting the section's height. At full
+                length the JSON ran ~1000px against the goal template's ~510 and
+                dragged the whole band to half again a screen; the two columns
+                now balance, and nothing is removed - the rest scrolls. */}
+            <CodeBlock bare maxHeight="max-h-[30rem]" code={schemaToJson(vertical.schema)} />
           </div>
         </div>
       </section>

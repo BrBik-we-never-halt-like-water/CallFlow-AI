@@ -65,7 +65,7 @@ const Z_FAR = 4.2;
 const Z_WALL = 1.45;
 
 /** Seconds each formation is held, and seconds spent travelling between them. */
-const HOLD = 8;
+const HOLD = 6.5;
 const MORPH = 2.4;
 const STEP = HOLD + MORPH;
 const CYCLE = STEP * 3;
