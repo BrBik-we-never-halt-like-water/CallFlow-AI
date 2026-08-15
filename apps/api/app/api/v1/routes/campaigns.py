@@ -12,11 +12,12 @@ from app.auth.dependencies import CurrentUser, RequirePermission, current_user
 from app.auth.permissions import Permission
 from app.database import database
 from app.database.repositories import campaigns as campaigns_repo
+from app.database.repositories import sharing as sharing_repo
 from app.domain.campaigns import BUILT_IN_IDS, FIELD_TYPES, REGISTRY, SCHEMAS, slugify
 from app.domain.entities import Campaign as CampaignEntity
 from app.domain.entities import Contact
+from app.domain.goal_rendering import render_goal
 from app.domain.result_schemas import build_result_schema
-from app.services.campaign_runner import render_goal
 
 router = APIRouter(prefix="/api/v1/campaigns", tags=["campaigns"])
 
@@ -58,6 +59,13 @@ class CampaignOut(BaseModel):
 class PreviewIn(BaseModel):
     campaign_id: str
     contacts: list[dict[str, Any]]
+
+
+class CampaignDirectoryEntryOut(BaseModel):
+    id: str
+    name: str
+    owner_user_id: str | None
+    owner_name: str | None
 
 
 async def resolve_campaign(
@@ -120,6 +128,31 @@ async def list_campaigns(
     async with database.as_user(user.auth_user_id) as conn:
         rows = await campaigns_repo.list_org_campaigns(conn, user.org_id)
     return [_built_in_json(c) for c in REGISTRY.values()] + [_row_json(r) for r in rows]
+
+
+@router.get("/directory", response_model=list[CampaignDirectoryEntryOut])
+async def campaign_directory(
+    user: Annotated[CurrentUser, Depends(current_user)],
+) -> list[CampaignDirectoryEntryOut]:
+    """Name + owner only, org-wide - not gated on any particular role, since
+    it exposes nothing about a campaign's content. Lets an operator (whose
+    own `GET /api/v1/campaigns` is narrowed by Phase 1's RLS to just their
+    own) see what else exists to request access to (Phase 4). Goes through
+    `list_campaign_directory()`, a `SECURITY DEFINER` function - a plain
+    query here would hit the exact same per-creator RLS narrowing this
+    endpoint exists to see past.
+    """
+    async with database.as_user(user.auth_user_id) as conn:
+        rows = await sharing_repo.list_campaign_directory(conn, user.org_id)
+    return [
+        CampaignDirectoryEntryOut(
+            id=r["id"],
+            name=r["name"],
+            owner_user_id=str(r["owner_user_id"]) if r["owner_user_id"] else None,
+            owner_name=r["owner_name"],
+        )
+        for r in rows
+    ]
 
 
 def _validate_and_build_fields(

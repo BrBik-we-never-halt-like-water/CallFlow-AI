@@ -45,7 +45,7 @@ export const NAV_ITEMS: Omit<NavItem, 'badge'>[] = [
   { label: 'Settings', href: '/app/settings', icon: GearSixIcon },
 ];
 
-/** The five destinations shown as the sidebar's primary nav list. */
+/** The six destinations shown as the sidebar's primary nav list. */
 export const PRIMARY_NAV_ITEMS = NAV_ITEMS.filter(
   (item) => item.href !== '/app/organisation' && item.href !== '/app/settings',
 );

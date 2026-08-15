@@ -1,14 +1,17 @@
 'use client';
 
+import { useState } from 'react';
 import {
   NotWiredNotice,
   SettingsSection,
 } from '@/components/app/settings-section';
 import { SessionGate } from '@/components/app/session-gate';
 import { Skeleton } from '@/components/ui/skeleton';
+import { api, type MyCredits } from '@/lib/api';
 import { formatNumber } from '@/lib/format';
 import { PLANS } from '@/lib/pricing';
 import { useAppStore } from '@/lib/app-store';
+import { useOrgScopedEffect } from '@/lib/hooks/use-org-scoped-effect';
 import { useSession, type SessionProfile } from '@/lib/hooks/use-session';
 
 export default function BillingSettingsPage() {
@@ -23,6 +26,63 @@ export default function BillingSettingsPage() {
 function BillingContent({ profile }: { profile: SessionProfile }) {
   const { safetySettings } = useAppStore();
   const plan = PLANS.find((p) => p.id === profile.active.plan_id);
+  const canReadOrgBilling = profile.permissions.includes('billing:read');
+  const [myCredits, setMyCredits] = useState<MyCredits | null>(null);
+
+  useOrgScopedEffect(() => {
+    if (canReadOrgBilling) return;
+    api
+      .myCredits()
+      .then(setMyCredits)
+      .catch(() => setMyCredits(null));
+  }, [canReadOrgBilling]);
+
+  if (!canReadOrgBilling) {
+    return (
+      <div className="flex flex-col gap-4">
+        <SettingsSection
+          title="My credits"
+          description="Your own share of this organisation's daily call budget."
+        >
+          {myCredits === null ? (
+            <div className="flex flex-col gap-2">
+              <Skeleton className="h-8 w-48" />
+              <Skeleton className="h-2 w-full" />
+            </div>
+          ) : myCredits.daily_allocation === 0 ? (
+            <NotWiredNotice>
+              An owner or admin hasn&apos;t set your daily credit allocation
+              yet - until they do, you draw from the organisation&apos;s
+              shared daily budget like everyone else.
+            </NotWiredNotice>
+          ) : (
+            <div className="flex flex-col gap-3">
+              <div className="flex items-baseline gap-2">
+                <span className="font-mono text-h2 tabular-nums text-text">
+                  {formatNumber(myCredits.used_today)}
+                </span>
+                <span className="text-body text-text-dim">
+                  of {formatNumber(myCredits.daily_allocation)} calls used
+                </span>
+              </div>
+              <div className="h-1.5 w-full overflow-hidden rounded-full bg-surface-sunken">
+                <div
+                  className="h-full rounded-full bg-surface-inverse"
+                  style={{
+                    width: `${Math.min(100, (myCredits.used_today / Math.max(1, myCredits.daily_allocation)) * 100)}%`,
+                  }}
+                />
+              </div>
+              <p className="text-small text-text-mute">
+                Resets daily. Ask an owner or admin to change your
+                allocation.
+              </p>
+            </div>
+          )}
+        </SettingsSection>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-4">

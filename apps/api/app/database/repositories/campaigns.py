@@ -126,3 +126,29 @@ async def delete_campaign(conn: asyncpg.Connection, org_id: UUID, campaign_id: s
         org_id,
         campaign_id,
     )
+
+
+async def clone_for_share(
+    conn: asyncpg.Connection,
+    *,
+    org_id: UUID,
+    source_campaign_id: str,
+    new_campaign_id: str,
+    new_owner: UUID,
+) -> None:
+    """Approving a campaign share request (`sharing.py`) - goes through the
+    `SECURITY DEFINER` function `clone_campaign_for_share()` (migration
+    `b938fa82e54d`), not a plain `INSERT ... RETURNING`. A plain insert
+    fails under RLS whenever the approver isn't owner/admin/viewer: the
+    insert policy is role-only and would allow it, but `RETURNING` also
+    requires the *select* policy to pass, and an operator's select policy
+    is `created_by = self` - never true here, since the clone's owner is
+    the *requester*, not the approver running this.
+    """
+    await conn.execute(
+        "select public.clone_campaign_for_share($1, $2, $3, $4)",
+        org_id,
+        source_campaign_id,
+        new_campaign_id,
+        new_owner,
+    )

@@ -10,23 +10,30 @@ import { supabaseBrowser } from '@/lib/supabase/client';
 const DEBOUNCE_MS = 300;
 
 /**
- * Refetch trigger for Postgres Changes on one table, scoped to one organisation.
+ * Live sync for one organisation's rows in a given table.
+ *
+ * `escalations` and `share_requests` were the first two tables in this product
+ * wired to Supabase Realtime (`SYSTEM.md` F27); `channels`/`channel_members`/
+ * `messages` (team chat) followed the same pattern rather than inventing a
+ * second one - everything else is still 2.5s/4s polling.
  *
  * The `org_id=eq.${orgId}` filter is a bandwidth optimisation Supabase evaluates
  * server-side before it even considers sending an event - it is NOT the security
- * boundary. For `channels`/`messages`, row-level security (`channels_select`/
- * `messages_select`, both requiring `is_channel_member`) is what actually
- * authorises which rows a Postgres Changes event is delivered for at all: a
- * teammate who isn't a member of a channel never receives its events, no matter
- * what this hook's own filter says. Get the RLS policies right (the migration);
- * this hook is only a refetch trigger, never a permission check.
+ * boundary. Each table's own `_select` RLS policy is what actually authorises
+ * which rows a given subscriber receives events for at all - a teammate who
+ * isn't a member of a channel, or isn't the assignee/owner an escalation or
+ * share request is scoped to, never receives its events, no matter what this
+ * hook's own filter says. Get the RLS policies right; this hook is only a
+ * refetch trigger, never a permission check.
  *
  * On any insert/update/delete Realtime allows through, it calls `onChange(payload)`
  * - a refetch, not a direct cache mutation, matching every other data-loading
  * pattern in `lib/app-store.tsx`. The payload is passed through (not just an
  * empty trigger) so a caller watching one specific row - the currently open
- * conversation, say - can skip a refetch for a change that plainly isn't
+ * chat conversation, say - can skip a refetch for a change that plainly isn't
  * about it, rather than re-fetching on every org-wide event on the table.
+ * Callers that don't need it (escalations, share requests) can just as well
+ * declare `onChange: () => void` - the extra argument is harmless to ignore.
  */
 export function useOrgRealtime(
   table: string,

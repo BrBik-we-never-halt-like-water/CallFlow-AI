@@ -65,7 +65,12 @@ from sqlalchemy.dialects import postgresql
 from alembic import op
 
 revision: str = "b3f7d2a891c5"
-down_revision: str | None = "f3d8a1c6e492"
+# Rebased onto dev's head (`b938fa82e54d` - escalations, credit allocations,
+# and share requests) rather than the shared ancestor (`f3d8a1c6e492`) both
+# chains originally branched from, so chat becomes the single tip of one
+# linear chain instead of a second head next to dev's. Only this pointer
+# changed - none of dev's own migrations are touched.
+down_revision: str | None = "b938fa82e54d"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

@@ -32,14 +32,16 @@ async def create_run(
 
 async def append_outcome(
     conn: asyncpg.Connection, *, run_id: str, org_id: UUID, outcome: dict[str, Any]
-) -> None:
-    """Insert or update a contact's row.
+) -> UUID:
+    """Insert or update a contact's row. Returns the row's stable id, needed
+    to link a real `escalations` row to the outcome that triggered it - this
+    was write-only until the role-based UI roadmap's Phase 2.
 
     A live call reports several times as it progresses (queued → ringing →
     completed), so this matches on the contact rather than appending - one call
     produces one row across all its status transitions, not a row per change.
     """
-    await conn.execute(
+    row = await conn.fetchrow(
         """
         insert into public.call_outcomes
             (run_id, org_id, contact_name, phone_masked, status, provider_call_id,
@@ -66,6 +68,7 @@ async def append_outcome(
             completion_confidence_label = excluded.completion_confidence_label,
             evidence = excluded.evidence,
             attempts = excluded.attempts
+        returning id
         """,
         run_id,
         org_id,
@@ -88,6 +91,7 @@ async def append_outcome(
         outcome.get("evidence", []),
         outcome.get("attempts", []),
     )
+    return row["id"]
 
 
 async def finish_run(conn: asyncpg.Connection, run_id: str, error: str | None = None) -> None:
@@ -167,6 +171,32 @@ async def summarize_by_member(conn: asyncpg.Connection, org_id: UUID) -> list[as
         select r.started_by, u.name as started_by_name, u.avatar_url as started_by_avatar_url,
                count(distinct r.id) as total_runs,
                count(c.id) filter (where c.disposition <> 'in_flight') as total_calls
+        from public.runs r
+        left join public.call_outcomes c on c.run_id = r.id
+        left join public.users u on u.id = r.started_by
+        where r.org_id = $1
+        group by r.started_by, u.name, u.avatar_url
+        order by total_calls desc
+        """,
+        org_id,
+    )
+
+
+async def team_performance(conn: asyncpg.Connection, org_id: UUID) -> list[asyncpg.Record]:
+    """`summarize_by_member`, plus a run-status breakdown - the richer view
+    behind the team-performance dashboard panel. Same RLS reasoning as
+    `summarize_by_member`: this only returns something wider than "my own
+    row" for a connection RLS already lets see the whole org.
+    """
+    return await conn.fetch(
+        """
+        select r.started_by, u.name as started_by_name, u.avatar_url as started_by_avatar_url,
+               count(distinct r.id) as total_runs,
+               count(distinct r.id) filter (where r.status = 'running') as runs_active,
+               count(distinct r.id) filter (where r.status = 'completed') as runs_completed,
+               count(distinct r.id) filter (where r.status = 'failed') as runs_failed,
+               count(c.id) filter (where c.disposition <> 'in_flight') as total_calls,
+               count(c.id) filter (where c.disposition = 'auto_closed') as calls_closed
         from public.runs r
         left join public.call_outcomes c on c.run_id = r.id
         left join public.users u on u.id = r.started_by

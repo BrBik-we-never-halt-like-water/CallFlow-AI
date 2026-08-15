@@ -18,7 +18,10 @@ from app.auth.permissions import Permission, can_act_on_member, can_grant_role
 from app.core.config import config
 from app.database import database
 from app.database.models import OrgRole
+from app.database.repositories import credits as credits_repo
+from app.database.repositories import escalations as escalations_repo
 from app.database.repositories import organisations as org_repo
+from app.database.repositories import runs as runs_repo
 from app.integrations.email.resend import (
     EmailAPIError,
     EmailGateway,
@@ -82,6 +85,30 @@ class InviteIn(BaseModel):
 
 class RoleUpdateIn(BaseModel):
     role: str
+
+
+class TeamPerformanceOut(BaseModel):
+    user_id: str | None
+    name: str | None
+    avatar_url: str | None
+    total_runs: int
+    runs_active: int
+    runs_completed: int
+    runs_failed: int
+    total_calls: int
+    calls_closed: int
+    open_escalations: int
+    daily_allocation: int
+    credits_used_today: int
+
+
+class MyCreditsOut(BaseModel):
+    daily_allocation: int
+    used_today: int
+
+
+class CreditAllocationIn(BaseModel):
+    daily_allocation: int = Field(ge=0)
 
 
 def _row_to_org(row: asyncpg.Record) -> OrganisationOut:
@@ -346,3 +373,80 @@ async def remove_member(
                 await org_repo.remove_member(conn, user.org_id, member_user_id)
         except asyncpg.exceptions.RestrictViolationError as exc:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=exc.message) from exc
+
+
+@router.get("/me/team-performance", response_model=list[TeamPerformanceOut])
+async def team_performance(
+    user: Annotated[CurrentUser, Depends(RequirePermission(Permission.RUNS_READ_TEAM))],
+) -> list[TeamPerformanceOut]:
+    """Calls, run status, open escalations, and credits - one row per
+    teammate, for the admin/owner/viewer dashboard panel. Four separate
+    aggregates (runs, escalations, credit allocations, credit usage), each
+    already correctly scoped by its own RLS policy and each one query - not
+    a used_today lookup per member - merged here in Python rather than one
+    giant join, so each stays a straightforward query in its own repository.
+    """
+    async with database.as_user(user.auth_user_id) as conn:
+        performance_rows = await runs_repo.team_performance(conn, user.org_id)
+        open_by_member = {
+            r["member_id"]: r["open_escalations"]
+            for r in await escalations_repo.open_counts_by_member(conn, user.org_id)
+            if r["member_id"] is not None
+        }
+        allocations = {
+            r["user_id"]: r["daily_allocation"]
+            for r in await credits_repo.list_allocations(conn, user.org_id)
+        }
+        used_today_by_member = {
+            r["started_by"]: r["used_today"]
+            for r in await credits_repo.used_today_by_member(conn, user.org_id)
+            if r["started_by"] is not None
+        }
+        results = [
+            TeamPerformanceOut(
+                user_id=str(row["started_by"]) if row["started_by"] else None,
+                name=row["started_by_name"],
+                avatar_url=row["started_by_avatar_url"],
+                total_runs=row["total_runs"],
+                runs_active=row["runs_active"],
+                runs_completed=row["runs_completed"],
+                runs_failed=row["runs_failed"],
+                total_calls=row["total_calls"],
+                calls_closed=row["calls_closed"],
+                open_escalations=open_by_member.get(row["started_by"], 0),
+                daily_allocation=allocations.get(row["started_by"], 0),
+                credits_used_today=used_today_by_member.get(row["started_by"], 0),
+            )
+            for row in performance_rows
+        ]
+    return results
+
+
+@router.get("/me/members/me/credits", response_model=MyCreditsOut)
+async def my_credits(user: Annotated[CurrentUser, Depends(current_user)]) -> MyCreditsOut:
+    """Your own credit allocation and today's usage - no permission beyond
+    being signed in, since RLS already scopes `member_credit_allocations`
+    to your own row (or the whole org, for admin/owner/viewer)."""
+    async with database.as_user(user.auth_user_id) as conn:
+        allocation = await credits_repo.get_allocation(conn, user.org_id, user.id)
+        used = await credits_repo.used_today(conn, user.org_id, user.id)
+    return MyCreditsOut(daily_allocation=allocation, used_today=used)
+
+
+@router.patch("/me/members/{member_user_id}/credits", status_code=status.HTTP_204_NO_CONTENT)
+async def set_member_credits(
+    member_user_id: UUID,
+    body: CreditAllocationIn,
+    user: Annotated[CurrentUser, Depends(RequirePermission(Permission.CREDITS_WRITE))],
+) -> None:
+    async with database.as_user(user.auth_user_id) as conn:
+        role = await org_repo.get_member_role(conn, user.org_id, member_user_id)
+        if role is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Member not found.")
+        await credits_repo.set_allocation(
+            conn,
+            org_id=user.org_id,
+            user_id=member_user_id,
+            daily_allocation=body.daily_allocation,
+            updated_by=user.id,
+        )

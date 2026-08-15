@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.routes.api_keys import router as api_keys_router
 from app.api.v1.routes.campaigns import router as campaigns_router
+from app.api.v1.routes.escalations import router as escalations_router
 from app.api.v1.routes.integrations import router as integrations_router
 from app.api.v1.routes.invitations import router as invitations_router
 from app.api.v1.routes.messages import router as messages_router
@@ -19,8 +20,8 @@ from app.api.v1.routes.organisations import router as organisations_router
 from app.api.v1.routes.profile import router as profile_router
 from app.api.v1.routes.runs import router as runs_router
 from app.api.v1.routes.safety import router as safety_router
+from app.api.v1.routes.sharing import router as sharing_router
 from app.api.v1.routes.suppressions import router as suppressions_router
-from app.api.v1.routes.webhooks import router as webhooks_router
 from app.core.config import config
 from app.core.logging import configure_logging
 from app.database import database
@@ -70,12 +71,13 @@ app.include_router(profile_router)
 app.include_router(organisations_router)
 app.include_router(invitations_router)
 app.include_router(campaigns_router)
+app.include_router(escalations_router)
 app.include_router(runs_router)
 app.include_router(safety_router)
+app.include_router(sharing_router)
 app.include_router(suppressions_router)
 app.include_router(api_keys_router)
 app.include_router(integrations_router)
-app.include_router(webhooks_router)
 app.include_router(messages_router)
 
 
@@ -94,9 +96,14 @@ def health() -> dict[str, Any]:
     """Unauthenticated, so this can only report the deployment's own defaults -
     not any organisation's live usage or override. `GET /api/v1/safety` (signed
     in) is where a real `used_today` lives now that the limiter is org-scoped."""
+    # Hard-coded false, not a missing key: CALL-E is gone and the LiveKit
+    # origination path (RUNBOOK_HET_PART_1.md P1-T6) does not exist yet, so no
+    # deployment can place a call regardless of how it is configured. Every
+    # surface that used to read `api_key_configured` reads this instead, and
+    # must keep saying "unavailable" until origination actually works.
     return {
         "ok": True,
-        "api_key_configured": bool(config.api_key),
+        "calling_available": False,
         "max_calls_per_run": config.max_calls_per_run,
         "allowlist_active": bool(config.allowlist),
         "limits": {
