@@ -27,7 +27,6 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Tooltip } from '@/components/ui/tooltip';
 import { VRule } from '@/components/ui/rule';
-import { ThemeToggle } from '@/components/ui/theme-toggle';
 import { useActiveOrg } from '@/lib/hooks/use-active-org';
 import { useOrganisations } from '@/lib/hooks/use-organisations';
 import { hasRole } from '@/lib/hooks/use-permission';
@@ -351,18 +350,6 @@ function AppSidebar({
           collapsed ? 'items-center border-transparent' : 'border-rule',
         )}
       >
-        {/* Sits with the account/settings rows rather than in the top bar:
-            theme is a preference about this person's machine, which is what
-            this footer already collects. Hidden when the sidebar is collapsed
-            - the segmented control has no icon-only form, and squeezing one
-            into a 40px rail would make it the least legible thing here. */}
-        {!collapsed ? (
-          <div className="flex items-center justify-between px-2.5 py-1.5">
-            <span className="text-small text-text-mute">Theme</span>
-            <ThemeToggle />
-          </div>
-        ) : null}
-
         <ProfileFooterLink
           profile={profile}
           collapsed={collapsed}
