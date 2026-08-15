@@ -66,9 +66,19 @@ class StubSip:
         )()
 
 
+class StubDispatch:
+    def __init__(self) -> None:
+        self.requests: list[Any] = []
+
+    async def create_dispatch(self, request: Any) -> Any:
+        self.requests.append(request)
+        return type("Dispatch", (), {"id": "AD_1"})()
+
+
 class StubClient:
     def __init__(self, sip: StubSip) -> None:
         self.sip = sip
+        self.agent_dispatch = StubDispatch()
         self.closed = False
 
     async def aclose(self) -> None:
@@ -88,6 +98,7 @@ def _gateway(sip: StubSip | None = None) -> tuple[LiveKitGateway, StubSip, list[
         url="wss://test.livekit.cloud",
         api_key="k",
         api_secret="s",
+        agent_name="callflow-voice",
         client_factory=factory,
     )
     return gateway, stub_sip, made
@@ -99,6 +110,50 @@ def _twirp(code: str, *, sip_status: int | None = None) -> EngineError:
 
 
 # --- configuration ------------------------------------------------------------
+
+
+async def test_the_agent_is_dispatched_before_the_call_connects() -> None:
+    """An answered call with no agent in the room is a person saying "hello?"
+    into silence. LiveKit holds a dispatch for a room that does not exist yet,
+    so dispatching first is safe and means the worker is already waiting."""
+    gateway, _sip, made = _gateway()
+    async with gateway as g:
+        await g.start_call(
+            trunk_id="T",
+            phone="+15555550100",
+            room_name="r",
+            participant_identity="c",
+            metadata={"goal": "Ask about Bali."},
+        )
+
+    dispatches = made[0].agent_dispatch.requests
+    assert len(dispatches) == 1
+    assert dispatches[0].agent_name == "callflow-voice"
+    assert dispatches[0].room == "r"
+    # The worker reads this as ctx.job.metadata.
+    assert "Bali" in dispatches[0].metadata
+
+
+async def test_no_agent_name_means_no_dispatch() -> None:
+    """A verification call only has to prove the trunk carries audio - there is
+    no conversation to hold, so putting a worker in the room would be waste."""
+    stub_sip = StubSip()
+    made: list[StubClient] = []
+
+    def factory(*, url: str, api_key: str, api_secret: str) -> StubClient:
+        client = StubClient(stub_sip)
+        made.append(client)
+        return client
+
+    gateway = LiveKitGateway(
+        url="wss://x", api_key="k", api_secret="s", agent_name="", client_factory=factory
+    )
+    async with gateway as g:
+        await g.start_call(
+            trunk_id="T", phone="+15555550100", room_name="r", participant_identity="c"
+        )
+
+    assert made[0].agent_dispatch.requests == []
 
 
 def test_an_unconfigured_gateway_refuses_to_construct() -> None:

@@ -23,7 +23,7 @@ is beyond `CALLFLOW_ENV`.
 | Branch | `main` | `dev` |
 | Directory | `/var/www/callflow-ai` | `/var/www/callflow-ai-dev` |
 | Hostname | `calllflow.com` | `dev.calllflow.com` |
-| pm2 processes | `callflow-api`, `callflow-web` | `callflow-api-dev`, `callflow-web-dev` |
+| pm2 processes | `callflow-api`, `callflow-voice`, `callflow-web` | `callflow-api-dev`, `callflow-voice-dev`, `callflow-web-dev` |
 | Ports | 8000 (api), **3001** (web) | 8001 (api), 3003 (web) |
 | Supabase project | the production project | **a separate project** |
 
@@ -309,6 +309,26 @@ Skipped entirely when only the frontend changed. `alembic.ini` sets `script_loca
 running it from the repo root with `-c` finds no migrations and silently upgrades nothing.
 
 **`deploy-api`** → `pm2 startOrRestart` the API, `pm2 save`, health-check `/api/health`.
+
+**`callflow-voice`** is the third process, added with the platform pivot. It is a
+long-running worker, not a server: it holds a websocket out to LiveKit and waits to be
+dispatched into rooms. So it claims **no port**, nginx does not front it, and there is
+nothing to add to the port table or to check with `ss -ltnp` before deploying it.
+
+It shares the repo-root `.venv` with the API, but its plugins are optional extras - a
+deployment installs only the vendors its organisations actually use, because each
+`livekit-plugins-*` package pulls a large dependency tree:
+
+```bash
+cd apps/voice-runtime
+../../.venv/bin/pip install -e ".[sarvam,openai,silero]"   # plus deepgram/elevenlabs if used
+```
+
+Its health check is that it starts at all: `python -m app.worker start` refuses to run
+with a clear list of missing variables rather than booting into a state where it answers
+calls and cannot report them. `LIVEKIT_AGENT_NAME` must match on both processes - if the
+API dispatches a name the worker has not registered, calls connect to silence and nothing
+in either log says why.
 
 **`deploy-web`** → `npm ci && npm run build` with `NEXT_PUBLIC_API_URL` set to
 `PUBLIC_URL`, restart, `pm2 save`, health-check `/`.

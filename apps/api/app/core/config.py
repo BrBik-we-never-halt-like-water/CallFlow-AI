@@ -134,6 +134,12 @@ class Config:
     livekit_url: str = field(default_factory=lambda: os.getenv("LIVEKIT_URL", "").rstrip("/"))
     livekit_api_key: str = field(default_factory=lambda: os.getenv("LIVEKIT_API_KEY", ""))
     livekit_api_secret: str = field(default_factory=lambda: os.getenv("LIVEKIT_API_SECRET", ""))
+    # The registered name of the voice-runtime worker, used to dispatch it
+    # into a room before the call connects. Must match the worker's own
+    # `agent_name`, or the call is answered by nobody.
+    livekit_agent_name: str = field(
+        default_factory=lambda: os.getenv("LIVEKIT_AGENT_NAME", "callflow-voice")
+    )
 
     # Shared secret the voice runtime presents when it reports a finished call.
     # That worker is a separate process with no Supabase session, so this is the

@@ -56,6 +56,27 @@ module.exports = {
       env: { CALLFLOW_ENV: isDev ? 'dev' : 'production' },
     },
     {
+      name: `callflow-voice${suffix}`,
+      cwd: `${__dirname}/apps/voice-runtime`,
+      // No port, and none needed: this is a long-running worker that dials out
+      // to LiveKit and holds a websocket, not a server anything connects to. So
+      // there is nothing for nginx to front and nothing to check against
+      // `ss -ltnp` before deploying it.
+      script: `${__dirname}/.venv/bin/python`,
+      // `-m` rather than a file path so `app.config`/`app.pipeline` resolve;
+      // `start` is livekit-agents' own subcommand for production (`dev` adds
+      // file watching and is not what you want under pm2).
+      args: '-m app.worker start',
+      interpreter: 'none',
+      // One process. livekit-agents runs each job in its own subprocess and
+      // handles concurrency itself, so a second pm2 instance would register a
+      // second worker against the same agent name and both would compete for
+      // the same dispatches.
+      // ponytail: single worker; raise this only once measured call volume,
+      // not guesswork, says one is not enough.
+      env: { CALLFLOW_ENV: isDev ? 'dev' : 'production' },
+    },
+    {
       name: `callflow-web${suffix}`,
       cwd: `${__dirname}/apps/web`,
       // next directly rather than `npm run start`: npm adds a wrapper process

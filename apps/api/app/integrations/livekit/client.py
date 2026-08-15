@@ -153,11 +153,16 @@ class LiveKitGateway:
         url: str | None = None,
         api_key: str | None = None,
         api_secret: str | None = None,
+        agent_name: str | None = None,
         client_factory: _VendorClientFactory | None = None,
     ) -> None:
         self._url = url if url is not None else config.livekit_url
         self._api_key = api_key if api_key is not None else config.livekit_api_key
         self._api_secret = api_secret if api_secret is not None else config.livekit_api_secret
+        # Which registered worker to put in the room. Empty means "don't
+        # dispatch" - useful for a verification call that only needs to prove
+        # the trunk carries audio, with no conversation to hold.
+        self._agent_name = agent_name if agent_name is not None else config.livekit_agent_name
         self._client_factory = client_factory or _default_factory
         self._client: Any | None = None
 
@@ -183,11 +188,19 @@ class LiveKitGateway:
 
     @property
     def _sip(self) -> Any:
+        return self._open_client.sip
+
+    @property
+    def _dispatch(self) -> Any:
+        return self._open_client.agent_dispatch
+
+    @property
+    def _open_client(self) -> Any:
         if self._client is None:
             raise RuntimeError(
                 "LiveKitGateway is not open. Use `async with LiveKitGateway() as gateway:`."
             )
-        return self._client.sip
+        return self._client
 
     async def create_inbound_trunk(
         self, *, name: str, numbers: list[str], allowed_addresses: list[str] | None = None
@@ -284,22 +297,36 @@ class LiveKitGateway:
         how they stop agreeing.
 
         `metadata` is how the worker learns what this call is for - the rendered
-        goal, the campaign, the contact's own context. It is JSON-encoded onto
-        the participant. **It must never carry the dialled number**: participant
-        metadata is visible to everything in the room and reaches LiveKit's own
-        logs and webhooks, all outside CallFlow's redaction filter.
+        goal, the campaign, the contact's own context. It is JSON-encoded and
+        attached to the **agent dispatch**, which is where the worker reads it
+        from (`ctx.job.metadata`). **It must never carry the dialled number**:
+        it reaches LiveKit's own logs and dashboards, outside CallFlow's
+        redaction filter.
+
+        The dispatch is created *before* the call, deliberately. An answered
+        call with no agent in the room is a person saying "hello?" into silence;
+        dispatching first means the worker is already waiting. LiveKit holds a
+        dispatch for a room that does not exist yet, so the ordering is safe.
 
         `max_call_duration_seconds` is a hard ceiling the carrier enforces even
         if the worker hangs - without it, a wedged agent bills for a call that
         never ends.
         """
+        if self._agent_name:
+            await self._dispatch.create_dispatch(
+                _vendor_api.CreateAgentDispatchRequest(
+                    agent_name=self._agent_name,
+                    room=room_name,
+                    metadata=_json.dumps(metadata) if metadata else "",
+                )
+            )
+
         request = _vendor_api.CreateSIPParticipantRequest(
             sip_trunk_id=trunk_id,
             sip_call_to=phone,
             room_name=room_name,
             participant_identity=participant_identity,
             participant_name=participant_name or participant_identity,
-            participant_metadata=_json.dumps(metadata) if metadata else "",
             wait_until_answered=wait_until_answered,
         )
         if max_call_duration_seconds is not None:
