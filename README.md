@@ -17,6 +17,8 @@ extracts typed results, and escalates only what needs a person.
 
 ---
 
+**Setting up locally?** Start with [DEV_SETUP.md](DEV_SETUP.md) - prerequisites, a one-command local database, and how to run the tests that CI cannot.
+
 ## The problem
 
 Outbound calling costs enormous manual effort and buys you no visibility.
