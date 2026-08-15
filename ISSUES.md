@@ -2836,6 +2836,68 @@ tests were removed; `RUNBOOK_HET_PART_1.md` P1-T7 rewrites them against the Live
 
 **Blocks:** every other CallFlow feature that needs a live call. **Depends on:** nothing.
 
+### #78 - A run reported itself completed while its calls were still happening
+
+**S2 · FIXED · api · `apps/api/app/api/v1/routes/runs.py`, `apps/api/app/database/repositories/runs.py`**
+
+Introduced and fixed inside the same phase, recorded because the shape of it will recur
+anywhere else this codebase swaps a request/response vendor for an event-driven one.
+
+CALL-E could be polled to completion, so `CampaignRunner.run()` returning meant every call
+had finished, and `_run_and_persist` correctly called `finish_run()` immediately after.
+LiveKit is not that: origination returns when a call is **answered**, and the conversation
+then continues in a room this process is not in. The same line therefore started marking
+runs `completed` while their own `call_outcomes` rows still read "In conversation…".
+
+**Impact.** A finished-looking run alongside live, unresolved rows - the exact fake success
+state CLAUDE.md non-negotiable #9 exists to prevent. Nothing errored; the dashboard simply
+lied, and the real outcomes would have landed afterwards against a run already closed.
+
+**Fix.** `finish_run()` is replaced on that path by `finish_if_all_settled()`, which closes
+a run only once no outcome is still in flight. Whichever worker callback settles the last
+contact is the one that closes it. Idempotent by a `finished_at is null` guard inside a
+single statement, so the concurrent callbacks a multi-contact run produces cannot both
+close it - asserted directly, along with the all-blocked case still closing immediately
+because those contacts settle on the spot.
+
+**Depends on:** `#77`. **Blocks:** nothing.
+
+### #79 - A provisioning retry could never resume, because every failure was terminal
+
+**S2 · FIXED · api · `apps/api/app/services/number_provisioning.py`, `apps/api/app/database/repositories/telephony_provisioning.py`**
+
+`telephony_provisioning` exists to stop a retried "connect number" attempt creating a
+second LiveKit trunk that nobody will ever clean up. The first implementation of the
+workflow marked **any** step failure as `failed`, and `failed` is terminal in the status
+machine (`domain/provisioning.py`) - so a retry with the same idempotency key was refused,
+and the resume logic the whole module was built around could not execute at all.
+
+Found by its own tests: the resume test had to perform an illegal `failed → provisioning`
+transition to set itself up, which is what exposed that the production path could never
+reach the state it was testing.
+
+**Impact.** Latent rather than shipped - no provisioning has run against a live account
+yet. Had it shipped: every carrier hiccup would have forced a fresh attempt, and each
+fresh attempt would have created another orphaned LiveKit inbound trunk and dispatch rule,
+silently, with nothing in the product ever mentioning them.
+
+**Fix.** `record_error()` notes why a step failed **without** ending the attempt, so the
+row stays `provisioning` and remains resumable - which is what `PLATFORM_PIVOT_PLAN.md`
+ADR-4 specified in the first place ("the row stays provisioning with last_error set"), and
+which the first implementation quietly contradicted. `failed` now means superseded, set by
+`supersede_unfinished()` when a newer attempt starts, so an agent cannot accumulate rows
+that look live forever. The superseded row keeps its own `last_error` rather than having it
+overwritten with "superseded" - that message is the only useful diagnostic on the row.
+
+A related trap avoided in the same pass: the SIP username and password LiveKit and the
+carrier must agree on are derived by HMAC from the attempt's idempotency key rather than
+generated randomly, so a resumed attempt reproduces them exactly. Regenerating would leave
+LiveKit dialling with a password the carrier no longer expects - a failure that surfaces
+only as outbound calls being silently rejected, with both systems reporting themselves
+healthy.
+
+**Depends on:** `#77`.
+
 ## Template for the next iteration
 
 ```

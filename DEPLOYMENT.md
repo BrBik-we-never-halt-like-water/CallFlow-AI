@@ -80,7 +80,7 @@ Four env values cap that, and the defaults are not the safe ones:
 
 | Value | Dev setting | What it does |
 | --- | --- | --- |
-| `CALLE_API_KEY` | **empty** | No key, no calls. Every run is refused with a clear error |
+| `LIVEKIT_SIP_HOST` | **empty** | No connected number, no calls. Every contact is refused with a clear reason |
 | `CALLFLOW_ALLOWLIST` | **your own number** | The one that matters - see below |
 | `CALLFLOW_MAX_CALLS_PER_RUN` | `2` | Hard stop per run regardless of list length |
 | `CALLFLOW_DAILY_BUDGET` | `5` | Shared daily ceiling |
