@@ -273,7 +273,81 @@ class ProviderCredential(TimestampedMixin, Base):
     phone_number: Mapped[str | None] = mapped_column(String(20))
 
 
+class AiProviderCredential(TimestampedMixin, Base):
+    """An org's own API key for an AI vendor used by its voice agents.
+
+    `api_key_encrypted` is Fernet ciphertext, never plaintext - see
+    `app/core/crypto.py`. One row per organisation per provider. Deliberately
+    a separate table from `ProviderCredential`: that one holds Twilio/Plivo
+    telephony credentials (identifier + secret); this one holds single-API-key
+    STT/TTS/LLM vendors.
+    """
+
+    __tablename__ = "ai_provider_credentials"
+    __table_args__ = (
+        UniqueConstraint("org_id", "provider", name="ai_provider_credentials_org_provider_key"),
+        CheckConstraint(
+            "provider in ('sarvam', 'deepgram', 'elevenlabs', 'openai', 'openrouter')",
+            name="ai_provider_credentials_provider_check",
+        ),
+        Index("ai_provider_credentials_org_idx", "org_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organisations.id", ondelete="CASCADE"), nullable=False
+    )
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    provider: Mapped[str] = mapped_column(Text, nullable=False)
+    label: Mapped[str | None] = mapped_column(Text)
+    api_key_encrypted: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class VoiceAgent(TimestampedMixin, Base):
+    """A voice agent's configuration: which STT/TTS/LLM vendors and voice it
+    uses, and the prompt or prebuilt persona that drives the conversation.
+
+    Read access is org-wide, not per-creator - an agent is infrastructure a
+    whole team dials against, not personal work product like a campaign.
+    """
+
+    __tablename__ = "voice_agents"
+    __table_args__ = (
+        CheckConstraint("kind in ('custom', 'prebuilt')", name="voice_agents_kind_check"),
+        CheckConstraint(
+            "telephony_provider in ('twilio', 'plivo')",
+            name="voice_agents_telephony_provider_check",
+        ),
+        Index("voice_agents_org_idx", "org_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organisations.id", ondelete="CASCADE"), nullable=False
+    )
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    kind: Mapped[str] = mapped_column(Text, nullable=False, server_default="custom")
+    stt_provider: Mapped[str | None] = mapped_column(Text)
+    tts_provider: Mapped[str | None] = mapped_column(Text)
+    llm_provider: Mapped[str | None] = mapped_column(Text, server_default="openrouter")
+    llm_model: Mapped[str | None] = mapped_column(Text)
+    voice_id: Mapped[str | None] = mapped_column(Text)
+    system_prompt: Mapped[str | None] = mapped_column(Text)
+    prebuilt_persona: Mapped[str | None] = mapped_column(Text)
+    telephony_provider: Mapped[str | None] = mapped_column(Text)
+
+
 __all__ = [
+    "AiProviderCredential",
     "ApiKey",
     "Base",
     "Membership",
@@ -283,6 +357,7 @@ __all__ = [
     "Suppression",
     "SuppressionSource",
     "User",
+    "VoiceAgent",
     "org_role_enum",
     "suppression_source_enum",
 ]
