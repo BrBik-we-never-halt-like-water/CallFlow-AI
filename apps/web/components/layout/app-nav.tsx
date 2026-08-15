@@ -8,6 +8,7 @@ import {
   GaugeIcon,
   GearSixIcon,
   MegaphoneIcon,
+  RobotIcon,
   UserFocusIcon,
 } from '@phosphor-icons/react/dist/ssr';
 import Link from 'next/link';
@@ -25,15 +26,17 @@ export interface NavItem {
 }
 
 /**
- * Every /app/* destination. The sidebar (`AppShell`'s `AppSidebar`) renders the
- * first five as its primary nav list; `Organisation` and `Settings` are lower-
- * frequency and live in the account menu (`UserMenu`) instead - folding them
- * into the sidebar too would mean either compressing type or cramming seven
- * links into one column, both worse than one extra click for a rare action.
+ * Every /app/* destination. The sidebar (`AppShell`'s `AppSidebar`) renders
+ * everything but the last two as its primary nav list; `Organisation` and
+ * `Settings` are lower-frequency and live in the account menu (`UserMenu`)
+ * instead - folding them into the sidebar too would mean either compressing
+ * type or cramming eight links into one column, both worse than one extra
+ * click for a rare action.
  */
 export const NAV_ITEMS: Omit<NavItem, 'badge'>[] = [
   { label: 'Dashboard', href: '/app', icon: GaugeIcon },
   { label: 'Campaigns', href: '/app/campaigns', icon: MegaphoneIcon },
+  { label: 'Agents', href: '/app/agentic', icon: RobotIcon },
   { label: 'Runs', href: '/app/runs', icon: BroadcastIcon },
   { label: 'Needs a person', href: '/app/escalations', icon: UserFocusIcon },
   { label: 'Contacts', href: '/app/contacts', icon: AddressBookIcon },
@@ -41,7 +44,8 @@ export const NAV_ITEMS: Omit<NavItem, 'badge'>[] = [
   { label: 'Settings', href: '/app/settings', icon: GearSixIcon },
 ];
 
-/** The five destinations shown as the sidebar's primary nav list. */
+/** The destinations shown as the sidebar's primary nav list - everything
+ *  except `Organisation` and `Settings` (see the account menu note above). */
 export const PRIMARY_NAV_ITEMS = NAV_ITEMS.filter(
   (item) => item.href !== '/app/organisation' && item.href !== '/app/settings',
 );
