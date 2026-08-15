@@ -185,7 +185,10 @@ async def _validate_agent_fields(
 
     if body.telephony_provider is not None:
         telephony_rows = await provider_credentials_repo.list_for_org(conn, org_id)
-        connected = {r["provider"] for r in telephony_rows}
+        # A credential row with no phone_number set isn't a usable connection -
+        # same "connected" definition provider_catalog() uses for its picker,
+        # so an agent can never be assigned a number-less telephony provider.
+        connected = {r["provider"] for r in telephony_rows if r["phone_number"]}
         if body.telephony_provider not in connected:
             display = _TELEPHONY_DISPLAY_NAMES[body.telephony_provider]
             raise HTTPException(
