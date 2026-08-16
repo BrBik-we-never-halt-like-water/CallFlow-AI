@@ -1,275 +1,155 @@
-# Local setup
+# Running CallFlow AI locally
 
-Everything needed to run CallFlow on your own machine, including a real
-database. Follow it top to bottom on a new checkout; it takes about ten minutes,
-most of which is downloads.
-
-> **The one rule.** Never point `DATABASE_URL` at a shared Supabase project.
-> That is not a style preference: it is how production ended up carrying six
-> tables no merged branch described, ~40 users created by the RLS test suite,
-> and a migration pointer naming a revision that existed only on somebody's
-> laptop (`ISSUES.md` #80). A local database exists precisely so nobody needs to.
-
----
-
-## 1. Prerequisites
-
-| Tool | Version | Check |
-| --- | --- | --- |
-| Node | 20+ | `node --version` |
-| Python | 3.11+ | `python --version` |
-| PostgreSQL **client + server binaries** | 16+ | `initdb --version` |
-
-You need Postgres *installed*, not *running* — the tooling starts its own
-instance on a private port and never touches a system one.
+One command. Everything in containers - Postgres, Supabase auth, storage,
+Realtime, Studio, plus the API, the voice worker and the web app.
 
 ```bash
-# Windows
-scoop install postgresql        # or the EDB installer
-
-# macOS
-brew install postgresql@17
-
-# Debian/Ubuntu
-sudo apt install postgresql
+npm run local
 ```
 
-If the binaries live somewhere unusual, set `PGBIN` to that `bin` directory and
-everything below still works.
+First run pulls images and builds; give it a few minutes. After that:
 
----
-
-## 2. Install
-
-```bash
-git clone git@github.com:BrBik-we-never-halt-like-water/CallFlow-AI.git
-cd CallFlow-AI
-
-python -m venv .venv                       # one venv at the repo root, shared by both Python apps
-.venv/Scripts/python -m pip install -e "apps/api[dev]"      # Windows
-# .venv/bin/python  -m pip install -e "apps/api[dev]"       # macOS / Linux
-
-npm ci --prefix apps/web
-```
-
-The voice runtime is optional until you're working on calls:
-
-```bash
-cd apps/voice-runtime
-../../.venv/Scripts/pip install -e ".[sarvam,openai,silero]"
-```
-
-Its STT/TTS/LLM plugins are **extras on purpose** — each pulls a large dependency
-tree, and a deployment should install only the vendors its organisations use.
-
----
-
-## 3. The database
-
-```bash
-npm run dev:db
-```
-
-That single command creates a cluster, applies a Supabase shim, runs every
-migration, and prints the connection string. First run ~15s; after that ~5s.
-
-| Command | What it does |
+| | |
 | --- | --- |
-| `npm run dev:db` | Start it and bring the schema to head |
-| `npm run dev:db:status` | Which revision, how many tables |
-| `npm run dev:db:reset` | Wipe and rebuild — the fast way back to a clean slate |
-| `npm run dev:db:down` | Stop it; data survives |
-| `npm run dev:db:destroy` | Delete the cluster entirely |
+| Web | http://localhost:3000 |
+| API | http://localhost:8000/api/health |
+| Studio (browse the database) | http://localhost:54323 |
+| Supabase gateway | http://localhost:54321 |
 
-It runs on **127.0.0.1:55432**, not 5432, so it cannot collide with a Postgres
-you already have.
-
-### What the shim is, and is not
-
-`scripts/local-db/supabase-shim.sql` provides the minimum Supabase surface the
-migrations reference: `auth.users`, `auth.uid()`, `storage.buckets` /
-`storage.objects`, and the `anon` / `authenticated` / `service_role` roles.
-
-That is enough for **every RLS policy in this schema to evaluate for real** —
-the role switch, `auth.uid()`, and cross-tenant filtering all behave as they do
-in production. It is not a Supabase replica: no GoTrue, no Studio, no realtime.
-
-### When you need the real thing
-
-For work that touches signup, password reset, or storage uploads, use the
-Supabase CLI instead — it runs actual GoTrue and Storage in Docker:
-
-```bash
-npm i -g supabase
-supabase start          # needs a running Docker daemon
-```
-
-Point `DATABASE_URL` at the URL it prints, then `npm run db:migrate`.
-
-The local-Postgres path above is the default because it needs no Docker, and an
-onboarding step that fails when Docker is asleep is one people route around.
+Then **sign up at http://localhost:3000/signup**. Auth runs locally, so the
+signup trigger creates your organisation and you land straight in it.
 
 ---
 
-## 4. Environment
+## Why containers, and why this replaced the old script
 
-```bash
-cp .env.example .env
-```
+`npm run dev:db` used to start a native Postgres with a hand-written
+`auth.users` shim. That could never work end to end, for a reason worth
+understanding before you reach for a shortcut:
 
-Then fill in the four things nothing works without:
+**Supabase Auth is a separate service from Supabase Postgres.** Signing up talks
+to an auth *server* (GoTrue). With a local database but hosted auth, your account
+is created in the hosted project and the local database never sees it - so the
+`on_auth_user_created` trigger never fires, you have no `public.users` row, no
+organisation, and the app tells you your account is not attached to one. Every
+developer then needed their user mirrored into the local database by hand.
 
-```bash
-# from `npm run dev:db` - your own, never a shared project
-DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:55432/callflow_dev
-DIRECT_URL=postgresql://postgres:postgres@127.0.0.1:55432/callflow_dev
+Running real GoTrue against the local Postgres closes that gap, and GoTrue needs
+a container. That is the whole reason this exists.
 
-# encrypts stored provider credentials AND derives every SIP trunk password.
-# python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
-PROVIDER_CREDENTIALS_KEY=
-
-# the voice runtime presents this when reporting a finished call
-# openssl rand -hex 32
-CALLFLOW_INTERNAL_API_SECRET=
-```
-
-**Never rotate `PROVIDER_CREDENTIALS_KEY` once a number is connected.** It
-decrypts stored credentials *and* derives trunk passwords, so changing it makes
-existing credentials unreadable and silently breaks outbound calls.
-
-Supabase auth values (`SUPABASE_URL`, `SUPABASE_JWKS_URL`, …) are only needed to
-sign in through the web app. Ask a teammate for a dev project's values, or run
-`supabase start` and use its own.
-
-### Before you dial anything
-
-```bash
-CALLFLOW_ALLOWLIST=+<your own number in E.164>
-```
-
-While the allowlist is non-empty, that is the only number that can be dialled.
-**An empty allowlist means no restriction, not total restriction** — see
-`DEPLOYMENT.md`. On a full (non-trial) carrier account it is the only thing
-between a test run and a stranger's phone.
+The second reason is sharper. Pointing `DATABASE_URL` at the shared Supabase
+project and running a feature branch's migrations has now corrupted **two**
+databases - production in August (`ISSUES.md` #80) and dev again a week later,
+which stranded it on a revision that exists in no branch and had to be rebuilt
+from scratch. A local stack removes the temptation instead of documenting it.
 
 ---
 
-## 5. Run it
+## Requirements
 
-Three processes; each is independent.
+**Docker Desktop** (Windows/macOS) or **Docker Engine + Compose v2** (Linux).
+Nothing else - no Python, no Node, no Postgres on your machine.
 
-```bash
-# API                      http://127.0.0.1:8000
-cd apps/api && ../../.venv/Scripts/uvicorn app.main:app --reload --port 8000
+The stack needs roughly **4 GB of RAM** and about 6 GB of disk.
 
-# Web                      http://localhost:3000
-cd apps/web && npm run dev
+### Windows: virtualisation must be on
 
-# Voice runtime (only when working on live calls)
-cd apps/voice-runtime && ../../.venv/Scripts/python -m app.worker dev
-```
+Docker Desktop needs hardware virtualisation. If it starts with *"Virtualization
+support not detected"*:
 
-The worker refuses to start without its configuration and names every missing
-variable, so a wrong `.env` fails immediately rather than at call time.
+1. **BIOS** - reboot, enter setup (Dell: `F2`), enable **Intel VT-x** /
+   **AMD-V**, sometimes listed under Virtualization Support.
+2. **Windows features** - in an *admin* PowerShell:
+   ```powershell
+   wsl --install
+   dism /online /Enable-Feature /FeatureName:VirtualMachinePlatform /All /NoRestart
+   ```
+   then reboot.
+3. Check it took:
+   ```powershell
+   (Get-CimInstance Win32_Processor).VirtualizationFirmwareEnabled   # want True
+   ```
 
----
-
-## 6. Tests
-
-```bash
-cd apps/api && ../../.venv/Scripts/python -m pytest -q
-```
-
-**With no `DATABASE_URL` you get ~186 passed and ~85 skipped.** The skipped ones
-are the tenant-isolation tests, and they are the ones that matter most — a
-policy that looks right and permits a cross-tenant read is the most expensive
-bug this product can ship. Run them:
-
-```bash
-npm run dev:db                                   # if it isn't already up
-cd apps/api
-DATABASE_URL=$(node ../../scripts/dev-db.js url) \
-DIRECT_URL=$(node ../../scripts/dev-db.js url) \
-  ../../.venv/Scripts/python -m pytest -q        # 355 passed, 0 skipped
-```
-
-CI runs without a database, so **these only ever run if you run them.** Do it
-before touching RLS, a migration, or anything with `org_id` in it.
-
-Everything else:
-
-```bash
-cd apps/api && ../../.venv/Scripts/ruff check app tests
-cd apps/voice-runtime && ../../.venv/Scripts/python -m pytest -q   # 35
-cd apps/web && npm run lint && npm run type-check && npm run build
-```
-
-Enable the pre-commit hook once and it runs the important ones for you:
-
-```bash
-git config core.hooksPath .githooks
-```
+On a managed laptop, Credential Guard or a VBS policy can hold the hypervisor
+and leave `VirtualizationFirmwareEnabled` at `False` no matter what the BIOS
+says. That needs IT, not a setting you can change.
 
 ---
 
-## 7. Migrations
+## Commands
 
 ```bash
-npm run db:generate -- -m "what changed"   # autogenerate a revision
-npm run db:migrate                          # upgrade head
+npm run local            # start everything
+npm run local:down       # stop, keeping data
+npm run local:reset -- --yes   # wipe the database and replay migrations
+npm run local:logs       # follow everything
+npm run local:logs api   # or one service: api, web, voice, db, auth...
+npm run local:status     # what is running
+npm run local:migrate    # run migrations only
 ```
 
-These drive **whatever `.env` points at** — which is why §4 insists that is your
-own database.
-
-Three things autogenerate cannot see, and you must hand-write into the revision:
-RLS (`enable` *and* `force`), a policy per operation, and a `grant` for
-`authenticated`. A tenant table missing any of them is a data leak, not a
-style issue. Copy the shape from
-`alembic/versions/202608151200_voice_agents_and_telephony_provisioning.py`.
-
-Then prove it with a cross-tenant test that hits the database — `tests/test_rls_isolation.py`
-has the pattern.
-
-### Adding a migration while someone else is
-
-Alembic allows only one head. Before you push, check:
-
-```bash
-cd apps/api && ../../.venv/Scripts/python -m alembic heads
-```
-
-Two heads means two revisions claim the same parent, and `upgrade head` then
-fails for everyone. Set your `down_revision` to whatever is on `dev`, not to
-whatever was there when you branched.
+Source is bind-mounted, so `uvicorn --reload` and Next fast refresh both work -
+edit on the host, the container picks it up. **Rebuild only when a dependency
+changes**: `docker compose build api` from `docker/`.
 
 ---
 
-## 8. When something is wrong
+## Configuration
 
-| Symptom | Cause | Fix |
+`docker/.env` is created from `docker/.env.example` on first run and is
+gitignored. Every default in it is local-only and safe: the JWT secret and the
+anon/service keys derived from it are the values Supabase's own self-hosting
+guide uses, so the key printed here is the key you actually have, and nothing
+listens outside localhost.
+
+**To place a real call** you also need a LiveKit project. Fill in `LIVEKIT_URL`,
+`LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` and `LIVEKIT_SIP_HOST`, then
+`npm run local`. Without them everything else works: the API refuses to build a
+gateway and the voice worker refuses to start, each naming what is missing.
+
+Carrier, speech and model credentials are **not** environment variables - they
+are per-organisation rows you add on **Integrations** in the app.
+
+---
+
+## Where things live
+
+| Service | Port | Notes |
 | --- | --- | --- |
-| `Could not find the PostgreSQL binaries` | Not installed, or not on PATH | Install per §1, or set `PGBIN` |
-| `Can't locate revision identified by …` | The database is on a revision no branch has — usually an unpushed migration applied by hand | Find the file, or rebuild with `npm run dev:db:reset` |
-| Tests report `85 skipped` | No `DATABASE_URL` | §6 |
-| `test_anonymous_sees_nothing` fails with a permission error | The `anon` grant is missing | `npm run dev:db` reapplies it |
-| `Multiple head revisions` | Two migrations share a parent | §7 |
-| Frontend can't reach the API | `NEXT_PUBLIC_API_URL` unset or unreachable | Defaults to `http://127.0.0.1:8000`; the client logs when it falls back |
-| `PROVIDER_CREDENTIALS_KEY is not set` | Missing from `.env` | §4 — it fails closed rather than deriving a guessable password |
+| web | 3000 | Next dev server |
+| api | 8000 | uvicorn, `--reload` |
+| voice | - | worker; health on 8081 inside the network |
+| kong | 54321 | one origin for every Supabase service |
+| studio | 54323 | database browser |
+| db | 55432 | connect directly: `postgres://postgres:postgres@localhost:55432/postgres` |
+
+`db`, `auth`, `rest`, `realtime`, `storage`, `imgproxy`, `meta` and `kong` are
+Supabase; `migrate` runs Alembic once and exits before the API starts, so a
+failed migration is a failed migration rather than an API that boots and 500s.
+
+Analytics and the vector collector from Supabase's own compose are deliberately
+left out - they are the heaviest part of that stack and contribute nothing here.
 
 ---
 
-## 9. Things that will bite you
+## Running the tests
 
-- **Alembic uses psycopg; the app uses asyncpg.** asyncpg prepares every
-  statement and rejects the multi-statement DDL that RLS policies are written
-  as. Don't "simplify" `alembic/env.py` back to the async driver.
-- **Use the direct connection, or the session pooler on 5432 — never the
-  transaction pooler on 6543.** Every request runs `SET LOCAL ROLE`, which
-  transaction pooling does not preserve, and RLS silently stops applying.
-- **`postgres` holds BYPASSRLS.** A plain connection sees every organisation's
-  rows regardless of policy. RLS is only real because `database.as_user()` drops
-  to `authenticated`. A query that skips that helper skips tenancy.
-- **Never edit the schema through the Supabase dashboard.** Alembic is the only
-  migration system here; a dashboard change is invisible to it and drifts every
-  environment apart.
+The suites run against the containerised database:
+
+```bash
+docker compose -f docker/docker-compose.yml exec api pytest -q
+docker compose -f docker/docker-compose.yml exec voice pytest -q
+```
+
+The tenant-isolation tests in `apps/api/tests/test_rls_isolation.py` **only run
+with a database** and are skipped without one - which is why CI, which has none,
+cannot catch a broken RLS policy. Run them locally before touching any policy.
+
+---
+
+## The one rule
+
+**Never point `DATABASE_URL` at a shared Supabase project.** Not to "just check
+something", not to run one migration. That is what broke production and then
+dev, and both took a full rebuild to recover. The stack above exists so you
+never have a reason to.

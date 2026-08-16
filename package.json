@@ -3,13 +3,14 @@
   "private": true,
   "description": "Repo-root convenience scripts. apps/web and apps/api each keep their own package.json/pyproject.toml - this one only wraps the database commands so they don't require activating the venv first.",
   "scripts": {
+    "local": "node scripts/local.js up",
+    "local:down": "node scripts/local.js down",
+    "local:reset": "node scripts/local.js reset",
+    "local:logs": "node scripts/local.js logs",
+    "local:status": "node scripts/local.js status",
+    "local:migrate": "node scripts/local.js migrate",
     "db:migrate": "node scripts/db.js migrate",
     "db:generate": "node scripts/db.js generate",
-    "db:reset": "node scripts/db.js reset",
-    "dev:db": "node scripts/dev-db.js up",
-    "dev:db:reset": "node scripts/dev-db.js reset",
-    "dev:db:down": "node scripts/dev-db.js down",
-    "dev:db:destroy": "node scripts/dev-db.js destroy",
-    "dev:db:status": "node scripts/dev-db.js status"
+    "db:reset": "node scripts/db.js reset"
   }
 }

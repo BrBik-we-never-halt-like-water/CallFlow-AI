@@ -1,0 +1,116 @@
+_format_version: "2.1"
+_transform: true
+
+# One origin for every Supabase service, because that is what the Supabase
+# client libraries expect: `createClient(url, key)` takes a single URL and
+# derives `/auth/v1`, `/rest/v1`, `/storage/v1` from it. Without a gateway the
+# web app would need a different port per service and `lib/supabase/` would stop
+# being ordinary Supabase code.
+
+consumers:
+  - username: anon
+    keyauth_credentials:
+      - key: $SUPABASE_ANON_KEY
+  - username: service_role
+    keyauth_credentials:
+      - key: $SUPABASE_SERVICE_KEY
+
+acls:
+  - consumer: anon
+    group: anon
+  - consumer: service_role
+    group: admin
+
+services:
+  # Signup, token, user, recover. Open by design - these are the endpoints a
+  # not-yet-authenticated person has to reach.
+  - name: auth-v1-open
+    url: http://auth:9999/
+    routes:
+      - name: auth-v1-open
+        strip_path: true
+        paths:
+          - /auth/v1/verify
+          - /auth/v1/callback
+          - /auth/v1/authorize
+          - /auth/v1/signup
+          - /auth/v1/token
+          - /auth/v1/logout
+          - /auth/v1/recover
+          - /auth/v1/user
+          - /auth/v1/magiclink
+          - /auth/v1/otp
+          - /auth/v1/resend
+          - /auth/v1/health
+    plugins:
+      - name: cors
+
+  # Everything else on GoTrue, including /admin. Behind key-auth so the service
+  # role is required rather than assumed.
+  - name: auth-v1
+    url: http://auth:9999/
+    routes:
+      - name: auth-v1-all
+        strip_path: true
+        paths:
+          - /auth/v1/
+    plugins:
+      - name: cors
+      - name: key-auth
+        config:
+          hide_credentials: false
+      - name: acl
+        config:
+          hide_groups_header: true
+          allow:
+            - admin
+            - anon
+
+  - name: rest-v1
+    url: http://rest:3000/
+    routes:
+      - name: rest-v1-all
+        strip_path: true
+        paths:
+          - /rest/v1/
+    plugins:
+      - name: cors
+      - name: key-auth
+        config:
+          hide_credentials: true
+      - name: acl
+        config:
+          hide_groups_header: true
+          allow:
+            - admin
+            - anon
+
+  - name: realtime-v1-ws
+    url: http://realtime:4000/socket
+    protocol: ws
+    routes:
+      - name: realtime-v1-ws
+        strip_path: true
+        paths:
+          - /realtime/v1/
+    plugins:
+      - name: cors
+      - name: key-auth
+        config:
+          hide_credentials: false
+      - name: acl
+        config:
+          hide_groups_header: true
+          allow:
+            - admin
+            - anon
+
+  - name: storage-v1
+    url: http://storage:5000/
+    routes:
+      - name: storage-v1-all
+        strip_path: true
+        paths:
+          - /storage/v1/
+    plugins:
+      - name: cors
