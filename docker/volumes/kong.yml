@@ -22,38 +22,21 @@ acls:
     group: admin
 
 services:
-  # Signup, token, user, recover. Open by design - these are the endpoints a
-  # not-yet-authenticated person has to reach.
-  - name: auth-v1-open
-    url: http://auth:9999/
+  # GoTrue's admin surface, matched *before* the catch-all below because Kong
+  # prefers the longer path. Behind key-auth so the service role is required
+  # rather than assumed.
+  #
+  # The endpoint lives in the service URL, not only in the route: `strip_path`
+  # removes the whole matched prefix, and whatever is left is appended to the
+  # service's own path. So `/auth/v1/admin/users` strips to `/users`, which the
+  # `/admin` here turns back into `/admin/users`.
+  - name: auth-v1-admin
+    url: http://auth:9999/admin
     routes:
-      - name: auth-v1-open
+      - name: auth-v1-admin
         strip_path: true
         paths:
-          - /auth/v1/verify
-          - /auth/v1/callback
-          - /auth/v1/authorize
-          - /auth/v1/signup
-          - /auth/v1/token
-          - /auth/v1/logout
-          - /auth/v1/recover
-          - /auth/v1/user
-          - /auth/v1/magiclink
-          - /auth/v1/otp
-          - /auth/v1/resend
-          - /auth/v1/health
-    plugins:
-      - name: cors
-
-  # Everything else on GoTrue, including /admin. Behind key-auth so the service
-  # role is required rather than assumed.
-  - name: auth-v1
-    url: http://auth:9999/
-    routes:
-      - name: auth-v1-all
-        strip_path: true
-        paths:
-          - /auth/v1/
+          - /auth/v1/admin
     plugins:
       - name: cors
       - name: key-auth
@@ -64,7 +47,25 @@ services:
           hide_groups_header: true
           allow:
             - admin
-            - anon
+
+  # Everything else on GoTrue: signup, token, user, recover, health. Open by
+  # design - these are the endpoints a not-yet-authenticated person has to reach.
+  #
+  # A trailing slash on the path is what makes this work, and its absence is what
+  # broke the previous version. Listing `/auth/v1/signup` exactly meant
+  # `strip_path` consumed the entire path and every request arrived at GoTrue's
+  # root as `/`, which answers 404 - so signup, the one flow this whole stack
+  # exists for, was unreachable. `/auth/v1/` leaves `signup` behind to be
+  # appended, the same way the rest-v1 and storage-v1 routes below already work.
+  - name: auth-v1
+    url: http://auth:9999/
+    routes:
+      - name: auth-v1-all
+        strip_path: true
+        paths:
+          - /auth/v1/
+    plugins:
+      - name: cors
 
   - name: rest-v1
     url: http://rest:3000/
