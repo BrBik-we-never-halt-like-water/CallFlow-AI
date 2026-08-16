@@ -15,7 +15,9 @@ export function SettingsSection({
   effect,
   footer,
 }: {
-  title: string;
+  /** `ReactNode` so a section can carry an icon or a count beside its name -
+   * the heading element and its type scale stay owned here either way. */
+  title: React.ReactNode;
   description?: string;
   children?: React.ReactNode;
   effect?: React.ReactNode;

@@ -243,10 +243,21 @@ class ApiKey(Base):
 
 
 class ProviderCredential(TimestampedMixin, Base):
-    """An org's own third-party credentials - carrier, STT, TTS, or LLM.
+    """An org's own third-party credentials - carrier, STT, TTS, LLM, or storage.
 
-    `identifier_encrypted`/`secret_encrypted` are Fernet ciphertext, never
-    plaintext - see `app/core/crypto.py`. One row per organisation per provider.
+    `fields_encrypted` is one Fernet ciphertext holding a JSON object keyed by
+    the field names that provider declares in `app/domain/providers.py`. One
+    ciphertext rather than one per field: encrypting values separately would
+    leave the field *names* in plaintext and leak the shape of every credential.
+
+    `identifier_encrypted`/`secret_encrypted` are the superseded two-column
+    form, kept nullable so rows written before `c8e1f4a29b76` still read. The
+    repository falls back to them and the next write upgrades the row; both
+    columns go once nothing has a null `fields_encrypted`.
+
+    One row per organisation per provider - and a provider can serve several
+    roles (one Deepgram key does speech-to-text *and* text-to-speech), so the
+    row is keyed on the vendor, never on what it is being used for.
 
     `provider` carries no database-level allow-list beyond "not blank": the set
     of accepted names is validated in the Pydantic layer instead, so adding a
@@ -258,6 +269,10 @@ class ProviderCredential(TimestampedMixin, Base):
     __table_args__ = (
         UniqueConstraint("org_id", "provider", name="provider_credentials_org_provider_key"),
         CheckConstraint("provider <> ''", name="provider_credentials_provider_not_blank"),
+        CheckConstraint(
+            "fields_encrypted is not null or secret_encrypted is not null",
+            name="provider_credentials_has_credentials",
+        ),
         Index("provider_credentials_org_idx", "org_id"),
     )
 
@@ -272,8 +287,9 @@ class ProviderCredential(TimestampedMixin, Base):
     )
     provider: Mapped[str] = mapped_column(Text, nullable=False)
     label: Mapped[str | None] = mapped_column(Text)
-    identifier_encrypted: Mapped[str] = mapped_column(Text, nullable=False)
-    secret_encrypted: Mapped[str] = mapped_column(Text, nullable=False)
+    fields_encrypted: Mapped[str | None] = mapped_column(Text)
+    identifier_encrypted: Mapped[str | None] = mapped_column(Text)
+    secret_encrypted: Mapped[str | None] = mapped_column(Text)
     phone_number: Mapped[str | None] = mapped_column(String(20))
 
 

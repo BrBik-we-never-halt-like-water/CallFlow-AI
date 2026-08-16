@@ -41,7 +41,9 @@ from app.domain.provisioning import ProvisioningStatus
 from app.integrations.livekit.client import LiveKitGateway, SipTransport
 from app.integrations.telephony import CarrierError, CarrierTrunk
 from app.integrations.telephony.plivo import PlivoCarrier
+from app.integrations.telephony.telnyx import TelnyxCarrier
 from app.integrations.telephony.twilio import TwilioCarrier
+from app.integrations.telephony.vonage import VonageCarrier
 
 log = logging.getLogger("app.services.number_provisioning")
 
@@ -51,6 +53,8 @@ CarrierFactory = Callable[..., Any]
 CARRIERS: dict[str, CarrierFactory] = {
     "twilio": TwilioCarrier,
     "plivo": PlivoCarrier,
+    "telnyx": TelnyxCarrier,
+    "vonage": VonageCarrier,
 }
 
 

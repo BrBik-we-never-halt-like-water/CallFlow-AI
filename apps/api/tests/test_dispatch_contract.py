@@ -179,3 +179,103 @@ async def test_no_phone_number_reaches_the_dispatch_metadata() -> None:
 
     assert "+15555550100" not in str(metadata)
     assert "5555550100" not in str(metadata)
+
+
+# --- the catalogue and the registry must describe the same set -----------------
+
+
+def _wired_by_role() -> dict[str, set[str]]:
+    from app.domain.providers import PROVIDERS, ProviderRole
+
+    roles = {
+        "stt": ProviderRole.TRANSCRIBER,
+        "tts": ProviderRole.VOICE,
+        "llm": ProviderRole.INTELLIGENCE,
+    }
+    return {
+        short: {p.id for p in PROVIDERS if role in p.roles and p.is_wired}
+        for short, role in roles.items()
+    }
+
+
+@pytest.mark.parametrize(
+    ("short", "registry_name"),
+    [("stt", "STT_PROVIDERS"), ("tts", "TTS_PROVIDERS"), ("llm", "LLM_PROVIDERS")],
+)
+def test_every_provider_the_catalogue_calls_connectable_can_actually_be_built(
+    short: str, registry_name: str
+) -> None:
+    """The settings page's promise, checked against the code that keeps it.
+
+    A provider the catalogue marks `wired` renders as connectable, so an
+    operator stores a key and points an agent at it. If this worker has no
+    factory for that name, the failure surfaces as `UnknownProvider` on a live
+    call - after the phone rang. The catalogue is the claim; the registry is
+    whether it is true.
+    """
+    registry = getattr(pipeline_module, registry_name)
+    missing = sorted(_wired_by_role()[short] - set(registry))
+
+    assert not missing, (
+        f"the catalogue offers {missing} for {short} but the worker cannot build them"
+    )
+
+
+@pytest.mark.parametrize(
+    ("short", "registry_name"),
+    [("stt", "STT_PROVIDERS"), ("tts", "TTS_PROVIDERS"), ("llm", "LLM_PROVIDERS")],
+)
+def test_the_worker_builds_nothing_the_catalogue_never_offers(
+    short: str, registry_name: str
+) -> None:
+    """The other direction. A factory nobody can select is dead code that
+    still has to be maintained, and usually means a rename landed on one side."""
+    registry = getattr(pipeline_module, registry_name)
+    orphaned = sorted(set(registry) - _wired_by_role()[short])
+
+    assert not orphaned, f"the worker builds {orphaned} for {short} but nothing offers them"
+
+
+def test_a_stored_only_provider_is_never_selectable_for_a_call() -> None:
+    """S3 and Zapier store a credential and drive nothing. If one ever reached a
+    provider registry it would be selectable on an agent, and the call would
+    fail resolving it."""
+    from app.domain.providers import PROVIDERS
+
+    stored_only = {p.id for p in PROVIDERS if not p.is_wired}
+
+    assert stored_only, "this test is meaningless if everything is wired"
+    assert not (stored_only & pipeline_module.SUPPORTED_PROVIDERS)
+
+
+def test_multi_field_credentials_survive_the_trip_to_a_factory() -> None:
+    """Azure and AWS need three fields. The single `*_api_key` cannot carry
+    them, so `credentials_for()` merges the extra mapping - and losing it here
+    is how a vendor authenticates with a key and no region."""
+    spec = pipeline_module.AgentSpec.from_metadata(
+        {
+            "voice_agent": {
+                "stt_provider": "azure_speech",
+                "tts_provider": "azure_speech",
+                "llm_provider": "azure_openai",
+                "llm_credentials": {
+                    "api_key": "k",
+                    "endpoint": "https://x.openai.azure.com",
+                    "deployment": "gpt-4o",
+                },
+                "stt_credentials": {"api_key": "sk", "region": "centralindia"},
+            }
+        }
+    )
+
+    assert spec.credentials_for("llm")["deployment"] == "gpt-4o"
+    assert spec.credentials_for("stt")["region"] == "centralindia"
+
+
+def test_the_single_key_shorthand_still_reaches_the_factory() -> None:
+    """Most vendors have exactly one secret and send it as `*_api_key`."""
+    spec = pipeline_module.AgentSpec.from_metadata(
+        {"voice_agent": {"stt_provider": "deepgram", "stt_api_key": "dg-key"}}
+    )
+
+    assert spec.credentials_for("stt") == {"api_key": "dg-key"}

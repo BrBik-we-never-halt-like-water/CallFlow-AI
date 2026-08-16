@@ -31,10 +31,11 @@ from pydantic import BaseModel, Field
 
 from app.auth.dependencies import CurrentUser, RequirePermission
 from app.auth.permissions import Permission
-from app.core.crypto import CredentialsNotConfigured, decrypt
+from app.core.crypto import CredentialsNotConfigured, unpack_fields
 from app.database import database
 from app.database.repositories import provider_credentials as credentials_repo
 from app.database.repositories import telephony_provisioning as provisioning_repo
+from app.domain.providers import spec
 from app.domain.provisioning import ProvisioningStatus
 from app.services.number_provisioning import (
     CARRIERS,
@@ -91,12 +92,17 @@ def _row_to_out(row: asyncpg.Record) -> ProvisioningOut:
 async def _carrier_credentials(
     conn: asyncpg.Connection, org_id: UUID, provider: str
 ) -> dict[str, str]:
-    """The stored keys for this carrier, decrypted, in its adapter's own shape.
+    """The stored keys for this carrier, decrypted, keyed as its adapter expects.
 
-    Both adapters take exactly two secrets under different names, so the
-    mapping is here rather than in either of them - an adapter that knew about
-    `provider_credentials` would be reaching back across the boundary it exists
-    to hold.
+    The field names a provider declares in `domain/providers.py` are chosen to
+    be the adapter's own constructor arguments, so this hands the mapping
+    straight through rather than translating per carrier - adding Telnyx or
+    Vonage needs no branch here.
+
+    A row written before `c8e1f4a29b76` comes back under the generic
+    `identifier`/`secret` keys, which are mapped onto the first two declared
+    fields. That is the only place that legacy shape is understood, and it goes
+    when the columns do.
     """
     row = await credentials_repo.get_for_provider(conn, org_id, provider)
     if row is None:
@@ -108,16 +114,31 @@ async def _carrier_credentials(
             ),
         )
     try:
-        identifier = decrypt(row["identifier_encrypted"])
-        secret = decrypt(row["secret_encrypted"])
+        stored = unpack_fields(row)
     except CredentialsNotConfigured as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
         ) from exc
 
-    if provider == "twilio":
-        return {"account_sid": identifier, "auth_token": secret}
-    return {"auth_id": identifier, "auth_token": secret}
+    provider_spec = spec(provider)
+    if provider_spec is None:  # pragma: no cover - guarded by the caller
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unknown carrier")
+
+    if "identifier" in stored or "secret" in stored:
+        declared = [f.key for f in provider_spec.fields]
+        legacy = [stored.get("identifier", ""), stored.get("secret", "")]
+        stored = {key: value for key, value in zip(declared, legacy, strict=False) if value}
+
+    missing = [f.label for f in provider_spec.fields if f.required and not stored.get(f.key)]
+    if missing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"The stored {provider_spec.name} credentials are missing: "
+                f"{', '.join(missing)}. Reconnect it on Settings → Integrations."
+            ),
+        )
+    return stored
 
 
 @router.post(

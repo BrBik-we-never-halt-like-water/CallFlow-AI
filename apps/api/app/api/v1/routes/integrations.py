@@ -27,10 +27,10 @@ from pydantic import BaseModel, Field
 
 from app.auth.dependencies import CurrentUser, RequirePermission
 from app.auth.permissions import Permission
-from app.core.crypto import CredentialsNotConfigured, encrypt
+from app.core.crypto import CredentialsNotConfigured, pack_fields
 from app.database import database
 from app.database.repositories import provider_credentials as credentials_repo
-from app.domain.providers import PROVIDERS, ConnectMethod, spec
+from app.domain.providers import PROVIDERS, ConnectMethod, ProviderSpec, spec
 
 router = APIRouter(prefix="/api/v1/integrations", tags=["integrations"])
 
@@ -52,22 +52,46 @@ def _require_known(provider: str) -> None:
         )
 
 
+class CredentialFieldOut(BaseModel):
+    """One input on the connect form, described by the server.
+
+    The frontend renders whatever arrives here and knows nothing about any
+    particular vendor - which is what lets a provider be added in
+    `domain/providers.py` alone.
+    """
+
+    key: str
+    label: str
+    secret: bool
+    required: bool
+    placeholder: str
+    help: str | None
+    multiline: bool
+
+
 class ProviderSpecOut(BaseModel):
     """What the settings page needs to render a provider it has never seen.
 
     Sent from the server rather than duplicated in the frontend: the two lists
     drifting is how a provider becomes selectable in the interface and
     unstorable by the API.
+
+    `wired` is the honest field. False means CallFlow will encrypt and store the
+    credential and nothing in a call will read it - there is no recording,
+    tool-calling or tracing behind those vendors yet. The interface says exactly
+    that rather than showing them as connected (CLAUDE.md non-negotiable #9).
     """
 
     id: str
     name: str
-    role: str
+    roles: list[str]
     connect: str
     summary: str
-    identifier_label: str | None
-    secret_label: str
+    fields: list[CredentialFieldOut]
     docs_url: str
+    wired: bool
+    needs_model: bool
+    note: str | None
 
 
 class ProviderCredentialOut(BaseModel):
@@ -79,10 +103,18 @@ class ProviderCredentialOut(BaseModel):
 
 
 class ProviderCredentialIn(BaseModel):
-    # Optional, because a single-secret vendor has no identifier to give. The
-    # stored row still gets both halves - see `connect_provider`.
-    identifier: str | None = Field(default=None, max_length=200)
-    secret: str = Field(min_length=1, max_length=500)
+    """Whatever fields this provider declares, by their own names.
+
+    A free-form mapping rather than a model per vendor: there are 57 of them and
+    the set is data, not code. `connect_provider` validates it against the
+    provider's own `fields` - an unknown key is rejected rather than stored, so a
+    typo cannot quietly persist a credential no adapter will ever look for.
+
+    The value ceiling is generous because a Google service-account JSON is a
+    field here.
+    """
+
+    fields: dict[str, str] = Field(default_factory=dict)
     phone_number: str | None = Field(default=None, max_length=20)
     label: str | None = Field(default=None, max_length=120)
 
@@ -109,19 +141,36 @@ async def list_catalogue(
     user: Annotated[CurrentUser, Depends(RequirePermission(Permission.INTEGRATIONS_READ))],
 ) -> list[ProviderSpecOut]:
     """Every provider CallFlow supports, and how each one connects."""
-    return [
-        ProviderSpecOut(
-            id=p.id,
-            name=p.name,
-            role=p.role.value,
-            connect=p.connect.value,
-            summary=p.summary,
-            identifier_label=p.identifier_label,
-            secret_label=p.secret_label,
-            docs_url=p.docs_url,
-        )
-        for p in PROVIDERS
-    ]
+    return [_spec_to_out(p) for p in PROVIDERS]
+
+
+def _spec_to_out(p: ProviderSpec) -> ProviderSpecOut:
+    return ProviderSpecOut(
+        id=p.id,
+        name=p.name,
+        # Sorted so the interface's grouping is stable between requests - a set
+        # iterates in whatever order it likes, and a card jumping between
+        # sections on refresh reads as a bug.
+        roles=sorted(r.value for r in p.roles),
+        connect=p.connect.value,
+        summary=p.summary,
+        fields=[
+            CredentialFieldOut(
+                key=f.key,
+                label=f.label,
+                secret=f.secret,
+                required=f.required,
+                placeholder=f.placeholder,
+                help=f.help,
+                multiline=f.multiline,
+            )
+            for f in p.fields
+        ],
+        docs_url=p.docs_url,
+        wired=p.is_wired,
+        needs_model=p.needs_model,
+        note=p.note,
+    )
 
 
 @router.get("/providers", response_model=list[ProviderCredentialOut])
@@ -190,31 +239,30 @@ async def exchange_oauth_code(
             ),
         )
 
-    return await _store(user=user, provider=provider, identifier=None, secret=key,
-                        phone_number=None, label="Connected with OpenRouter")
+    return await _store(
+        user=user,
+        provider=provider,
+        fields={provider_spec.fields[0].key: key},
+        phone_number=None,
+        label="Connected with OpenRouter",
+    )
 
 
 async def _store(
     *,
     user: CurrentUser,
     provider: str,
-    identifier: str | None,
-    secret: str,
+    fields: dict[str, str],
     phone_number: str | None,
     label: str | None,
 ) -> ProviderCredentialOut:
-    """Encrypt and upsert. Both halves are always written.
-
-    A single-secret vendor stores the empty string as its identifier rather
-    than NULL: the column is NOT NULL, and an empty ciphertext round-trips
-    cleanly, which keeps every read path free of a "does this vendor have an
-    identifier" branch.
-    """
+    """Encrypt the whole field set as one blob and upsert it."""
     try:
-        identifier_encrypted = encrypt(identifier or "")
-        secret_encrypted = encrypt(secret)
+        packed = pack_fields(fields)
     except CredentialsNotConfigured as exc:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
+        ) from exc
 
     async with database.as_user(user.auth_user_id) as conn:
         row = await credentials_repo.upsert(
@@ -223,11 +271,43 @@ async def _store(
             created_by=user.id,
             provider=provider,
             label=label,
-            identifier_encrypted=identifier_encrypted,
-            secret_encrypted=secret_encrypted,
+            fields_encrypted=packed,
             phone_number=phone_number,
         )
     return _row_to_out(row)
+
+
+def _validated_fields(provider_spec: ProviderSpec, submitted: dict[str, str]) -> dict[str, str]:
+    """Exactly the fields this provider declares, trimmed, none missing.
+
+    Unknown keys are rejected rather than dropped. Silently discarding one would
+    let a caller believe they had configured something they had not - and the
+    only sign would be an authentication failure on a live call, long after the
+    form said it saved.
+    """
+    declared = {f.key: f for f in provider_spec.fields}
+    unknown = sorted(set(submitted) - set(declared))
+    if unknown:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"{provider_spec.name} has no field called '{unknown[0]}'. "
+                f"It takes: {', '.join(f.label for f in provider_spec.fields)}."
+            ),
+        )
+
+    cleaned: dict[str, str] = {}
+    for key, spec_field in declared.items():
+        value = (submitted.get(key) or "").strip()
+        if not value:
+            if spec_field.required:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"{provider_spec.name} needs a {spec_field.label}.",
+                )
+            continue
+        cleaned[key] = value
+    return cleaned
 
 
 @router.put("/providers/{provider}", response_model=ProviderCredentialOut)
@@ -236,35 +316,21 @@ async def connect_provider(
     body: ProviderCredentialIn,
     user: Annotated[CurrentUser, Depends(RequirePermission(Permission.INTEGRATIONS_WRITE))],
 ) -> ProviderCredentialOut:
+    """Store one provider's credentials.
+
+    Storing them is all this does, for every provider. For a carrier or a speech
+    or model vendor that is enough to make it usable on a call; for storage,
+    automation and observability vendors nothing reads the credential yet, and
+    the catalogue's `wired` flag is what the interface uses to say so.
+    """
     _require_known(provider)
     provider_spec = spec(provider)
     assert provider_spec is not None  # guarded above
 
-    # A vendor that names an identifier needs one; a vendor that does not must
-    # not be asked for it. Validating against the spec rather than the request
-    # keeps the rule in one place instead of in every form.
-    if provider_spec.identifier_label and not (body.identifier or "").strip():
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"{provider_spec.name} needs a {provider_spec.identifier_label}.",
-        )
-
     return await _store(
         user=user,
         provider=provider,
-        identifier=(body.identifier or "").strip() or None,
-        secret=body.secret,
+        fields=_validated_fields(provider_spec, body.fields),
         phone_number=body.phone_number,
         label=body.label,
     )
-
-
-@router.delete("/providers/{provider}", status_code=status.HTTP_204_NO_CONTENT)
-async def disconnect_provider(
-    provider: str,
-    user: Annotated[CurrentUser, Depends(RequirePermission(Permission.INTEGRATIONS_WRITE))],
-) -> None:
-    async with database.as_user(user.auth_user_id) as conn:
-        deleted = await credentials_repo.remove(conn, user.org_id, provider)
-    if deleted is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not connected.")

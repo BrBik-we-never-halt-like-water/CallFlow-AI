@@ -361,25 +361,53 @@ export interface ChatMessage {
  * provider becomes selectable in the UI and unstorable by the API. */
 export type Provider = string;
 
-/** What the credential is for. Mirrors `voice_agents`' own columns, so an
- * organisation can see it needs one of each before a call is possible. */
-export type ProviderRole = 'telephony' | 'speech' | 'intelligence';
+/** What a credential is for. The first four mirror `voice_agents`' own columns
+ * so an organisation can see it needs one of each before a call is possible;
+ * the last three have no feature behind them yet - see `wired`. */
+export type ProviderRole =
+  | 'telephony'
+  | 'transcriber'
+  | 'voice'
+  | 'intelligence'
+  | 'storage'
+  | 'automation'
+  | 'observability';
 
 /** How a vendor lets you connect. Only some host a login - a "Connect with X"
  * button on a vendor that offers none would be a success state for something
  * that never happens. */
 export type ConnectMethod = 'oauth' | 'api_key';
 
+/** One input on a provider's connect form, described by the server so this
+ * client can render a vendor it has never heard of. */
+export interface CredentialField {
+  key: string;
+  label: string;
+  /** Masked on entry and never returned by any read endpoint. */
+  secret: boolean;
+  required: boolean;
+  placeholder: string;
+  help: string | null;
+  /** A service-account JSON needs a textarea, not a single line. */
+  multiline: boolean;
+}
+
 export interface ProviderSpec {
   id: Provider;
   name: string;
-  role: ProviderRole;
+  /** A vendor can serve several - one Deepgram key does speech in and out. */
+  roles: ProviderRole[];
   connect: ConnectMethod;
   summary: string;
-  /** Null for a vendor with a single secret and no account identifier. */
-  identifier_label: string | null;
-  secret_label: string;
+  fields: CredentialField[];
   docs_url: string;
+  /** False means the credential is stored and nothing reads it yet. The card
+   * says so rather than showing it as connected. */
+  wired: boolean;
+  /** One key proxies many models, so the agent must also name which to run. */
+  needs_model: boolean;
+  /** A short constraint worth stating on the card. */
+  note: string | null;
 }
 
 export interface ProviderCredential {
@@ -391,8 +419,9 @@ export interface ProviderCredential {
 }
 
 export interface ProviderCredentialInput {
-  identifier?: string;
-  secret: string;
+  /** Keyed by the provider's own `CredentialField.key` values. The server
+   * rejects a key the provider never declared rather than dropping it. */
+  fields: Record<string, string>;
   phone_number?: string;
   label?: string;
 }
