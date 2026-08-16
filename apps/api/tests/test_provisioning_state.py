@@ -176,3 +176,57 @@ async def test_the_outbound_trunk_leaves_twilio_on_auto(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     assert await _outbound_transport_for(TwilioCarrier, monkeypatch) == "auto"
+
+
+# --- what the carriers will actually accept (pure, so CI runs it) ---
+
+
+@pytest.fixture
+def sip_auth(monkeypatch: pytest.MonkeyPatch):
+    """`_sip_auth` fails closed without a credentials key, and CI sets none.
+
+    Supplied here rather than skipping: what these assert is the *shape* of the
+    derived credentials, which has nothing to do with which key derived them,
+    and skipping would put them back in the CI blind spot they were moved out of.
+    """
+    import dataclasses
+
+    from app.core.config import config
+    from app.services import number_provisioning as service
+
+    monkeypatch.setattr(
+        service, "config", dataclasses.replace(config, provider_credentials_key="test-key")
+    )
+    return service._sip_auth
+
+
+def test_the_derived_sip_password_satisfies_twilios_own_policy(sip_auth) -> None:
+    """Twilio error 21240, found the first time this ran against a real account.
+
+    A stub carrier has no password policy, so every test passed while every real
+    Twilio provisioning attempt failed at the store-credentials step. The rule
+    Twilio states: at least 12 characters, with an uppercase letter, a lowercase
+    letter and a digit.
+    """
+    _username, password = sip_auth("some-attempt-key")
+
+    assert len(password) >= 12
+    assert any(c.isupper() for c in password)
+    assert any(c.islower() for c in password)
+    assert any(c.isdigit() for c in password)
+
+
+def test_sip_credentials_are_alphanumeric_so_no_carrier_has_to_escape_them(sip_auth) -> None:
+    """Four carriers, four sets of rules nobody has read in full. Staying inside
+    [A-Za-z0-9] is the one alphabet all of them accept without quoting."""
+    username, password = sip_auth("some-attempt-key")
+
+    assert username.isalnum(), username
+    assert password.isalnum(), password
+
+
+def test_the_same_key_still_derives_the_same_credentials(sip_auth) -> None:
+    """The property the whole design rests on: a resumed attempt reproduces its
+    credentials with no column to remember them. A prefix must not break it."""
+    assert sip_auth("key-one") == sip_auth("key-one")
+    assert sip_auth("key-one") != sip_auth("key-two")

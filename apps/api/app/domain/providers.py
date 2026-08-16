@@ -167,25 +167,25 @@ R = ProviderRole
 _INTELLIGENCE: tuple[ProviderSpec, ...] = (
     _p(
         "openrouter", "OpenRouter", {R.INTELLIGENCE},
-        "One account, hundreds of models. The agent's reasoning.",
+        "One key, hundreds of models.",
         "https://openrouter.ai/keys",
         connect=ConnectMethod.OAUTH, runtime_extra="openai", needs_model=True,
     ),
     _p(
         "openai", "OpenAI", {R.INTELLIGENCE, R.TRANSCRIBER, R.VOICE},
-        "GPT models, Whisper transcription, and OpenAI voices.",
+        "GPT, Whisper and OpenAI voices.",
         "https://platform.openai.com/api-keys",
         fields=(_key(ph="sk-…"),), runtime_extra="openai", needs_model=True,
     ),
     _p(
         "anthropic", "Anthropic", {R.INTELLIGENCE},
-        "Claude models - strong instruction-following for scripted goals.",
+        "Claude. Follows a brief closely.",
         "https://console.anthropic.com/settings/keys",
         fields=(_key(ph="sk-ant-…"),), runtime_extra="anthropic", needs_model=True,
     ),
     _p(
         "google", "Google Gemini", {R.INTELLIGENCE, R.TRANSCRIBER, R.VOICE},
-        "Gemini models, plus Google Cloud speech and voices.",
+        "Gemini, plus Cloud speech and voices.",
         "https://aistudio.google.com/apikey",
         fields=(
             _key("API key", help="An AI Studio key covers Gemini."),
@@ -199,7 +199,7 @@ _INTELLIGENCE: tuple[ProviderSpec, ...] = (
     ),
     _p(
         "groq", "Groq", {R.INTELLIGENCE, R.TRANSCRIBER},
-        "The fastest inference available - and Whisper transcription.",
+        "Fastest inference here.",
         "https://console.groq.com/keys",
         fields=(_key(ph="gsk_…"),), runtime_extra="groq", needs_model=True,
     ),
@@ -211,43 +211,43 @@ _INTELLIGENCE: tuple[ProviderSpec, ...] = (
     ),
     _p(
         "mistral", "Mistral AI", {R.INTELLIGENCE},
-        "Open-weight European models, strong in French and Spanish.",
+        "Strong in French and Spanish.",
         "https://console.mistral.ai/api-keys",
         runtime_extra="mistralai", needs_model=True,
     ),
     _p(
         "cerebras", "Cerebras", {R.INTELLIGENCE},
-        "Wafer-scale inference. Very low latency on Llama models.",
+        "Very low latency on Llama.",
         "https://cloud.cerebras.ai",
         runtime_extra="cerebras", needs_model=True,
     ),
     _p(
         "fireworks", "Fireworks AI", {R.INTELLIGENCE},
-        "Hosted open models with per-token billing.",
+        "Hosted open models, per token.",
         "https://fireworks.ai/account/api-keys",
         runtime_extra="fireworksai", needs_model=True,
     ),
     _p(
         "together", "Together AI", {R.INTELLIGENCE},
-        "Open models at scale, through an OpenAI-compatible endpoint.",
+        "Open models at scale.",
         "https://api.together.xyz/settings/api-keys",
         runtime_extra="openai", needs_model=True,
     ),
     _p(
         "deepseek", "DeepSeek", {R.INTELLIGENCE},
-        "Strong reasoning at a fraction of frontier pricing.",
+        "Frontier reasoning, far cheaper.",
         "https://platform.deepseek.com/api_keys",
         runtime_extra="openai", needs_model=True,
     ),
     _p(
         "perplexity", "Perplexity", {R.INTELLIGENCE},
-        "Models that search the web while they answer.",
+        "Searches the web while answering.",
         "https://www.perplexity.ai/settings/api",
         fields=(_key(ph="pplx-…"),), runtime_extra="openai", needs_model=True,
     ),
     _p(
         "azure_openai", "Azure OpenAI", {R.INTELLIGENCE},
-        "OpenAI models under your own Azure tenancy and data residency.",
+        "OpenAI under your Azure tenancy.",
         "https://portal.azure.com",
         fields=(
             _key(),
@@ -264,7 +264,7 @@ _INTELLIGENCE: tuple[ProviderSpec, ...] = (
     ),
     _p(
         "aws_bedrock", "AWS Bedrock", {R.INTELLIGENCE, R.TRANSCRIBER, R.VOICE},
-        "Bedrock models, Transcribe, and Polly voices on one AWS account.",
+        "Bedrock, Transcribe and Polly.",
         "https://console.aws.amazon.com/bedrock",
         fields=(
             CredentialField(key="access_key_id", label="Access key ID"),
@@ -277,7 +277,7 @@ _INTELLIGENCE: tuple[ProviderSpec, ...] = (
     ),
     _p(
         "minimax", "MiniMax", {R.INTELLIGENCE, R.VOICE},
-        "Multilingual models and expressive voices.",
+        "Multilingual models and voices.",
         "https://www.minimax.io/platform",
         fields=(
             _key(),
@@ -292,43 +292,43 @@ _INTELLIGENCE: tuple[ProviderSpec, ...] = (
 _TRANSCRIBER: tuple[ProviderSpec, ...] = (
     _p(
         "deepgram", "Deepgram", {R.TRANSCRIBER, R.VOICE},
-        "Fast, accurate English transcription, and the Aura voices.",
+        "Fast English speech, plus Aura voices.",
         "https://console.deepgram.com",
         runtime_extra="deepgram",
     ),
     _p(
         "assemblyai", "AssemblyAI", {R.TRANSCRIBER},
-        "Accurate English transcription with strong formatting.",
+        "Accurate English, well formatted.",
         "https://www.assemblyai.com/app/api-keys",
         runtime_extra="assemblyai",
     ),
     _p(
         "gladia", "Gladia", {R.TRANSCRIBER},
-        "Built for telephony audio - noise-resistant on real phone lines.",
+        "Built for noisy phone lines.",
         "https://app.gladia.io",
         runtime_extra="gladia",
     ),
     _p(
         "speechmatics", "Speechmatics", {R.TRANSCRIBER},
-        "Speaker diarisation - tells apart who said what on a shared line.",
+        "Tells apart who said what.",
         "https://portal.speechmatics.com",
         runtime_extra="speechmatics",
     ),
     _p(
         "soniox", "Soniox", {R.TRANSCRIBER},
-        "Real-time transcription across 60+ languages in one model.",
+        "60+ languages, one model.",
         "https://console.soniox.com",
         runtime_extra="soniox",
     ),
     _p(
         "sarvam", "Sarvam", {R.TRANSCRIBER, R.VOICE},
-        "Speech and voices built for Indian languages.",
+        "Built for Indian languages.",
         "https://dashboard.sarvam.ai",
         fields=(_key("API subscription key"),), runtime_extra="sarvam",
     ),
     _p(
         "azure_speech", "Azure Speech", {R.TRANSCRIBER, R.VOICE},
-        "Microsoft's speech stack, with the widest language coverage here.",
+        "Widest language coverage here.",
         "https://portal.azure.com",
         fields=(
             _key("Subscription key"),
@@ -350,13 +350,13 @@ _TRANSCRIBER: tuple[ProviderSpec, ...] = (
     ),
     _p(
         "gnani", "Gnani", {R.TRANSCRIBER, R.VOICE},
-        "Indian-language speech tuned for contact-centre audio.",
+        "Indian languages, contact-centre tuned.",
         "https://www.gnani.ai",
         runtime_extra="gnani",
     ),
     _p(
         "rtzr", "ReturnZero", {R.TRANSCRIBER},
-        "Korean transcription with strong telephony accuracy.",
+        "Korean, strong on phone audio.",
         "https://developers.rtzr.ai",
         fields=(
             CredentialField(key="client_id", label="Client ID", secret=False),
@@ -366,19 +366,19 @@ _TRANSCRIBER: tuple[ProviderSpec, ...] = (
     ),
     _p(
         "spitch", "Spitch", {R.TRANSCRIBER, R.VOICE},
-        "African languages - Yoruba, Igbo, Hausa, Amharic.",
+        "Yoruba, Igbo, Hausa, Amharic.",
         "https://spi-tch.com",
         runtime_extra="spitch",
     ),
     _p(
         "baseten", "Baseten", {R.TRANSCRIBER},
-        "Your own transcription model, served on dedicated hardware.",
+        "Your own model, dedicated hardware.",
         "https://app.baseten.co/settings/api_keys",
         runtime_extra="baseten",
     ),
     _p(
         "fal", "fal.ai", {R.TRANSCRIBER},
-        "Wizper - Whisper served fast enough for live conversation.",
+        "Whisper, fast enough to talk to.",
         "https://fal.ai/dashboard/keys",
         runtime_extra="fal",
     ),
@@ -389,19 +389,19 @@ _TRANSCRIBER: tuple[ProviderSpec, ...] = (
 _VOICE: tuple[ProviderSpec, ...] = (
     _p(
         "elevenlabs", "ElevenLabs", {R.VOICE, R.TRANSCRIBER},
-        "Expressive voices, for when the voice is the product.",
+        "For when the voice is the product.",
         "https://elevenlabs.io/app/settings/api-keys",
         runtime_extra="elevenlabs",
     ),
     _p(
         "cartesia", "Cartesia", {R.VOICE, R.TRANSCRIBER},
-        "Sonic - the lowest time-to-first-audio of anything here.",
+        "Lowest time to first audio.",
         "https://play.cartesia.ai/keys",
         runtime_extra="cartesia",
     ),
     _p(
         "playai", "PlayAI", {R.VOICE},
-        "PlayHT's voices, including instant voice cloning.",
+        "PlayHT voices and instant cloning.",
         "https://play.ht/studio/api-access",
         fields=(
             CredentialField(key="user_id", label="User ID", secret=False),
@@ -411,67 +411,67 @@ _VOICE: tuple[ProviderSpec, ...] = (
     ),
     _p(
         "lmnt", "LMNT", {R.VOICE},
-        "Low-latency streaming voices priced for high call volume.",
+        "Priced for high call volume.",
         "https://app.lmnt.com/account",
         runtime_extra="lmnt",
     ),
     _p(
         "rime", "Rime", {R.VOICE},
-        "Conversational voices that sound like people, not narrators.",
+        "Sounds like a person, not a narrator.",
         "https://rime.ai/dashboard/tokens",
         runtime_extra="rime",
     ),
     _p(
         "hume", "Hume AI", {R.VOICE},
-        "Voices that modulate on emotional context.",
+        "Reads emotional context.",
         "https://platform.hume.ai/settings/keys",
         runtime_extra="hume",
     ),
     _p(
         "inworld", "Inworld", {R.VOICE},
-        "Character voices with consistent persona across a call.",
+        "Consistent persona across a call.",
         "https://studio.inworld.ai",
         runtime_extra="inworld",
     ),
     _p(
         "neuphonic", "Neuphonic", {R.VOICE},
-        "Efficient streaming voices, strong on European languages.",
+        "Strong on European languages.",
         "https://neuphonic.com",
         runtime_extra="neuphonic",
     ),
     _p(
         "resemble", "Resemble AI", {R.VOICE},
-        "Voice cloning with per-clone consent records.",
+        "Cloning, with consent records.",
         "https://app.resemble.ai",
         runtime_extra="resemble",
     ),
     _p(
         "speechify", "Speechify", {R.VOICE},
-        "Clear, highly intelligible voices - good on poor phone lines.",
+        "Stays clear on a poor line.",
         "https://console.sws.speechify.com",
         runtime_extra="speechify",
     ),
     _p(
         "murf", "Murf AI", {R.VOICE},
-        "A large studio voice library across 20+ languages.",
+        "Large library, 20+ languages.",
         "https://murf.ai/api/dashboard",
         runtime_extra="murf",
     ),
     _p(
         "smallestai", "Smallest AI", {R.VOICE},
-        "Waves - Indian-language voices at very low latency.",
+        "Indian voices, very low latency.",
         "https://waves.smallest.ai",
         runtime_extra="smallestai",
     ),
     _p(
         "fishaudio", "Fish Audio", {R.VOICE},
-        "Open-model voices with fast custom cloning.",
+        "Open models, fast cloning.",
         "https://fish.audio/go-api",
         runtime_extra="fishaudio",
     ),
     _p(
         "upliftai", "Uplift AI", {R.VOICE},
-        "Urdu and Pakistani-language voices.",
+        "Urdu and Pakistani languages.",
         "https://upliftai.org",
         runtime_extra="upliftai",
     ),
@@ -482,7 +482,7 @@ _VOICE: tuple[ProviderSpec, ...] = (
 _TELEPHONY: tuple[ProviderSpec, ...] = (
     _p(
         "twilio", "Twilio", {R.TELEPHONY},
-        "Dial from your own Twilio number.",
+        "Your own Twilio number.",
         "https://console.twilio.com",
         fields=(
             CredentialField(key="account_sid", label="Account SID", placeholder="AC…"),
@@ -495,7 +495,7 @@ _TELEPHONY: tuple[ProviderSpec, ...] = (
     ),
     _p(
         "plivo", "Plivo", {R.TELEPHONY},
-        "Dial from your own Plivo number.",
+        "Your own Plivo number.",
         "https://console.plivo.com",
         fields=(
             CredentialField(key="auth_id", label="Auth ID", placeholder="MA…"),
@@ -505,7 +505,7 @@ _TELEPHONY: tuple[ProviderSpec, ...] = (
     ),
     _p(
         "telnyx", "Telnyx", {R.TELEPHONY},
-        "Carrier-grade SIP with its own network - often the cheapest per minute.",
+        "Own network. Usually cheapest per minute.",
         "https://portal.telnyx.com/#/app/api-keys",
         fields=(
             _key("API key", ph="KEY…"),
@@ -518,7 +518,7 @@ _TELEPHONY: tuple[ProviderSpec, ...] = (
     ),
     _p(
         "vonage", "Vonage", {R.TELEPHONY},
-        "Global reach through Vonage's own SIP trunking.",
+        "Widest international coverage.",
         "https://dashboard.nexmo.com/settings",
         fields=(
             CredentialField(key="api_key", label="API key", secret=False),
@@ -536,7 +536,7 @@ _TELEPHONY: tuple[ProviderSpec, ...] = (
 _STORAGE: tuple[ProviderSpec, ...] = (
     _p(
         "aws_s3", "Amazon S3", {R.STORAGE},
-        "Keep call recordings in your own bucket.",
+        "Recordings in your own bucket.",
         "https://console.aws.amazon.com/s3",
         fields=(
             CredentialField(key="access_key_id", label="Access key ID"),
@@ -547,7 +547,7 @@ _STORAGE: tuple[ProviderSpec, ...] = (
     ),
     _p(
         "gcp_storage", "Google Cloud Storage", {R.STORAGE},
-        "Keep call recordings in your own GCS bucket.",
+        "Recordings in your own GCS bucket.",
         "https://console.cloud.google.com/storage",
         fields=(
             CredentialField(
@@ -558,7 +558,7 @@ _STORAGE: tuple[ProviderSpec, ...] = (
     ),
     _p(
         "cloudflare_r2", "Cloudflare R2", {R.STORAGE},
-        "S3-compatible storage with no egress fees.",
+        "S3-compatible, no egress fees.",
         "https://dash.cloudflare.com",
         fields=(
             CredentialField(key="account_id", label="Account ID", secret=False),
@@ -572,7 +572,7 @@ _STORAGE: tuple[ProviderSpec, ...] = (
 _AUTOMATION: tuple[ProviderSpec, ...] = (
     _p(
         "make", "Make", {R.AUTOMATION},
-        "Fire a Make scenario from a call's result.",
+        "Trigger a Make scenario.",
         "https://www.make.com",
         fields=(
             _key(),
@@ -584,7 +584,7 @@ _AUTOMATION: tuple[ProviderSpec, ...] = (
     ),
     _p(
         "n8n", "n8n", {R.AUTOMATION},
-        "Send call outcomes into a self-hosted n8n workflow.",
+        "Into a self-hosted workflow.",
         "https://n8n.io",
         fields=(
             CredentialField(
@@ -596,7 +596,7 @@ _AUTOMATION: tuple[ProviderSpec, ...] = (
     ),
     _p(
         "zapier", "Zapier", {R.AUTOMATION},
-        "Push results into 6,000+ apps through a Zap.",
+        "6,000+ apps through a Zap.",
         "https://zapier.com/app/zaps",
         fields=(
             CredentialField(
@@ -610,7 +610,7 @@ _AUTOMATION: tuple[ProviderSpec, ...] = (
     ),
     _p(
         "gohighlevel", "GoHighLevel", {R.AUTOMATION},
-        "Write call outcomes back to a GHL sub-account.",
+        "Write back to a sub-account.",
         "https://marketplace.gohighlevel.com",
         fields=(
             _key("Private integration token"),
@@ -619,7 +619,7 @@ _AUTOMATION: tuple[ProviderSpec, ...] = (
     ),
     _p(
         "slack", "Slack", {R.AUTOMATION},
-        "Post escalations into a channel.",
+        "Escalations into a channel.",
         "https://api.slack.com/apps",
         fields=(
             _key("Bot user OAuth token", ph="xoxb-…"),
@@ -628,13 +628,13 @@ _AUTOMATION: tuple[ProviderSpec, ...] = (
     ),
     _p(
         "hubspot", "HubSpot", {R.AUTOMATION},
-        "Log calls against the matching HubSpot contact.",
+        "Log calls on the contact record.",
         "https://app.hubspot.com/private-apps",
         fields=(_key("Private app token", ph="pat-…"),),
     ),
     _p(
         "salesforce", "Salesforce", {R.AUTOMATION},
-        "Log calls against the matching Salesforce record.",
+        "Log calls on the record.",
         "https://help.salesforce.com",
         fields=(
             CredentialField(
@@ -650,7 +650,7 @@ _AUTOMATION: tuple[ProviderSpec, ...] = (
 _OBSERVABILITY: tuple[ProviderSpec, ...] = (
     _p(
         "langfuse", "Langfuse", {R.OBSERVABILITY},
-        "Trace every model call behind a conversation.",
+        "Trace every model call.",
         "https://cloud.langfuse.com",
         fields=(
             CredentialField(key="public_key", label="Public key", secret=False, placeholder="pk-lf-…"),

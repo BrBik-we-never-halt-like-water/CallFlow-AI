@@ -97,6 +97,33 @@ class TwilioCarrier:
             raise CarrierError("Twilio", action, _detail(response))
         return response.json()
 
+    async def _find(self, url: str, collection: str, match: dict[str, str], *, action: str) -> dict[str, Any] | None:
+        """The existing object this attempt already created, if there is one.
+
+        `configure_number()` makes five things and returns after the fifth, so a
+        failure at the third leaves the first two behind with nothing recording
+        them - `telephony_provisioning` only learns the carrier's ids once the
+        whole carrier step succeeds. A retry then hits *Trunk Domain already
+        exists* (Twilio 21248) and can never get past it, because the domain is
+        derived from the label and so is the same every time.
+
+        Looking first makes the step resumable without a second ledger: the
+        objects are named deterministically from the org-scoped label, so
+        finding one means this attempt made it earlier.
+        """
+        if self._client is None:
+            raise RuntimeError("TwilioCarrier is not open. Use `async with TwilioCarrier(...)`.")
+        try:
+            response = await self._client.get(url, auth=self._auth)
+        except httpx.HTTPError as exc:
+            raise CarrierError("Twilio", action, f"could not be reached ({type(exc).__name__}).") from exc
+        if response.status_code >= 300:
+            raise CarrierError("Twilio", action, _detail(response))
+        items = response.json().get(collection) or []
+        return next(
+            (i for i in items if all(i.get(k) == v for k, v in match.items())),
+            None,
+        )
 
     async def configure_number(
         self,
@@ -106,6 +133,7 @@ class TwilioCarrier:
         label: str,
         auth_username: str,
         auth_password: str,
+        attach_number: bool = True,
     ) -> CarrierTrunk:
         """Point a Twilio number at LiveKit, both directions.
 
@@ -118,53 +146,103 @@ class TwilioCarrier:
         number is associated *last* - until that final step nothing about the
         organisation's live traffic has changed, so an earlier failure leaves a
         stray empty trunk rather than a number that rings into nowhere.
+
+        `attach_number=False` stops before that last step, which makes the whole
+        call **non-destructive**: everything created is new, and the number keeps
+        whatever was already routing it. That is outbound-only - CallFlow can
+        dial *from* the number, because Twilio validates an outbound caller ID
+        against the account rather than against the trunk, but calls *to* it
+        still reach wherever they reached before. It is the right setting for an
+        organisation keeping an existing IVR on a number it also wants to dial
+        out from, and for verifying against a number already in production use.
         """
         domain = f"{_slug(label)}.pstn.twilio.com"
-        trunk = await self._post(
+        trunk = await self._find(
+            f"{_TRUNKING}/Trunks",
+            "trunks",
+            {"domain_name": domain},
+            action="look for an existing SIP trunk",
+        ) or await self._post(
             f"{_TRUNKING}/Trunks",
             {"FriendlyName": f"CallFlow {label}", "DomainName": domain},
             action="create a SIP trunk",
         )
         trunk_sid = str(trunk.get("sid", ""))
 
-        await self._post(
+        # Twilio accepts duplicate origination URLs on one trunk, and a duplicate
+        # would double-deliver every inbound call.
+        existing_uri = await self._find(
             f"{_TRUNKING}/Trunks/{trunk_sid}/OriginationUrls",
-            {
-                "FriendlyName": "CallFlow LiveKit",
-                "SipUrl": sip_uri(livekit_sip_host),
-                "Weight": 1,
-                "Priority": 1,
-                "Enabled": "true",
-            },
-            action="route inbound calls to LiveKit",
+            "origination_urls",
+            {"sip_url": sip_uri(livekit_sip_host)},
+            action="look for an existing origination URI",
         )
+        if not existing_uri:
+            await self._post(
+                f"{_TRUNKING}/Trunks/{trunk_sid}/OriginationUrls",
+                {
+                    "FriendlyName": "CallFlow LiveKit",
+                    "SipUrl": sip_uri(livekit_sip_host),
+                    "Weight": 1,
+                    "Priority": 1,
+                    "Enabled": "true",
+                },
+                action="route inbound calls to LiveKit",
+            )
 
         # Outbound is the half Twilio *can* authenticate, so it does.
-        credential_list = await self._post(
+        credential_list = await self._find(
+            f"{_API}/Accounts/{self._account_sid}/SIP/CredentialLists.json",
+            "credential_lists",
+            {"friendly_name": f"CallFlow {label}"},
+            action="look for an existing credential list",
+        ) or await self._post(
             f"{_API}/Accounts/{self._account_sid}/SIP/CredentialLists.json",
             {"FriendlyName": f"CallFlow {label}"},
             action="create a credential list",
         )
         credential_list_sid = str(credential_list.get("sid", ""))
 
-        await self._post(
+        # The password is derived from the attempt's own key, so a resumed
+        # attempt presents the identical one and there is nothing to rotate.
+        existing_credential = await self._find(
             f"{_API}/Accounts/{self._account_sid}/SIP/CredentialLists/{credential_list_sid}/Credentials.json",
-            {"Username": auth_username, "Password": auth_password},
-            action="store outbound credentials",
+            "credentials",
+            {"username": auth_username},
+            action="look for existing outbound credentials",
         )
-        await self._post(
+        if not existing_credential:
+            await self._post(
+                f"{_API}/Accounts/{self._account_sid}/SIP/CredentialLists/{credential_list_sid}/Credentials.json",
+                {"Username": auth_username, "Password": auth_password},
+                action="store outbound credentials",
+            )
+
+        attached = await self._find(
             f"{_TRUNKING}/Trunks/{trunk_sid}/CredentialLists",
-            {"CredentialListSid": credential_list_sid},
-            action="attach outbound credentials to the trunk",
+            "credential_lists",
+            {"sid": credential_list_sid},
+            action="look for credentials already on the trunk",
         )
+        if not attached:
+            await self._post(
+                f"{_TRUNKING}/Trunks/{trunk_sid}/CredentialLists",
+                {"CredentialListSid": credential_list_sid},
+                action="attach outbound credentials to the trunk",
+            )
 
-        await self._post(
-            f"{_TRUNKING}/Trunks/{trunk_sid}/PhoneNumbers",
-            {"PhoneNumberSid": number_ref},
-            action="attach the phone number to the trunk",
+        if attach_number:
+            await self._post(
+                f"{_TRUNKING}/Trunks/{trunk_sid}/PhoneNumbers",
+                {"PhoneNumberSid": number_ref},
+                action="attach the phone number to the trunk",
+            )
+
+        log.info(
+            "configured Twilio trunk %s (inbound %s)",
+            trunk_sid,
+            "attached" if attach_number else "left where it was",
         )
-
-        log.info("configured Twilio trunk %s", trunk_sid)
         return CarrierTrunk(
             provider="twilio",
             trunk_id=trunk_sid,

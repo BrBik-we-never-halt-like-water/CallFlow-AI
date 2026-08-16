@@ -234,3 +234,46 @@ def test_a_provider_serving_two_roles_stores_one_credential() -> None:
     assert ProviderRole.TRANSCRIBER in deepgram.roles
     assert ProviderRole.VOICE in deepgram.roles
     assert len(deepgram.fields) == 1
+
+
+# --- the routes the typed client actually calls -------------------------------
+
+
+def test_the_integrations_router_exposes_every_method_the_client_uses() -> None:
+    """`apps/web/lib/api.ts` calls all five of these.
+
+    A route can disappear from a hand-edited module without a single test
+    failing - nothing else here imports it by name, and the frontend only finds
+    out as a 405 at the moment a user clicks. That is exactly how DELETE went
+    missing during the per-provider-fields rewrite: every other test still
+    passed, and the first sign was "Couldn't disconnect" in the interface.
+    """
+    from app.api.v1.routes.integrations import router
+
+    exposed = {
+        (method, route.path)
+        for route in router.routes
+        for method in getattr(route, "methods", set())
+    }
+
+    assert ("GET", "/api/v1/integrations/catalogue") in exposed
+    assert ("GET", "/api/v1/integrations/providers") in exposed
+    assert ("PUT", "/api/v1/integrations/providers/{provider}") in exposed
+    assert ("DELETE", "/api/v1/integrations/providers/{provider}") in exposed
+    assert ("POST", "/api/v1/integrations/providers/{provider}/oauth/exchange") in exposed
+
+
+def test_the_telephony_router_exposes_both_connect_number_methods() -> None:
+    """Same reasoning: the connect-a-number screen polls the GET, and losing it
+    would look like provisioning silently never finishing."""
+    from app.api.v1.routes.telephony import router
+
+    exposed = {
+        (method, route.path)
+        for route in router.routes
+        for method in getattr(route, "methods", set())
+    }
+    path = "/api/v1/voice-agents/{voice_agent_id}/connect-number"
+
+    assert ("POST", path) in exposed
+    assert ("GET", path) in exposed

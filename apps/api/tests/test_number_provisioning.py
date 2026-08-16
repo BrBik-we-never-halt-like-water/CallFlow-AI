@@ -450,3 +450,4 @@ async def test_an_unset_credentials_key_refuses_rather_than_deriving_a_guessable
         await _connect(db, agent, "k-nokey")
 
     assert "PROVIDER_CREDENTIALS_KEY" in str(caught.value)
+

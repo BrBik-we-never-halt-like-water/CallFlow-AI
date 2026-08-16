@@ -9,6 +9,7 @@ import {
   GaugeIcon,
   GearSixIcon,
   MegaphoneIcon,
+  PlugsConnectedIcon,
   UserFocusIcon,
 } from '@phosphor-icons/react/dist/ssr';
 import Link from 'next/link';
@@ -32,7 +33,10 @@ export interface NavItem {
  * since folding them into the sidebar too would mean either compressing type or
  * cramming more links into one column, both worse than one extra click for a
  * rare action. `Chat`, unlike those two, is a working feature someone checks
- * often, so it stays in the primary list rather than joining them.
+ * often, so it stays in the primary list rather than joining them. `Integrations`
+ * moved out of Settings for the same reason: connecting a carrier and a speech
+ * vendor is what a new organisation has to do before anything works at all, so
+ * burying it two clicks deep put the first task behind the rarest menu.
  */
 export const NAV_ITEMS: Omit<NavItem, 'badge'>[] = [
   { label: 'Dashboard', href: '/app', icon: GaugeIcon },
@@ -41,11 +45,12 @@ export const NAV_ITEMS: Omit<NavItem, 'badge'>[] = [
   { label: 'Needs a person', href: '/app/escalations', icon: UserFocusIcon },
   { label: 'Contacts', href: '/app/contacts', icon: AddressBookIcon },
   { label: 'Chat', href: '/app/chat', icon: ChatCircleIcon },
+  { label: 'Integrations', href: '/app/integrations', icon: PlugsConnectedIcon },
   { label: 'Organisation', href: '/app/organisation', icon: BuildingsIcon },
   { label: 'Settings', href: '/app/settings', icon: GearSixIcon },
 ];
 
-/** The six destinations shown as the sidebar's primary nav list. */
+/** The seven destinations shown as the sidebar's primary nav list. */
 export const PRIMARY_NAV_ITEMS = NAV_ITEMS.filter(
   (item) => item.href !== '/app/organisation' && item.href !== '/app/settings',
 );

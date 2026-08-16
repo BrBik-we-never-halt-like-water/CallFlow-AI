@@ -1156,3 +1156,40 @@ pushes most of the fade off-canvas and leaves the rest as a short dissolve at th
 The two standing formations are taller as well (`GRID_HEIGHT` 2.6, `WAVE_HEIGHT` 2.7, from
 1.55 and 2.1), which fills the frame vertically and - because more particles now fall off
 the top and bottom and get culled - costs nothing.
+
+## 23. Integrations: one grid instead of seven walls, and why every brand mark is monochrome
+
+Two free-axis choices worth writing down, because both look like omissions.
+
+**The roles became a filter, not a layout.** The first version rendered a titled
+section per role - Phone numbers, Speech in, Speech out, Intelligence, Storage,
+Automation, Observability - each with its own paragraph and its own card grid.
+That reads fine with six providers and badly with fifty-seven: the two things an
+operator actually wants, "find Deepgram" and "what do I still need", ended up
+several screens apart from wherever they landed. Roles are now chips above one
+dense grid that search narrows, and the readiness line leads the page because it
+is the page's actual thesis. Nothing was removed; it stopped being stacked.
+
+**Every brand mark renders in `currentColor`, never the vendor's own colour.**
+Only 19 of the 57 providers have an obtainable logo: `simple-icons` used to
+carry most of the rest and has since removed them after trademark requests -
+Twilio, OpenAI, Slack, Salesforce, AWS and Azure among them - and there is no
+maintained source left. So the grid will hold a mix of real logos and fallback
+monograms for the foreseeable future, and a mix of full-colour brand marks
+against grey letters reads as broken rather than as varied. Monochrome makes the
+mixed set deliberate, keeps §9's monochrome identity intact, and sidesteps 57
+arbitrary brand hexes each having to clear contrast in two themes.
+
+The marks live as raw paths in `lib/brand-paths.ts` rather than behind a package
+dependency, because the 38 missing ones will arrive as hand-supplied SVGs and
+one registry beats two sources. Adding one is a `d` attribute and no other file
+change.
+
+**Toast animation was fixed in the same pass.** `toast.tsx` carried
+`data-[state=open]:animate-in`, a `tailwindcss-animate` utility from a plugin
+this project does not install - so the class resolved to nothing and every toast
+appeared and vanished on a single frame, with swipes snapping rather than
+following the finger. Replaced with real keyframes in `globals.css` under
+`.toast-item`, following §15's own `menu-in`/`sheet-in` convention, including
+the `data-swipe` states and a `prefers-reduced-motion` opt-out.
+
