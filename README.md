@@ -97,8 +97,11 @@ cp .env.example .env.local
 npm run dev                      # → http://localhost:3000
 ```
 
-Set `CALLE_API_KEY` to the Voice API key from your voice-engine provider - new
-accounts include free calls.
+Calls run on your own accounts, not a bundled one. Set `LIVEKIT_URL`,
+`LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` and `LIVEKIT_SIP_HOST` for the media and
+SIP layer, then connect a carrier and a speech and model vendor on
+Settings → Integrations - those credentials are stored per organisation, not in
+the environment.
 
 Auth and persistence run on Supabase: a project gives you a Postgres database, a
 JWKS URL, and publishable/secret keys. Set `SUPABASE_URL`, `SUPABASE_JWKS_URL`,

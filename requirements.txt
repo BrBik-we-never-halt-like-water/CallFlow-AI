@@ -1,4 +1,4 @@
-# CallFlow AI - backend runtime dependencies.
+# CallFlow AI - backend runtime dependencies for `apps/api`.
 #
 # Mirrors [project.dependencies] in apps/api/pyproject.toml. Installing the
 # package itself (`pip install -e ./apps/api`) resolves the same set; this file
@@ -10,10 +10,10 @@
 #   pip install -r requirements.txt
 #
 # For tests and linting, use requirements-dev.txt instead - it includes this file.
-
-# Voice engine SDK. The package name is the upstream distribution name and has
-# to stay verbatim or the install fails; it is never surfaced in the UI.
-calle-ai>=0.6.0
+#
+# `apps/voice-runtime` is a separate deployable with its own pyproject and its
+# own vendor extras; it is deliberately NOT installed by this file. See
+# DEPLOYMENT.md for how that process is installed and run.
 
 fastapi>=0.115.0
 uvicorn[standard]>=0.32.0
@@ -21,6 +21,10 @@ pydantic>=2.9.0
 python-dotenv>=1.0.1
 httpx>=0.27.0
 rich>=13.9.0
+
+# LiveKit's server API - trunks, dispatch rules, and CreateSIPParticipant.
+# Only ever imported by app/integrations/livekit/client.py.
+livekit-api>=1.0.0
 
 # Persistence and identity (Supabase Postgres).
 asyncpg>=0.30.0
