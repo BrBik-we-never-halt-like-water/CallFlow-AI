@@ -45,7 +45,12 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "a7c4e2f9b813"
-down_revision: str | None = "b938fa82e54d"
+# Rebased onto team chat's revision rather than the `b938fa82e54d` both
+# branches originally cut from. Chat merged into dev first, so leaving this
+# pointing at the shared parent would leave two heads - `alembic upgrade head`
+# fails outright on that, and CI's own single-head check catches it before the
+# VM does. Only this pointer moved; neither migration's contents changed.
+down_revision: str | None = "b3f7d2a891c5"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

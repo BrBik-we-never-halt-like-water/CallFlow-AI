@@ -334,6 +334,28 @@ export interface Suppression {
   suppressed_at: string;
 }
 
+export type ChannelKind = 'channel' | 'dm';
+
+export interface Channel {
+  id: string;
+  kind: ChannelKind;
+  name: string | null;
+  created_by: string | null;
+  member_ids: string[];
+  unread_count: number;
+  created_at: string;
+}
+
+export interface ChatMessage {
+  id: string;
+  channel_id: string;
+  sender_id: string | null;
+  sender_name: string | null;
+  body: string;
+  created_at: string;
+  edited_at: string | null;
+}
+
 /** Whatever the API's catalogue says it supports - not a hard-coded pair.
  * The list used to live here *and* on the server; the two drifting is how a
  * provider becomes selectable in the UI and unstorable by the API. */
@@ -547,7 +569,10 @@ export const api = {
     }),
   deleteActiveOrganisation: () =>
     authReq<void>('/api/v1/organisations/me', { method: 'DELETE' }),
-  listMembers: () => authReq<Team>('/api/v1/organisations/me/members'),
+  listMembers: (q?: string) =>
+    authReq<Team>(
+      `/api/v1/organisations/me/members${q ? `?q=${encodeURIComponent(q)}` : ''}`,
+    ),
   inviteMember: (email: string, role: string) =>
     authReq<PendingInvite>('/api/v1/organisations/me/invitations', {
       method: 'POST',
@@ -635,6 +660,69 @@ export const api = {
     }),
   disconnectProvider: (provider: Provider) =>
     authReq<void>(`/api/v1/integrations/providers/${provider}`, {
+      method: 'DELETE',
+    }),
+
+  // --- internal team chat ---------------------------------------------------
+  listChannels: () => authReq<Channel[]>('/api/v1/channels'),
+  // A dedicated cheap aggregate for the nav badge - not derived from
+  // listChannels(), which pays for every channel's full member list on every
+  // call. This one is mounted app-wide (every page, not just /app/chat), so
+  // it has to stay a single small query regardless of group size.
+  getUnreadCount: () =>
+    authReq<{ unread_count: number }>('/api/v1/channels/unread-count'),
+  getChannel: (channelId: string) =>
+    authReq<Channel>(`/api/v1/channels/${channelId}`),
+  createChannel: (draft: {
+    kind: ChannelKind;
+    name?: string | null;
+    member_ids: string[];
+  }) =>
+    authReq<Channel>('/api/v1/channels', {
+      method: 'POST',
+      body: JSON.stringify(draft),
+    }),
+  renameChannel: (channelId: string, name: string) =>
+    authReq<Channel>(`/api/v1/channels/${channelId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ name }),
+    }),
+  addChannelMember: (channelId: string, userId: string) =>
+    authReq<void>(`/api/v1/channels/${channelId}/members`, {
+      method: 'POST',
+      body: JSON.stringify({ user_id: userId }),
+    }),
+  removeChannelMember: (channelId: string, userId: string) =>
+    authReq<void>(`/api/v1/channels/${channelId}/members/${userId}`, {
+      method: 'DELETE',
+    }),
+  markChannelRead: (channelId: string) =>
+    authReq<void>(`/api/v1/channels/${channelId}/read`, { method: 'POST' }),
+  listMessages: (
+    channelId: string,
+    opts?: { before?: string; beforeId?: string; limit?: number },
+  ) => {
+    const params = new URLSearchParams();
+    if (opts?.before) params.set('before', opts.before);
+    if (opts?.beforeId) params.set('before_id', opts.beforeId);
+    if (opts?.limit) params.set('limit', String(opts.limit));
+    const qs = params.toString();
+    return authReq<ChatMessage[]>(
+      `/api/v1/channels/${channelId}/messages${qs ? `?${qs}` : ''}`,
+    );
+  },
+  sendMessage: (channelId: string, body: string) =>
+    authReq<ChatMessage>(`/api/v1/channels/${channelId}/messages`, {
+      method: 'POST',
+      body: JSON.stringify({ body }),
+    }),
+  editMessage: (channelId: string, messageId: string, body: string) =>
+    authReq<ChatMessage>(`/api/v1/channels/${channelId}/messages/${messageId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ body }),
+    }),
+  deleteMessage: (channelId: string, messageId: string) =>
+    authReq<void>(`/api/v1/channels/${channelId}/messages/${messageId}`, {
       method: 'DELETE',
     }),
 };
