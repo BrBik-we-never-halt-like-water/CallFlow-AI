@@ -5,6 +5,7 @@ import {
   AddressBookIcon,
   BroadcastIcon,
   BuildingsIcon,
+  ChatCircleIcon,
   GaugeIcon,
   GearSixIcon,
   MegaphoneIcon,
@@ -26,12 +27,13 @@ export interface NavItem {
 }
 
 /**
- * Every /app/* destination. The sidebar (`AppShell`'s `AppSidebar`) renders
- * everything but the last two as its primary nav list; `Organisation` and
- * `Settings` are lower-frequency and live in the account menu (`UserMenu`)
- * instead - folding them into the sidebar too would mean either compressing
- * type or cramming eight links into one column, both worse than one extra
- * click for a rare action.
+ * Every /app/* destination. The sidebar (`AppShell`'s `AppSidebar`) renders every
+ * item here except `Organisation` and `Settings` as its primary nav list - those
+ * two are lower-frequency and live in the account menu (`UserMenu`) instead,
+ * since folding them into the sidebar too would mean either compressing type or
+ * cramming more links into one column, both worse than one extra click for a
+ * rare action. `Chat` and `Agents`, unlike those two, are working features
+ * someone checks often, so they stay in the primary list rather than joining them.
  */
 export const NAV_ITEMS: Omit<NavItem, 'badge'>[] = [
   { label: 'Dashboard', href: '/app', icon: GaugeIcon },
@@ -40,6 +42,7 @@ export const NAV_ITEMS: Omit<NavItem, 'badge'>[] = [
   { label: 'Runs', href: '/app/runs', icon: BroadcastIcon },
   { label: 'Needs a person', href: '/app/escalations', icon: UserFocusIcon },
   { label: 'Contacts', href: '/app/contacts', icon: AddressBookIcon },
+  { label: 'Chat', href: '/app/chat', icon: ChatCircleIcon },
   { label: 'Organisation', href: '/app/organisation', icon: BuildingsIcon },
   { label: 'Settings', href: '/app/settings', icon: GearSixIcon },
 ];

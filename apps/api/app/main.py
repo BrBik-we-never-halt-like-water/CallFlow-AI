@@ -16,6 +16,7 @@ from app.api.v1.routes.campaigns import router as campaigns_router
 from app.api.v1.routes.escalations import router as escalations_router
 from app.api.v1.routes.integrations import router as integrations_router
 from app.api.v1.routes.invitations import router as invitations_router
+from app.api.v1.routes.messages import router as messages_router
 from app.api.v1.routes.organisations import router as organisations_router
 from app.api.v1.routes.profile import router as profile_router
 from app.api.v1.routes.runs import router as runs_router
@@ -81,6 +82,7 @@ app.include_router(api_keys_router)
 app.include_router(integrations_router)
 app.include_router(ai_providers_router)
 app.include_router(voice_agents_router)
+app.include_router(messages_router)
 
 
 @app.get("/")
