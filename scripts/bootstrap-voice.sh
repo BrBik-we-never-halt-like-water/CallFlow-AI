@@ -42,19 +42,77 @@ have_sudo() { sudo -n true 2>/dev/null; }
 # Checked rather than assumed, and named individually: a fresh VM is the normal
 # case for this script, and "ModuleNotFoundError" three steps later is a worse
 # way to learn the interpreter is too old.
-if ! command -v python3 > /dev/null; then
-  echo "FATAL: python3 is not installed on this host." >&2
-  exit 1
-fi
+# `livekit-agents` needs 3.11+, and this box may not have it: the voice VM runs
+# Ubuntu 20.04, whose system python is 3.8, while the API VM runs 24.04 with
+# 3.12. Refusing was the old behaviour and it left the deploy dead on a machine
+# nobody could fix without a shell - so this now *provisions* an interpreter
+# rather than only complaining about the one it found.
+#
+# `uv` rather than the deadsnakes PPA: it is a single static binary with real
+# arm64 builds (this host is aarch64, where deadsnakes coverage is patchy), it
+# needs no apt source and no sudo, and the CPython it fetches is a standalone
+# build that cannot be disturbed by a later `apt upgrade` of the system python.
+PYTHON_MIN_MINOR=11
+PYTHON_WANTED=3.12
 
-if ! python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)'; then
-  echo "FATAL: livekit-agents needs Python 3.11+, found $(python3 -V 2>&1)." >&2
-  echo "       Install a newer interpreter and point python3 at it." >&2
-  exit 1
-fi
+is_new_enough() {
+  "$1" -c "import sys; sys.exit(0 if sys.version_info >= (3, $PYTHON_MIN_MINOR) else 1)" 2>/dev/null
+}
 
-if ! python3 -c 'import venv' 2> /dev/null; then
-  echo "FATAL: the python3 venv module is missing (Debian/Ubuntu: apt install python3-venv)." >&2
+find_python() {
+  local candidate
+  for candidate in python3.13 python3.12 python3.11 python3; do
+    if command -v "$candidate" > /dev/null && is_new_enough "$candidate"; then
+      command -v "$candidate"
+      return 0
+    fi
+  done
+  # A previous run's uv-managed build, before uv itself is on PATH.
+  for candidate in "$HOME/.local/bin/uv" /usr/local/bin/uv; do
+    if [ -x "$candidate" ]; then
+      local managed
+      managed=$("$candidate" python find "$PYTHON_WANTED" 2>/dev/null) || true
+      if [ -n "$managed" ] && is_new_enough "$managed"; then
+        printf '%s' "$managed"
+        return 0
+      fi
+    fi
+  done
+  return 1
+}
+
+# Everything except the final path goes to stderr: the caller reads this
+# function's stdout as the interpreter path, so a stray log line becomes the
+# path and the venv step fails with a name nobody recognises.
+install_python() {
+  log "no Python ${PYTHON_WANTED}+ on this host - installing one with uv" >&2
+  if ! command -v uv > /dev/null && [ ! -x "$HOME/.local/bin/uv" ]; then
+    if ! curl -LsSf https://astral.sh/uv/install.sh | sh > /dev/null 2>&1; then
+      echo "FATAL: could not install uv. Is this host offline?" >&2
+      exit 1
+    fi
+  fi
+
+  local uv_bin="${HOME}/.local/bin/uv"
+  command -v uv > /dev/null && uv_bin=$(command -v uv)
+
+  if ! "$uv_bin" python install "$PYTHON_WANTED" >&2; then
+    echo "FATAL: uv could not install Python $PYTHON_WANTED." >&2
+    exit 1
+  fi
+
+  "$uv_bin" python find "$PYTHON_WANTED"
+}
+
+PYTHON=$(find_python || true)
+if [ -z "${PYTHON:-}" ]; then
+  PYTHON=$(install_python)
+fi
+[ -n "$PYTHON" ] || { echo "FATAL: no usable Python after provisioning." >&2; exit 1; }
+log "using $($PYTHON -V 2>&1) at $PYTHON"
+
+if ! "$PYTHON" -c 'import venv' 2> /dev/null; then
+  echo "FATAL: $PYTHON has no venv module (Debian/Ubuntu: apt install python3-venv)." >&2
   exit 1
 fi
 
@@ -69,9 +127,16 @@ for tool in node pm2; do
 done
 
 # ---------------------------------------------------------------- python env
+# Rebuilt when the existing venv is too old - a box upgraded from 3.8 keeps a
+# 3.8 .venv otherwise, and every install into it fails on the requires-python.
+if [ -x .venv/bin/python ] && ! is_new_enough .venv/bin/python; then
+  log "existing .venv is $(.venv/bin/python -V 2>&1) - replacing it"
+  rm -rf .venv
+fi
+
 if [ ! -x .venv/bin/python ]; then
   log "creating .venv"
-  python3 -m venv .venv
+  "$PYTHON" -m venv .venv
 fi
 
 log "installing the voice runtime with extras: $VOICE_EXTRAS"
