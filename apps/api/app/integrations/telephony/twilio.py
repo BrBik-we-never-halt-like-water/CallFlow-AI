@@ -55,6 +55,10 @@ TWILIO_SIGNALLING_CIDRS: tuple[str, ...] = (
 class TwilioCarrier:
     """Configures an organisation's own Twilio account to talk to LiveKit."""
 
+    # Twilio infers the transport, so LiveKit's outbound trunk is left on its
+    # own default. See `PlivoCarrier.outbound_transport` for why this exists.
+    outbound_transport: str | None = None
+
     def __init__(
         self,
         *,

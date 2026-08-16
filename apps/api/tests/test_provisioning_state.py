@@ -1,9 +1,16 @@
-"""The provisioning state machine: every legal move, and every illegal one.
+"""The provisioning state machine: every legal move, and every illegal one,
+plus the parts of the workflow that need no database to check.
 
-Pure - no database, so this runs in CI where the RLS tests cannot.
+Pure - no database, so this runs in CI where the RLS tests cannot. That is the
+whole reason the `_run_steps` case at the bottom lives here rather than beside
+the rest of the workflow's tests: `test_number_provisioning.py` is gated on
+`DATABASE_URL`, which CI never sets, so a regression there is caught by nobody.
 """
 
 from __future__ import annotations
+
+from typing import Any, Self
+from uuid import uuid4
 
 import pytest
 
@@ -15,6 +22,8 @@ from app.domain.provisioning import (
     check_transition,
     is_terminal,
 )
+from app.integrations.telephony.plivo import PlivoCarrier
+from app.integrations.telephony.twilio import TwilioCarrier
 
 S = ProvisioningStatus
 
@@ -95,3 +104,75 @@ def test_status_values_match_the_database_check_constraint() -> None:
     database rejects an unknown value, but only the enum rejects a known value
     reached illegally, so a mismatch disables one guard silently."""
     assert {s.value for s in S} == {"pending", "provisioning", "verified", "failed"}
+
+
+class _TrunkRecordingGateway:
+    """Captures the kwargs the outbound-trunk step actually sends."""
+
+    def __init__(self) -> None:
+        self.outbound_kwargs: dict[str, Any] = {}
+
+    async def __aenter__(self) -> Self:
+        return self
+
+    async def __aexit__(self, *_exc: object) -> None:
+        return None
+
+    async def create_outbound_trunk(self, **kwargs: Any) -> str:
+        self.outbound_kwargs = kwargs
+        return "ST_out_1"
+
+
+async def _outbound_transport_for(carrier_cls: type, monkeypatch: pytest.MonkeyPatch) -> Any:
+    """Run `_run_steps` with only the outbound-trunk step left to do."""
+    from app.services import number_provisioning as service
+
+    attempt_id = uuid4()
+    # Every earlier step already recorded its result, so this resumes straight
+    # to the outbound trunk - which is also the path that has no `CarrierTrunk`
+    # in scope, the reason the transport has to come off the carrier class.
+    row = {
+        "id": attempt_id,
+        "livekit_inbound_trunk_id": "ST_in_1",
+        "livekit_dispatch_rule_id": "SDR_1",
+        "carrier_termination_domain": "acme.zt.plivo.com",
+        "livekit_outbound_trunk_id": None,
+    }
+
+    async def _record(_conn: Any, _attempt_id: Any, **fields: Any) -> dict[str, Any]:
+        return {**row, **fields}
+
+    monkeypatch.setattr(service.provisioning_repo, "record_livekit_ids", _record)
+
+    gateway = _TrunkRecordingGateway()
+    await service._run_steps(
+        None,
+        row=row,
+        carrier_cls=carrier_cls,
+        credentials={},
+        phone_number="+15555550100",
+        number_ref="+15555550100",
+        label="acme",
+        sip_host="abc.sip.livekit.cloud",
+        username="u",
+        password="p",
+        gateway_factory=lambda: gateway,
+    )
+    return gateway.outbound_kwargs["transport"]
+
+
+@pytest.mark.asyncio
+async def test_the_outbound_trunk_names_plivos_transport(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Left to LiveKit's `auto` default, every outbound call to Plivo is
+    rejected - and provisioning still reports verified, so the only symptom is
+    calls that never connect."""
+    assert await _outbound_transport_for(PlivoCarrier, monkeypatch) == "tls"
+
+
+@pytest.mark.asyncio
+async def test_the_outbound_trunk_leaves_twilio_on_auto(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    assert await _outbound_transport_for(TwilioCarrier, monkeypatch) == "auto"

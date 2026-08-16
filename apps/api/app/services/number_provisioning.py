@@ -38,7 +38,7 @@ import asyncpg
 from app.core.config import config
 from app.database.repositories import telephony_provisioning as provisioning_repo
 from app.domain.provisioning import ProvisioningStatus
-from app.integrations.livekit.client import LiveKitGateway
+from app.integrations.livekit.client import LiveKitGateway, SipTransport
 from app.integrations.telephony import CarrierError, CarrierTrunk
 from app.integrations.telephony.plivo import PlivoCarrier
 from app.integrations.telephony.twilio import TwilioCarrier
@@ -165,7 +165,10 @@ async def connect_number(
         log.info("resuming provisioning attempt %s", row["id"])
 
     if status is ProvisioningStatus.PENDING:
-        row = await provisioning_repo.set_status(conn, row["id"], ProvisioningStatus.PROVISIONING)
+        row = _require(
+            await provisioning_repo.set_status(conn, row["id"], ProvisioningStatus.PROVISIONING),
+            row["id"],
+        )
 
     username, password = _sip_auth(idempotency_key)
 
@@ -286,6 +289,10 @@ async def _run_steps(
                 numbers=[phone_number],
                 auth_username=username,
                 auth_password=password,
+                # Read off the carrier, not the row: a resumed attempt reaches
+                # here with `configured` long out of scope, and defaulting to
+                # `auto` is exactly what Plivo rejects.
+                transport=carrier_cls.outbound_transport or SipTransport.AUTO,
             )
             row = _require(
                 await provisioning_repo.record_livekit_ids(

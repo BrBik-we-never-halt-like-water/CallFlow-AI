@@ -44,6 +44,13 @@ DEFAULT_TRANSPORT = "tls"
 class PlivoCarrier:
     """Configures an organisation's own Plivo account to talk to LiveKit."""
 
+    # The transport LiveKit's *outbound* trunk must name when it dials this
+    # carrier's termination domain. Plivo rejects a URI without one, so leaving
+    # it to LiveKit's `auto` fails every outbound call - `None` (Twilio) means
+    # the carrier infers it, the same "branch on the value, not the provider"
+    # shape `CarrierTrunk.termination_domain` already uses.
+    outbound_transport: str | None = DEFAULT_TRANSPORT
+
     def __init__(
         self,
         *,

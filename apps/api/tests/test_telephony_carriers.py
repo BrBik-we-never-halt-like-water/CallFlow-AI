@@ -26,6 +26,18 @@ from app.integrations.telephony.twilio import TWILIO_SIGNALLING_CIDRS, TwilioCar
 LIVEKIT_HOST = "5t4ms1u1nvx.sip.livekit.cloud"
 
 
+def test_only_plivo_demands_an_explicit_outbound_transport() -> None:
+    """The value `number_provisioning` hands LiveKit's outbound trunk.
+
+    Plivo rejects a termination URI that does not name a transport, so leaving
+    LiveKit on its `auto` default fails every outbound call to it - silently,
+    since provisioning itself still reports success. Twilio infers one, and
+    says so by declaring nothing.
+    """
+    assert PlivoCarrier.outbound_transport == "tls"
+    assert TwilioCarrier.outbound_transport is None
+
+
 class Recorder:
     """Records every request and answers from a scripted sequence."""
 
