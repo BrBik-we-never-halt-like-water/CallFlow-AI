@@ -58,6 +58,12 @@ module.exports = {
     {
       name: `callflow-voice${suffix}`,
       cwd: `${__dirname}/apps/voice-runtime`,
+      // Runs on its OWN VM, not the one above (DEPLOYMENT.md §3b). One file
+      // still describes all three because `pm2 --only` is what selects per
+      // host - the API box never starts this entry, and the voice box starts
+      // only this one. Splitting the file would mean two places to keep the
+      // suffix convention in step for no gain.
+      //
       // No port, and none needed: this is a long-running worker that dials out
       // to LiveKit and holds a websocket, not a server anything connects to. So
       // there is nothing for nginx to front and nothing to check against

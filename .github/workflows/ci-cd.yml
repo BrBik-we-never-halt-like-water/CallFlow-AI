@@ -36,6 +36,7 @@ jobs:
     outputs:
       api: ${{ steps.filter.outputs.api }}
       web: ${{ steps.filter.outputs.web }}
+      voice: ${{ steps.filter.outputs.voice }}
     steps:
       # No `actions/checkout`, deliberately. This job sits on the critical path
       # of every run, so it has to be cheap or it eats the time the filtering
@@ -53,6 +54,7 @@ jobs:
             echo "$1"
             echo "api=true" >> "$GITHUB_OUTPUT"
             echo "web=true" >> "$GITHUB_OUTPUT"
+            echo "voice=true" >> "$GITHUB_OUTPUT"
             exit 0
           }
 
@@ -84,20 +86,28 @@ jobs:
 
           api=false
           web=false
-          # Anything outside the two app directories is shared - the workflow
-          # itself, ecosystem.config.js, scripts/bootstrap.sh, the root
-          # package.json - and any of them can change how BOTH halves deploy.
+          voice=false
+          # Anything outside the three app directories is shared - the workflow
+          # itself, ecosystem.config.js, the bootstrap scripts, the root
+          # package.json - and any of them can change how ALL of them deploy.
+          #
+          # The voice runtime deploys to its own VM (see the deployment section
+          # below), so it gets its own flag rather than falling through to the
+          # catch-all: without this, every worker change also rebuilt the web
+          # app and re-ran migrations on a box it never touches.
           while IFS= read -r f; do
             case "$f" in
-              apps/api/*) api=true ;;
-              apps/web/*) web=true ;;
-              *)          api=true; web=true ;;
+              apps/api/*)           api=true ;;
+              apps/web/*)           web=true ;;
+              apps/voice-runtime/*) voice=true ;;
+              *)                    api=true; web=true; voice=true ;;
             esac
           done <<< "$changed"
 
           echo "api=$api" >> "$GITHUB_OUTPUT"
           echo "web=$web" >> "$GITHUB_OUTPUT"
-          echo "Result: api=$api web=$web"
+          echo "voice=$voice" >> "$GITHUB_OUTPUT"
+          echo "Result: api=$api web=$web voice=$voice"
 
   api:
     name: API lint & tests
@@ -130,6 +140,27 @@ jobs:
             exit 1
           fi
 
+      - run: pytest -q
+
+  voice:
+    name: Voice runtime lint & tests
+    needs: [changes]
+    if: ${{ needs.changes.outputs.voice == 'true' }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/voice-runtime
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      # No extras: the plugin factories import lazily (app/pipeline.py), so the
+      # registry and the worker are testable with no vendor package present -
+      # which is the point of that design and worth holding CI to.
+      - run: pip install -e ".[dev]"
+      - run: ruff check app tests
       - run: pytest -q
 
   web:
@@ -208,7 +239,7 @@ jobs:
           username: ${{ vars.VM_USER }}
           key: ${{ secrets.VM_SSH_KEY }}
           command_timeout: 20m
-          envs: BRANCH,APP_DIR,PUBLIC_URL,CALLFLOW_ENV,REPO_URL,ENV_FILE_B64,WEB_ENV_FILE_B64,ORIGIN_CERT_B64,ORIGIN_KEY_B64,CERTBOT_EMAIL
+          envs: BRANCH,APP_DIR,PUBLIC_URL,CALLFLOW_ENV,REPO_URL,ENV_FILE_B64,WEB_ENV_FILE_B64,ORIGIN_CERT_B64,ORIGIN_KEY_B64,CERTBOT_EMAIL,VOICE_VM_HOST
           script: |
             set -euo pipefail
 
@@ -253,6 +284,9 @@ jobs:
           ORIGIN_CERT_B64: ${{ secrets.ORIGIN_CERT_B64 }}
           ORIGIN_KEY_B64: ${{ secrets.ORIGIN_KEY_B64 }}
           CERTBOT_EMAIL: ${{ vars.CERTBOT_EMAIL }}
+          # Not for this VM to use - it is the address nginx here will allow to
+          # reach /internal/, which is the only door the voice VM knocks on.
+          VOICE_VM_HOST: ${{ vars.VOICE_VM_HOST }}
 
   # ---- API chain -------------------------------------------------------------
 
@@ -381,3 +415,154 @@ jobs:
         run: |
           sleep 5
           curl -fsS --retry 5 --retry-delay 3 --retry-connrefused -o /dev/null "$PUBLIC_URL/"
+
+  # ---- Voice chain -------------------------------------------------------------
+  #
+  # A different VM entirely (vars.VOICE_VM_HOST), so this chain shares nothing
+  # with the two above except the SSH credentials - not the checkout, not the
+  # .venv, not the pm2 daemon. It therefore does not go through `provision`, and
+  # a failing API deploy does not hold it back.
+  #
+  # No `migrate` step: the worker never opens a database connection. It reports
+  # a finished call to the API over HTTP (`/internal/v1/...`), which is the only
+  # thing on this box that talks to CallFlow at all.
+
+  provision-voice:
+    name: Provision voice ${{ github.ref_name }}
+    needs: [changes, voice]
+    if: >-
+      ${{ github.event_name == 'push'
+          && needs.changes.outputs.voice == 'true'
+          && !cancelled()
+          && needs.voice.result != 'failure' }}
+    runs-on: ubuntu-latest
+    environment: ${{ github.ref_name }}
+    env:
+      BRANCH: ${{ github.ref_name }}
+      VOICE_APP_DIR: ${{ vars.VOICE_APP_DIR }}
+      VOICE_VM_HOST: ${{ vars.VOICE_VM_HOST }}
+    steps:
+      # Same reasoning as the API's own check: an unset var would deploy this
+      # branch into whatever directory - or onto whatever host - the other
+      # environment uses.
+      - name: Check the environment is configured
+        run: |
+          test -n "$VOICE_APP_DIR" || { echo "VOICE_APP_DIR is not set for environment '$BRANCH'"; exit 1; }
+          test -n "$VOICE_VM_HOST" || { echo "VOICE_VM_HOST is not set for environment '$BRANCH'"; exit 1; }
+
+      - name: Bring the voice VM to the expected state
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ vars.VOICE_VM_HOST }}
+          username: ${{ vars.VM_USER }}
+          key: ${{ secrets.VM_SSH_KEY }}
+          command_timeout: 20m
+          envs: BRANCH,VOICE_APP_DIR,CALLFLOW_ENV,REPO_URL,VOICE_ENV_FILE_B64,VOICE_EXTRAS
+          script: |
+            set -euo pipefail
+
+            # Inline for the same reason as the API's: on a bare machine
+            # scripts/bootstrap-voice.sh does not exist yet.
+            if [ ! -d "$VOICE_APP_DIR/.git" ]; then
+              echo "==> cloning $BRANCH into $VOICE_APP_DIR"
+              if [ ! -d "$VOICE_APP_DIR" ]; then
+                mkdir -p "$VOICE_APP_DIR" 2>/dev/null \
+                  || { sudo -n mkdir -p "$VOICE_APP_DIR" && sudo -n chown "$(id -u):$(id -g)" "$VOICE_APP_DIR"; }
+              fi
+              git clone --branch "$BRANCH" "$REPO_URL" "$VOICE_APP_DIR"
+            fi
+
+            cd "$VOICE_APP_DIR"
+            git remote set-url origin "$REPO_URL"
+            git fetch --prune origin
+            git checkout -B "$BRANCH" "origin/$BRANCH"
+
+            for required in apps/voice-runtime ecosystem.config.js scripts/bootstrap-voice.sh; do
+              [ -e "$required" ] || { echo "FATAL: $required missing."; exit 1; }
+            done
+
+            bash scripts/bootstrap-voice.sh
+        env:
+          CALLFLOW_ENV: ${{ github.ref_name == 'main' && 'production' || 'dev' }}
+          REPO_URL: ${{ vars.REPO_URL || 'https://github.com/BrBik-we-never-halt-like-water/CallFlow-AI.git' }}
+          VOICE_ENV_FILE_B64: ${{ secrets.VOICE_ENV_FILE_B64 }}
+          VOICE_EXTRAS: ${{ vars.VOICE_EXTRAS }}
+
+  deploy-voice:
+    name: Deploy voice ${{ github.ref_name }}
+    needs: [changes, provision-voice]
+    # Bracket notation, not `needs.provision-voice`: a hyphen in a job id is
+    # parsed as subtraction in a GitHub expression, so the dotted form silently
+    # evaluates to nothing and the guard never holds.
+    if: >-
+      ${{ needs.changes.outputs.voice == 'true'
+          && !cancelled()
+          && needs['provision-voice'].result == 'success' }}
+    runs-on: ubuntu-latest
+    environment: ${{ github.ref_name }}
+    env:
+      BRANCH: ${{ github.ref_name }}
+      VOICE_APP_DIR: ${{ vars.VOICE_APP_DIR }}
+    steps:
+      - name: Restart the worker
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ vars.VOICE_VM_HOST }}
+          username: ${{ vars.VM_USER }}
+          key: ${{ secrets.VM_SSH_KEY }}
+          command_timeout: 10m
+          envs: BRANCH,VOICE_APP_DIR
+          script: |
+            set -euo pipefail
+            cd "$VOICE_APP_DIR"
+
+            if [ "$BRANCH" = "main" ]; then SUFFIX=""; else SUFFIX="-dev"; fi
+            if [ "$BRANCH" = "main" ]; then export CALLFLOW_ENV=production; else export CALLFLOW_ENV=dev; fi
+
+            # One ecosystem.config.js describes all three processes; --only is
+            # what makes this host run the worker and nothing else. The API's
+            # entries are simply never selected here.
+            pm2 startOrRestart "$VOICE_APP_DIR/ecosystem.config.js" \
+              --only "callflow-voice$SUFFIX" --update-env
+
+            pm2 save
+
+      - name: Health check
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ vars.VOICE_VM_HOST }}
+          username: ${{ vars.VM_USER }}
+          key: ${{ secrets.VM_SSH_KEY }}
+          command_timeout: 5m
+          envs: BRANCH
+          script: |
+            set -euo pipefail
+            if [ "$BRANCH" = "main" ]; then SUFFIX=""; else SUFFIX="-dev"; fi
+            NAME="callflow-voice$SUFFIX"
+
+            # There is no port to curl: this process dials out and serves
+            # nothing. "Online" alone is not enough either - a crash-looping
+            # worker is online for the moment pm2 samples it - so the uptime has
+            # to have survived long enough to prove it got past its own config
+            # check and the livekit-agents import.
+            sleep 20
+            pm2 jlist > /tmp/pm2-voice.json
+            node -e '
+              const name = process.argv[1];
+              const proc = require("/tmp/pm2-voice.json").find((p) => p.name === name);
+              if (!proc) {
+                console.error(`FATAL: ${name} is not in the pm2 process list.`);
+                process.exit(1);
+              }
+              const status = proc.pm2_env.status;
+              const uptimeMs = Date.now() - proc.pm2_env.pm_uptime;
+              if (status !== "online") {
+                console.error(`FATAL: ${name} is ${status}, not online.`);
+                process.exit(1);
+              }
+              if (uptimeMs < 10000) {
+                console.error(`FATAL: ${name} restarted ${Math.round(uptimeMs / 1000)}s ago - it is crash-looping.`);
+                process.exit(1);
+              }
+              console.log(`${name} is online, up ${Math.round(uptimeMs / 1000)}s.`);
+            ' "$NAME" || { pm2 logs "$NAME" --lines 50 --nostream; exit 1; }

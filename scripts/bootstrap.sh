@@ -21,6 +21,11 @@
 #   ORIGIN_CERT_B64    Cloudflare Origin certificate, base64. Omit if the pair is
 #   ORIGIN_KEY_B64     already on the VM at /etc/ssl/cloudflare/calllflow.{pem,key}
 #   CERTBOT_EMAIL      Let's Encrypt fallback, for a host not behind Cloudflare
+#   VOICE_VM_HOST      the voice runtime's address, allowed to reach /internal/.
+#                      Unset closes that location to everyone.
+#
+# The voice runtime deploys to its own VM and its own script - see
+# scripts/bootstrap-voice.sh. Nothing here installs or starts it.
 #
 set -euo pipefail
 
@@ -36,6 +41,18 @@ have_sudo() { sudo -n true 2>/dev/null; }
 
 PUBLIC_HOST=${PUBLIC_URL#*://}
 PUBLIC_HOST=${PUBLIC_HOST%%/*}
+
+# The voice runtime posts finished calls to /internal/ from its own VM. Only
+# that host may reach it, and an environment with no voice VM configured gets a
+# location that refuses everyone rather than one that quietly allows anyone.
+if [ -n "${VOICE_VM_HOST:-}" ]; then
+  VOICE_ALLOW="allow $VOICE_VM_HOST;"
+else
+  # A comment, not another `deny all;` - the template already denies everything
+  # this does not explicitly allow, and the rendered file should say why the
+  # location is shut rather than repeat itself.
+  VOICE_ALLOW="# no voice host configured for this environment"
+fi
 
 # ---------------------------------------------------------------- python env
 if [ ! -x .venv/bin/python ]; then
@@ -165,7 +182,8 @@ if [ ! -f "$SITE" ] && have_sudo; then
     sed -e "s|@HOST@|$PUBLIC_HOST|g" \
         -e "s|@ENV@|$CALLFLOW_ENV|g" \
         -e "s|@API_PORT@|$API_PORT|g" \
-        -e "s|@WEB_PORT@|$WEB_PORT|g" "$1"
+        -e "s|@WEB_PORT@|$WEB_PORT|g" \
+        -e "s|@VOICE_ALLOW@|$VOICE_ALLOW|g" "$1"
   }
 
   sudo mkdir -p /etc/nginx/snippets
@@ -193,6 +211,7 @@ else
   if have_sudo; then
     sudo mkdir -p /etc/nginx/snippets
     sed -e "s|@API_PORT@|$API_PORT|g" -e "s|@WEB_PORT@|$WEB_PORT|g" \
+      -e "s|@VOICE_ALLOW@|$VOICE_ALLOW|g" \
       scripts/nginx.locations.template \
       | sudo tee "/etc/nginx/snippets/callflow-$CALLFLOW_ENV.conf.next" > /dev/null
     if ! sudo cmp -s "/etc/nginx/snippets/callflow-$CALLFLOW_ENV.conf.next" \
