@@ -132,6 +132,10 @@ exist in this repo**; `SYSTEM.md` §12 is the closest real gap map until it's wr
 | [#102](#102--channel_members_select-s-member-branch-had-no-live-organisation-membership-check)                                     | S2  | `channel_members_select`'s member branch had no live organisation-membership check                                    | database       | it-36 | **FIXED**        |
 | [#103](#103--opening-a-different-conversation-remounted-the-whole-chat-page)                                                       | S2  | Opening a different conversation remounted the whole chat page                                                        | web            | it-37 | **FIXED**        |
 | [#104](#104--the-message-pane-never-auto-scrolled-to-the-newest-message)                                                           | S3  | The message pane never auto-scrolled to the newest message                                                            | web            | it-37 | **FIXED**        |
+| [#105](#105--the-realtime-debounce-coalesced-a-burst-down-to-only-its-last-payload)                                                | S2  | The Realtime debounce coalesced a burst down to only its last payload                                                 | web            | it-38 | **FIXED**        |
+| [#106](#106--no-replica-identity-full-on-the-three-chat-tables)                                                                    | S2  | No `replica identity full` on the three chat tables                                                                   | database       | it-38 | **FIXED**        |
+| [#107](#107--messages_insert-had-no-org_id-check-channel_members_insert-already-had)                                               | S2  | `messages_insert` had no `org_id` check `channel_members_insert` already had                                          | database       | it-38 | **FIXED**        |
+| [#108](#108--gitignores-supabase-entry-was-un-anchored)                                                                            | S3  | `.gitignore`'s `supabase` entry was un-anchored                                                                       | web            | it-38 | **FIXED**        |
 
 ---
 
@@ -4260,6 +4264,119 @@ after opening a conversation with overflowing history; after the fix, `scrollTop
 new message into it.
 
 **Depends on / Blocks:** Iteration 37 #103 (same restructure exposed both).
+
+## Iteration 38 - 2026-08-16 · team chat code review: four must-fix findings
+
+A full review of the chat feature against `RUNBOOK_JATIN_PART_3.md` (26 files, +5538/-56)
+found four issues serious enough to block the PR - "careful work... but #1 and #2 mean live
+chat doesn't reliably deliver, which is the feature." All four are fixed below. The review's
+"should fix" and "nit" findings (edit-then-403 ordering in `edit_message`, the admin-branch
+product question on `channels_select`/`list_my_channels`, non-idempotent DELETE endpoints,
+`supabase/config.toml`'s overlap with `DEV_SETUP.md`'s own local-database path, a migration
+filename that sorts out of apply order, a stale `Revises:` docstring, a dead grant on
+`channels`) are deliberately not addressed here - several want an explicit product decision
+(the admin-branch scope, whether to keep the Supabase CLI path at all) rather than a
+unilateral fix.
+
+### #105 - The Realtime debounce coalesced a burst down to only its last payload
+
+**S2 · FIXED · web · `apps/web/lib/hooks/use-org-realtime.ts`**
+
+`useOrgRealtime`'s debounce reset a single timeout on every event and, when it fired, handed
+the callback only the payload from whichever event arrived last. Two call sites filter on
+that payload (`chat-shell.tsx`'s `messages`/`channel_members` subscriptions): a message
+landing in channel A and one in channel B within the same 300ms window meant only B's payload
+survived, so A's message was never refetched until a channel switch or reload. Debouncing the
+refetch and filtering by payload are each fine in isolation; combined, the filter silently
+discarded whichever event didn't win the race - the normal case, not an edge case, in a busy
+organisation.
+
+**Fix.** The debounce now accumulates every payload it coalesces into an array and clears it
+only when the timer actually fires, so the callback receives the whole burst rather than its
+last member - still one refetch per burst, but zero events dropped. Both consuming call sites
+in `chat-shell.tsx` (`channel_members`, `messages`) were updated to check the whole batch
+(`payloads.some(...)`) rather than a single payload; the three call sites that ignore the
+payload entirely (`use-chat-unread.ts`, `app-store.tsx`, `organisation/page.tsx`) needed no
+change - a `() => void` callback is assignable wherever the array-typed one is expected.
+
+**Verified.** `tsc --noEmit` clean across all six call sites. Not covered by an automated
+test - simulating a genuine sub-300ms two-channel Realtime burst deterministically wasn't
+attempted; the fix was verified by inspection of the corrected coalescing logic instead.
+
+### #106 - No `replica identity full` on the three chat tables
+
+**S2 · FIXED · database · `apps/api/alembic/versions/202608100000_team_chat_channels_and_messages.py`**
+
+The migration adds `channels`/`channel_members`/`messages` to `supabase_realtime` but never
+sets replica identity - the one line `202608101000_escalations_realtime.py` already sets
+defensively, and that migration's own docstring says why: Supabase's docs note RLS cannot be
+applied to a DELETE event at all without it. Escalations set it for a delete path that
+doesn't exist; chat has one - `channel_members` rows are deleted on leave/removal and
+subscribed with `event: '*'`. Without the full row, a DELETE's `old` record ships primary-key
+columns only (`org_id` isn't part of any of these three tables' primary key), so being
+removed from a channel - or leaving in another tab - never propagated live, and the
+`org_id=eq.<org>` Realtime filter couldn't match the delete's old record either.
+
+**Fix.** `replica identity full` for all three tables, executed right before they're added to
+the publication (mirroring escalations' order), with the reverse in `downgrade()`.
+
+**Verified.** New regression test `test_chat_tables_have_full_replica_identity` asserts
+`pg_class.relreplident = 'f'` for all three tables directly - confirmed to fail before the
+migration change, pass after. Applied directly to the local dev database (`alter table ...
+replica identity full`) rather than a destructive downgrade/upgrade cycle, so existing seeded
+conversations were preserved. Full backend suite: 274 passed (272 + this + #107's test),
+`ruff` clean.
+
+### #107 - `messages_insert` had no `org_id` check `channel_members_insert` already had
+
+**S2 · FIXED · database · `apps/api/alembic/versions/202608100000_team_chat_channels_and_messages.py`**
+
+`channel_members_insert` ends with `and org_id = public.channel_org_id(channel_id)`;
+`messages_insert` never constrained `messages.org_id` at all. Reachable without PostgREST: a
+user who belongs to both organisation A and organisation B, seated in a channel that belongs
+to A, sends with an active-org header of B. `sender_id`/`is_channel_member`/`is_org_member`
+all pass - none of them look at the `org_id` column being written - and the row lands with
+`org_id = B`. No read leak (`messages_select` keys off membership, not `org_id`), but the row
+becomes invisible to every recipient's own `org_id=eq.A` Realtime filter - the message goes
+undelivered live for the whole channel - and `messages.org_id` stops being trustworthy for
+anything downstream that assumes it agrees with its own `channel_id`.
+
+**Fix.** Added the identical clause - `and org_id = public.channel_org_id(channel_id)` - to
+`messages_insert`'s `WITH CHECK`.
+
+**Verified.** New regression test `test_messages_insert_rejects_a_mismatched_org_id_from_a_multi_org_member`
+seats one tenant in both organisations, confirms the exact scenario above (`send_message`
+called with the channel's own org and a different, mismatched `org_id`) is rejected and
+leaves no row - confirmed to fail against the pre-fix policy, pass after. Applied directly to
+the local dev database (`drop policy` + recreate) rather than a destructive migration replay.
+Full backend suite: 274 passed, `ruff` clean.
+
+### #108 - `.gitignore`'s `supabase` entry was un-anchored
+
+**S3 · FIXED · web · `.gitignore`**
+
+An un-anchored `supabase` line matched any path segment named `supabase` anywhere in the
+repository, confirmed with `git check-ignore` against `apps/web/lib/supabase/newfile.ts`. The
+four files already there stayed tracked (an ignore rule doesn't retroactively untrack
+anything), so nothing broke today - but the next file added to the browser/server Supabase
+clients would have been silently ignored. It also lacked a trailing newline and duplicated,
+imprecisely, what `supabase/.gitignore` (this same PR's own addition) already excludes
+precisely: `.branches` and `.temp`, relative to that nested file.
+
+**Fix.** Removed the redundant, incorrectly-scoped root-level line entirely rather than
+re-anchoring it to `/supabase/` - the nested `supabase/.gitignore` already handles the actual
+exclusion correctly, and a root-level `/supabase/` would additionally ignore any future
+top-level file added under `supabase/` (a seed file, say), which is a product decision (see
+`ISSUES.md` #106's neighbour, the "should fix" note on `supabase/config.toml` itself) rather
+than something this fix should decide unilaterally.
+
+**Verified.** `git check-ignore -v apps/web/lib/supabase/newfile.ts` no longer matches;
+`git check-ignore -v supabase/.branches/_current_branch` and `.../temp/...` still correctly
+match via the nested `supabase/.gitignore`, confirming no loss of the intended exclusion.
+Trailing newline confirmed via a byte-level check of the file's tail.
+
+**Depends on / Blocks:** none - independent of #105-#107, filed together as the same review's
+findings.
 
 ## Template for the next iteration
 

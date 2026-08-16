@@ -203,11 +203,20 @@ create policy messages_select on public.messages for select
     and public.is_org_member(public.channel_org_id(channel_id))
   );
 
+-- The org_id = channel_org_id(channel_id) check mirrors channel_members_insert's
+-- own - without it, a caller who is a member of this channel but currently
+-- acting as a different organisation (a stale/forged X-Org-Id) can insert a
+-- row whose org_id doesn't match its own channel_id at all. messages_select
+-- keys off membership, not org_id, so that alone isn't a read leak - but the
+-- mismatched org_id makes the row invisible to every recipient's Realtime
+-- filter (org_id=eq.<their org>) and untrustworthy for anything downstream
+-- that assumes it agrees with its own channel.
 create policy messages_insert on public.messages for insert
   with check (
     sender_id = public.current_user_id()
     and public.is_channel_member(channel_id)
     and public.is_org_member(public.channel_org_id(channel_id))
+    and org_id = public.channel_org_id(channel_id)
   );
 
 -- Edit or soft-delete: the sender only, on their own message, never anyone
@@ -295,6 +304,26 @@ $$;
 """
 
 DROP_CREATE_CHANNEL_FUNCTION = "drop function if exists public.create_channel(uuid, text, text, uuid[])"
+
+# Supabase's own docs note RLS cannot be applied to DELETE events at all
+# without REPLICA IDENTITY FULL - `202608101000_escalations_realtime.py` set
+# this defensively for a delete path escalations doesn't even have. Chat does:
+# channel_members is deleted on leave/removal and subscribed with event: '*'.
+# Without this, a DELETE's `old` record ships primary-key columns only
+# (channel_id, user_id for channel_members - org_id isn't part of any of
+# these three tables' primary key), so a departure never reaches an open tab
+# live: it's not just that RLS can't be evaluated on the stripped-down row,
+# the org_id=eq.<org> filter this hook subscribes with can't match it either.
+REPLICA_IDENTITY = (
+    "alter table public.channels replica identity full;\n"
+    "alter table public.channel_members replica identity full;\n"
+    "alter table public.messages replica identity full;"
+)
+REPLICA_IDENTITY_RESET = (
+    "alter table public.channels replica identity default;\n"
+    "alter table public.channel_members replica identity default;\n"
+    "alter table public.messages replica identity default;"
+)
 
 # `postgres` owns `supabase_realtime` (confirmed against this project before
 # writing this migration - CLAUDE.md's document map calls SUPABASE_SETUP.md the
@@ -413,11 +442,13 @@ def upgrade() -> None:
     op.execute(HELPERS)
     op.execute(POLICIES)
     op.execute(CREATE_CHANNEL_FUNCTION)
+    op.execute(REPLICA_IDENTITY)
     op.execute(REALTIME_PUBLICATION)
 
 
 def downgrade() -> None:
     op.execute(REALTIME_PUBLICATION_DROP)
+    op.execute(REPLICA_IDENTITY_RESET)
     op.execute(DROP_CREATE_CHANNEL_FUNCTION)
     op.execute("drop function if exists public.channel_created_by(uuid) cascade")
     op.execute("drop function if exists public.is_user_org_member(uuid, uuid) cascade")

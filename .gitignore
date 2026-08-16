@@ -43,4 +43,3 @@ apps/web/AGENTS.md
 
 # Playwright MCP session scratch (screenshots, console logs, page snapshots)
 .playwright-mcp/
-supabase

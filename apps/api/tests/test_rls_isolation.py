@@ -2312,6 +2312,30 @@ async def _create_channel(
         )
 
 
+async def test_chat_tables_have_full_replica_identity(db: asyncpg.Connection) -> None:
+    """Same reasoning as `202608101000_escalations_realtime.py`'s own defensive
+    `replica identity full` on `escalations`, which has no delete path at all
+    - chat does: `channel_members` rows are deleted on leave/removal and
+    subscribed with `event: '*'`. Without the full row, a DELETE's `old`
+    record ships primary-key columns only, so RLS can't be evaluated against
+    it and the `org_id=eq.<org>` Realtime filter (`org_id` isn't part of any
+    of these three tables' primary key) can't match it either - a departure
+    would never reach an open tab live."""
+    rows = await db.fetch(
+        """
+        select c.relname, c.relreplident::text as relreplident
+        from pg_class c
+        join pg_namespace n on n.oid = c.relnamespace
+        where n.nspname = 'public' and c.relname = any($1::text[])
+        """,
+        ["channels", "channel_members", "messages"],
+    )
+    by_name = {row["relname"]: row["relreplident"] for row in rows}
+    assert by_name == {"channels": "f", "channel_members": "f", "messages": "f"}, (
+        f"expected REPLICA IDENTITY FULL ('f') on all three chat tables, got {by_name}"
+    )
+
+
 async def test_org_b_member_cannot_see_org_a_channels_or_messages(
     db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
 ) -> None:
@@ -2774,6 +2798,42 @@ async def test_send_message_repo_rejects_a_channel_in_another_organisation(
     )
     assert count == 0
 
+    await db.execute("delete from public.channels where org_id = $1", a.org_id)
+
+
+async def test_messages_insert_rejects_a_mismatched_org_id_from_a_multi_org_member(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    """`sender_id`/`is_channel_member`/`is_org_member(channel_org_id(...))` are
+    all satisfiable by someone who belongs to *both* organisations - none of
+    them constrain the `org_id` column being written, only who is inserting
+    and which channel they're inserting into. A member of both A and B who is
+    seated in a channel in A but currently sends with `org_id=B` (a stale or
+    forged active-org header) must still be rejected."""
+    a, b = tenants
+    channel_id = await _create_channel(db, creator=a, org_id=a.org_id)
+
+    await _as_postgres(db)
+    await db.execute(
+        "insert into public.memberships (org_id, user_id, role) values ($1, $2, 'operator')",
+        b.org_id,
+        a.user_id,
+    )
+
+    async with db.transaction():
+        await _as_user(db, a.auth_user_id)
+        row = await messages_repo.send_message(
+            db, org_id=b.org_id, channel_id=channel_id, sender_id=a.user_id, body="wrong org"
+        )
+    assert row is None, "send_message() let a channel's own org_id be overridden to another organisation"
+
+    await _as_postgres(db)
+    count = await db.fetchval(
+        "select count(*) from public.messages where channel_id = $1", channel_id
+    )
+    assert count == 0
+
+    await db.execute("delete from public.memberships where org_id = $1 and user_id = $2", b.org_id, a.user_id)
     await db.execute("delete from public.channels where org_id = $1", a.org_id)
 
 

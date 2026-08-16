@@ -358,10 +358,13 @@ export function ChatShell() {
   // can add or remove a channel from the caller's own list. The open
   // conversation's detail only needs refetching when the change was actually
   // about it, not any other channel in the organisation.
-  useOrgRealtime('channel_members', orgId, (payload) => {
+  useOrgRealtime('channel_members', orgId, (payloads) => {
     refetchChannels();
-    const changed = payloadChannelId(payload);
-    if (changed === null || changed === channelId) {
+    const relevant = payloads.some((payload) => {
+      const changed = payloadChannelId(payload);
+      return changed === null || changed === channelId;
+    });
+    if (relevant) {
       refetchChannelDetail();
     }
   });
@@ -434,7 +437,18 @@ export function ChatShell() {
       })
       .catch(() => undefined);
   }
-  useOrgRealtime('messages', orgId, (payload) => refetchMessages(payloadChannelId(payload)));
+  useOrgRealtime('messages', orgId, (payloads) => {
+    // At most one refetch per burst, even if several payloads in it are
+    // relevant - refetchMessages always re-lists the full current state, so a
+    // second call back-to-back would just re-fetch the same result.
+    for (const payload of payloads) {
+      const changed = payloadChannelId(payload);
+      if (changed === null || changed === view.channelId) {
+        refetchMessages(changed);
+        return;
+      }
+    }
+  });
 
   async function loadOlderMessages() {
     const id = view.channelId;

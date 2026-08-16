@@ -26,19 +26,29 @@ const DEBOUNCE_MS = 300;
  * hook's own filter says. Get the RLS policies right; this hook is only a
  * refetch trigger, never a permission check.
  *
- * On any insert/update/delete Realtime allows through, it calls `onChange(payload)`
- * - a refetch, not a direct cache mutation, matching every other data-loading
- * pattern in `lib/app-store.tsx`. The payload is passed through (not just an
+ * On any insert/update/delete Realtime allows through, it calls
+ * `onChange(payloads)` with every payload the debounce window coalesced - a
+ * refetch, not a direct cache mutation, matching every other data-loading
+ * pattern in `lib/app-store.tsx`. Payloads are passed through (not just an
  * empty trigger) so a caller watching one specific row - the currently open
- * chat conversation, say - can skip a refetch for a change that plainly isn't
- * about it, rather than re-fetching on every org-wide event on the table.
- * Callers that don't need it (escalations, share requests) can just as well
- * declare `onChange: () => void` - the extra argument is harmless to ignore.
+ * chat conversation, say - can skip a refetch when NONE of them are about it,
+ * rather than re-fetching on every org-wide event on the table. Callers that
+ * don't need them (escalations, share requests) can just as well declare
+ * `onChange: () => void` - the argument is harmless to ignore.
+ *
+ * The whole batch is delivered, not just the last payload in it: two events
+ * landing within the same debounce window used to collapse to one callback
+ * carrying only the most recent payload, which meant a caller filtering by
+ * row id (chat's own `payloadChannelId` checks) silently dropped whichever
+ * event lost the race - a message arriving in channel A while a burst was
+ * mid-flight for channel B was never refetched at all. Accumulating into an
+ * array and clearing it only when the timer actually fires keeps every event
+ * while still coalescing the *refetch* to one per burst.
  */
 export function useOrgRealtime(
   table: string,
   orgId: string | null,
-  onChange: (payload: RealtimePostgresChangesPayload<Record<string, unknown>>) => void,
+  onChange: (payloads: RealtimePostgresChangesPayload<Record<string, unknown>>[]) => void,
 ): void {
   // A ref, not a dependency: the effect below re-subscribes when `table`/`orgId`
   // change, not merely because the caller passed a new function identity. Kept
@@ -64,6 +74,7 @@ export function useOrgRealtime(
 
     let cancelled = false;
     let timeout: ReturnType<typeof setTimeout> | null = null;
+    let pending: RealtimePostgresChangesPayload<Record<string, unknown>>[] = [];
     const supabase = supabaseBrowser();
     const channel = supabase
       .channel(`realtime:${table}:${orgId}:${instanceId}`)
@@ -72,9 +83,13 @@ export function useOrgRealtime(
         { event: '*', schema: 'public', table, filter: `org_id=eq.${orgId}` },
         (payload) => {
           if (cancelled) return;
+          pending.push(payload);
           if (timeout) clearTimeout(timeout);
           timeout = setTimeout(() => {
-            if (!cancelled) onChangeRef.current(payload);
+            if (cancelled) return;
+            const batch = pending;
+            pending = [];
+            onChangeRef.current(batch);
           }, DEBOUNCE_MS);
         },
       )
