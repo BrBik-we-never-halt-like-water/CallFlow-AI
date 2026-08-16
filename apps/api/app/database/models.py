@@ -18,6 +18,7 @@ from sqlalchemy import (
     DateTime,
     Enum,
     ForeignKey,
+    Identity,
     Index,
     String,
     Text,
@@ -242,17 +243,35 @@ class ApiKey(Base):
 
 
 class ProviderCredential(TimestampedMixin, Base):
-    """An org's own Twilio or Plivo credentials, for dialling from its own number.
+    """An org's own third-party credentials - carrier, STT, TTS, LLM, or storage.
 
-    `identifier_encrypted`/`secret_encrypted` are Fernet ciphertext, never
-    plaintext - see `app/core/crypto.py`. One row per organisation per provider.
+    `fields_encrypted` is one Fernet ciphertext holding a JSON object keyed by
+    the field names that provider declares in `app/domain/providers.py`. One
+    ciphertext rather than one per field: encrypting values separately would
+    leave the field *names* in plaintext and leak the shape of every credential.
+
+    `identifier_encrypted`/`secret_encrypted` are the superseded two-column
+    form, kept nullable so rows written before `c8e1f4a29b76` still read. The
+    repository falls back to them and the next write upgrades the row; both
+    columns go once nothing has a null `fields_encrypted`.
+
+    One row per organisation per provider - and a provider can serve several
+    roles (one Deepgram key does speech-to-text *and* text-to-speech), so the
+    row is keyed on the vendor, never on what it is being used for.
+
+    `provider` carries no database-level allow-list beyond "not blank": the set
+    of accepted names is validated in the Pydantic layer instead, so adding a
+    vendor is an app change rather than a migration (`PLATFORM_PIVOT_PLAN.md`
+    ADR-4). Keep the two in step - the database will accept anything non-empty.
     """
 
     __tablename__ = "provider_credentials"
     __table_args__ = (
         UniqueConstraint("org_id", "provider", name="provider_credentials_org_provider_key"),
+        CheckConstraint("provider <> ''", name="provider_credentials_provider_not_blank"),
         CheckConstraint(
-            "provider in ('twilio', 'plivo')", name="provider_credentials_provider_check"
+            "fields_encrypted is not null or secret_encrypted is not null",
+            name="provider_credentials_has_credentials",
         ),
         Index("provider_credentials_org_idx", "org_id"),
     )
@@ -266,11 +285,121 @@ class ProviderCredential(TimestampedMixin, Base):
     created_by: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL")
     )
-    provider: Mapped[str] = mapped_column(String(16), nullable=False)
+    provider: Mapped[str] = mapped_column(Text, nullable=False)
     label: Mapped[str | None] = mapped_column(Text)
-    identifier_encrypted: Mapped[str] = mapped_column(Text, nullable=False)
-    secret_encrypted: Mapped[str] = mapped_column(Text, nullable=False)
+    fields_encrypted: Mapped[str | None] = mapped_column(Text)
+    identifier_encrypted: Mapped[str | None] = mapped_column(Text)
+    secret_encrypted: Mapped[str | None] = mapped_column(Text)
     phone_number: Mapped[str | None] = mapped_column(String(20))
+
+
+class VoiceAgent(Base):
+    """What a live conversation runs with: which STT, TTS and LLM to use, whose
+    credentials to authenticate each with, and which number to dial from.
+
+    One number per agent for V1 - an org with several agents connects a number
+    per agent rather than sharing a pool. Every provider/credential column is
+    nullable because an agent is built up incrementally in the Agentic tab, and
+    a half-configured agent must be storable; the check that it is *complete
+    enough to dial* belongs at run-start, not in the schema.
+    """
+
+    __tablename__ = "voice_agents"
+    __table_args__ = (
+        CheckConstraint("kind in ('custom', 'prebuilt')", name="voice_agents_kind_check"),
+        Index("voice_agents_org_idx", "org_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organisations.id", ondelete="CASCADE"), nullable=False
+    )
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    kind: Mapped[str] = mapped_column(Text, nullable=False)
+
+    stt_provider: Mapped[str | None] = mapped_column(Text)
+    stt_credential_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("provider_credentials.id", ondelete="RESTRICT")
+    )
+    tts_provider: Mapped[str | None] = mapped_column(Text)
+    tts_credential_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("provider_credentials.id", ondelete="RESTRICT")
+    )
+    llm_provider: Mapped[str | None] = mapped_column(Text)
+    llm_credential_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("provider_credentials.id", ondelete="RESTRICT")
+    )
+    # Required when llm_provider = 'openrouter': one credential proxies many
+    # models, so the credential alone does not say which one to run.
+    llm_model: Mapped[str | None] = mapped_column(Text)
+
+    telephony_provider: Mapped[str | None] = mapped_column(Text)
+    telephony_credential_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("provider_credentials.id", ondelete="RESTRICT")
+    )
+
+    prebuilt_persona: Mapped[str | None] = mapped_column(Text)
+    system_prompt: Mapped[str | None] = mapped_column(Text)
+    voice_id: Mapped[str | None] = mapped_column(Text)
+
+    created_at: Mapped[datetime] = mapped_column(nullable=False, server_default=func.now())
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+
+
+class TelephonyProvisioning(TimestampedMixin, Base):
+    """One attempt to connect a number to a voice agent.
+
+    A row per attempt, not per agent: a failed attempt keeps its `last_error`
+    when a fresh attempt is started, so the trail of what was tried survives.
+    Rows are re-statused, never deleted - there is no delete policy and no
+    delete grant on this table.
+
+    `idempotency_key` is unique per agent so a double-submitted attempt cannot
+    create two rows, and so a retry of the *same* attempt can look up what it
+    already created (a LiveKit trunk, say) rather than re-running the step and
+    orphaning a second one.
+    """
+
+    __tablename__ = "telephony_provisioning"
+    __table_args__ = (
+        UniqueConstraint(
+            "voice_agent_id", "idempotency_key", name="telephony_provisioning_agent_key_uniq"
+        ),
+        CheckConstraint(
+            "status in ('pending', 'provisioning', 'verified', 'failed')",
+            name="telephony_provisioning_status_check",
+        ),
+        Index("telephony_provisioning_org_idx", "org_id"),
+        Index("telephony_provisioning_agent_idx", "voice_agent_id", text("seq desc")),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    # Monotonic, unlike `created_at` (transaction time, so it ties) and `id`
+    # (a random uuid). The only column that can answer "which attempt is newest".
+    seq: Mapped[int] = mapped_column(BigInteger, Identity(always=True), nullable=False)
+    voice_agent_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("voice_agents.id", ondelete="CASCADE"), nullable=False
+    )
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organisations.id", ondelete="CASCADE"), nullable=False
+    )
+    status: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'pending'"))
+    idempotency_key: Mapped[str] = mapped_column(Text, nullable=False)
+
+    livekit_inbound_trunk_id: Mapped[str | None] = mapped_column(Text)
+    livekit_outbound_trunk_id: Mapped[str | None] = mapped_column(Text)
+    livekit_dispatch_rule_id: Mapped[str | None] = mapped_column(Text)
+    # Plivo's <trunk_id>.zt.plivo.com. Null for Twilio, which has no analog.
+    carrier_termination_domain: Mapped[str | None] = mapped_column(Text)
+    # Shown to the operator verbatim when status = 'failed', so it must read as
+    # an instruction rather than a stack trace (CLAUDE.md §5).
+    last_error: Mapped[str | None] = mapped_column(Text)
 
 
 __all__ = [
@@ -282,7 +411,9 @@ __all__ = [
     "ProviderCredential",
     "Suppression",
     "SuppressionSource",
+    "TelephonyProvisioning",
     "User",
+    "VoiceAgent",
     "org_role_enum",
     "suppression_source_enum",
 ]

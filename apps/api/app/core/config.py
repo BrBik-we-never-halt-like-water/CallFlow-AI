@@ -126,6 +126,54 @@ class Config:
         default_factory=lambda: os.getenv("SITE_URL", "http://localhost:3000").rstrip("/")
     )
 
+    # --- LiveKit: the media/SIP substrate ------------------------------------
+    # CallFlow's own LiveKit Cloud project, not an org's credential: every
+    # organisation's calls run through it, on their own carrier trunks. Empty
+    # key/secret ⇒ `LiveKitGateway` refuses to construct rather than failing at
+    # the first API call, same spirit as the old `require_api_key()`.
+    livekit_url: str = field(default_factory=lambda: os.getenv("LIVEKIT_URL", "").rstrip("/"))
+    livekit_api_key: str = field(default_factory=lambda: os.getenv("LIVEKIT_API_KEY", ""))
+    livekit_api_secret: str = field(default_factory=lambda: os.getenv("LIVEKIT_API_SECRET", ""))
+    # The registered name of the voice-runtime worker, used to dispatch it
+    # into a room before the call connects. Must match the worker's own
+    # `agent_name`, or the call is answered by nobody.
+    livekit_agent_name: str = field(
+        default_factory=lambda: os.getenv("LIVEKIT_AGENT_NAME", "callflow-voice")
+    )
+    # The project's SIP host (e.g. abc123.sip.livekit.cloud), which every
+    # carrier is told to send inbound calls to. A property of the LiveKit
+    # project, not of any one trunk, which is why it is configuration rather
+    # than something provisioning discovers.
+    livekit_sip_host: str = field(
+        default_factory=lambda: os.getenv("LIVEKIT_SIP_HOST", "").removeprefix("sip:").rstrip("/")
+    )
+
+    # --- OpenRouter: the metered LLM marketplace ------------------------------
+    # CallFlow's *management* key, used to issue one metered key per
+    # organisation. Not an org's own credential - it is the key that mints
+    # theirs - so it is a platform setting and never a `provider_credentials`
+    # row. Empty ⇒ no organisation key can be issued, and provisioning says so
+    # rather than failing at the first LLM call.
+    openrouter_management_key: str = field(
+        default_factory=lambda: os.getenv("OPENROUTER_MANAGEMENT_KEY", "")
+    )
+    # Default spend ceiling, in USD, for a newly issued organisation key. `0`
+    # means unlimited, which is a deliberate choice rather than a default: an
+    # unmetered key on a per-token marketplace is how one runaway campaign
+    # becomes CallFlow's bill.
+    openrouter_default_limit_usd: float = field(
+        default_factory=lambda: float(os.getenv("OPENROUTER_DEFAULT_LIMIT_USD", "25") or 0)
+    )
+
+    # Shared secret the voice runtime presents when it reports a finished call.
+    # That worker is a separate process with no Supabase session, so this is the
+    # entire trust boundary on `/internal/v1/*` - a caller who knows it can write
+    # a transcript against any run. Empty ⇒ the endpoint refuses every request,
+    # failing closed rather than open, same as `owner_key`/`resend_api_key`.
+    internal_api_secret: str = field(
+        default_factory=lambda: os.getenv("CALLFLOW_INTERNAL_API_SECRET", "")
+    )
+
     # Symmetric key for org-owned third-party provider credentials (Twilio/Plivo
     # auth tokens). Same sensitivity class as SUPABASE_SECRET_KEY - never enters
     # the database, only this process's environment. A Fernet key: 32 url-safe

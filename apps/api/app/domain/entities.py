@@ -52,6 +52,14 @@ class DialFailure(str, Enum):
     UNAUTHORIZED = "unauthorized"
     PROVIDER_UNAVAILABLE = "provider_unavailable"
     TIMED_OUT = "timed_out"
+    # The line itself answered with a reason, rather than the request failing.
+    # Added when SIP became the transport: a carrier reports "486 Busy Here" and
+    # "480 Temporarily Unavailable" distinctly, and collapsing either into
+    # PROVIDER_UNAVAILABLE would tell an operator our provider broke when in fact
+    # the person was on another call. Extending this enum is the intended move -
+    # what CLAUDE.md forbids is a *second* vocabulary alongside it.
+    BUSY = "busy"
+    NO_ANSWER = "no_answer"
     INTERNAL = "internal"
 
 

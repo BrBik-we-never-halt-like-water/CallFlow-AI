@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 from uuid import UUID
 
 import asyncpg
+
+log = logging.getLogger("app.database.repositories.runs")
 
 
 async def create_run(
@@ -40,6 +43,14 @@ async def append_outcome(
     A live call reports several times as it progresses (queued → ringing →
     completed), so this matches on the contact rather than appending - one call
     produces one row across all its status transitions, not a row per change.
+
+    **A settled row is never downgraded back to in-flight.** The two writers
+    race by design: origination writes IN_FLIGHT once a call is answered, and
+    the worker's completion callback writes the terminal row when it ends. A
+    short call finishes before the first write lands, and without the guard
+    below the in-flight row would overwrite the terminal one - discarding the
+    transcript and leaving `finish_if_all_settled` permanently unable to close
+    the run.
     """
     row = await conn.fetchrow(
         """
@@ -68,6 +79,8 @@ async def append_outcome(
             completion_confidence_label = excluded.completion_confidence_label,
             evidence = excluded.evidence,
             attempts = excluded.attempts
+        where public.call_outcomes.disposition = 'in_flight'
+           or excluded.disposition <> 'in_flight'
         returning id
         """,
         run_id,
@@ -91,7 +104,21 @@ async def append_outcome(
         outcome.get("evidence", []),
         outcome.get("attempts", []),
     )
-    return row["id"]
+    if row is not None:
+        return row["id"]
+
+    # The guard above suppressed the update, so nothing was returned. The row
+    # exists and is already terminal - the caller still needs its id to link an
+    # escalation to it.
+    return await conn.fetchval(
+        """
+        select id from public.call_outcomes
+        where run_id = $1 and contact_name = $2 and phone_masked = $3
+        """,
+        run_id,
+        outcome["contact_name"],
+        outcome["phone_masked"],
+    )
 
 
 async def finish_run(conn: asyncpg.Connection, run_id: str, error: str | None = None) -> None:
@@ -108,11 +135,96 @@ async def finish_run(conn: asyncpg.Connection, run_id: str, error: str | None = 
     )
 
 
+async def expire_stale_in_flight(
+    conn: asyncpg.Connection, run_id: str, *, stale_after_seconds: int
+) -> int:
+    """Settle rows whose worker never reported. Returns how many.
+
+    Every call carries a hard `max_call_duration` the carrier itself enforces,
+    so an in-flight row older than that ceiling cannot still be a live call -
+    the worker died, or its callback never got through. Left alone the row
+    blocks `finish_if_all_settled` forever and the run reads "running" for good.
+
+    Recorded as a real failure rather than quietly closed: nobody knows what
+    was said, and showing that as a completed call would be a success state for
+    something that did not happen (CLAUDE.md non-negotiable #9).
+    """
+    rows = await conn.fetch(
+        """
+        update public.call_outcomes
+           set status = 'FAILED',
+               disposition = 'unreachable',
+               disposition_reason = 'The call ended without reporting a result.',
+               error = 'timed_out'
+         where run_id = $1
+           and disposition = 'in_flight'
+           and created_at < now() - make_interval(secs => $2::int)
+        returning id
+        """,
+        run_id,
+        stale_after_seconds,
+    )
+    return len(rows)
+
+
+async def finish_if_all_settled(
+    conn: asyncpg.Connection, run_id: str, *, stale_after_seconds: int | None = None
+) -> bool:
+    """Mark the run completed only once every contact has actually settled.
+
+    Origination returns when a call is *answered*, not when it ends, so the
+    background task that started the run finishes long before the conversations
+    do. Marking the run completed there would show a finished run alongside rows
+    still reading "In conversation…" - a success state for something that has
+    not happened (CLAUDE.md non-negotiable #9). Instead each worker callback
+    asks this, and whichever one settles the last contact closes the run.
+
+    Idempotent by the `finished_at is null` guard, and safe under the
+    concurrent callbacks a multi-contact run produces: the `update` is a single
+    statement, so two callbacks racing cannot both see an unfinished run and
+    both write. Returns whether *this* call was the one that closed it.
+
+    `stale_after_seconds` sweeps abandoned rows first, so one dead worker
+    cannot hold a whole run open. It only runs when something asks - a run
+    whose *every* worker dies has nobody left to ask, and stays open until the
+    next callback or run-completion check touches it (`ISSUES.md` #117).
+    """
+    if stale_after_seconds is not None:
+        expired = await expire_stale_in_flight(
+            conn, run_id, stale_after_seconds=stale_after_seconds
+        )
+        if expired:
+            log.warning(
+                "run %s: %d call(s) never reported a result and were closed as unreachable",
+                run_id,
+                expired,
+            )
+
+    row = await conn.fetchrow(
+        """
+        update public.runs r
+           set status = 'completed', finished_at = now()
+         where r.id = $1
+           and r.finished_at is null
+           and (
+             select count(*) from public.call_outcomes o
+              where o.run_id = r.id and o.disposition <> 'in_flight'
+           ) >= r.total
+        returning r.id
+        """,
+        run_id,
+    )
+    return row is not None
+
+
 async def lookup_owner_for_webhook(conn: asyncpg.Connection, run_id: str) -> asyncpg.Record | None:
     """Unauthenticated resolution, via the SECURITY DEFINER
-    `lookup_run_owner_for_webhook` function - the CALL-E webhook receiver has
-    no signed-in user to scope a plain query with. Runs on a
-    `database.anonymous()` connection, same shape as `invitations_repo.lookup_public`.
+    `lookup_run_owner_for_webhook` function - the voice runtime's completion
+    callback (`routes/internal.py`) is CallFlow's own worker, not a person with
+    a session, so it has no signed-in user to scope a plain query with. Runs on
+    a `database.anonymous()` connection, same shape as
+    `invitations_repo.lookup_public`. Named for CALL-E's webhook receiver,
+    which was the original caller; the function is unchanged, the caller is not.
 
     Returns the run's *starter*, not just any org member - see the migration's
     own docstring for why that's the deliberate choice.

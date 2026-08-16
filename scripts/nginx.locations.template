@@ -21,6 +21,22 @@ location /api/ {
     proxy_pass http://127.0.0.1:@API_PORT@;
 }
 
+# Where the voice runtime reports a finished call, from its own VM. It is NOT
+# part of the public API surface and no browser ever calls it, so it is closed
+# to everything but that one host - the shared secret the endpoint checks
+# (X-CallFlow-Internal-Key) is then the second lock rather than the only one.
+#
+# Without this block /internal/ falls through to `location /` and is answered by
+# Next.js with a 404, which is what happens today: the worker retries for two
+# minutes and the transcript is lost. @VOICE_ALLOW@ renders to `deny all;` when
+# no voice host is configured, so an unconfigured environment fails closed and
+# says so in this server's own log rather than looking like a routing bug.
+location /internal/ {
+    @VOICE_ALLOW@
+    deny all;
+    proxy_pass http://127.0.0.1:@API_PORT@;
+}
+
 location / {
     proxy_pass http://127.0.0.1:@WEB_PORT@;
 

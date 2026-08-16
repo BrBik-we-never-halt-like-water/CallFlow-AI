@@ -264,18 +264,21 @@ Both are worth doing before launch.
 ## 9. Vendor de-branding
 
 The product reads as first-party throughout. No vendor is named in any UI copy, metadata,
-asset, or filename. `callflow/calle_client.py` → `engine_client.py`, `CalleGateway` →
-`EngineGateway`, and the SDK is imported under a neutral alias so nothing above that
-module speaks the vendor's name.
+asset, or filename, and every SDK is imported under a neutral alias so nothing above the
+integration module speaks the vendor's name.
 
-Three deliberate exceptions, all functional:
+The single-vendor era this section described is over: CALL-E was removed outright
+(`ISSUES.md` #77) and the stack is now several vendors an organisation partly chooses for
+itself - LiveKit for media and SIP, the org's own Twilio or Plivo, and whichever STT, TTS
+and LLM its voice agent is configured with. The de-branding rule survives that unchanged
+and matters more, not less: `apps/api/app/integrations/{vendor}/` is the only place any of
+their names appear, and the UI still says "voice agent", never a vendor's product name.
 
-1. `calle-ai` in `requirements.txt` / `pyproject.toml` - the real distribution name; the
-   install breaks otherwise.
-2. `CALLE_API_KEY` as an environment variable - the brief explicitly permits this. Every
-   _label_ says "Voice API key".
-3. `"call-e/customerMetadata"` in `orchestrator.py` - an API payload key. Changing it
-   would break extraction.
+The remaining exceptions are all functional rather than cosmetic: distribution names in
+`pyproject.toml` (`livekit-api`, `livekit-agents`, `livekit-plugins-*`), the environment
+variables those SDKs and their consoles are documented by (`LIVEKIT_URL`,
+`OPENROUTER_MANAGEMENT_KEY`), and provider *values* stored in `voice_agents` and
+`provider_credentials` - which name a vendor because the operator picked it.
 
 **Left in place, for you to decide:** `DEVPOST_STORY.md` at the repo root is entirely a
 hackathon artefact. Deleting authored narrative felt like your call rather than mine - but

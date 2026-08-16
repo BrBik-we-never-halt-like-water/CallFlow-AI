@@ -3742,6 +3742,249 @@ tests were removed; `RUNBOOK_HET_PART_1.md` P1-T7 rewrites them against the Live
 
 **Blocks:** every other CallFlow feature that needs a live call. **Depends on:** nothing.
 
+### #78 - A run reported itself completed while its calls were still happening
+
+**S2 · FIXED · api · `apps/api/app/api/v1/routes/runs.py`, `apps/api/app/database/repositories/runs.py`**
+
+Introduced and fixed inside the same phase, recorded because the shape of it will recur
+anywhere else this codebase swaps a request/response vendor for an event-driven one.
+
+CALL-E could be polled to completion, so `CampaignRunner.run()` returning meant every call
+had finished, and `_run_and_persist` correctly called `finish_run()` immediately after.
+LiveKit is not that: origination returns when a call is **answered**, and the conversation
+then continues in a room this process is not in. The same line therefore started marking
+runs `completed` while their own `call_outcomes` rows still read "In conversation…".
+
+**Impact.** A finished-looking run alongside live, unresolved rows - the exact fake success
+state CLAUDE.md non-negotiable #9 exists to prevent. Nothing errored; the dashboard simply
+lied, and the real outcomes would have landed afterwards against a run already closed.
+
+**Fix.** `finish_run()` is replaced on that path by `finish_if_all_settled()`, which closes
+a run only once no outcome is still in flight. Whichever worker callback settles the last
+contact is the one that closes it. Idempotent by a `finished_at is null` guard inside a
+single statement, so the concurrent callbacks a multi-contact run produces cannot both
+close it - asserted directly, along with the all-blocked case still closing immediately
+because those contacts settle on the spot.
+
+**Depends on:** `#77`. **Blocks:** nothing.
+
+### #79 - A provisioning retry could never resume, because every failure was terminal
+
+**S2 · FIXED · api · `apps/api/app/services/number_provisioning.py`, `apps/api/app/database/repositories/telephony_provisioning.py`**
+
+`telephony_provisioning` exists to stop a retried "connect number" attempt creating a
+second LiveKit trunk that nobody will ever clean up. The first implementation of the
+workflow marked **any** step failure as `failed`, and `failed` is terminal in the status
+machine (`domain/provisioning.py`) - so a retry with the same idempotency key was refused,
+and the resume logic the whole module was built around could not execute at all.
+
+Found by its own tests: the resume test had to perform an illegal `failed → provisioning`
+transition to set itself up, which is what exposed that the production path could never
+reach the state it was testing.
+
+**Impact.** Latent rather than shipped - no provisioning has run against a live account
+yet. Had it shipped: every carrier hiccup would have forced a fresh attempt, and each
+fresh attempt would have created another orphaned LiveKit inbound trunk and dispatch rule,
+silently, with nothing in the product ever mentioning them.
+
+**Fix.** `record_error()` notes why a step failed **without** ending the attempt, so the
+row stays `provisioning` and remains resumable - which is what `PLATFORM_PIVOT_PLAN.md`
+ADR-4 specified in the first place ("the row stays provisioning with last_error set"), and
+which the first implementation quietly contradicted. `failed` now means superseded, set by
+`supersede_unfinished()` when a newer attempt starts, so an agent cannot accumulate rows
+that look live forever. The superseded row keeps its own `last_error` rather than having it
+overwritten with "superseded" - that message is the only useful diagnostic on the row.
+
+A related trap avoided in the same pass: the SIP username and password LiveKit and the
+carrier must agree on are derived by HMAC from the attempt's idempotency key rather than
+generated randomly, so a resumed attempt reproduces them exactly. Regenerating would leave
+LiveKit dialling with a password the carrier no longer expects - a failure that surfaces
+only as outbound calls being silently rejected, with both systems reporting themselves
+healthy.
+
+**Depends on:** `#77`.
+
+## Iteration 25 - 2026-08-16 · platform pivot, phase A1 review pass (PR #23)
+
+Nine defects found by review of the LiveKit/telephony PR before it merged. Numbered #109-#117 after the merge with dev: these were written as #90-#98 on a branch, and team chat had already merged those ids into the shared log. Eight of the
+nine sit in a **seam between two modules that each mocked the other's half** - the dispatch
+contract, the run/worker completion race, the escalation hand-off, the transaction boundary
+between a service and its caller. None was a design error; every one was wiring, and every
+one had a green test suite on both sides of it.
+
+The pattern is worth naming, because it will recur for the rest of this pivot: a stub proves
+a module honours the contract it was *told*, never that two modules were told the same one.
+Where both halves live in this repo, test them against each other -
+`apps/api/tests/test_dispatch_contract.py` loads the worker's real parser by path and feeds
+it metadata the real orchestrator built.
+
+### #109 - The two halves of the agent-dispatch contract disagreed, so no call could ever start
+
+**S1 · FIXED · api + voice-runtime · `apps/api/app/services/campaign_runner.py`, `apps/voice-runtime/app/pipeline.py`**
+
+`_originate()` built job metadata with `goal`, `campaign_id`, `contact_name`, `phone_masked`,
+`result_schema`, `language` and `run_id` - and no `voice_agent` key. `AgentSpec.from_metadata()`
+reads `metadata.get("voice_agent") or {}` and nothing else, so all three provider names
+resolved to the empty string and `build_pipeline()` raised `UnknownProvider` on the first
+lookup.
+
+**Impact.** Every dispatched job died before its pipeline existed. The contact would have
+heard the call connect into silence while the API recorded IN_FLIGHT, and the row would have
+stayed there - the worker crashes before it can report anything. This was the phase's entire
+deliverable, and it did not work.
+
+**Fix.** `CampaignRunner` takes `voice_agent` beside `trunk_id` (both resolved from the same
+voice agent) and sends it under the key the worker actually reads. A runner with a trunk but
+no agent now refuses *before* dialling rather than letting the worker discover it after the
+phone has rung. `test_dispatch_contract.py` builds metadata through the real `_originate()`
+and feeds it to the real `AgentSpec.from_metadata()`, so the two can no longer drift apart
+silently.
+
+### #110 - The worker closed the session the instant it opened it, so every call reported empty
+
+**S1 · FIXED · voice-runtime · `apps/voice-runtime/app/worker.py`**
+
+`run_call()` ran `session.start(...)`, then `ctx.connect()`, then `session.aclose()` with
+nothing awaiting the call's end. The ordering was also inverted - `connect()` has to precede
+`start(room=...)`.
+
+**Impact.** `aclose()` ran while the phone was still ringing. `transcript_from_history()`
+returned the empty string, so `completion_payload()` picked `NO_ANSWER`, and
+`duration_seconds` was a hardcoded `0` regardless. Every call - answered or not - would have
+been reported as unanswered with no transcript.
+
+**Fix.** `wait_for_call_end()` waits for the contact to join (an answer timeout), then for
+them to leave, with a hard ceiling for a room that reports neither. Duration is measured from
+`time.monotonic()`. The function is written against a duck-typed context specifically so it
+*is* testable without a live room - it had been excluded from tests as "needs a live room",
+and it was the one block that was wrong.
+
+### #111 - Triage ran on every finished call and its result went nowhere
+
+**S1 · FIXED · api · `apps/api/app/api/v1/routes/internal.py`**
+
+`escalations_repo.create_for_outcome()` was called in exactly one place: inside
+`_run_and_persist`'s `on_progress`, gated on a needs-a-person disposition. With LiveKit,
+`run_one()` returns when the call is *answered*, so the outcome it reports is always
+`IN_FLIGHT` - never a needs-a-person disposition. The real disposition arrives later through
+the completion callback, which triaged it, wrote it, closed the run, and created nothing.
+
+**Impact.** The "Needs a person" worklist was dead for every real call. Someone asking for a
+human callback, or opting out, produced a correct `escalated` row that nobody was ever shown.
+The check that remained could only fire for a contact that failed to dial.
+
+**Fix.** The escalation is created in the completion callback, where the terminal disposition
+actually exists.
+
+### #112 - The provisioning error handler rolled back the ledger it had just written
+
+**S1 · FIXED · api · `apps/api/app/services/number_provisioning.py`**
+
+`connect_number()` caught a failed step, called `record_error()`, and re-raised. `as_user()`
+wraps a request in a single transaction (`database/session.py`), so the raise discarded that
+note *and* every `record_livekit_ids()` write the steps that had succeeded made.
+
+**Impact.** Exactly the orphan ADR-4 exists to prevent, reintroduced by its own error path. A
+carrier failure at step 3 leaves a real LiveKit inbound trunk and dispatch rule behind, but
+the committed row records neither - so `_run_steps`' "skipped when the row already records its
+result" has nothing to skip, and the retry creates a second trunk pair nobody will clean up.
+The unit tests passed because they mock the connection, so no rollback ever happened.
+
+**Fix.** Failure is *returned*, not raised: `connect_number()` hands back the attempt row
+whichever way it goes, and `status` plus `last_error` are the result. The ledger now outlives
+the failure, because the failure no longer unwinds the transaction carrying it.
+
+### #113 - The connect-number workflow had no HTTP caller, so no number could be connected
+
+**S1 · FIXED · api · `apps/api/app/api/v1/routes/telephony.py`**
+
+The service (325 lines) and repository (235 lines) were complete and tested, but
+`connect_number` was imported only by its own test file. Nothing in the running application
+could start a provisioning attempt - which is also why `CampaignRunner._trunk_id` could only
+ever be `None`.
+
+**Impact.** The feature was unreachable from the product. It had been deferred on the grounds
+that the runbook specified `Permission.AGENTS_WRITE`, which Part 2 owns.
+
+**Fix.** `routes/telephony.py`, gated on `Permission.INTEGRATIONS_WRITE`/`INTEGRATIONS_READ`.
+That is the honest permission rather than a placeholder: the endpoint reconfigures the
+organisation's own Twilio or Plivo account using credentials stored on the Integrations page.
+No new enum member, and no collision with Part 2's `permissions.py`.
+
+### #114 - An uploaded CSV column could overwrite the agent's own instructions
+
+**S2 · FIXED · api · `apps/api/app/services/campaign_runner.py`**
+
+`**contact.context` was spread *last* into the dispatch metadata, after the deliberate keys.
+The comment directly above it explained that the phone number is excluded because metadata
+reaches LiveKit's logs and webhooks - and then let customer data overwrite everything beside
+it.
+
+**Impact.** A CSV column named `goal` rewrote what the agent was told to do. One named
+`phone_masked` misaddressed the completion callback's row, so the call's result would insert a
+second row rather than resolving the in-flight one. Uploaded data is context for a
+conversation; it was in a position to control it.
+
+**Fix.** The spread moved to the front, so CallFlow's own keys win. Asserted directly with a
+contact whose context tries to overwrite `goal`, `phone_masked`, `run_id` and `voice_agent`.
+
+### #115 - A failed dial left its agent dispatch behind, and the orphan overwrote the real outcome
+
+**S2 · FIXED · api · `apps/api/app/integrations/livekit/client.py`**
+
+The dispatch is created before the SIP participant, deliberately and correctly - an answered
+call with no agent in the room is a person saying "hello?" into silence. But when
+`create_sip_participant` then raised busy or unreachable, the dispatch survived.
+
+**Impact.** The orphaned worker joins a room nobody will ever enter, waits out its answer
+timeout, and POSTs `NO_ANSWER` - overwriting the accurate `busy`/`RETRY` outcome
+`classify_error()` had just produced from the carrier's own SIP status. The operator is told
+the wrong thing about a real call, and a retryable failure reads as unretryable.
+
+**Fix.** The dial is wrapped and the dispatch deleted on failure. Cleanup is best-effort and
+never replaces the dial's own classified error - letting it surface would turn "486 Busy Here"
+into an internal error, which is strictly worse information.
+
+### #116 - A settled call outcome could be dragged back to in-flight, losing its transcript
+
+**S2 · FIXED · api · `apps/api/app/database/repositories/runs.py`**
+
+Two writers upsert the same `(run_id, contact_name, phone_masked)` key: origination writes
+IN_FLIGHT once a call is answered, and the completion callback writes the terminal row when it
+ends. `append_outcome`'s `do update` set every column unconditionally, so whichever landed
+last won.
+
+**Impact.** A short call completes before origination's own progress write lands. The
+in-flight write then overwrites the terminal row - discarding the transcript, the disposition
+and the extracted result - and leaves `finish_if_all_settled` permanently unable to close the
+run. Separately, `on_status` was declared on `run_one()`, threaded through from `run()`, and
+never called; it is removed rather than left as an unwired hook.
+
+**Fix.** The upsert refuses to downgrade a settled row, and falls back to reading the id when
+its update is suppressed, since the caller still needs it to link an escalation.
+
+### #117 - A run could stay "running" forever, from two independent causes
+
+**S3 · PARTLY FIXED · api · `apps/api/app/database/repositories/runs.py`, `apps/api/app/api/v1/routes/runs.py`**
+
+`finish_if_all_settled` requires `count(settled) >= runs.total`. Two things made that
+unreachable: a contact list containing the same `(name, phone)` twice collapsed under the
+upsert key, so the count could never reach `total`; and a worker that died before its callback
+left a row in flight indefinitely (`ReportFailed` is logged and swallowed). `finish_run` used
+to be unconditional, so neither could happen before this phase.
+
+**Impact.** The run reads "running" for good and its progress never completes. The duplicate
+case also silently discarded one real call's transcript.
+
+**Fix.** Contacts are deduplicated at run start - a run should not dial the same person twice,
+and the row being overwritten was a real call. `expire_stale_in_flight` settles rows older than
+the carrier-enforced call ceiling as `unreachable`/`timed_out`, recorded as a real failure
+rather than quietly closed, because nobody knows what was said (non-negotiable #9).
+
+**Still open.** The sweep only runs when a callback or a run-completion check asks. A run whose
+*every* worker dies has nobody left to ask, and stays open until something else touches it. A
+scheduled reaper is the real fix and needs a scheduler this deployment does not have yet.
+
 ## Iteration 32 - 2026-08-15 · internal team chat (RUNBOOK_JATIN_PART_3.md)
 
 ### #90 - `channel_members_insert`'s RLS check verified the inserter, never the person being added

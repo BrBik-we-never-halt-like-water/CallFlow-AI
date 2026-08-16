@@ -5,6 +5,11 @@
   "scripts": {
     "db:migrate": "node scripts/db.js migrate",
     "db:generate": "node scripts/db.js generate",
-    "db:reset": "node scripts/db.js reset"
+    "db:reset": "node scripts/db.js reset",
+    "dev:db": "node scripts/dev-db.js up",
+    "dev:db:reset": "node scripts/dev-db.js reset",
+    "dev:db:down": "node scripts/dev-db.js down",
+    "dev:db:destroy": "node scripts/dev-db.js destroy",
+    "dev:db:status": "node scripts/dev-db.js status"
   }
 }
