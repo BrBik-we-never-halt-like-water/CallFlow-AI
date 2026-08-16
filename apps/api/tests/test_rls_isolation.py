@@ -68,7 +68,11 @@ async def _create_tenant(conn: asyncpg.Connection, label: str) -> Tenant:
         """,
         auth_user_id,
         f"rls-{label}-{auth_user_id.hex[:8]}@brbik.com",
-        json.dumps({"full_name": f"RLS {label}"}),
+        # A dict, not `json.dumps(...)`: the jsonb codec registered on this
+        # connection encodes it. Passing a pre-serialised string would be
+        # encoded a second time, and the signup trigger would read
+        # `full_name` off a JSON string instead of an object and store NULL.
+        {"full_name": f"RLS {label}"},
     )
 
     row = await conn.fetchrow(
@@ -96,9 +100,24 @@ async def _as_postgres(conn: asyncpg.Connection) -> None:
     await conn.execute("select set_config('request.jwt.claims', '', true)")
 
 
+async def _register_codecs(conn: asyncpg.Connection) -> None:
+    """The same jsonb codec `database.Database` installs on every pooled
+    connection. Without it a raw test connection hands asyncpg a Python list
+    for a jsonb column and fails with "expected str, got list" - a failure the
+    repository never sees at runtime, so the test would be lying about it."""
+    await conn.set_type_codec(
+        "jsonb",
+        encoder=json.dumps,
+        decoder=json.loads,
+        schema="pg_catalog",
+        format="text",
+    )
+
+
 @pytest_asyncio.fixture
 async def db() -> AsyncIterator[asyncpg.Connection]:
     conn = await asyncpg.connect(config.database_url, timeout=30)
+    await _register_codecs(conn)
     try:
         yield conn
     finally:
@@ -2285,6 +2304,270 @@ async def test_operator_cannot_insert_a_share_request_on_someone_elses_behalf(
     await db.execute("delete from public.organisations where deleted_at is not null")
 
 
+# --- voice_agents / telephony_provisioning (PLATFORM_PIVOT_PLAN.md ADR-4) -----
+#
+# These two tables are the reason the pivot needs its own isolation pass:
+# `voice_agents` holds references to an org's STT/TTS/LLM *credentials*, and
+# `telephony_provisioning` holds the carrier/LiveKit trunk identifiers that
+# connect a real phone number. A policy that looks right and leaks either is
+# exactly the bug class CLAUDE.md Â§7 calls the most expensive available here.
+
+
+async def _make_agent(conn: asyncpg.Connection, tenant: Tenant, name: str) -> uuid.UUID:
+    """Insert a voice agent for a tenant, bypassing RLS - the fixture, not the test."""
+    return await conn.fetchval(
+        """
+        insert into public.voice_agents (org_id, name, kind, llm_provider, llm_model)
+        values ($1, $2, 'custom', 'openrouter', 'anthropic/claude-sonnet-4')
+        returning id
+        """,
+        tenant.org_id,
+        name,
+    )
+
+
+async def _make_provisioning(
+    conn: asyncpg.Connection, tenant: Tenant, agent_id: uuid.UUID, key: str
+) -> uuid.UUID:
+    return await conn.fetchval(
+        """
+        insert into public.telephony_provisioning
+            (voice_agent_id, org_id, status, idempotency_key, livekit_inbound_trunk_id)
+        values ($1, $2, 'provisioning', $3, 'ST_fake_trunk')
+        returning id
+        """,
+        agent_id,
+        tenant.org_id,
+        key,
+    )
+
+
+async def test_voice_agents_are_invisible_across_tenants(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    a, b = tenants
+
+    await _as_postgres(db)
+    await _make_agent(db, a, "A's agent")
+    await _make_agent(db, b, "B's agent")
+
+    async with db.transaction():
+        await _as_user(db, a.auth_user_id)
+        rows = await db.fetch("select org_id, name from public.voice_agents")
+
+    assert {row["org_id"] for row in rows} == {a.org_id}
+    assert "B's agent" not in {row["name"] for row in rows}
+
+
+async def test_telephony_provisioning_is_invisible_across_tenants(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    """The trunk identifiers are infrastructure secrets: knowing another org's
+    inbound trunk id is knowing where their calls land."""
+    a, b = tenants
+
+    await _as_postgres(db)
+    agent_a = await _make_agent(db, a, "A's agent")
+    agent_b = await _make_agent(db, b, "B's agent")
+    await _make_provisioning(db, a, agent_a, "key-a")
+    await _make_provisioning(db, b, agent_b, "key-b")
+
+    async with db.transaction():
+        await _as_user(db, a.auth_user_id)
+        rows = await db.fetch(
+            "select org_id, idempotency_key from public.telephony_provisioning"
+        )
+
+    assert {row["org_id"] for row in rows} == {a.org_id}
+    assert "key-b" not in {row["idempotency_key"] for row in rows}
+
+
+async def test_cannot_create_a_voice_agent_in_another_tenant(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    """The dangerous case: a forged org_id on an insert."""
+    a, b = tenants
+
+    with pytest.raises(asyncpg.exceptions.InsufficientPrivilegeError):
+        async with db.transaction():
+            await _as_user(db, a.auth_user_id)
+            await db.execute(
+                """
+                insert into public.voice_agents (org_id, name, kind)
+                values ($1, 'hijacked', 'custom')
+                """,
+                b.org_id,
+            )
+
+
+async def test_cannot_update_another_tenants_voice_agent(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    """Repointing another org's agent at your own credentials would make their
+    calls run on your account - RLS must filter the row out entirely."""
+    a, b = tenants
+
+    await _as_postgres(db)
+    agent_b = await _make_agent(db, b, "B's agent")
+
+    async with db.transaction():
+        await _as_user(db, a.auth_user_id)
+        await db.execute(
+            "update public.voice_agents set name = 'hijacked' where id = $1", agent_b
+        )
+
+    await _as_postgres(db)
+    name = await db.fetchval("select name from public.voice_agents where id = $1", agent_b)
+    assert name == "B's agent"
+
+
+async def test_cannot_write_provisioning_into_another_tenant(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    a, b = tenants
+
+    await _as_postgres(db)
+    agent_b = await _make_agent(db, b, "B's agent")
+
+    with pytest.raises(asyncpg.exceptions.InsufficientPrivilegeError):
+        async with db.transaction():
+            await _as_user(db, a.auth_user_id)
+            await db.execute(
+                """
+                insert into public.telephony_provisioning
+                    (voice_agent_id, org_id, idempotency_key)
+                values ($1, $2, 'forged')
+                """,
+                agent_b,
+                b.org_id,
+            )
+
+
+async def test_provisioning_rows_cannot_be_deleted_by_anyone(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    """A provisioning attempt is re-statused, never removed, so the trail of what
+    was tried survives a retry. There is no delete policy *and* no delete grant -
+    this asserts the grant, which is the half a future policy edit can't undo."""
+    a, _ = tenants
+
+    await _as_postgres(db)
+    agent_a = await _make_agent(db, a, "A's agent")
+    row_id = await _make_provisioning(db, a, agent_a, "key-a")
+
+    with pytest.raises(asyncpg.exceptions.InsufficientPrivilegeError):
+        async with db.transaction():
+            await _as_user(db, a.auth_user_id)
+            await db.execute(
+                "delete from public.telephony_provisioning where id = $1", row_id
+            )
+
+    await _as_postgres(db)
+    assert await db.fetchval(
+        "select exists(select 1 from public.telephony_provisioning where id = $1)", row_id
+    )
+
+
+async def test_the_same_idempotency_key_cannot_start_a_second_attempt(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    """The schema half of the "retrying an attempt must not orphan a second
+    LiveKit trunk" guarantee: a double-submitted connect-number request cannot
+    become two rows, so the retry path is forced to look up what the first
+    attempt already created."""
+    a, _ = tenants
+
+    await _as_postgres(db)
+    agent_a = await _make_agent(db, a, "A's agent")
+    await _make_provisioning(db, a, agent_a, "same-key")
+
+    with pytest.raises(asyncpg.exceptions.UniqueViolationError):
+        await _make_provisioning(db, a, agent_a, "same-key")
+
+
+async def test_a_different_attempt_on_the_same_agent_is_allowed(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    """"Try again" starts a *new* row with a new key rather than retrying the
+    stuck one in place, so the uniqueness above must not block a fresh attempt."""
+    a, _ = tenants
+
+    await _as_postgres(db)
+    agent_a = await _make_agent(db, a, "A's agent")
+    await _make_provisioning(db, a, agent_a, "attempt-1")
+    await _make_provisioning(db, a, agent_a, "attempt-2")
+
+    count = await db.fetchval(
+        "select count(*) from public.telephony_provisioning where voice_agent_id = $1",
+        agent_a,
+    )
+    assert count == 2
+
+
+async def test_a_credential_in_use_by_an_agent_cannot_be_deleted(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    """ON DELETE RESTRICT, not CASCADE: silently detaching a credential would
+    leave an agent that cannot authenticate and no record of why."""
+    a, _ = tenants
+
+    await _as_postgres(db)
+    credential_id = await db.fetchval(
+        """
+        insert into public.provider_credentials
+            (org_id, provider, identifier_encrypted, secret_encrypted)
+        values ($1, 'twilio', 'enc', 'enc')
+        returning id
+        """,
+        a.org_id,
+    )
+    await db.execute(
+        """
+        insert into public.voice_agents (org_id, name, kind, telephony_credential_id)
+        values ($1, 'wired', 'custom', $2)
+        """,
+        a.org_id,
+        credential_id,
+    )
+
+    # ForeignKeyViolationError (23503), not RestrictViolationError (23001).
+    # Postgres raises 23001 only for a deferred RESTRICT check fired by the
+    # referencing side; a plain delete of a still-referenced parent row is a
+    # foreign-key violation, and asyncpg's two classes are unrelated - so
+    # expecting the wrong one lets the delete succeed without the test noticing.
+    with pytest.raises(asyncpg.exceptions.ForeignKeyViolationError):
+        await db.execute(
+            "delete from public.provider_credentials where id = $1", credential_id
+        )
+
+
+async def test_provider_credentials_accepts_a_non_carrier_provider(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    """The check was widened from `in ('twilio','plivo')` so STT/TTS/LLM vendors
+    can live in the same table without one migration per vendor. Blank is still
+    rejected - the constraint is narrower than "anything"."""
+    a, _ = tenants
+
+    await _as_postgres(db)
+    await db.execute(
+        """
+        insert into public.provider_credentials
+            (org_id, provider, identifier_encrypted, secret_encrypted)
+        values ($1, 'openrouter', 'enc', 'enc')
+        """,
+        a.org_id,
+    )
+
+    with pytest.raises(asyncpg.exceptions.CheckViolationError):
+        await db.execute(
+            """
+            insert into public.provider_credentials
+                (org_id, provider, identifier_encrypted, secret_encrypted)
+            values ($1, '', 'enc', 'enc')
+            """,
+            a.org_id,
+        )
 # --- Internal team chat: channels, membership, messages (migration
 # `b3f7d2a891c5`, RUNBOOK_JATIN_PART_3.md) -----------------------------------
 #
@@ -3247,6 +3530,8 @@ async def test_concurrent_dm_creation_from_two_connections_converges_on_one_chan
 
     conn_a = await asyncpg.connect(config.database_url, timeout=30)
     conn_b = await asyncpg.connect(config.database_url, timeout=30)
+    await _register_codecs(conn_a)
+    await _register_codecs(conn_b)
     try:
         # `_as_user()`'s set_config(..., true) is LOCAL to the transaction it
         # runs in - it has to share one with the create_channel() call itself,
@@ -3709,10 +3994,18 @@ async def _insert_voice_agent(
         system_prompt="Be helpful.",
         prebuilt_persona=None,
         telephony_provider="twilio",
+        collect_fields=[
+            {
+                "key": "callback_time",
+                "type": "string",
+                "description": "When they want to be called back",
+                "required": False,
+            }
+        ],
     )
 
 
-async def test_voice_agents_are_invisible_across_tenants(
+async def test_voice_agents_are_invisible_across_tenants_through_the_repository(
     db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
 ) -> None:
     a, b = tenants

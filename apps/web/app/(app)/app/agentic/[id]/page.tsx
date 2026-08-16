@@ -59,9 +59,8 @@ export default function EditAgentPage() {
   }
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-1">
-        <p className="text-small font-bold text-text-mute">Agent</p>
+    <div className="flex flex-col gap-8">
+      <div className="flex flex-col gap-1.5">
         <h1 className="font-display text-h2 text-text">{agent.name}</h1>
         <p className="font-mono text-data text-text-mute">{agent.id}</p>
       </div>

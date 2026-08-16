@@ -264,18 +264,21 @@ Both are worth doing before launch.
 ## 9. Vendor de-branding
 
 The product reads as first-party throughout. No vendor is named in any UI copy, metadata,
-asset, or filename. `callflow/calle_client.py` → `engine_client.py`, `CalleGateway` →
-`EngineGateway`, and the SDK is imported under a neutral alias so nothing above that
-module speaks the vendor's name.
+asset, or filename, and every SDK is imported under a neutral alias so nothing above the
+integration module speaks the vendor's name.
 
-Three deliberate exceptions, all functional:
+The single-vendor era this section described is over: CALL-E was removed outright
+(`ISSUES.md` #77) and the stack is now several vendors an organisation partly chooses for
+itself - LiveKit for media and SIP, the org's own Twilio or Plivo, and whichever STT, TTS
+and LLM its voice agent is configured with. The de-branding rule survives that unchanged
+and matters more, not less: `apps/api/app/integrations/{vendor}/` is the only place any of
+their names appear, and the UI still says "voice agent", never a vendor's product name.
 
-1. `calle-ai` in `requirements.txt` / `pyproject.toml` - the real distribution name; the
-   install breaks otherwise.
-2. `CALLE_API_KEY` as an environment variable - the brief explicitly permits this. Every
-   _label_ says "Voice API key".
-3. `"call-e/customerMetadata"` in `orchestrator.py` - an API payload key. Changing it
-   would break extraction.
+The remaining exceptions are all functional rather than cosmetic: distribution names in
+`pyproject.toml` (`livekit-api`, `livekit-agents`, `livekit-plugins-*`), the environment
+variables those SDKs and their consoles are documented by (`LIVEKIT_URL`,
+`OPENROUTER_MANAGEMENT_KEY`), and provider *values* stored in `voice_agents` and
+`provider_credentials` - which name a vendor because the operator picked it.
 
 **Left in place, for you to decide:** `DEVPOST_STORY.md` at the repo root is entirely a
 hackathon artefact. Deleting authored narrative felt like your call rather than mine - but
@@ -1153,3 +1156,40 @@ pushes most of the fade off-canvas and leaves the rest as a short dissolve at th
 The two standing formations are taller as well (`GRID_HEIGHT` 2.6, `WAVE_HEIGHT` 2.7, from
 1.55 and 2.1), which fills the frame vertically and - because more particles now fall off
 the top and bottom and get culled - costs nothing.
+
+## 23. Integrations: one grid instead of seven walls, and why every brand mark is monochrome
+
+Two free-axis choices worth writing down, because both look like omissions.
+
+**The roles became a filter, not a layout.** The first version rendered a titled
+section per role - Phone numbers, STT, TTS, Intelligence, Storage,
+Automation, Observability - each with its own paragraph and its own card grid.
+That reads fine with six providers and badly with fifty-seven: the two things an
+operator actually wants, "find Deepgram" and "what do I still need", ended up
+several screens apart from wherever they landed. Roles are now chips above one
+dense grid that search narrows, and the readiness line leads the page because it
+is the page's actual thesis. Nothing was removed; it stopped being stacked.
+
+**Every brand mark renders in `currentColor`, never the vendor's own colour.**
+Only 19 of the 57 providers have an obtainable logo: `simple-icons` used to
+carry most of the rest and has since removed them after trademark requests -
+Twilio, OpenAI, Slack, Salesforce, AWS and Azure among them - and there is no
+maintained source left. So the grid will hold a mix of real logos and fallback
+monograms for the foreseeable future, and a mix of full-colour brand marks
+against grey letters reads as broken rather than as varied. Monochrome makes the
+mixed set deliberate, keeps §9's monochrome identity intact, and sidesteps 57
+arbitrary brand hexes each having to clear contrast in two themes.
+
+The marks live as raw paths in `lib/brand-paths.ts` rather than behind a package
+dependency, because the 38 missing ones will arrive as hand-supplied SVGs and
+one registry beats two sources. Adding one is a `d` attribute and no other file
+change.
+
+**Toast animation was fixed in the same pass.** `toast.tsx` carried
+`data-[state=open]:animate-in`, a `tailwindcss-animate` utility from a plugin
+this project does not install - so the class resolved to nothing and every toast
+appeared and vanished on a single frame, with swipes snapping rather than
+following the finger. Replaced with real keyframes in `globals.css` under
+`.toast-item`, following §15's own `menu-in`/`sheet-in` convention, including
+the `data-swipe` states and a `prefers-reduced-motion` opt-out.
+

@@ -72,6 +72,16 @@
      never used for buttons, links, headings, hovers, or decoration. That
      discipline is what makes a lit lamp mean something on an otherwise
      monochrome page. */
+  /* The three legs of a voice agent, colour-coded so a cost or latency bar can
+     be read without a legend. Deliberately outside the lamp hues below -
+     cyan/indigo/fuchsia against the lamps' mid-blue, amber, green and red - so
+     nothing here can be mistaken for call state (CLAUDE.md non-negotiable #10).
+     This is the one other place colour carries meaning, and the meaning is
+     "which part of the pipeline", never "how a call went". */
+  --leg-stt: #22d3ee;
+  --leg-llm: #818cf8;
+  --leg-tts: #e879f9;
+
   --lamp-off: #b3bcbb;
   --lamp-ice: #4b82c4;
   --lamp-brass: #c2871a;
@@ -325,8 +335,8 @@
   --dark-glass-border: var(--dark-glass-border);
   --dark-glass-blur: var(--dark-glass-blur);
 
-  --font-display: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
-  --font-sans: var(--font-inter-tight), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-space-grotesk), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-geist), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-jetbrains-mono), ui-monospace, monospace;
 
   --text-display-xl: var(--t-display-xl);
@@ -387,6 +397,10 @@
 html {
   scroll-padding-top: calc(var(--h-site-header) + 24px);
   -webkit-text-size-adjust: 100%;
+  /* Anchor jumps and scroll-to-top glide instead of teleporting. The
+     reduced-motion block near the end of this file switches it back to
+     `auto`, so this is a preference, not an imposition. */
+  scroll-behavior: smooth;
 
   /* The root carries the page colour, not just `body`.
      `body` was the only element with a background, which leaves the root
@@ -402,26 +416,26 @@ html {
 body {
   background: var(--surface);
   color: var(--text);
-  font-family: var(--font-inter-tight), ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--font-geist), ui-sans-serif, system-ui, sans-serif;
   font-size: var(--t-body);
   line-height: 1.65;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
 
-/* Ubuntu, scoped to the dashboard only - `app/(app)/app/layout.tsx` wraps its
-   tree in this class because that layout doesn't render `<html>`/`<body>`
-   itself (those stay Inter Tight for marketing/auth in the true root layout).
-   `font-family` is set directly here, not just redeclared as the `--font-sans`
-   custom property, because `body` above hardcodes `--font-inter-tight` rather
-   than routing through `--font-sans` - redeclaring the token alone would
-   leave the rendered face unchanged. `--font-sans` is redeclared too so
-   anything that *does* reach for the Tailwind `font-sans` utility anywhere
-   under `/app` still resolves to Ubuntu rather than silently falling back to
-   Inter Tight. */
+/* The dashboard used to override the body face here with Ubuntu, on the
+   reasoning that the app should read differently from the marketing site. It
+   no longer needs to: the product now runs one pairing everywhere, Geist for
+   text and Space Grotesk for display, and Ubuntu's humanist warmth was working
+   against the instrument-panel register the rest of the interface is going
+   for. The class itself stays - it is load-bearing for the `--dark-*` token
+   block below, which is the reason `/app` wraps in it at all - and still
+   declares the face explicitly, because `body` hardcodes `--font-geist`
+   rather than routing through `--font-sans`, so redeclaring the token alone
+   would leave a nested override unable to take effect. */
 .app-font-scope {
-  --font-sans: var(--font-ubuntu), ui-sans-serif, system-ui, sans-serif;
-  font-family: var(--font-ubuntu), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-geist), ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--font-geist), ui-sans-serif, system-ui, sans-serif;
 }
 
 /* The dark palette. Raw values only - nothing here decides what is dark, it
@@ -580,8 +594,13 @@ body {
      The border does the rest of the work: at these lightnesses a 14% white
      hairline is nearly gone, so it goes to 20% - a card should have an edge
      even where its fill and the page briefly agree. */
-  --dark-surface: #1f1f26;
-  --dark-glass-surface: color-mix(in oklab, var(--dark-surface) 62%, transparent);
+  /* Was #1f1f26 at 62%. Against a #050505 page that lands as a flat mid-grey
+     slab - light enough to read as its own colour rather than as the page
+     lifted, which is what made a wall of cards look washed out. Darker, and
+     composited a little lower, so a card reads as depth and the hairline
+     border is what draws its edge. */
+  --dark-surface: #141419;
+  --dark-glass-surface: color-mix(in oklab, var(--dark-surface) 55%, transparent);
   --dark-glass-border: color-mix(in oklab, #ffffff 20%, transparent);
   --dark-glass-blur: blur(24px) saturate(150%);
   --dark-rule: color-mix(in oklab, #ffffff 12%, transparent);
@@ -758,12 +777,14 @@ body {
   --shadow-overlay: 0 1px 3px rgba(0, 0, 0, 0.6), 0 16px 40px -8px rgba(0, 0, 0, 0.7);
 }
 
-/* Archivo at width 112 ("Expanded"). Applied through a class rather than an
-   element selector so it is never inherited by body copy. */
+/* Applied through a class rather than an element selector so it is never
+   inherited by body copy. Space Grotesk has no width axis - its character
+   comes from the letterforms themselves, so the tightening that used to be
+   done by expanding Archivo is done by tracking instead. */
 .font-display {
-  font-family: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
-  font-variation-settings: 'wdth' 112;
+  font-family: var(--font-space-grotesk), ui-sans-serif, system-ui, sans-serif;
   font-weight: 600;
+  letter-spacing: -0.03em;
 }
 
 /* Every piece of machine-produced data in this product is set in mono, with
@@ -948,11 +969,14 @@ button[data-menu][data-state='open']:focus-visible {
     color-mix(in oklab, var(--surface-raised) 40%, transparent);
 }
 
+/* No `transform` here any more: an interactive panel rises in z rather than
+   in y (see `panel.tsx`), so the only things that move are the shadow and the
+   edge. `--dur-enter` rather than `--dur-base` - a card is a large surface,
+   and a shadow that resolves in 240ms across that much area reads as a snap. */
 .panel-glass-interactive {
   transition:
-    box-shadow var(--dur-base) var(--ease-out),
-    border-color var(--dur-base) var(--ease-out),
-    transform var(--dur-base) var(--ease-out);
+    box-shadow var(--dur-enter) var(--ease-out),
+    border-color var(--dur-enter) var(--ease-out);
 }
 
 .panel-glass-interactive:hover {
@@ -1301,12 +1325,14 @@ button[data-menu][data-state='open']:focus-visible {
   );
 }
 
+/* Flat black, no glow. The indigo wash that used to sit behind the whole
+   content column tinted every neutral on top of it, which is why panels read
+   as blue-grey rather than grey - and on a screen the size of a dashboard the
+   gradient was a mood, not information. Colour in the dark app is now carried
+   by the things that mean something: lamp state, the primary action, and
+   vendors' own brand marks. */
 :root[data-theme='dark'] .app-canvas {
-  background: radial-gradient(
-    170% 150% at 50% -10%,
-    color-mix(in oklab, var(--dark-bg-glow) 26%, var(--surface)),
-    var(--surface) 90%
-  );
+  background: var(--surface);
 }
 
 /* --------------------------------------------------------------------------
@@ -1415,21 +1441,12 @@ button[data-menu][data-state='open']:focus-visible {
    marketing form, so it applies this class conditionally rather than
    unconditionally - see its own component for the check).
 
-   The `background` is `.dark-canvas`'s own radial-gradient formula, not a
-   flat fill or `.dark-chrome`'s glass - the ask was specifically "the same
-   purple gradient as the main content", and a popover is exactly the kind
-   of small, opaque-appropriate surface that gradient already suits (unlike
-   `.dark-chrome`, which is deliberately neutral so nothing behind its own
-   translucency reads as coloured chrome). Percentages are relative to each
-   element's own box, so a small popover gets a tighter, more concentrated
-   version of the same glow rather than a literal crop of the page-wide one -
-   same recipe, correctly proportioned for a smaller surface. */
+   The `background` follows the canvas. That used to mean matching its purple
+   radial-gradient; the canvas is flat black now, so this is too - an overlay
+   that kept the glow after the page behind it dropped it would read as a
+   different surface material floating over the app. */
 .dark-overlay {
-  background: radial-gradient(
-    170% 150% at 50% -10%,
-    color-mix(in oklab, var(--dark-bg-glow) 26%, var(--dark-bg)),
-    var(--dark-bg) 90%
-  );
+  background: var(--dark-surface);
   --text: var(--dark-text);
   --text-dim: var(--dark-text-dim);
   --text-mute: var(--dark-text-mute);
@@ -1464,7 +1481,13 @@ button[data-menu][data-state='open']:focus-visible {
    exception to "reference the token, never the hex" in this file, and it's
    here specifically because the whole point is to *not* depend on where the
    toast is mounted. If the dark palette changes, update both places. */
-.toast-dark-overlay {
+/* Now gated on the dark theme rather than applied unconditionally. The
+   original ask was for the toast to read as CallFlow's own chrome everywhere;
+   the follow-up ask is for it to match the theme, and a black slab over a
+   white page is what prompted it. The dark values below are unchanged - they
+   simply no longer apply in light, where the plain `bg-surface-raised` the
+   component already carries shows through instead. */
+:root[data-theme='dark'] .toast-dark-overlay {
   background: radial-gradient(
     170% 150% at 50% -10%,
     color-mix(in oklab, #9333ea 26%, #050505),
@@ -1485,6 +1508,28 @@ button[data-menu][data-state='open']:focus-visible {
   --lamp-brass-text: #ccab7c;
   --lamp-jade-text: #88bfa6;
   --lamp-flare-text: #e49282;
+}
+
+/* The third theme state: no `data-theme` at all means "follow the system", so
+   a dark OS has to get the dark toast without an attribute to match on. Only
+   the selector differs - the declarations are the block above. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .toast-dark-overlay {
+    background: radial-gradient(
+      170% 150% at 50% -10%,
+      color-mix(in oklab, #9333ea 26%, #050505),
+      #050505 90%
+    );
+    border-color: color-mix(in oklab, #ffffff 18%, transparent);
+    --text: #f1f5f9;
+    --text-dim: #cbd5e1;
+    --text-mute: #94a3b8;
+    --rule: color-mix(in oklab, #ffffff 10%, transparent);
+    --rule-strong: color-mix(in oklab, #ffffff 18%, transparent);
+    --surface-hover: color-mix(in oklab, #ffffff 8%, transparent);
+    --lamp-jade-text: #88bfa6;
+    --lamp-flare-text: #e49282;
+  }
 }
 
 /* §18 (DESIGN_NOTES.md): opaque purple gradient, not translucent glass - a
@@ -1816,6 +1861,103 @@ button[data-menu][data-state='open']:focus-visible {
 
 .sheet-in[data-state='open'] {
   animation: sheet-in var(--dur-base) var(--ease-out);
+}
+
+/* --------------------------------------------------------------------------
+   Tooltip.
+
+   `tooltip.tsx` carried `data-[state=delayed-open]:animate-in`, the same
+   `tailwindcss-animate` class the toast below was written against and which
+   this project does not install - so it resolved to nothing and a tooltip
+   appeared on one frame, which is what reads as "too fast" even behind a
+   400ms delay. The delay decides *when* it arrives; this decides how.
+   -------------------------------------------------------------------------- */
+
+@keyframes tooltip-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.tooltip-content {
+  transform-origin: var(--radix-tooltip-content-transform-origin);
+  animation: tooltip-in var(--dur-base) var(--ease-out) both;
+}
+
+/* --------------------------------------------------------------------------
+   Toast.
+
+   `toast.tsx` carried `data-[state=open]:animate-in`, which is a
+   `tailwindcss-animate` utility - a plugin this project does not install. The
+   class resolved to nothing, so every toast appeared and vanished on one frame
+   and a swipe snapped rather than followed the finger.
+
+   It enters from the right because that is the edge it lives on, and leaves the
+   same way so dismissing reads as putting it back rather than deleting it.
+   `--dur-micro` on the way out: an exit the reader is no longer looking at
+   should not hold the slot open.
+   -------------------------------------------------------------------------- */
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateX(12px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+@keyframes toast-out {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+}
+
+.toast-item[data-state='open'] {
+  animation: toast-in var(--dur-base) var(--ease-out);
+}
+
+.toast-item[data-state='closed'] {
+  animation: toast-out var(--dur-micro) var(--ease-out) forwards;
+}
+
+/* Follows the finger while dragging, then leaves along the same axis. Without
+   the move rule the toast stays put until the gesture ends and then jumps. */
+.toast-item[data-swipe='move'] {
+  transform: translateX(var(--radix-toast-swipe-move-x));
+}
+
+.toast-item[data-swipe='cancel'] {
+  transform: translateX(0);
+  transition: transform var(--dur-micro) var(--ease-out);
+}
+
+.toast-item[data-swipe='end'] {
+  animation: toast-out var(--dur-micro) var(--ease-out) forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toast-item[data-state='open'],
+  .toast-item[data-state='closed'],
+  .toast-item[data-swipe='end'] {
+    animation: none;
+  }
+
+  .toast-item[data-swipe='cancel'] {
+    transition: none;
+  }
 }
 
 /* --------------------------------------------------------------------------

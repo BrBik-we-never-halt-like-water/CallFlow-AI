@@ -14,16 +14,21 @@ that genuinely cannot be automated.
 ## 1. What an environment is
 
 One directory on a VM holding a checkout of one branch, with its own `.env`, its own
-Supabase project, and its own pair of pm2 processes. Dev and production can share a
-VM because the process names and ports differ; nothing in the code knows which one it
-is beyond `CALLFLOW_ENV`.
+Supabase project, and its own pm2 processes. Dev and production can share a VM because
+the process names and ports differ; nothing in the code knows which one it is beyond
+`CALLFLOW_ENV`.
+
+**An environment spans two machines.** The API and the web app share one; the voice
+runtime has its own, with its own checkout, `.env` and pm2 daemon — see §3b. The table
+below is the API/web VM unless a row says otherwise.
 
 | | production | dev |
 | --- | --- | --- |
 | Branch | `main` | `dev` |
 | Directory | `/var/www/callflow-ai` | `/var/www/callflow-ai-dev` |
 | Hostname | `calllflow.com` | `dev.calllflow.com` |
-| pm2 processes | `callflow-api`, `callflow-web` | `callflow-api-dev`, `callflow-web-dev` |
+| pm2 processes (API VM) | `callflow-api`, `callflow-web` | `callflow-api-dev`, `callflow-web-dev` |
+| pm2 processes (voice VM) | `callflow-voice` | `callflow-voice-dev` |
 | Ports | 8000 (api), **3001** (web) | 8001 (api), 3003 (web) |
 | Supabase project | the production project | **a separate project** |
 
@@ -80,7 +85,7 @@ Four env values cap that, and the defaults are not the safe ones:
 
 | Value | Dev setting | What it does |
 | --- | --- | --- |
-| `CALLE_API_KEY` | **empty** | No key, no calls. Every run is refused with a clear error |
+| `LIVEKIT_SIP_HOST` | **empty** | No connected number, no calls. Every contact is refused with a clear reason |
 | `CALLFLOW_ALLOWLIST` | **your own number** | The one that matters - see below |
 | `CALLFLOW_MAX_CALLS_PER_RUN` | `2` | Hard stop per run regardless of list length |
 | `CALLFLOW_DAILY_BUDGET` | `5` | Shared daily ceiling |
@@ -115,6 +120,10 @@ place environment configuration lives.
 | `VM_SSH_KEY` | secret | private key | Inherited from repo-level if the same box |
 | `ENV_FILE_B64` | secret | `base64 -w0 .env` | The API's `.env`, base64'd |
 | `WEB_ENV_FILE_B64` | secret | `base64 -w0 apps/web/.env.local` | The web app's, base64'd |
+| `VOICE_VM_HOST` | var | `203.0.113.20` | The voice runtime's own VM (§3b). Repo-level, like `VM_HOST` |
+| `VOICE_APP_DIR` | var | `/var/www/callflow-voice-dev` | Deploy directory on that VM. Per environment |
+| `VOICE_ENV_FILE_B64` | secret | `base64 -w0 voice.env` | The worker's `.env`, base64'd. Per environment |
+| `VOICE_EXTRAS` | var | `sarvam,openai` | Optional; defaults to every provider |
 
 The two `_B64` secrets are what remove the last manual step. Write both files locally
 from their `.env.example`s, then:
@@ -249,6 +258,58 @@ does not resolve yet. If you get the order wrong: fix DNS, then re-run the faile
 
 ---
 
+## 3b. The voice runtime's VM
+
+The LiveKit worker runs on a **separate machine** from the API and the web app. It gets
+its own bootstrap script (`scripts/bootstrap-voice.sh`), its own pair of pipeline jobs
+(`provision-voice` → `deploy-voice`), and its own `.env`. It shares only the SSH
+credentials — `VM_USER` and `VM_SSH_KEY` are reused, so the same deploy key must be
+authorised on both boxes.
+
+**Why separate, beyond capacity:** this host holds no `DATABASE_URL`, no
+`PROVIDER_CREDENTIALS_KEY` and no Supabase service key, and never should. Every per-call
+STT/TTS/LLM credential arrives in the job metadata that `apps/api` resolves and sends;
+the worker stores none of it. `bootstrap-voice.sh` **refuses to start** if the `.env` it
+is handed contains any of those API-only keys, because pasting the wrong secret in is
+the one mistake that would quietly undo the separation.
+
+**What the box needs before the first deploy:** Python 3.11+ (livekit-agents' floor),
+`python3-venv`, `node`, and `pm2`. The bootstrap checks each and fails naming the missing
+one rather than dying later with a `ModuleNotFoundError`. Passwordless sudo is optional
+and used only to install the pm2 systemd unit, without which the worker will not come
+back after a reboot.
+
+**The worker's `.env`** is five required keys. Two of them must match the API VM's
+byte for byte, and both fail *silently* when they don't:
+
+```
+LIVEKIT_URL=wss://<project>.livekit.cloud
+LIVEKIT_API_KEY=
+LIVEKIT_API_SECRET=
+CALLFLOW_PUBLIC_API_URL=https://dev.calllflow.com
+CALLFLOW_INTERNAL_API_SECRET=          # identical to the API's, or every callback 404s
+LIVEKIT_AGENT_NAME=callflow-voice      # identical to the API's, or dispatches go unanswered
+```
+
+`CALLFLOW_PUBLIC_API_URL` must be the API's **public** URL. On a single VM you could
+point it at `127.0.0.1`; from another machine that is a worker which can never report a
+transcript, so the bootstrap rejects a localhost value outright.
+
+**How the callback reaches the API.** The worker POSTs to `/internal/v1/runs/{id}/complete`.
+nginx on the API VM proxies `/api/` and `/`, so without a rule of its own that path is
+answered by Next.js with a 404. `scripts/nginx.locations.template` therefore carries a
+`location /internal/` block that is **closed to everything except `VOICE_VM_HOST`** — the
+shared secret the endpoint checks is the second lock, not the only one. Leave
+`VOICE_VM_HOST` unset and that location denies everyone, which is a 403 in the API's own
+nginx log rather than a confusing 404.
+
+**Health check.** The worker serves nothing, so there is no URL to curl. `deploy-voice`
+asks pm2 instead, and checks the process has stayed up ~10s — "online" alone is satisfied
+by a worker that is crash-looping at the moment pm2 samples it. On failure it prints the
+last 50 log lines.
+
+---
+
 ## 4. The one thing that is not automated
 
 **A Supabase project.** Creating one, and the dashboard settings in `SUPABASE_SETUP.md`,
@@ -309,6 +370,26 @@ Skipped entirely when only the frontend changed. `alembic.ini` sets `script_loca
 running it from the repo root with `-c` finds no migrations and silently upgrades nothing.
 
 **`deploy-api`** → `pm2 startOrRestart` the API, `pm2 save`, health-check `/api/health`.
+
+**`callflow-voice`** is the third process, added with the platform pivot. It is a
+long-running worker, not a server: it holds a websocket out to LiveKit and waits to be
+dispatched into rooms. So it claims **no port**, nginx does not front it, and there is
+nothing to add to the port table or to check with `ss -ltnp` before deploying it.
+
+It shares the repo-root `.venv` with the API, but its plugins are optional extras - a
+deployment installs only the vendors its organisations actually use, because each
+`livekit-plugins-*` package pulls a large dependency tree:
+
+```bash
+cd apps/voice-runtime
+../../.venv/bin/pip install -e ".[sarvam,openai,silero]"   # plus deepgram/elevenlabs if used
+```
+
+Its health check is that it starts at all: `python -m app.worker start` refuses to run
+with a clear list of missing variables rather than booting into a state where it answers
+calls and cannot report them. `LIVEKIT_AGENT_NAME` must match on both processes - if the
+API dispatches a name the worker has not registered, calls connect to silence and nothing
+in either log says why.
 
 **`deploy-web`** → `npm ci && npm run build` with `NEXT_PUBLIC_API_URL` set to
 `PUBLIC_URL`, restart, `pm2 save`, health-check `/`.

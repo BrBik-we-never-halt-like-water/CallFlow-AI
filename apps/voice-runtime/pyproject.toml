@@ -1,0 +1,86 @@
+[project]
+name = "callflow-voice-runtime"
+version = "0.1.0"
+description = "The worker that holds a CallFlow conversation inside a LiveKit room"
+requires-python = ">=3.11"
+dependencies = [
+    "livekit-agents>=1.0.0",
+    "httpx>=0.27.0",
+    "python-dotenv>=1.0.1",
+]
+
+# Every STT/TTS/LLM vendor is optional. The pipeline imports a plugin only when
+# a voice agent actually asks for that provider (see `pipeline.py`), so a
+# deployment installs the vendors its organisations use and nothing else -
+# `livekit-agents` pulls in a large dependency tree per plugin.
+[project.optional-dependencies]
+
+# STT
+assemblyai = ["livekit-plugins-assemblyai>=1.0.0"]
+baseten = ["livekit-plugins-baseten>=1.0.0"]
+clova = ["livekit-plugins-clova>=1.0.0"]
+deepgram = ["livekit-plugins-deepgram>=1.0.0"]
+fal = ["livekit-plugins-fal>=1.0.0"]
+gladia = ["livekit-plugins-gladia>=1.0.0"]
+gnani = ["livekit-plugins-gnani>=1.0.0"]
+rtzr = ["livekit-plugins-rtzr>=1.0.0"]
+soniox = ["livekit-plugins-soniox>=1.0.0"]
+speechmatics = ["livekit-plugins-speechmatics>=1.0.0"]
+
+# TTS
+cartesia = ["livekit-plugins-cartesia>=1.0.0"]
+elevenlabs = ["livekit-plugins-elevenlabs>=1.0.0"]
+fishaudio = ["livekit-plugins-fishaudio>=1.0.0"]
+hume = ["livekit-plugins-hume>=1.0.0"]
+inworld = ["livekit-plugins-inworld>=1.0.0"]
+lmnt = ["livekit-plugins-lmnt>=1.0.0"]
+murf = ["livekit-plugins-murf>=1.0.0"]
+neuphonic = ["livekit-plugins-neuphonic>=1.0.0"]
+playai = ["livekit-plugins-playai>=1.0.0"]
+resemble = ["livekit-plugins-resemble>=1.0.0"]
+rime = ["livekit-plugins-rime>=1.0.0"]
+smallestai = ["livekit-plugins-smallestai>=1.0.0"]
+speechify = ["livekit-plugins-speechify>=1.0.0"]
+upliftai = ["livekit-plugins-upliftai>=1.0.0"]
+
+# Reasoning
+anthropic = ["livekit-plugins-anthropic>=1.0.0"]
+cerebras = ["livekit-plugins-cerebras>=1.0.0"]
+fireworksai = ["livekit-plugins-fireworksai>=1.0.0"]
+groq = ["livekit-plugins-groq>=1.0.0"]
+mistralai = ["livekit-plugins-mistralai>=1.0.0"]
+xai = ["livekit-plugins-xai>=1.0.0"]
+# OpenRouter, Together, DeepSeek, Perplexity and Azure OpenAI have no package of
+# their own - `openai.LLM.with_*()` is the supported wiring for all of them.
+openai = ["livekit-agents[openai]>=1.0.0"]
+
+# Vendors serving several roles from one package
+aws = ["livekit-plugins-aws>=1.0.0"]
+azure = ["livekit-plugins-azure>=1.0.0"]
+google = ["livekit-plugins-google>=1.0.0"]
+minimax = ["livekit-plugins-minimax>=1.0.0"]
+sarvam = ["livekit-plugins-sarvam>=1.0.0"]
+spitch = ["livekit-plugins-spitch>=1.0.0"]
+
+# Not a vendor: local voice-activity detection, used regardless of who speaks.
+silero = ["livekit-plugins-silero>=1.0.0"]
+
+dev = ["pytest>=8.3.0", "pytest-asyncio>=0.24.0", "ruff>=0.7.0"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF", "PYI"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

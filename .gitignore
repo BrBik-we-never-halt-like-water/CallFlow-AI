@@ -43,3 +43,12 @@ apps/web/AGENTS.md
 
 # Playwright MCP session scratch (screenshots, console logs, page snapshots)
 .playwright-mcp/
+
+# Real vendor state written by scripts/telephony_check.py - never commit it.
+.telephony-check/
+
+# Local Docker stack env - generated from docker/.env.example on first run.
+docker/.env
+
+.agents
+.claude

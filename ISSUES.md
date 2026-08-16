@@ -136,6 +136,7 @@ exist in this repo**; `SYSTEM.md` §12 is the closest real gap map until it's wr
 | [#106](#106--no-replica-identity-full-on-the-three-chat-tables)                                                                    | S2  | No `replica identity full` on the three chat tables                                                                   | database       | it-38 | **FIXED**        |
 | [#107](#107--messages_insert-had-no-org_id-check-channel_members_insert-already-had)                                               | S2  | `messages_insert` had no `org_id` check `channel_members_insert` already had                                          | database       | it-38 | **FIXED**        |
 | [#108](#108--gitignores-supabase-entry-was-un-anchored)                                                                            | S3  | `.gitignore`'s `supabase` entry was un-anchored                                                                       | web            | it-38 | **FIXED**        |
+| [#109](#109--appchat-served-a-cached-frozen-shell-to-every-visitor---opening-any-conversation-hung-on-the-loader-permanently)      | S1  | `/app/chat` served a cached, frozen shell to every visitor - opening any conversation hung forever                    | web            | it-39 | **FIXED**        |
 
 ---
 
@@ -3741,6 +3742,249 @@ tests were removed; `RUNBOOK_HET_PART_1.md` P1-T7 rewrites them against the Live
 
 **Blocks:** every other CallFlow feature that needs a live call. **Depends on:** nothing.
 
+### #78 - A run reported itself completed while its calls were still happening
+
+**S2 · FIXED · api · `apps/api/app/api/v1/routes/runs.py`, `apps/api/app/database/repositories/runs.py`**
+
+Introduced and fixed inside the same phase, recorded because the shape of it will recur
+anywhere else this codebase swaps a request/response vendor for an event-driven one.
+
+CALL-E could be polled to completion, so `CampaignRunner.run()` returning meant every call
+had finished, and `_run_and_persist` correctly called `finish_run()` immediately after.
+LiveKit is not that: origination returns when a call is **answered**, and the conversation
+then continues in a room this process is not in. The same line therefore started marking
+runs `completed` while their own `call_outcomes` rows still read "In conversation…".
+
+**Impact.** A finished-looking run alongside live, unresolved rows - the exact fake success
+state CLAUDE.md non-negotiable #9 exists to prevent. Nothing errored; the dashboard simply
+lied, and the real outcomes would have landed afterwards against a run already closed.
+
+**Fix.** `finish_run()` is replaced on that path by `finish_if_all_settled()`, which closes
+a run only once no outcome is still in flight. Whichever worker callback settles the last
+contact is the one that closes it. Idempotent by a `finished_at is null` guard inside a
+single statement, so the concurrent callbacks a multi-contact run produces cannot both
+close it - asserted directly, along with the all-blocked case still closing immediately
+because those contacts settle on the spot.
+
+**Depends on:** `#77`. **Blocks:** nothing.
+
+### #79 - A provisioning retry could never resume, because every failure was terminal
+
+**S2 · FIXED · api · `apps/api/app/services/number_provisioning.py`, `apps/api/app/database/repositories/telephony_provisioning.py`**
+
+`telephony_provisioning` exists to stop a retried "connect number" attempt creating a
+second LiveKit trunk that nobody will ever clean up. The first implementation of the
+workflow marked **any** step failure as `failed`, and `failed` is terminal in the status
+machine (`domain/provisioning.py`) - so a retry with the same idempotency key was refused,
+and the resume logic the whole module was built around could not execute at all.
+
+Found by its own tests: the resume test had to perform an illegal `failed → provisioning`
+transition to set itself up, which is what exposed that the production path could never
+reach the state it was testing.
+
+**Impact.** Latent rather than shipped - no provisioning has run against a live account
+yet. Had it shipped: every carrier hiccup would have forced a fresh attempt, and each
+fresh attempt would have created another orphaned LiveKit inbound trunk and dispatch rule,
+silently, with nothing in the product ever mentioning them.
+
+**Fix.** `record_error()` notes why a step failed **without** ending the attempt, so the
+row stays `provisioning` and remains resumable - which is what `PLATFORM_PIVOT_PLAN.md`
+ADR-4 specified in the first place ("the row stays provisioning with last_error set"), and
+which the first implementation quietly contradicted. `failed` now means superseded, set by
+`supersede_unfinished()` when a newer attempt starts, so an agent cannot accumulate rows
+that look live forever. The superseded row keeps its own `last_error` rather than having it
+overwritten with "superseded" - that message is the only useful diagnostic on the row.
+
+A related trap avoided in the same pass: the SIP username and password LiveKit and the
+carrier must agree on are derived by HMAC from the attempt's idempotency key rather than
+generated randomly, so a resumed attempt reproduces them exactly. Regenerating would leave
+LiveKit dialling with a password the carrier no longer expects - a failure that surfaces
+only as outbound calls being silently rejected, with both systems reporting themselves
+healthy.
+
+**Depends on:** `#77`.
+
+## Iteration 25 - 2026-08-16 · platform pivot, phase A1 review pass (PR #23)
+
+Nine defects found by review of the LiveKit/telephony PR before it merged. Numbered #109-#117 after the merge with dev: these were written as #90-#98 on a branch, and team chat had already merged those ids into the shared log. Eight of the
+nine sit in a **seam between two modules that each mocked the other's half** - the dispatch
+contract, the run/worker completion race, the escalation hand-off, the transaction boundary
+between a service and its caller. None was a design error; every one was wiring, and every
+one had a green test suite on both sides of it.
+
+The pattern is worth naming, because it will recur for the rest of this pivot: a stub proves
+a module honours the contract it was *told*, never that two modules were told the same one.
+Where both halves live in this repo, test them against each other -
+`apps/api/tests/test_dispatch_contract.py` loads the worker's real parser by path and feeds
+it metadata the real orchestrator built.
+
+### #109 - The two halves of the agent-dispatch contract disagreed, so no call could ever start
+
+**S1 · FIXED · api + voice-runtime · `apps/api/app/services/campaign_runner.py`, `apps/voice-runtime/app/pipeline.py`**
+
+`_originate()` built job metadata with `goal`, `campaign_id`, `contact_name`, `phone_masked`,
+`result_schema`, `language` and `run_id` - and no `voice_agent` key. `AgentSpec.from_metadata()`
+reads `metadata.get("voice_agent") or {}` and nothing else, so all three provider names
+resolved to the empty string and `build_pipeline()` raised `UnknownProvider` on the first
+lookup.
+
+**Impact.** Every dispatched job died before its pipeline existed. The contact would have
+heard the call connect into silence while the API recorded IN_FLIGHT, and the row would have
+stayed there - the worker crashes before it can report anything. This was the phase's entire
+deliverable, and it did not work.
+
+**Fix.** `CampaignRunner` takes `voice_agent` beside `trunk_id` (both resolved from the same
+voice agent) and sends it under the key the worker actually reads. A runner with a trunk but
+no agent now refuses *before* dialling rather than letting the worker discover it after the
+phone has rung. `test_dispatch_contract.py` builds metadata through the real `_originate()`
+and feeds it to the real `AgentSpec.from_metadata()`, so the two can no longer drift apart
+silently.
+
+### #110 - The worker closed the session the instant it opened it, so every call reported empty
+
+**S1 · FIXED · voice-runtime · `apps/voice-runtime/app/worker.py`**
+
+`run_call()` ran `session.start(...)`, then `ctx.connect()`, then `session.aclose()` with
+nothing awaiting the call's end. The ordering was also inverted - `connect()` has to precede
+`start(room=...)`.
+
+**Impact.** `aclose()` ran while the phone was still ringing. `transcript_from_history()`
+returned the empty string, so `completion_payload()` picked `NO_ANSWER`, and
+`duration_seconds` was a hardcoded `0` regardless. Every call - answered or not - would have
+been reported as unanswered with no transcript.
+
+**Fix.** `wait_for_call_end()` waits for the contact to join (an answer timeout), then for
+them to leave, with a hard ceiling for a room that reports neither. Duration is measured from
+`time.monotonic()`. The function is written against a duck-typed context specifically so it
+*is* testable without a live room - it had been excluded from tests as "needs a live room",
+and it was the one block that was wrong.
+
+### #111 - Triage ran on every finished call and its result went nowhere
+
+**S1 · FIXED · api · `apps/api/app/api/v1/routes/internal.py`**
+
+`escalations_repo.create_for_outcome()` was called in exactly one place: inside
+`_run_and_persist`'s `on_progress`, gated on a needs-a-person disposition. With LiveKit,
+`run_one()` returns when the call is *answered*, so the outcome it reports is always
+`IN_FLIGHT` - never a needs-a-person disposition. The real disposition arrives later through
+the completion callback, which triaged it, wrote it, closed the run, and created nothing.
+
+**Impact.** The "Needs a person" worklist was dead for every real call. Someone asking for a
+human callback, or opting out, produced a correct `escalated` row that nobody was ever shown.
+The check that remained could only fire for a contact that failed to dial.
+
+**Fix.** The escalation is created in the completion callback, where the terminal disposition
+actually exists.
+
+### #112 - The provisioning error handler rolled back the ledger it had just written
+
+**S1 · FIXED · api · `apps/api/app/services/number_provisioning.py`**
+
+`connect_number()` caught a failed step, called `record_error()`, and re-raised. `as_user()`
+wraps a request in a single transaction (`database/session.py`), so the raise discarded that
+note *and* every `record_livekit_ids()` write the steps that had succeeded made.
+
+**Impact.** Exactly the orphan ADR-4 exists to prevent, reintroduced by its own error path. A
+carrier failure at step 3 leaves a real LiveKit inbound trunk and dispatch rule behind, but
+the committed row records neither - so `_run_steps`' "skipped when the row already records its
+result" has nothing to skip, and the retry creates a second trunk pair nobody will clean up.
+The unit tests passed because they mock the connection, so no rollback ever happened.
+
+**Fix.** Failure is *returned*, not raised: `connect_number()` hands back the attempt row
+whichever way it goes, and `status` plus `last_error` are the result. The ledger now outlives
+the failure, because the failure no longer unwinds the transaction carrying it.
+
+### #113 - The connect-number workflow had no HTTP caller, so no number could be connected
+
+**S1 · FIXED · api · `apps/api/app/api/v1/routes/telephony.py`**
+
+The service (325 lines) and repository (235 lines) were complete and tested, but
+`connect_number` was imported only by its own test file. Nothing in the running application
+could start a provisioning attempt - which is also why `CampaignRunner._trunk_id` could only
+ever be `None`.
+
+**Impact.** The feature was unreachable from the product. It had been deferred on the grounds
+that the runbook specified `Permission.AGENTS_WRITE`, which Part 2 owns.
+
+**Fix.** `routes/telephony.py`, gated on `Permission.INTEGRATIONS_WRITE`/`INTEGRATIONS_READ`.
+That is the honest permission rather than a placeholder: the endpoint reconfigures the
+organisation's own Twilio or Plivo account using credentials stored on the Integrations page.
+No new enum member, and no collision with Part 2's `permissions.py`.
+
+### #114 - An uploaded CSV column could overwrite the agent's own instructions
+
+**S2 · FIXED · api · `apps/api/app/services/campaign_runner.py`**
+
+`**contact.context` was spread *last* into the dispatch metadata, after the deliberate keys.
+The comment directly above it explained that the phone number is excluded because metadata
+reaches LiveKit's logs and webhooks - and then let customer data overwrite everything beside
+it.
+
+**Impact.** A CSV column named `goal` rewrote what the agent was told to do. One named
+`phone_masked` misaddressed the completion callback's row, so the call's result would insert a
+second row rather than resolving the in-flight one. Uploaded data is context for a
+conversation; it was in a position to control it.
+
+**Fix.** The spread moved to the front, so CallFlow's own keys win. Asserted directly with a
+contact whose context tries to overwrite `goal`, `phone_masked`, `run_id` and `voice_agent`.
+
+### #115 - A failed dial left its agent dispatch behind, and the orphan overwrote the real outcome
+
+**S2 · FIXED · api · `apps/api/app/integrations/livekit/client.py`**
+
+The dispatch is created before the SIP participant, deliberately and correctly - an answered
+call with no agent in the room is a person saying "hello?" into silence. But when
+`create_sip_participant` then raised busy or unreachable, the dispatch survived.
+
+**Impact.** The orphaned worker joins a room nobody will ever enter, waits out its answer
+timeout, and POSTs `NO_ANSWER` - overwriting the accurate `busy`/`RETRY` outcome
+`classify_error()` had just produced from the carrier's own SIP status. The operator is told
+the wrong thing about a real call, and a retryable failure reads as unretryable.
+
+**Fix.** The dial is wrapped and the dispatch deleted on failure. Cleanup is best-effort and
+never replaces the dial's own classified error - letting it surface would turn "486 Busy Here"
+into an internal error, which is strictly worse information.
+
+### #116 - A settled call outcome could be dragged back to in-flight, losing its transcript
+
+**S2 · FIXED · api · `apps/api/app/database/repositories/runs.py`**
+
+Two writers upsert the same `(run_id, contact_name, phone_masked)` key: origination writes
+IN_FLIGHT once a call is answered, and the completion callback writes the terminal row when it
+ends. `append_outcome`'s `do update` set every column unconditionally, so whichever landed
+last won.
+
+**Impact.** A short call completes before origination's own progress write lands. The
+in-flight write then overwrites the terminal row - discarding the transcript, the disposition
+and the extracted result - and leaves `finish_if_all_settled` permanently unable to close the
+run. Separately, `on_status` was declared on `run_one()`, threaded through from `run()`, and
+never called; it is removed rather than left as an unwired hook.
+
+**Fix.** The upsert refuses to downgrade a settled row, and falls back to reading the id when
+its update is suppressed, since the caller still needs it to link an escalation.
+
+### #117 - A run could stay "running" forever, from two independent causes
+
+**S3 · PARTLY FIXED · api · `apps/api/app/database/repositories/runs.py`, `apps/api/app/api/v1/routes/runs.py`**
+
+`finish_if_all_settled` requires `count(settled) >= runs.total`. Two things made that
+unreachable: a contact list containing the same `(name, phone)` twice collapsed under the
+upsert key, so the count could never reach `total`; and a worker that died before its callback
+left a row in flight indefinitely (`ReportFailed` is logged and swallowed). `finish_run` used
+to be unconditional, so neither could happen before this phase.
+
+**Impact.** The run reads "running" for good and its progress never completes. The duplicate
+case also silently discarded one real call's transcript.
+
+**Fix.** Contacts are deduplicated at run start - a run should not dial the same person twice,
+and the row being overwritten was a real call. `expire_stale_in_flight` settles rows older than
+the carrier-enforced call ceiling as `unreachable`/`timed_out`, recorded as a real failure
+rather than quietly closed, because nobody knows what was said (non-negotiable #9).
+
+**Still open.** The sweep only runs when a callback or a run-completion check asks. A run whose
+*every* worker dies has nobody left to ask, and stays open until something else touches it. A
+scheduled reaper is the real fix and needs a scheduler this deployment does not have yet.
+
 ## Iteration 32 - 2026-08-16 · the Agentic tab (voice-agent builder)
 
 ### #90 - Voice agents can be built and previewed for real, but none can place a live call yet
@@ -4362,14 +4606,19 @@ removed from a channel - or leaving in another tab - never propagated live, and 
 `org_id=eq.<org>` Realtime filter couldn't match the delete's old record either.
 
 **Fix.** `replica identity full` for all three tables, executed right before they're added to
-the publication (mirroring escalations' order), with the reverse in `downgrade()`.
+the publication (mirroring escalations' order), with the reverse in `downgrade()`. Edited into
+this migration directly rather than shipped as a follow-up - this table set is brand new to
+every environment beyond this developer's own local one, so there is nothing anywhere to
+migrate *through*, only the corrected end state to ship, the same reasoning the migration's
+own docstring already gives for consolidating five earlier migrations into it in the first
+place.
 
 **Verified.** New regression test `test_chat_tables_have_full_replica_identity` asserts
 `pg_class.relreplident = 'f'` for all three tables directly - confirmed to fail before the
 migration change, pass after. Applied directly to the local dev database (`alter table ...
 replica identity full`) rather than a destructive downgrade/upgrade cycle, so existing seeded
 conversations were preserved. Full backend suite: 274 passed (272 + this + #107's test),
-`ruff` clean.
+`ruff` clean, single alembic head.
 
 ### #107 - `messages_insert` had no `org_id` check `channel_members_insert` already had
 
@@ -4386,14 +4635,14 @@ undelivered live for the whole channel - and `messages.org_id` stops being trust
 anything downstream that assumes it agrees with its own `channel_id`.
 
 **Fix.** Added the identical clause - `and org_id = public.channel_org_id(channel_id)` - to
-`messages_insert`'s `WITH CHECK`.
+`messages_insert`'s `WITH CHECK`, in the same migration (see `#106`'s note on why editing it
+directly is correct here, unlike a migration that has already shipped elsewhere).
 
 **Verified.** New regression test `test_messages_insert_rejects_a_mismatched_org_id_from_a_multi_org_member`
 seats one tenant in both organisations, confirms the exact scenario above (`send_message`
 called with the channel's own org and a different, mismatched `org_id`) is rejected and
-leaves no row - confirmed to fail against the pre-fix policy, pass after. Applied directly to
-the local dev database (`drop policy` + recreate) rather than a destructive migration replay.
-Full backend suite: 274 passed, `ruff` clean.
+leaves no row - confirmed to fail against the pre-fix policy, pass after. Full backend suite:
+274 passed, `ruff` clean.
 
 ### #108 - `.gitignore`'s `supabase` entry was un-anchored
 
@@ -4421,6 +4670,24 @@ Trailing newline confirmed via a byte-level check of the file's tail.
 
 **Depends on / Blocks:** none - independent of #105-#107, filed together as the same review's
 findings.
+
+## Iteration 39 - 2026-08-16 · chat unusable on dev: a cached static shell froze `channelId` forever
+
+### #109 - `/app/chat` served a cached, frozen shell to every visitor - opening any conversation hung on the loader permanently
+
+**S1 · FIXED · web · `apps/web/app/(app)/app/chat/page.tsx`**
+
+Reported live: after deploying to `dev`, every conversation opened into the `WavesLoader` (`#105`-`#108`'s own iteration) and never resolved - confirmed stuck past 20 seconds against the real deployment (Playwright, `jatinorg@yopmail.com`), even though the network log showed `GET /api/v1/channels/{id}` and `GET .../messages` both returning `200` with well-formed bodies and zero console errors. A local production build (`next build && next start`, not `next dev`) of the identical code resolved in under a second - so the bug wasn't in the React logic, the API, or "dev vs prod build" as such.
+
+The actual difference: `curl`/Playwright response headers on `/app/chat` itself showed `x-nextjs-cache: HIT`, `x-nextjs-prerender: 1`, `x-nextjs-stale-time: 300`, and `x-nextjs-postponed: 2` on the streamed RSC payload. `ChatShell` reads the open conversation via a `useSearchParams()` call (isolated in a stateless `ChannelIdSync` leaf per `#103`'s fix, under its own `<Suspense>` boundary, which Next.js requires for `useSearchParams()`). That exact shape - a `Suspense` boundary around a `useSearchParams()` read, on an otherwise-static page (`○` in the build output, true of every `/app/*` page since none does server-side data fetching) - is what Next.js treats as one static, cacheable "shell" with a dynamic "hole" to resume per request. On `dev`'s deployed pm2 process, that shell got cached once - `channelId` frozen at whatever it read on the very first request that built it (effectively `null`, before `ChannelIdSync`'s effect ever ran) - and served to every subsequent visitor for the page's 300s stale window, regardless of the real URL each of them actually requested. `cf-cache-status: DYNAMIC` on the same response rules out Cloudflare's edge cache as a second layer to purge - this was entirely Next.js's own server-side route cache, on the origin.
+
+**Impact.** Every conversation, for every user, on `dev`, hung on the loading state permanently - not an edge case, the whole feature.
+
+**Fix.** `export const dynamic = 'force-dynamic'` on `chat/page.tsx`, which required first turning it back into a Server Component (dropping `'use client'`, since route segment config isn't available from a Client Component file) that renders `ChatShell` as a child - matching the split `#103` already introduced for the same reason. Forces this route to render fresh every request; costs nothing in practice, since the entire page's real content is a client component with no server-rendered data to reuse anyway. Confirmed in the build output: `/app/chat` moved from `○` (Static) to `ƒ` (Dynamic).
+
+**The same shape exists in three other pages already in this codebase, pre-existing, not introduced by this work**: `app/(app)/app/organisation/page.tsx`, `app/(app)/app/runs/new/page.tsx`, and `app/(auth)/login/page.tsx` all wrap a `useSearchParams()` read in `Suspense` on a page the build marks `○` Static, with no `force-dynamic`. None is fixed here - each reads a narrower value (a redirect target, an invite token, a prefilled campaign id) than chat's does, so a frozen shell there likely misroutes or drops a prefill rather than hanging the whole page, but the mechanism is identical and worth a deliberate look rather than a silent fix bundled into this one.
+
+**Verified.** Reproduced live against the real `dev` deployment (stuck past 20s, `.loader-bar` present, composer never rendered). Reproduced the *absence* of the bug locally under `next build && next start` (resolved in ~1s) before the fix, confirming it wasn't a build-mode difference. After the fix: `npm run build` shows `ƒ /app/chat`; `tsc --noEmit` and `eslint` both clean. Not re-verified against the live `dev` deployment after the fix - that requires an actual redeploy, which is the user's next step, not something done from here.
 
 ## Template for the next iteration
 

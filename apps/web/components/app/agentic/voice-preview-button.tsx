@@ -3,6 +3,7 @@
 import { PauseIcon, PlayIcon } from '@phosphor-icons/react/dist/ssr';
 import { useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { Tooltip } from '@/components/ui/tooltip';
 import { useToast } from '@/components/ui/toast';
 import { api } from '@/lib/api';
 
@@ -20,6 +21,7 @@ export function VoicePreviewButton({
   kind,
   text,
   voiceId,
+  iconOnly,
 }: {
   provider: string;
   kind: 'stt' | 'tts';
@@ -27,6 +29,8 @@ export function VoicePreviewButton({
   text?: string;
   /** For `kind === 'tts'`. */
   voiceId?: string;
+  /** Render as a bare icon beside a heading rather than a labelled button. */
+  iconOnly?: boolean;
 }) {
   const toast = useToast();
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -81,6 +85,28 @@ export function VoicePreviewButton({
             : "The service didn't respond.",
       });
     }
+  }
+
+  const label = state === 'playing' ? 'Stop the preview' : 'Hear this voice';
+
+  if (iconOnly) {
+    return (
+      <Tooltip content={reason ?? label}>
+        <button
+          type="button"
+          onClick={() => void play()}
+          aria-label={label}
+          disabled={state === 'loading'}
+          className="flex size-7 items-center justify-center rounded-full text-text-mute transition-colors duration-(--dur-micro) hover:bg-surface-hover hover:text-text disabled:opacity-45"
+        >
+          {state === 'playing' ? (
+            <PauseIcon aria-hidden weight="fill" className="size-4" />
+          ) : (
+            <PlayIcon aria-hidden weight="fill" className="size-4" />
+          )}
+        </button>
+      </Tooltip>
+    );
   }
 
   return (

@@ -27,6 +27,7 @@ from app.database.repositories import (
 )
 from app.database.repositories import provider_credentials as provider_credentials_repo
 from app.database.repositories import voice_agents as voice_agents_repo
+from app.domain.campaigns import FIELD_TYPES
 from app.domain.safety import mask
 from app.integrations.ai_providers import catalog
 from app.services import voice_preview
@@ -36,6 +37,20 @@ router = APIRouter(prefix="/api/v1/voice-agents", tags=["voice-agents"])
 TelephonyProvider = Literal["twilio", "plivo"]
 
 _TELEPHONY_DISPLAY_NAMES: dict[str, str] = {"twilio": "Twilio", "plivo": "Plivo"}
+
+
+class CollectFieldIn(BaseModel):
+    """One thing the agent has to come back with.
+
+    Deliberately the same shape as a campaign's `extra_fields` entry
+    (`campaigns.py`'s `FieldIn`): both end up as structured call results, and a
+    second field format would mean a second validator to keep in step.
+    """
+
+    key: str = Field(min_length=1, max_length=40)
+    type: str = "string"
+    description: str = ""
+    required: bool = False
 
 
 class VoiceAgentIn(BaseModel):
@@ -49,6 +64,7 @@ class VoiceAgentIn(BaseModel):
     system_prompt: str | None = None
     prebuilt_persona: str | None = None
     telephony_provider: TelephonyProvider | None = None
+    collect_fields: list[CollectFieldIn] = Field(default_factory=list)
 
 
 class VoiceAgentOut(VoiceAgentIn):
@@ -89,6 +105,15 @@ class PreviewOut(BaseModel):
     transcript: str | None = None
 
 
+def _decode_collect_fields(raw: object) -> list[CollectFieldIn]:
+    """`session.py` registers a `jsonb` codec, so this arrives as a real list -
+    the guard is for rows written before the column existed, which read back as
+    the `[]` server default, and for anything hand-edited into a non-list."""
+    if not isinstance(raw, list):
+        return []
+    return [CollectFieldIn.model_validate(item) for item in raw]
+
+
 def _row_json(row: asyncpg.Record) -> VoiceAgentOut:
     created_by = row["created_by"]
     return VoiceAgentOut(
@@ -104,6 +129,7 @@ def _row_json(row: asyncpg.Record) -> VoiceAgentOut:
         system_prompt=row["system_prompt"],
         prebuilt_persona=row["prebuilt_persona"],
         telephony_provider=row["telephony_provider"],
+        collect_fields=_decode_collect_fields(row["collect_fields"]),
         created_at=row["created_at"],
         created_by=str(created_by) if created_by else None,
         created_by_name=row.get("created_by_name"),
@@ -174,6 +200,11 @@ async def provider_catalog(
     return ProviderCatalogOut(stt=stt, tts=tts, llm=llm, telephony=telephony)
 
 
+def _encode_collect_fields(body: VoiceAgentIn) -> list[dict[str, Any]]:
+    """Plain dicts, not a JSON string: the `jsonb` codec does the encoding."""
+    return [f.model_dump() for f in body.collect_fields]
+
+
 async def _validate_agent_fields(
     conn: asyncpg.Connection, org_id: UUID, body: VoiceAgentIn
 ) -> None:
@@ -181,6 +212,27 @@ async def _validate_agent_fields(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="llm_model is required when llm_provider is 'openrouter' - pick a model.",
+        )
+
+    bad = [f.type for f in body.collect_fields if f.type not in FIELD_TYPES]
+    if bad:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"Unsupported field type(s): {', '.join(bad)}. "
+                f"Use: {', '.join(sorted(FIELD_TYPES))}"
+            ),
+        )
+
+    keys = [f.key for f in body.collect_fields]
+    duplicates = sorted({k for k in keys if keys.count(k) > 1})
+    if duplicates:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"Two fields share the key {', '.join(duplicates)}. "
+                "Give each field its own key."
+            ),
         )
 
     if body.telephony_provider is not None:
@@ -221,6 +273,7 @@ async def create_voice_agent(
             system_prompt=body.system_prompt,
             prebuilt_persona=body.prebuilt_persona,
             telephony_provider=body.telephony_provider,
+            collect_fields=_encode_collect_fields(body),
         )
     return _row_json(row)
 
@@ -247,6 +300,7 @@ async def update_voice_agent(
             system_prompt=body.system_prompt,
             prebuilt_persona=body.prebuilt_persona,
             telephony_provider=body.telephony_provider,
+            collect_fields=_encode_collect_fields(body),
         )
     if row is None:
         raise HTTPException(

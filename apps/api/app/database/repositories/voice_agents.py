@@ -6,6 +6,7 @@ wants to show who built an agent, so `list_org_agents`/`get_org_agent` join to
 
 from __future__ import annotations
 
+from typing import Any
 from uuid import UUID
 
 import asyncpg
@@ -13,14 +14,14 @@ import asyncpg
 _LIST_COLUMNS = """
     v.id, v.org_id, v.created_by, v.name, v.kind, v.stt_provider, v.tts_provider,
     v.llm_provider, v.llm_model, v.voice_id, v.system_prompt, v.prebuilt_persona,
-    v.telephony_provider, v.created_at, v.updated_at,
+    v.telephony_provider, v.collect_fields, v.created_at, v.updated_at,
     u.name as created_by_name, u.avatar_url as created_by_avatar_url
 """
 
 _WRITE_RETURNING = """
     id, org_id, name, kind, stt_provider, tts_provider, llm_provider, llm_model,
-    voice_id, system_prompt, prebuilt_persona, telephony_provider, created_at,
-    updated_at, created_by
+    voice_id, system_prompt, prebuilt_persona, telephony_provider,
+    collect_fields, created_at, updated_at, created_by
 """
 
 
@@ -67,14 +68,15 @@ async def create_agent(
     system_prompt: str | None,
     prebuilt_persona: str | None,
     telephony_provider: str | None,
+    collect_fields: list[dict[str, Any]],
 ) -> asyncpg.Record:
     return await conn.fetchrow(
         f"""
         insert into public.voice_agents
             (org_id, created_by, name, kind, stt_provider, tts_provider,
              llm_provider, llm_model, voice_id, system_prompt, prebuilt_persona,
-             telephony_provider)
-        values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+             telephony_provider, collect_fields)
+        values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
         returning {_WRITE_RETURNING}
         """,
         org_id,
@@ -89,6 +91,7 @@ async def create_agent(
         system_prompt,
         prebuilt_persona,
         telephony_provider,
+        collect_fields,
     )
 
 
@@ -107,13 +110,15 @@ async def update_agent(
     system_prompt: str | None,
     prebuilt_persona: str | None,
     telephony_provider: str | None,
+    collect_fields: list[dict[str, Any]],
 ) -> asyncpg.Record | None:
     return await conn.fetchrow(
         f"""
         update public.voice_agents
         set name = $3, kind = $4, stt_provider = $5, tts_provider = $6,
             llm_provider = $7, llm_model = $8, voice_id = $9, system_prompt = $10,
-            prebuilt_persona = $11, telephony_provider = $12, updated_at = now()
+            prebuilt_persona = $11, telephony_provider = $12,
+            collect_fields = $13, updated_at = now()
         where org_id = $1 and id = $2
         returning {_WRITE_RETURNING}
         """,
@@ -129,6 +134,7 @@ async def update_agent(
         system_prompt,
         prebuilt_persona,
         telephony_provider,
+        collect_fields,
     )
 
 

@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from 'next';
-import { Archivo, Inter_Tight, JetBrains_Mono } from 'next/font/google';
+import { Geist, JetBrains_Mono, Space_Grotesk } from 'next/font/google';
 import { NuqsAdapter } from 'nuqs/adapters/next/app';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { ToastProvider } from '@/components/ui/toast';
@@ -9,20 +9,26 @@ import { THEME_PRE_PAINT_SCRIPT } from '@/lib/theme';
 import './globals.css';
 
 /**
- * Display face. Archivo is variable on the width axis, and the design calls for
- * width 112 ("Expanded") - set via `font-variation-settings` in `.font-display`
- * rather than a static weight. This is the only preloaded face.
+ * Display face. Space Grotesk's drawing comes out of technical lettering - the
+ * squared bowls and the single-storey `a` read as instrument panel rather than
+ * brochure, which is the right register for a product that reports what
+ * happened on a phone call. The only preloaded face.
  */
-const archivo = Archivo({
-  variable: '--font-archivo',
+const spaceGrotesk = Space_Grotesk({
+  variable: '--font-space-grotesk',
   subsets: ['latin'],
-  axes: ['wdth'],
+  weight: ['500', '600', '700'],
   display: 'swap',
   preload: true,
 });
 
-const interTight = Inter_Tight({
-  variable: '--font-inter-tight',
+/**
+ * Text face. Geist rather than Inter: Inter is the default every product
+ * reaches for, and at the small sizes this interface lives at, Geist's wider
+ * apertures and taller x-height hold up better in dense rows of data.
+ */
+const geist = Geist({
+  variable: '--font-geist',
   subsets: ['latin'],
   weight: ['400', '500', '600'],
   display: 'swap',
@@ -92,7 +98,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${archivo.variable} ${interTight.variable} ${jetbrainsMono.variable}`}
+      className={`${spaceGrotesk.variable} ${geist.variable} ${jetbrainsMono.variable}`}
       // The pre-paint script sets `data-theme` on this element before React
       // hydrates, so the server-rendered markup and the DOM legitimately differ
       // by that one attribute. Without this, React warns on every load.

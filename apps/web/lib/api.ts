@@ -356,7 +356,59 @@ export interface ChatMessage {
   edited_at: string | null;
 }
 
-export type Provider = 'twilio' | 'plivo';
+/** Whatever the API's catalogue says it supports - not a hard-coded pair.
+ * The list used to live here *and* on the server; the two drifting is how a
+ * provider becomes selectable in the UI and unstorable by the API. */
+export type Provider = string;
+
+/** What a credential is for. The first four mirror `voice_agents`' own columns
+ * so an organisation can see it needs one of each before a call is possible;
+ * the last three have no feature behind them yet - see `wired`. */
+export type ProviderRole =
+  | 'telephony'
+  | 'transcriber'
+  | 'voice'
+  | 'intelligence'
+  | 'storage'
+  | 'automation'
+  | 'observability';
+
+/** How a vendor lets you connect. Only some host a login - a "Connect with X"
+ * button on a vendor that offers none would be a success state for something
+ * that never happens. */
+export type ConnectMethod = 'oauth' | 'api_key';
+
+/** One input on a provider's connect form, described by the server so this
+ * client can render a vendor it has never heard of. */
+export interface CredentialField {
+  key: string;
+  label: string;
+  /** Masked on entry and never returned by any read endpoint. */
+  secret: boolean;
+  required: boolean;
+  placeholder: string;
+  help: string | null;
+  /** A service-account JSON needs a textarea, not a single line. */
+  multiline: boolean;
+}
+
+export interface ProviderSpec {
+  id: Provider;
+  name: string;
+  /** A vendor can serve several - one Deepgram key does speech in and out. */
+  roles: ProviderRole[];
+  connect: ConnectMethod;
+  summary: string;
+  fields: CredentialField[];
+  docs_url: string;
+  /** False means the credential is stored and nothing reads it yet. The card
+   * says so rather than showing it as connected. */
+  wired: boolean;
+  /** One key proxies many models, so the agent must also name which to run. */
+  needs_model: boolean;
+  /** A short constraint worth stating on the card. */
+  note: string | null;
+}
 
 export interface ProviderCredential {
   provider: Provider;
@@ -367,8 +419,9 @@ export interface ProviderCredential {
 }
 
 export interface ProviderCredentialInput {
-  identifier: string;
-  secret: string;
+  /** Keyed by the provider's own `CredentialField.key` values. The server
+   * rejects a key the provider never declared rather than dropping it. */
+  fields: Record<string, string>;
   phone_number?: string;
   label?: string;
 }
@@ -406,6 +459,15 @@ export interface ProviderCatalogEntry {
   latency_note: string;
   quality_note: string;
   preview_available: boolean;
+  /** The same figures as the `*_note` strings, in machine units, so the
+   *  builder can draw a comparable breakdown per leg. Null where the vendor
+   *  bills in a unit the field doesn't cover - see `catalog.py`. */
+  latency_ms: number | null;
+  /** STT and TTS bill per minute of audio; LLM entries carry the two token
+   *  fields instead. */
+  cost_per_min_usd: number | null;
+  cost_per_1m_input_usd: number | null;
+  cost_per_1m_output_usd: number | null;
   voice_options: string[];
   connected: boolean;
 }
@@ -434,6 +496,9 @@ export interface VoiceAgentDraft {
   system_prompt?: string | null;
   prebuilt_persona?: string | null;
   telephony_provider?: TelephonyProvider | null;
+  /** What the agent has to come back with. Same shape as a campaign's
+   *  `extra_fields` - both end up as structured call results. */
+  collect_fields?: CampaignField[];
 }
 
 export interface VoiceAgent {
@@ -449,6 +514,9 @@ export interface VoiceAgent {
   system_prompt: string | null;
   prebuilt_persona: string | null;
   telephony_provider: TelephonyProvider | null;
+  /** What the agent has to come back with from a call. Same shape as a
+   *  campaign's `extra_fields` - both become structured call results. */
+  collect_fields: CampaignField[];
   created_at: string;
   created_by: string | null;
   created_by_name: string | null;
@@ -715,8 +783,18 @@ export const api = {
     authReq<void>(`/api/v1/suppressions/${id}`, { method: 'DELETE' }),
 
   // --- integrations ----------------------------------------------------------
+  listProviderCatalogue: () =>
+    authReq<ProviderSpec[]>('/api/v1/integrations/catalogue'),
   listProviderCredentials: () =>
     authReq<ProviderCredential[]>('/api/v1/integrations/providers'),
+  exchangeOAuthCode: (
+    provider: Provider,
+    body: { code: string; code_verifier?: string },
+  ) =>
+    authReq<ProviderCredential>(
+      `/api/v1/integrations/providers/${provider}/oauth/exchange`,
+      { method: 'POST', body: JSON.stringify(body) },
+    ),
   connectProvider: (provider: Provider, body: ProviderCredentialInput) =>
     authReq<ProviderCredential>(`/api/v1/integrations/providers/${provider}`, {
       method: 'PUT',

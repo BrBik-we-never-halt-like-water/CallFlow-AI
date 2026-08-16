@@ -37,7 +37,12 @@ export function Panel({
         'rounded-xl border',
         sunken ? 'panel-glass-sunken' : 'panel-glass',
         !sunken && flat && 'panel-glass-flat',
-        interactive && 'panel-glass-interactive hover:-translate-y-0.5',
+        // Rises in z, not in y. A translate nudges the card out from under the
+        // cursor and shifts every neighbour's apparent baseline; lifting it
+        // above its siblings and deepening the shadow reads as the same
+        // "picked up" without anything moving.
+        interactive &&
+          'panel-glass-interactive relative z-0 hover:z-10 hover:shadow-lg',
         className,
       )}
       {...props}

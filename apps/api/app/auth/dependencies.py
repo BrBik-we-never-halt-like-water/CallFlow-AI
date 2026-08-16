@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Annotated
@@ -14,6 +15,8 @@ from app.auth.tokens import InvalidToken, TokenClaims, token_verifier
 from app.database import database
 from app.database.models import OrgRole
 from app.domain.api_keys import hash_api_key, looks_like_api_key
+
+log = logging.getLogger("app.auth.dependencies")
 
 # Sent by the web client when a user belongs to more than one organisation.
 ORG_HEADER = "X-Org-Id"
@@ -141,6 +144,17 @@ async def _resolve_supabase_session(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="You are not a member of that organisation.",
             )
+        # Logged with the auth user id, which the caller is never told. The
+        # signup trigger builds a user's organisation on `auth.users` insert, so
+        # reaching here with a token that verified means the trigger never ran
+        # for this identity - the normal cause being an environment whose
+        # database is not the one its auth provider writes to. That is a
+        # deployment fact nobody can diagnose from a 403 alone.
+        log.warning(
+            "verified token for auth user %s has no organisation - "
+            "the signup trigger never ran against this database",
+            claims.auth_user_id,
+        )
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Your account is not attached to an organisation yet.",

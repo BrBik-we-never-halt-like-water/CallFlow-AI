@@ -15,6 +15,7 @@ from app.api.v1.routes.api_keys import router as api_keys_router
 from app.api.v1.routes.campaigns import router as campaigns_router
 from app.api.v1.routes.escalations import router as escalations_router
 from app.api.v1.routes.integrations import router as integrations_router
+from app.api.v1.routes.internal import router as internal_router
 from app.api.v1.routes.invitations import router as invitations_router
 from app.api.v1.routes.messages import router as messages_router
 from app.api.v1.routes.organisations import router as organisations_router
@@ -23,6 +24,7 @@ from app.api.v1.routes.runs import router as runs_router
 from app.api.v1.routes.safety import router as safety_router
 from app.api.v1.routes.sharing import router as sharing_router
 from app.api.v1.routes.suppressions import router as suppressions_router
+from app.api.v1.routes.telephony import router as telephony_router
 from app.api.v1.routes.voice_agents import router as voice_agents_router
 from app.core.config import config
 from app.core.logging import configure_logging
@@ -83,6 +85,9 @@ app.include_router(integrations_router)
 app.include_router(ai_providers_router)
 app.include_router(voice_agents_router)
 app.include_router(messages_router)
+app.include_router(telephony_router)
+# Not a public API - the voice runtime's callback, guarded by a shared secret.
+app.include_router(internal_router)
 
 
 @app.get("/")

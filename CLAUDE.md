@@ -19,6 +19,7 @@ requests for a human get escalated.
 | `ISSUES.md`                | Living bug log, severity-ranked, per iteration                    | Whenever you find or fix a bug                                                                                                                                                                                                                                                                                     |
 | `apps/web/DESIGN_NOTES.md` | Frontend design decisions and deliberate deviations               | When you make a free-axis design choice                                                                                                                                                                                                                                                                            |
 | `SUPABASE_SETUP.md`        | Dashboard settings a human must click                             | When a new provider setting is required                                                                                                                                                                                                                                                                            |
+| `DEV_SETUP.md`             | Running the whole stack locally, including a one-command database  | When a prerequisite, a setup step, or the local-database tooling changes                                                                                                                                                                                                                            |
 | `DEPLOYMENT.md`            | Bringing up an environment: database, server, CI/CD               | When the deploy job, `ecosystem.config.js`, or the per-environment configuration changes                                                                                                                                                                                                                           |
 
 Keeping `SYSTEM.md` and `ISSUES.md` current is part of the work, not paperwork after it.
@@ -229,6 +230,16 @@ These override style preference, convenience, and personal taste.
     second colour. The dark pivot keeps its own `--dark-accent` (`#4f46e5`) because a
     solid button there must clear both the white-label bar and the against-the-page bar;
     same hue, different lightness, and the reason is cited in `globals.css`.
+
+    **The one addition to this rule: the `--leg-*` spectrum** (`globals.css`) -
+    cyan `--leg-stt`, indigo `--leg-llm`, fuchsia `--leg-tts`. The Agentic
+    builder colour-codes the three parts of a voice agent so a stacked cost or
+    latency bar can be read without a legend (`agent-metrics.tsx`). Its hues sit
+    deliberately clear of all four lamps (mid-blue ice, amber brass, green jade,
+    red flare), and its meaning is *which part of the pipeline*, never *how a
+    call went*. Do not use `--leg-*` for anything that represents call, run, or
+    escalation state, and do not add a fourth leg colour without checking it
+    against the lamp hues first.
 
     The line between all of that and the lamps is absolute: `--primary`/`--accent` must
     never appear inside anything that represents call/run/escalation state (`Lamp`,
