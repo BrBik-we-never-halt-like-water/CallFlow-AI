@@ -88,9 +88,94 @@ npm run local:status     # what is running
 npm run local:migrate    # run migrations only
 ```
 
-Source is bind-mounted, so `uvicorn --reload` and Next fast refresh both work -
-edit on the host, the container picks it up. **Rebuild only when a dependency
-changes**: `docker compose build api` from `docker/`.
+---
+
+## Working day to day
+
+You start the stack once and leave it running. Editing code is the normal case
+and mostly needs nothing from you; the exceptions are worth knowing before they
+cost you an afternoon.
+
+### What reloads on save
+
+`apps/api`, `apps/web` and `apps/voice-runtime` are bind-mounted into their
+containers, so the code running inside is the code on your disk - there is no
+copy step and no rebuild between an edit and the next request.
+
+| You edit | What happens |
+| --- | --- |
+| `apps/api/**` | `uvicorn --reload` restarts the app, about a second |
+| `apps/web/**` | Next fast-refreshes the route in the browser |
+| `apps/voice-runtime/**` | **nothing** - restart it: `npm run local:logs` will show it come back after `docker compose -f docker/docker-compose.yml restart voice` |
+
+The voice worker is the odd one out because `python -m app.worker start` has no
+reloader. A LiveKit worker registers with the server on boot and holds the
+connection, so restarting it is the honest way to pick up a change rather than
+something that could be papered over with a file watcher.
+
+On Windows and macOS the web container sets `WATCHPACK_POLLING=true`: file
+change events do not cross the host-to-Linux filesystem boundary, so without
+polling you would save a file and watch nothing happen.
+
+### What needs more than a save
+
+| You changed | Do this |
+| --- | --- |
+| `pyproject.toml` or `package.json` (a dependency) | `docker compose -f docker/docker-compose.yml up -d --build -V <service>` |
+| a `docker/*.Dockerfile` | same as above |
+| `docker/docker-compose.yml` or `docker/.env` | `npm run local` - compose recreates only what changed |
+| pulled a branch with a new migration | `npm run local:migrate` |
+| `docker/volumes/kong.yml` | `docker compose -f docker/docker-compose.yml restart kong` |
+| `docker/volumes/db/*.sql` | `npm run local:reset -- --yes` - see below |
+
+**`-V` on a dependency change is not optional.** `node_modules` and `.next` are
+anonymous volumes mounted over the bind mount, which is what stops your
+Windows-built native binaries (SWC, sharp) from shadowing the Linux ones. Compose
+deliberately carries an anonymous volume across a recreate so you do not lose
+data - which here means a rebuild installs the new package into the image and
+then mounts the old `node_modules` straight back over it. You rebuild, nothing
+changes, and there is no error to read. `-V` (`--renew-anon-volumes`) is what
+tells compose to take the image's copy instead. The same applies in reverse:
+`npm install` on the host never reaches the container.
+
+**The database init scripts only run once.** `docker/volumes/db/*.sql` create the
+roles and schemas Supabase's services expect, and Postgres runs them against an
+empty data directory and never again. Changing one means throwing the volume
+away, which is what `npm run local:reset -- --yes` does - and it takes your local
+accounts and data with it, so sign up again afterwards.
+
+**Migrations do not run on their own after the first start.** `migrate` is a
+one-shot container: it waits for the `auth` schema to exist, runs
+`alembic upgrade head`, and exits before the API starts. That ordering is on
+purpose - a failed migration is a failed start rather than an API that boots and
+then 500s on every query. But it means pulling a branch with a new revision
+needs `npm run local:migrate`.
+
+### The loop, in full
+
+```bash
+npm run local                       # once, in the morning
+# edit apps/api or apps/web         → saved, reloaded, done
+# edit apps/voice-runtime           → restart voice
+npm run local:logs api web          # when something looks wrong
+npm run local:down                  # end of day, data survives
+```
+
+Expect the first `/app` request after a start to take around 40 seconds - the web
+container runs webpack rather than Turbopack (Turbopack's resolver cannot follow
+`node_modules` across the anonymous-volume boundary and panics on every compile).
+It is warm after that.
+
+### When it misbehaves
+
+| Symptom | Cause | Fix |
+| --- | --- | --- |
+| A package you just installed is "not found" | the old anonymous `node_modules` is still mounted | rebuild with `-V` |
+| Signing in bounces straight back to `/login` | the middleware cannot reach Supabase | check `callflow-web` logged `localhost:54321 -> kong:8000` on start |
+| The API 500s on a column that exists in your branch | migrations have not run | `npm run local:migrate` |
+| A service is `unhealthy` and nothing works | look at the one *below* it | `npm run local:logs db auth` - a failed database init surfaces two services away |
+| `port is already allocated` | something else holds 3000/8000/54321/55432 | stop it, or set `WEB_PORT`/`API_PORT` in `docker/.env` |
+| Studio shows `unhealthy` | its healthcheck expects the analytics service, which this stack leaves out | ignore it - Studio works |
 
 ---
 
