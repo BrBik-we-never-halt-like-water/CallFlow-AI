@@ -45,7 +45,7 @@ What exists **today**, verified against the running system on 2026-08-07. Not a 
 | Auth        | Supabase Auth, email + password. Cookie sessions, RLS-enforced tenancy                                                                                                    |
 | Deployment  | Single VM, nginx + pm2, at `callflow-ai.brbik.com`. `render.yaml` is stale                                                                                                |
 | CI          | GitHub Actions `ci-cd.yml` - 3 jobs, deploys on push to `main`                                                                                                            |
-| Verified    | 29 API endpoints (all but 3 authenticated) · 50 built routes · **147 backend tests** (31 cross-tenant/cross-role RLS) · eslint + `tsc` clean · `alembic check` no drift   |
+| Verified    | 29 API endpoints (all but 3 authenticated) · 50 built routes · **258 backend tests** (59 cross-tenant/cross-role RLS, `test_rls_isolation.py`) · eslint + `tsc` clean · `alembic check` no drift. The endpoint/route counts here predate this doc's most recent few iterations and are known stale (a direct count via `main.py`'s route table is noticeably higher) - not re-audited as part of this change |
 
 ---
 
@@ -100,6 +100,7 @@ What a user can actually do, which endpoint it hits, and what survives a restart
 | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Campaigns**                     | List, create, edit in place (name + goal + extraction fields, id/slug never changes), duplicate, delete, live goal/schema preview                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | `GET/POST /api/v1/campaigns`, `PATCH/DELETE /api/v1/campaigns/{id}`                                                               | ✅ org-scoped Postgres row (built-ins stay Python constants)                                                                                                                        |
 | **Goal preview**                  | Render the goal per contact - free, no dialling                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | `POST /api/v1/campaigns/preview` (authenticated; currently unused by any UI - the editor and run composer render locally, see §5) | n/a (stateless)                                                                                                                                                                     |
+| **Voice agents** (the Agentic tab) | Create/edit/delete a reusable agent: an STT provider, a TTS provider + voice, an LLM model (always routed through OpenRouter today), a system prompt, and one of the org's already-connected Twilio/Plivo numbers. Browse the provider catalog (cost/latency/quality notes per vendor) and connect/disconnect the org's own Sarvam/Deepgram/ElevenLabs/OpenAI/OpenRouter API keys. Preview a connected provider - a real TTS/STT vendor call, Sarvam only today. "Prebuilt agents" is an honest "coming soon" notice, not a working picker | `GET/POST /api/v1/voice-agents`, `PATCH/DELETE /api/v1/voice-agents/{id}`, `GET /api/v1/voice-agents/providers`, `POST /api/v1/voice-agents/preview`, `GET/PUT/DELETE /api/v1/ai-providers[/{provider}]` | ✅ org-scoped Postgres row (`voice_agents`, `ai_provider_credentials` - key Fernet-encrypted at rest). ⚠️ No agent can place or receive a real call yet - depends on the not-yet-built LiveKit voice runtime (§9, `ISSUES.md` #90) |
 | **Contacts (in a run)**           | Paste, CSV drop, manual grid entry, per-row E.164 validation, remove-all-invalid                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | none - client-side only, sent inline with the run                                                                                 | ❌ never stored                                                                                                                                                                     |
 | **Runs**                          | Start (always live), watch live, open a call's transcript, export CSV                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | `POST /api/v1/runs`, `GET /api/v1/runs`, `GET /api/v1/runs/{id}`                                                                  | ✅ org-scoped Postgres, updated as each call resolves                                                                                                                               |
 | **Safety guards**                 | View and edit this org's own overrides (per-run ceiling, rate limit, daily budget, allowlist); enforced server-side per dial                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | `GET/PATCH /api/v1/safety`                                                                                                        | ✅ org-scoped Postgres row (`org_safety_settings`), falls back to deployment env vars when unset                                                                                    |
@@ -145,6 +146,8 @@ Legend: ✅ persists · ⚠️ persists locally/partially · ❌ lost on restart
 | `database/repositories/safety_settings.py`      | An org's own safety-guard overrides, raw asyncpg                                                                                                                                                                                                                                                                                                     | `get_for_org()`, `upsert()`                                                                                   |
 | `database/repositories/api_keys.py`             | Org-scoped API key CRUD, raw asyncpg. RLS restricts every query to owner/admin                                                                                                                                                                                                                                                                       | `list_for_org()`, `create()`, `revoke()`                                                                      |
 | `database/repositories/provider_credentials.py` | Org-owned Twilio/Plivo credential storage, raw asyncpg. Only ever sees ciphertext - encryption happens in the route layer                                                                                                                                                                                                                            | `list_for_org()`, `upsert()`, `remove()`                                                                      |
+| `database/repositories/ai_provider_credentials.py` | Org-owned AI-vendor (Sarvam/Deepgram/ElevenLabs/OpenAI/OpenRouter) credential storage for the Agentic tab, raw asyncpg - same shape and encrypted-at-rest posture as `provider_credentials.py`, deliberately a separate table (migration `a1c48e7f2b93`)                                                                                            | `list_for_org()`, `get_credential()`, `upsert()`, `remove()`                                                  |
+| `database/repositories/voice_agents.py`         | Org-owned voice agent (Agentic tab) configuration CRUD, raw asyncpg. Unlike campaigns, list/get read access is org-wide, not per-creator - `voice_agents_select`'s RLS is `is_org_member()` - joined to `public.users` only for `created_by_name`/`created_by_avatar_url` attribution                                                                | `list_org_agents()`, `get_org_agent()`, `create_agent()`, `update_agent()`, `delete_agent()`                   |
 | `domain/entities.py`                            | Pydantic domain types and terminal-status sets. **No `dry_run` field anywhere**                                                                                                                                                                                                                                                                      | `Contact`, `Campaign`, `CallOutcome`, `Sentiment`, `Disposition`, `DialFailure`                               |
 | `domain/safety.py`                              | Pre-dial gate and phone masking. No I/O                                                                                                                                                                                                                                                                                                              | `is_e164()`, `mask()`, `phone_hash()`, `check_dial_allowed()`, `EffectiveSafety`, `resolve_safety_settings()` |
 | `domain/triage.py`                              | Pure disposition decision from typed fields only                                                                                                                                                                                                                                                                                                     | `triage()`, `needs_human()`                                                                                   |
@@ -152,14 +155,20 @@ Legend: ✅ persists · ⚠️ persists locally/partially · ❌ lost on restart
 | `domain/campaigns.py`                           | 2 built-in constants + `slugify()`. **No runtime registry anymore** - custom campaigns are real rows, resolved through the repository above                                                                                                                                                                                                          | `TRAVEL_DISCOVERY`, `APPOINTMENT_REMINDER`, `REGISTRY`, `SCHEMAS`, `BUILT_IN_IDS`, `FIELD_TYPES`, `slugify()` |
 | `domain/api_keys.py`                            | Generating and hashing CallFlow API keys. Pure - no I/O, no database                                                                                                                                                                                                                                                                                 | `generate_api_key()`, `hash_api_key()`, `looks_like_api_key()`                                                |
 | `services/campaign_runner.py`                   | Per-contact pipeline - **fully `async def`**, using `asyncio.to_thread()` for the still-synchronous voice SDK. `run()` dials up to `CALLFLOW_MAX_CONCURRENT_CALLS` contacts at once (`asyncio.Semaphore`); the per-run ceiling check-and-reserve is one atomic step under a lock, race-safe under that concurrency (`ISSUES.md` #54/#60). `_resolve_outcome()`/`base_outcome_from_webhook_payload()` are shared with the webhook receiver, so both paths triage identically | `CampaignRunner`, `render_goal()`                                                                             |
+| `services/voice_preview.py`                     | Orchestrates the Agentic tab's one-shot STT/TTS demo: decrypts the org's stored AI-vendor key and dispatches to a real adapter when one exists and the catalog marks that vendor `preview_available`; otherwise returns an honest `available=False` with a reason distinguishing "no key connected" from "not wired up yet" (CLAUDE.md non-negotiable #9). Does real I/O, so lives here rather than in `domain/` (dependency rule, §4b)             | `PreviewResult`, `preview_tts()`, `preview_stt()`                                                              |
 | `api/v1/routes/campaigns.py`                    | `/api/v1/campaigns` - list/create/update/delete/preview, org-scoped                                                                                                                                                                                                                                                                                  | `router`, `resolve_campaign()`                                                                                |
 | `api/v1/routes/runs.py`                         | `/api/v1/runs` - start/list/get, org-scoped, background execution | `router`                                                                                                      |
 | `api/v1/routes/suppressions.py`                 | `/api/v1/suppressions` - list/add/remove the org's do-not-call list. Add is operator+, remove is owner-only, matching the RLS policy                                                                                                                                                                                                                 | `router`                                                                                                      |
 | `api/v1/routes/safety.py`                       | `/api/v1/safety` - get/patch this org's own safety-guard overrides, plus live `used_today` from the org-keyed limiter                                                                                                                                                                                                                                | `router`                                                                                                      |
 | `api/v1/routes/api_keys.py`                     | `/api/v1/api-keys` - list/create/revoke, org-scoped, owner/admin only                                                                                                                                                                                                                                                                                | `router`                                                                                                      |
 | `api/v1/routes/integrations.py`                 | `/api/v1/integrations/providers/{provider}` - connect (upsert)/list/disconnect, owner/admin only                                                                                                                                                                                                                                                     | `router`                                                                                                      |
+| `api/v1/routes/ai_providers.py`                 | `/api/v1/ai-providers[/{provider}]` - connect/list/disconnect an org's AI-vendor (Sarvam/Deepgram/ElevenLabs/OpenAI/OpenRouter) credentials for the Agentic tab. Reuses `INTEGRATIONS_READ`/`WRITE` (owner/admin) rather than a new permission - same sensitivity tier as telephony credentials                                                   | `router`                                                                                                      |
+| `api/v1/routes/voice_agents.py`                 | `/api/v1/voice-agents` - list/create/update/delete an org's voice agents (`AGENTS_READ`/`WRITE`/`DELETE`), plus `/providers` (the serialized catalog + this org's connection status, `AGENTS_READ`) and `/preview` (a real, possibly-billed vendor call, `AGENTS_WRITE`)                                                                          | `router`, `_validate_agent_fields()`                                                                          |
 | `integrations/voice/protocol.py`                | The `VoiceProvider` structural protocol every voice adapter conforms to - CALL-E is still the only one (`VOICE_AGENT_PLATFORM.md` P1)                                                                                                                                                                                                                | `VoiceProvider`, `VoiceCapability`, `NotImplementedForProvider`                                               |
 | `integrations/voice/protocol.py`                | The `VoiceProvider` protocol and its `VoiceCapability` set. **No implementation exists** - CALL-E was removed and the LiveKit client that replaces it is not built yet (`RUNBOOK_HET_PART_1.md` P1-T5/P1-T6). Kept as the shape those adapters are meant to fit | `VoiceProvider`, `VoiceCapability` |
+| `integrations/ai_providers/protocol.py`         | The `SpeechToText`/`TextToSpeech` structural protocols every STT/TTS adapter conforms to for the Agentic tab - mirrors `integrations/voice/protocol.py`'s shape, `supports(capability)` over one fat interface. Sarvam is still the only implementation                                                                                          | `SpeechToText`, `TextToSpeech`, `SttCapability`, `TtsCapability`, `AdapterUnavailable`                        |
+| `integrations/ai_providers/catalog.py`          | The static STT/TTS/LLM provider catalog (cost/latency/quality notes, `preview_available`) the builder UI and `GET /api/v1/voice-agents/providers` render from - a plain module constant, no I/O, same convention as `domain/campaigns.py`'s built-ins. 2 STT (Sarvam, Deepgram), 2 TTS (Sarvam, ElevenLabs), 4 curated OpenRouter LLM models     | `STT_PROVIDERS`, `TTS_PROVIDERS`, `LLM_MODELS`, `ProviderCatalogEntry`, `all_providers()`                     |
+| `integrations/ai_providers/sarvam.py`           | The one real adapter today: Sarvam Bulbul (TTS) and Saarika (STT) over Sarvam's public REST API (`api.sarvam.ai/text-to-speech`, `/speech-to-text`) - the only vendor pair with a working preview                                                                                                                                                 | `SarvamAdapter`                                                                                               |
 
 **Per-contact pipeline** (`CampaignRunner.run_one`, in `services/campaign_runner.py`):
 
@@ -773,6 +782,175 @@ applies regardless of any individual allocation. A teammate with no row at all
 (`credits_repo.get_enforced_ceiling()` returns `None`) is not gated by this check -
 only an admin/owner explicitly setting one (including to `0`) turns it on for them.
 
+### The Agentic tab: AI-provider credentials and voice agents
+
+Two new routers, both org-scoped. `ai_providers.py` mirrors `routes/integrations.py`'s
+connect/list/disconnect shape and reuses its permissions (`INTEGRATIONS_READ`/`WRITE`,
+owner/admin) rather than adding new ones - connecting a costed AI-vendor key is the same
+sensitivity as connecting Twilio/Plivo. `voice_agents.py` uses the three new
+`AGENTS_READ`/`WRITE`/`DELETE` permissions instead (every role / operator+ / admin+).
+
+### `GET /api/v1/ai-providers`
+
+Requires `Permission.INTEGRATIONS_READ` (owner/admin). Lists this organisation's connected
+AI-vendor credentials - key material itself is never returned, only that a row exists.
+
+```json
+[
+  { "provider": "sarvam", "label": "Prod key", "created_at": "2026-08-15T09:00:00Z", "updated_at": "2026-08-15T09:00:00Z" }
+]
+```
+
+### `PUT /api/v1/ai-providers/{provider}`
+
+Requires `Permission.INTEGRATIONS_WRITE` (owner/admin). `{provider}` is one of `sarvam`,
+`deepgram`, `elevenlabs`, `openai`, `openrouter` - the exact five values the
+`ai_provider_credentials.provider` check constraint allows, not the provider catalog's
+per-model LLM ids (e.g. `openai/gpt-4o`).
+
+```json
+{ "api_key": "sk_live_...", "label": "Prod key" }
+```
+
+Upserts on `(org_id, provider)` - connecting the same vendor twice replaces the stored key
+rather than erroring. The key is Fernet-encrypted (`core/crypto.py`, `PROVIDER_CREDENTIALS_KEY`)
+before it reaches the repository, which only ever sees ciphertext.
+→ `200` the connected credential (same shape as the list; the key is never echoed back) ·
+`503` if `PROVIDER_CREDENTIALS_KEY` isn't configured (`CredentialsNotConfigured`).
+
+### `DELETE /api/v1/ai-providers/{provider}`
+
+Requires `Permission.INTEGRATIONS_WRITE`.
+→ `204` no body · `404` `"Not connected."` if no row exists for that provider.
+
+### `GET /api/v1/voice-agents`
+
+Requires `Permission.AGENTS_READ` (every role). Unlike campaigns, read access here is
+**org-wide, not per-creator** - `voice_agents_select`'s RLS policy is plain
+`is_org_member(org_id)` (migration `a1c48e7f2b93`), because an agent configuration is
+shared infrastructure a teammate needs to see to run or share a campaign against, not a
+personal work product the way a campaign is.
+
+```json
+[
+  {
+    "id": "3f9c1a2b-...", "org_id": "2c7e1a4b-...", "name": "Booking confirmations",
+    "kind": "custom", "stt_provider": "sarvam", "tts_provider": "sarvam",
+    "llm_provider": "openrouter", "llm_model": "openai/gpt-4o", "voice_id": "anushka",
+    "system_prompt": "You are calling to confirm a booking...", "prebuilt_persona": null,
+    "telephony_provider": "twilio", "created_at": "2026-08-15T09:00:00Z",
+    "created_by": "2c7e1a4b-...", "created_by_name": "Aditi Rao",
+    "created_by_avatar_url": "https://.../avatar.png"
+  }
+]
+```
+
+Newest first (`created_at` descending). `created_by_name`/`created_by_avatar_url` are
+joined to `public.users` for attribution, same pattern as campaigns/runs.
+
+### `POST /api/v1/voice-agents`
+
+Requires `Permission.AGENTS_WRITE` (operator role or above).
+
+```json
+{
+  "name": "Booking confirmations",
+  "kind": "custom",
+  "stt_provider": "sarvam",
+  "tts_provider": "sarvam",
+  "llm_provider": "openrouter",
+  "llm_model": "openai/gpt-4o",
+  "voice_id": "anushka",
+  "system_prompt": "You are calling to confirm a booking...",
+  "telephony_provider": "twilio"
+}
+```
+
+| Constraint                                                       | Enforced by                                                                                   |
+| ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `name` 2-80 chars                                                | Pydantic `Field(min_length=2, max_length=80)`                                                 |
+| `kind` ∈ `{custom, prebuilt}`, `telephony_provider` ∈ `{twilio, plivo}` (or `null`) | Pydantic `Literal`                                                                             |
+| `llm_model` required whenever `llm_provider` is `"openrouter"` (today, always)        | `_validate_agent_fields()`, `400` "llm_model is required when llm_provider is 'openrouter' - pick a model." |
+| `telephony_provider`, if set, must be a provider this org has connected **with a phone number on file** | `_validate_agent_fields()`, `400` naming which provider to connect first - a credential row with no `phone_number` doesn't count as connected, the same definition `GET .../providers` uses for its own picker |
+
+→ `201` the created agent (same shape as the list, `created_by_name`/`created_by_avatar_url`
+left `null` since the actor already knows it's their own edit - same convention campaigns
+uses) · `400` on either validation failure above.
+
+### `PATCH /api/v1/voice-agents/{agent_id}`
+
+Requires `Permission.AGENTS_WRITE`. Same body and validation as `POST`.
+→ `200` the updated agent · `404` unknown or belongs to another organisation.
+
+### `DELETE /api/v1/voice-agents/{agent_id}`
+
+Requires `Permission.AGENTS_DELETE` (admin role or above - stricter than create/edit: an
+operator can build and edit an agent but not remove one, per the migration's own reasoning).
+→ `204` no body · `404` unknown or belongs to another organisation.
+
+### `GET /api/v1/voice-agents/providers`
+
+Requires `Permission.AGENTS_READ` (every role) - deliberately broader than the
+credential-management endpoints above: whether Sarvam is connected, and a masked phone
+number, isn't the same sensitivity as reading or changing the secret itself, just what
+anyone building or reviewing an agent needs to see. Returns the static provider catalog
+(`app/integrations/ai_providers/catalog.py`) merged with this organisation's live
+connection status.
+
+```json
+{
+  "stt": [
+    { "id": "sarvam", "category": "stt", "name": "Sarvam Saarika", "vendor": "Sarvam AI", "cost_note": "~$0.35/hr of audio (~$0.006/min)", "latency_note": "~1-2s for a short clip (sync REST, not streaming)", "quality_note": "Strong Indian-language and code-mixed accuracy", "preview_available": true, "voice_options": [], "connected": true },
+    { "id": "deepgram", "category": "stt", "name": "Deepgram Nova-3", "...": "...", "preview_available": false, "connected": false }
+  ],
+  "tts": [ { "id": "sarvam", "...": "...", "voice_options": ["anushka", "abhilash", "manisha", "vidya", "arya", "karun", "hitesh"] }, { "id": "elevenlabs", "...": "..." } ],
+  "llm": [ { "id": "openai/gpt-4o", "category": "llm", "name": "GPT-4o", "...": "...", "connected": true } ],
+  "telephony": [
+    { "provider": "twilio", "connected": true, "phone_number_masked": "+91••••••1234" },
+    { "provider": "plivo", "connected": false, "phone_number_masked": null }
+  ]
+}
+```
+
+`cost_note`/`latency_note`/`quality_note` are best-effort human-written strings from public
+vendor pricing/docs pages (checked August 2026), not a live quote. `preview_available`
+means this codebase has a real adapter wired for the demo action *today*, not that the
+vendor lacks an API - Sarvam is the only `true` in both `stt` and `tts`; every `llm` entry
+is `false` (OpenRouter itself supports all 4 models, no adapter is built against it here).
+`llm`'s own `"connected"` tracks the `openrouter` vendor credential, not the per-model id.
+`telephony.connected` requires both a credential row **and** a phone number on file - the
+same definition `POST`/`PATCH` above enforce. Phone numbers are masked via
+`domain.safety.mask()` (CLAUDE.md non-negotiable #4).
+
+### `POST /api/v1/voice-agents/preview`
+
+Requires `Permission.AGENTS_WRITE` (operator role or above) - **a real, possibly-billed
+vendor call** on the org's own stored key, the same trust tier as building/editing an
+agent, not a read-only action.
+
+```json
+{ "provider": "sarvam", "kind": "tts", "text": "Hi, this is a preview.", "voice_id": "anushka" }
+```
+
+```json
+{ "available": true, "reason": null, "audio_base64": "UklGR...", "transcript": null }
+```
+
+`kind` is `"tts"` (requires `text`) or `"stt"` (requires `audio_base64`, an
+already-recorded sample - there is no live microphone capture in this contract).
+Decrypts the org's stored key for `provider` and dispatches to `services/voice_preview.py`,
+which distinguishes two different `available: false` reasons rather than conflating them
+(CLAUDE.md non-negotiable #9): no key connected for that vendor ("Connect your ... API key
+first to preview this.") versus a selectable-but-unwired vendor ("Live preview for ... isn't
+wired up yet - you can still select it for your agent."). Sarvam TTS/Bulbul and STT/Saarika
+are the only pair with a real adapter (`app/integrations/ai_providers/sarvam.py`, calling
+Sarvam's real REST API at `api.sarvam.ai`); Deepgram, ElevenLabs, and all 4 curated
+OpenRouter models are selectable in the builder but return the "isn't wired up yet" reason.
+→ `200` always - an unavailable preview is a successful response shape, never an
+`HTTPException` · `400` `text`/`audio_base64` missing for the given `kind`.
+_Used by:_ `components/app/agentic/voice-preview-button.tsx`, from the agent editor's
+STT/TTS provider picker.
+
 ### What the API does **not** have
 
 No `Idempotency-Key` header · no cursor pagination · no RFC 9457 problem details (errors
@@ -905,6 +1083,58 @@ Before dry_run removal it meant "simulated, nothing dialled"; `lamp.ts`'s own co
 now reserves it for a possible future "scheduled, not yet dialling" state rather than
 retiring the colour outright.
 
+### Voice agents and AI-provider credentials (`public.voice_agents`, `public.ai_provider_credentials`)
+
+The Agentic tab's two tables have no `domain/entities.py` representation - unlike
+`Contact`/`Campaign`/`CallOutcome` above, they're plain asyncpg rows shaped only by
+route-level Pydantic models (`VoiceAgentIn`/`Out` in `routes/voice_agents.py`,
+`AiProviderCredentialIn`/`Out` in `routes/ai_providers.py`), the same "hand-authored row,
+not an ORM class" treatment `campaigns`/`runs` already get (§4). Both added by migration
+`a1c48e7f2b93`.
+
+**`voice_agents`**
+
+| Field                | Type          | Default       | Notes                                                                                     |
+| -------------------- | ------------- | ------------- | ------------------------------------------------------------------------------------------ |
+| `id`                 | `uuid`        | random        |                                                                                            |
+| `org_id`             | `uuid`        | required      | FK `organisations`, cascades on delete                                                    |
+| `created_by`         | `uuid \| null`| null          | FK `users`, `ON DELETE SET NULL`                                                          |
+| `name`               | `text`        | required      | 2-80 chars, enforced by the route's Pydantic model, not a DB constraint                   |
+| `kind`               | `text`        | `'custom'`    | Check constraint: `custom` \| `prebuilt`                                                  |
+| `stt_provider`       | `text \| null`| null          | e.g. `"sarvam"`                                                                           |
+| `tts_provider`       | `text \| null`| null          | e.g. `"sarvam"`                                                                           |
+| `llm_provider`       | `text \| null`| `'openrouter'`| Always `"openrouter"` today - no other LLM vendor is wired                               |
+| `llm_model`          | `text \| null`| null          | e.g. `"openai/gpt-4o"` - required by the route whenever `llm_provider` is `"openrouter"`  |
+| `voice_id`           | `text \| null`| null          | TTS voice/speaker id, e.g. `"anushka"`                                                    |
+| `system_prompt`      | `text \| null`| null          | What the agent should do - the same job a campaign's `goal_template` does                |
+| `prebuilt_persona`   | `text \| null`| null          | Reserved for `kind = 'prebuilt'`; nothing currently sets it - the Agentic tab's "Prebuilt" section is a placeholder notice |
+| `telephony_provider` | `text \| null`| null          | Check constraint: `twilio` \| `plivo` - must be a provider this org has connected **with a phone number on file**, enforced at the route layer, not by the check constraint |
+| `created_at`/`updated_at` | `timestamptz` | `now()` |                                                                                       |
+
+`select` RLS is `is_org_member(org_id)` - **org-wide, not per-creator**, deliberately
+broader than campaigns/runs (§4b's per-creator narrowing doesn't apply here): an agent is
+shared org infrastructure. `insert`/`update` need operator role or above; `delete` needs
+admin or above.
+
+**`ai_provider_credentials`**
+
+| Field               | Type          | Default  | Notes                                                                          |
+| ------------------- | ------------- | -------- | -------------------------------------------------------------------------------- |
+| `id`                | `uuid`        | random   |                                                                                  |
+| `org_id`            | `uuid`        | required | FK `organisations`, cascades on delete                                          |
+| `created_by`        | `uuid \| null`| null     | FK `users`, `ON DELETE SET NULL`                                                |
+| `provider`          | `text`        | required | Check constraint: `sarvam` \| `deepgram` \| `elevenlabs` \| `openai` \| `openrouter` |
+| `label`             | `text \| null`| null     | Free-text, e.g. `"Prod key"`                                                    |
+| `api_key_encrypted` | `text`        | required | Fernet ciphertext (`core/crypto.py`), never decrypted outside a route handler   |
+| `created_at`/`updated_at` | `timestamptz` | `now()` |                                                                            |
+
+Unique on `(org_id, provider)` - connecting a vendor a second time upserts rather than
+creating a second row. RLS is owner/admin only on every operation (`select`/`insert`/
+`update`/`delete`) - the same sensitivity tier as `provider_credentials` (telephony), and
+deliberately a separate table from it rather than a widened one (the migration's own
+docstring: mixing telephony and AI-vendor credentials would force one column shape and
+check constraint to serve two unrelated vendor classes).
+
 ---
 
 ## 7. Safety model
@@ -952,11 +1182,11 @@ check · consent flag.
 
 ## 8. Frontend
 
-### Routes (40 page files → 48 built routes, verified via `next build`)
+### Routes (43 page files → 51 built routes, verified via `next build`)
 
 - **`(marketing)`** - `/`, `/pricing`, `/solutions/[vertical]` (4 static), `/trust`, `/about`, `/demo`, `/status`, `/maintenance`, `/docs` + 8 MDX pages
 - **`(auth)`** - `/login`, `/signup`, `/forgot-password`, `/reset-password`, `/verify-email`, `/accept-invite/[token]`
-- **`(app)/app`** - dashboard (`/app`), `campaigns` + `new` + `[id]`, `runs` + `new` + `[id]`, `escalations`, `contacts`, `profile`, `organisation` + `new`, `settings` + 4 panes (`safety`, `api-keys`, `integrations`, `billing`). Organisation and Team are their own route, `/app/organisation` (`Suspense`-wrapped for `useSearchParams()`, `?tab=team`/`?tab=sharing` select the Team/Sharing panes - Phase 4 added the third tab) - not a dialog and not a Settings pane; `/app/settings` and `/app/settings/team` both redirect to `/app/settings/safety` so pre-existing generic "Settings" links still resolve; "Organisation" lives in the account menu (`user-menu.tsx`'s dropdown) and, as of the dark-theme-pivot foundation task, also as a direct link in the sidebar's footer section (`app-shell.tsx`'s `AppSidebar`, below the five-item primary nav list) - it and Settings are lower-frequency than those five, so neither joins `PRIMARY_NAV_ITEMS` itself; the footer is a second path to the same three destinations (Profile/Organisation/Settings), not a replacement for the account menu, since the sidebar disappears below `lg` and the account menu is mobile's only way to reach them (or to sign out). Creating a second organisation is a dedicated two-step page, `/app/organisation/new` (name, then an optional logo - logo upload has to be a second step because Storage RLS scopes the upload path by `org_id`, which doesn't exist until the create call returns). There is no `/app/welcome` - the mandatory org-setup step + its skippable profile follow-up are **not routes at all**; `OnboardingGate` renders them as a modal over whatever page is active (see §3/§12), specifically to avoid the two-independent-`useSession()`-instances bug a page-per-step version had (`ISSUES.md`)
+- **`(app)/app`** - dashboard (`/app`), `campaigns` + `new` + `[id]`, `agentic` + `new` + `[id]` (the Agentic tab - a voice-agent builder, between Campaigns and Runs in the nav), `runs` + `new` + `[id]`, `escalations`, `contacts`, `profile`, `organisation` + `new`, `settings` + 4 panes (`safety`, `api-keys`, `integrations`, `billing`). Organisation and Team are their own route, `/app/organisation` (`Suspense`-wrapped for `useSearchParams()`, `?tab=team`/`?tab=sharing` select the Team/Sharing panes - Phase 4 added the third tab) - not a dialog and not a Settings pane; `/app/settings` and `/app/settings/team` both redirect to `/app/settings/safety` so pre-existing generic "Settings" links still resolve; "Organisation" lives in the account menu (`user-menu.tsx`'s dropdown) and, as of the dark-theme-pivot foundation task, also as a direct link in the sidebar's footer section (`app-shell.tsx`'s `AppSidebar`, below the six-item primary nav list - Dashboard/Campaigns/Agents/Runs/Needs a person/Contacts, since the Agentic tab's nav entry joined the list between Campaigns and Runs) - it and Settings are lower-frequency than those six, so neither joins `PRIMARY_NAV_ITEMS` itself; the footer is a second path to the same three destinations (Profile/Organisation/Settings), not a replacement for the account menu, since the sidebar disappears below `lg` and the account menu is mobile's only way to reach them (or to sign out). Creating a second organisation is a dedicated two-step page, `/app/organisation/new` (name, then an optional logo - logo upload has to be a second step because Storage RLS scopes the upload path by `org_id`, which doesn't exist until the create call returns). There is no `/app/welcome` - the mandatory org-setup step + its skippable profile follow-up are **not routes at all**; `OnboardingGate` renders them as a modal over whatever page is active (see §3/§12), specifically to avoid the two-independent-`useSession()`-instances bug a page-per-step version had (`ISSUES.md`)
 - **Generated** - `icon.svg`, `apple-icon`, `opengraph-image`, `manifest.webmanifest`, `not-found` (`error.tsx` is a boundary, not a routed page)
 
 ### Design layer - `app/globals.css`
@@ -1014,7 +1244,7 @@ Named animations: `relay-settle` (the signature lamp flicker), `relay-glow`, `la
 | `hooks/use-org-scoped-effect.ts`           | `useEffect`, structurally forced to re-run when the active organisation changes - the standard pattern for org-scoped data fetching, used by 9 fetch sites                           |
 | `hooks/use-reveal.ts`, `use-typewriter.ts` | Scroll reveal, hero typing                                                                                                                                                           |
 
-### `components/` - all 66 files
+### `components/` - all 72 files
 
 **`brand/` (4)** - the visual identity.
 
@@ -1067,7 +1297,7 @@ Named animations: `relay-settle` (the signature lamp flicker), `relay-glow`, `la
 | `roi-calculator.tsx`                      | Leads with **hours**, not money                                                                                                                                                                                                                             |
 | `final-cta.tsx`                           | Closing card with grid backdrop                                                                                                                                                                                                                             |
 
-**`app/` (16)** - dashboard. **`dry-run-switch.tsx` is deleted** - there is nothing left to
+**`app/` (17)** - dashboard. **`dry-run-switch.tsx` is deleted** - there is nothing left to
 switch; every run composer and the welcome flow start a real run directly.
 **`prewarm.tsx` is also deleted**, along with the `/api/wake` route handler it fired - the
 deployment is a single always-on VM, not a cold-starting free tier, so there is nothing
@@ -1091,6 +1321,17 @@ left to pre-warm (`hooks/use-connection.ts` below no longer has wake/retry logic
 | `invite-dialog.tsx`        | Email + role "invite a teammate" dialog, shared by `/app/organisation`'s Team pane and the dashboard's team popover                                                                                                                                                                                                                                               |
 | `welcome-modal.tsx`        | `WelcomeModal` - one-time dismissible dialog naming the org + role, shown after a freshly-accepted invitation. Reads/clears a `localStorage` flag (`PENDING_WELCOME_KEY`) written by `accept-invite/[token]` right before it redirects to `/app`; mounted once, as a sibling of `AppShell`                                                                     |
 | `share-request-dialog.tsx` | `ShareRequestDialog` - Phase 4. Title/copy vary by `resourceType` ("Request access" for a campaign, "Request to help" for an escalation), optional 280-char message, `POST /api/v1/share-requests`. Reused by both directory panels below                                                                                                                       |
+| `agent-card.tsx`           | `AgentCard` - one voice agent's summary card (`/app/agentic`). Edit is always offered (the editor itself re-checks `agents:write`); delete owns its own confirm step, gated on `agents:delete`                                                                                                                                                                  |
+
+**`app/agentic/` (4)** - the Agentic tab's builder-specific components, shared by the
+create/edit routes (`/app/agentic/new`, `/app/agentic/[id]`).
+
+| File                          | Role                                                                                                                                                                                          |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `agent-editor.tsx`            | `AgentEditor` - the shared create/edit form both routes wrap: name, STT/TTS provider + voice, LLM model, system prompt, telephony number. Structurally the same shape as `campaign-editor.tsx` |
+| `provider-picker.tsx`         | `ProviderPicker` - renders one category of the provider catalog (cost/latency/quality notes), selection, and an inline "Connect" affordance per entry                                        |
+| `connect-ai-key-dialog.tsx`   | Connect/update an org's AI-vendor API key inline from the picker, without leaving the editor                                                                                                  |
+| `voice-preview-button.tsx`    | Fires `POST /api/v1/voice-agents/preview` for the selected provider and renders the result - including the honest reason when a vendor isn't wired up yet                                    |
 
 **`layout/` (11)**
 
@@ -1128,6 +1369,8 @@ and `ViewTransitions` as siblings.
 | `/app/settings/integrations`                       | Connect, update, or disconnect Twilio/Plivo credentials                                                                                                                                    | `GET`/`PUT`/`DELETE /api/v1/integrations/providers/{provider}`                                  |
 | `/app/settings/billing`                            | View the current plan and today's real usage - no upgrade flow                                                                                                                             | `GET /api/v1/me`, `GET /api/health`                                                             |
 | `/app/welcome`                                     | 4-step onboarding ending in a real, live call - the copy is explicit ("This places a real call to each contact above")                                                                     | `POST /api/v1/runs`                                                                             |
+| `/app/agentic`                                     | "Your agents" grid (edit, delete gated on `agents:delete`), an honest "Prebuilt agents coming soon" notice - no persona picker exists yet                                                 | `GET /api/v1/voice-agents`, `DELETE /api/v1/voice-agents/{agent_id}`                             |
+| `/app/agentic/new`, `/[id]`                        | Pick STT/TTS/model provider cards (cost/latency/quality shown per card), connect an AI-vendor key inline, preview a TTS voice for real (Sarvam only today), pick a connected Twilio/Plivo number, save | `GET /api/v1/voice-agents/providers`, `POST /api/v1/voice-agents/preview`, `POST`/`PATCH /api/v1/voice-agents[/{agent_id}]`, `GET`/`PUT /api/v1/ai-providers[/{provider}]` |
 
 ---
 
@@ -1142,6 +1385,8 @@ Consistent with `web/DESIGN_NOTES.md` §5.
 | Voice-API-key status, status page, credit balance                                                                    | **Real** - from `/api/health` (deployment defaults only, no per-org usage - see §5)                                |
 | Campaign editor (name, goal, fields, region, language)                                                               | **Real**                                                                                                           |
 | Organisation setup gate, team, API keys, Integrations (credential storage), Billing (plan + usage), Suppression list | **Real** - see §3. Integrations doesn't yet place a call over a connected number; Billing has no payment processor |
+| Agentic tab - agent CRUD, provider catalog, Sarvam TTS/STT preview                                                   | **Real** - a saved agent, its provider choices, and a Sarvam preview are genuine, but no agent can place a live call yet (`ISSUES.md` #90) |
+| Agentic tab - Deepgram/ElevenLabs/OpenRouter-model preview, "Prebuilt" agents                                        | **Not wired** - selectable/configurable for later, but the preview button and the persona picker both say so honestly rather than faking a result |
 | Calling window, retry policy, onboarding progress                                                                    | **Local only** - `localStorage`                                                                                    |
 | Numbers, notifications, webhooks                                                                                     | **Not wired** - validate then say so                                                                               |
 

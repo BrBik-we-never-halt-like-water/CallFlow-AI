@@ -3722,6 +3722,50 @@ tests were removed; `RUNBOOK_HET_PART_1.md` P1-T7 rewrites them against the Live
 
 **Blocks:** every other CallFlow feature that needs a live call. **Depends on:** nothing.
 
+## Iteration 32 - 2026-08-16 · the Agentic tab (voice-agent builder)
+
+### #90 - Voice agents can be built and previewed for real, but none can place a live call yet
+
+**S2 · DELIBERATE · api + web · `apps/api/app/api/v1/routes/voice_agents.py`, `apps/api/app/services/voice_preview.py`, `apps/web/app/(app)/app/agentic/`**
+
+Not a bug - a planned, sequenced gap, recorded here for the same reason `#77` is: the next
+person to read `SYSTEM.md` needs to know this feature is real but not yet load-bearing.
+
+The Agentic tab ships the full BYO voice-agent stack the platform pivot calls for: two new
+tables (`voice_agents`, `ai_provider_credentials`), a CRUD API gated by three new
+permissions (`AGENTS_READ`/`WRITE`/`DELETE`), a provider catalog (STT: Sarvam, Deepgram;
+TTS: Sarvam, ElevenLabs; LLM: four curated OpenRouter models), a working `SarvamAdapter`
+(Saarika STT + Bulbul TTS, real REST calls against `api.sarvam.ai`), and a full builder UI
+- pick providers, connect a vendor key inline, preview a real TTS voice, assign one of the
+org's already-connected Twilio/Plivo numbers.
+
+**Impact.** An organisation can fully configure and preview an agent today. What it cannot
+do is have that agent actually answer or place a phone call - that depends entirely on the
+separate LiveKit voice runtime tracked in `RUNBOOK_HET_PART_1.md`, which does not exist yet
+(`#77`). Two narrower gaps within the feature itself, both handled honestly rather than
+faked: only Sarvam has a real preview adapter (Deepgram/ElevenLabs/OpenRouter models are
+selectable for later use, but their "Preview" button says plainly that it isn't wired up
+yet, via `app/services/voice_preview.py`'s `preview_available` check - never a fake result);
+and the "Prebuilt" agents section is a placeholder notice, not a working picker, since
+CallFlow has no hosted AI-vendor credentials or persona catalog of its own yet.
+
+**Fix.** No fix needed until the LiveKit runtime lands - at that point, `voice_agents`'
+`telephony_provider` field and the org's connected `provider_credentials` row are what a
+real dial needs to originate from, and nothing about this feature's data model should need
+to change to support it. Wiring OpenRouter's own preview and Deepgram/ElevenLabs adapters
+are separate, smaller follow-ups (flip `preview_available` to `true` in
+`app/integrations/ai_providers/catalog.py` once each adapter exists - no other code changes
+needed).
+
+**Verified.** `ruff check app tests` clean; `pytest -q` 258 passed (up from 235 before this
+iteration; 59 of those in `test_rls_isolation.py`, including new cross-tenant and
+same-org-role coverage for both new tables); `npm run lint`, `type-check`, and `build` all
+clean, with `/app/agentic`, `/app/agentic/new`, and `/app/agentic/[id]` all present in the
+build's route table.
+
+**Blocks:** nothing (an org can build and preview agents right now). **Depends on:** the
+LiveKit voice runtime (`#77`) for any of this to originate a real call.
+
 ## Template for the next iteration
 
 ```
