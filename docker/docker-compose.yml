@@ -1,0 +1,351 @@
+# CallFlow AI, whole, on one machine.
+#
+# `docker compose up` gives a real Supabase - Postgres, GoTrue, PostgREST,
+# Realtime, Storage, Studio behind Kong - plus the API, the voice worker and the
+# web app. Nothing points at a shared project, which is the entire reason this
+# exists: pointing DATABASE_URL at hosted Supabase and running a feature
+# branch's migrations has now corrupted two databases (`ISSUES.md` #80, and dev
+# again in August). A local stack removes the temptation rather than documenting
+# it away.
+#
+# **GoTrue is the piece `npm run dev:db` could never provide.** That script gave
+# a Postgres with a hand-written `auth.users` shim, but signup goes to an auth
+# *server*, so a locally-created account had no row in the local database and no
+# organisation - the trigger fires on `auth.users` inserts that hosted Supabase
+# never makes. Here GoTrue writes to this Postgres, so signing up creates the
+# user, fires `on_auth_user_created`, and you land in a real organisation.
+#
+# The API verifies HS256 against JWT_SECRET rather than fetching a JWKS: GoTrue
+# signs local tokens symmetrically, and `tokens.py` prefers JWKS whenever
+# SUPABASE_JWKS_URL is set - so that variable is deliberately absent below.
+#
+# Analytics/Logflare and the vector collector from Supabase's own compose are
+# left out. They are the heaviest part of that stack and contribute nothing to
+# developing CallFlow; Studio's dependency on them is dropped with them.
+
+name: callflow
+
+services:
+  # --------------------------------------------------------------------------
+  # Platform
+  # --------------------------------------------------------------------------
+
+  db:
+    image: supabase/postgres:15.8.1.060
+    container_name: callflow-db
+    restart: unless-stopped
+    ports:
+      - "${POSTGRES_PORT:-55432}:5432"
+    environment:
+      POSTGRES_HOST: /var/run/postgresql
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-postgres}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXP: ${JWT_EXPIRY:-3600}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+      # Ordered by filename. `01` creates the roles GoTrue and PostgREST log in
+      # as; `02` creates the schemas they own before either starts.
+      - ./volumes/db/01-roles.sql:/docker-entrypoint-initdb.d/01-roles.sql:ro
+      - ./volumes/db/02-schemas.sql:/docker-entrypoint-initdb.d/02-schemas.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -h localhost"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  auth:
+    image: supabase/gotrue:v2.170.0
+    container_name: callflow-auth
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      GOTRUE_API_HOST: 0.0.0.0
+      GOTRUE_API_PORT: 9999
+      API_EXTERNAL_URL: ${SUPABASE_PUBLIC_URL}
+      GOTRUE_DB_DRIVER: postgres
+      GOTRUE_DB_DATABASE_URL: postgres://supabase_auth_admin:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-postgres}
+      GOTRUE_SITE_URL: ${SITE_URL}
+      GOTRUE_URI_ALLOW_LIST: ${SITE_URL},${SITE_URL}/**
+      GOTRUE_JWT_SECRET: ${JWT_SECRET}
+      GOTRUE_JWT_EXP: ${JWT_EXPIRY:-3600}
+      GOTRUE_JWT_AUD: authenticated
+      GOTRUE_JWT_DEFAULT_GROUP_NAME: authenticated
+      # No inbox locally. Signup returns a session immediately, which is what
+      # makes "one command to a working login" true rather than nearly true.
+      GOTRUE_MAILER_AUTOCONFIRM: "true"
+      GOTRUE_EXTERNAL_EMAIL_ENABLED: "true"
+      GOTRUE_DISABLE_SIGNUP: "false"
+      GOTRUE_LOG_LEVEL: warn
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9999/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  rest:
+    image: postgrest/postgrest:v12.2.8
+    container_name: callflow-rest
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGRST_DB_URI: postgres://authenticator:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-postgres}
+      PGRST_DB_SCHEMAS: public,storage
+      PGRST_DB_ANON_ROLE: anon
+      PGRST_JWT_SECRET: ${JWT_SECRET}
+      PGRST_DB_USE_LEGACY_GUCS: "false"
+
+  realtime:
+    image: supabase/realtime:v2.34.31
+    container_name: callflow-realtime
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PORT: 4000
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_USER: supabase_admin
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      DB_NAME: ${POSTGRES_DB:-postgres}
+      DB_AFTER_CONNECT_QUERY: 'SET search_path TO _realtime'
+      DB_ENC_KEY: supabaserealtime
+      API_JWT_SECRET: ${JWT_SECRET}
+      SECRET_KEY_BASE: ${REALTIME_SECRET_KEY_BASE}
+      ERL_AFLAGS: -proto_dist inet_tcp
+      DNS_NODES: "''"
+      RLIMIT_NOFILE: "10000"
+      APP_NAME: realtime
+      SEED_SELF_HOST: "true"
+      RUN_JANITOR: "true"
+
+  storage:
+    image: supabase/storage-api:v1.19.3
+    container_name: callflow-storage
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      rest:
+        condition: service_started
+    environment:
+      ANON_KEY: ${ANON_KEY}
+      SERVICE_KEY: ${SERVICE_ROLE_KEY}
+      POSTGREST_URL: http://rest:3000
+      PGRST_JWT_SECRET: ${JWT_SECRET}
+      DATABASE_URL: postgres://supabase_storage_admin:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-postgres}
+      FILE_SIZE_LIMIT: 52428800
+      STORAGE_BACKEND: file
+      FILE_STORAGE_BACKEND_PATH: /var/lib/storage
+      TENANT_ID: stub
+      REGION: stub
+      GLOBAL_S3_BUCKET: stub
+      ENABLE_IMAGE_TRANSFORMATION: "true"
+      IMGPROXY_URL: http://imgproxy:5001
+    volumes:
+      - storage-data:/var/lib/storage
+
+  imgproxy:
+    image: darthsim/imgproxy:v3.8.0
+    container_name: callflow-imgproxy
+    restart: unless-stopped
+    environment:
+      IMGPROXY_BIND: ":5001"
+      IMGPROXY_LOCAL_FILESYSTEM_ROOT: /
+      IMGPROXY_USE_ETAG: "true"
+    volumes:
+      - storage-data:/var/lib/storage
+
+  meta:
+    image: supabase/postgres-meta:v0.86.0
+    container_name: callflow-meta
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PG_META_PORT: 8080
+      PG_META_DB_HOST: db
+      PG_META_DB_PORT: 5432
+      PG_META_DB_NAME: ${POSTGRES_DB:-postgres}
+      PG_META_DB_USER: supabase_admin
+      PG_META_DB_PASSWORD: ${POSTGRES_PASSWORD}
+
+  studio:
+    image: supabase/studio:2025.06.30-sha-6f5982d
+    container_name: callflow-studio
+    restart: unless-stopped
+    ports:
+      - "${STUDIO_PORT:-54323}:3000"
+    depends_on:
+      meta:
+        condition: service_started
+    environment:
+      STUDIO_PG_META_URL: http://meta:8080
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      DEFAULT_ORGANIZATION_NAME: CallFlow
+      DEFAULT_PROJECT_NAME: CallFlow local
+      SUPABASE_URL: http://kong:8000
+      SUPABASE_PUBLIC_URL: ${SUPABASE_PUBLIC_URL}
+      SUPABASE_ANON_KEY: ${ANON_KEY}
+      SUPABASE_SERVICE_KEY: ${SERVICE_ROLE_KEY}
+      AUTH_JWT_SECRET: ${JWT_SECRET}
+      NEXT_PUBLIC_ENABLE_LOGS: "false"
+
+  kong:
+    image: kong:2.8.1
+    container_name: callflow-kong
+    restart: unless-stopped
+    ports:
+      - "${SUPABASE_PORT:-54321}:8000"
+    depends_on:
+      auth:
+        condition: service_healthy
+      rest:
+        condition: service_started
+    environment:
+      KONG_DATABASE: "off"
+      KONG_DECLARATIVE_CONFIG: /home/kong/kong.yml
+      KONG_DNS_ORDER: LAST,A,CNAME
+      KONG_PLUGINS: request-transformer,cors,key-auth
+      KONG_NGINX_PROXY_PROXY_BUFFER_SIZE: 160k
+      KONG_NGINX_PROXY_PROXY_BUFFERS: 64 160k
+    volumes:
+      - ./volumes/kong.yml:/home/kong/kong.yml:ro
+
+  # --------------------------------------------------------------------------
+  # CallFlow
+  # --------------------------------------------------------------------------
+
+  # Runs to completion, then everything waiting on it starts. Separate from the
+  # api service so a failed migration is a failed migration rather than an API
+  # that boots and 500s on its first query.
+  migrate:
+    build:
+      context: ..
+      dockerfile: docker/api.Dockerfile
+    container_name: callflow-migrate
+    depends_on:
+      db:
+        condition: service_healthy
+      auth:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-postgres}
+      DIRECT_URL: postgres://postgres:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-postgres}
+    volumes:
+      - ../apps/api:/app/apps/api
+    working_dir: /app/apps/api
+    # `auth` being healthy is not the same as its migrations having finished, and
+    # our first migration references `auth.users`.
+    command: >
+      sh -c "
+      until python -c \"
+      import os,psycopg;
+      psycopg.connect(os.environ['DIRECT_URL']).cursor().execute('select 1 from auth.users limit 1')
+      \" 2>/dev/null; do echo 'waiting for the auth schema...'; sleep 2; done;
+      alembic upgrade head
+      "
+    restart: "no"
+
+  api:
+    build:
+      context: ..
+      dockerfile: docker/api.Dockerfile
+    container_name: callflow-api
+    restart: unless-stopped
+    ports:
+      - "${API_PORT:-8000}:8000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-postgres}
+      DIRECT_URL: postgres://postgres:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-postgres}
+      SUPABASE_URL: ${SUPABASE_PUBLIC_URL}
+      SUPABASE_PUBLISHABLE_KEY: ${ANON_KEY}
+      SUPABASE_SECRET_KEY: ${SERVICE_ROLE_KEY}
+      # HS256 against GoTrue's own secret. SUPABASE_JWKS_URL is deliberately
+      # unset - `tokens.py` prefers it whenever present, and local GoTrue signs
+      # symmetrically.
+      SUPABASE_JWT_SECRET: ${JWT_SECRET}
+      SITE_URL: ${SITE_URL}
+      CALLFLOW_CORS_ORIGINS: ${SITE_URL}
+      CALLFLOW_PUBLIC_API_URL: http://api:8000
+      CALLFLOW_INTERNAL_API_SECRET: ${CALLFLOW_INTERNAL_API_SECRET}
+      PROVIDER_CREDENTIALS_KEY: ${PROVIDER_CREDENTIALS_KEY}
+      PHONE_HASH_PEPPER: ${PHONE_HASH_PEPPER}
+      LIVEKIT_URL: ${LIVEKIT_URL:-}
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-}
+      LIVEKIT_SIP_HOST: ${LIVEKIT_SIP_HOST:-}
+      LIVEKIT_AGENT_NAME: ${LIVEKIT_AGENT_NAME:-callflow-voice}
+      CALLFLOW_ALLOWLIST: ${CALLFLOW_ALLOWLIST:-}
+      CALLFLOW_LOG_FORMAT: text
+    volumes:
+      - ../apps/api:/app/apps/api
+    working_dir: /app/apps/api
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  voice:
+    build:
+      context: ..
+      dockerfile: docker/voice.Dockerfile
+      args:
+        VOICE_EXTRAS: ${VOICE_EXTRAS:-sarvam,openai,silero}
+    container_name: callflow-voice
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_started
+    environment:
+      LIVEKIT_URL: ${LIVEKIT_URL:-}
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-}
+      LIVEKIT_AGENT_NAME: ${LIVEKIT_AGENT_NAME:-callflow-voice}
+      CALLFLOW_PUBLIC_API_URL: http://api:8000
+      CALLFLOW_INTERNAL_API_SECRET: ${CALLFLOW_INTERNAL_API_SECRET}
+    volumes:
+      - ../apps/voice-runtime:/app/apps/voice-runtime
+    working_dir: /app/apps/voice-runtime
+    # Refuses to start without LiveKit credentials, and says which are missing.
+    # `|| true` so an incomplete .env leaves the rest of the stack usable rather
+    # than putting compose into a restart loop nobody asked for.
+    command: sh -c "python -m app.worker start || (echo 'voice worker not started - see the message above' && sleep infinity)"
+
+  web:
+    build:
+      context: ..
+      dockerfile: docker/web.Dockerfile
+    container_name: callflow-web
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+    depends_on:
+      api:
+        condition: service_started
+    environment:
+      # Browser-side, so these must be reachable from the host, not from inside
+      # the compose network. `http://api:8000` would only resolve in a container.
+      NEXT_PUBLIC_API_URL: http://localhost:${API_PORT:-8000}
+      NEXT_PUBLIC_SITE_URL: ${SITE_URL}
+      NEXT_PUBLIC_SUPABASE_URL: ${SUPABASE_PUBLIC_URL}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${ANON_KEY}
+      WATCHPACK_POLLING: "true"
+    volumes:
+      - ../apps/web:/app/apps/web
+      # Keep the image's own node_modules and .next: bind-mounting the source
+      # over them would hide the Linux binaries with whatever the host built.
+      - /app/apps/web/node_modules
+      - /app/apps/web/.next
+    working_dir: /app/apps/web
+    command: npm run dev
+
+volumes:
+  db-data:
+  storage-data:

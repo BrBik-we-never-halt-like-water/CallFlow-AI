@@ -46,3 +46,6 @@ apps/web/AGENTS.md
 
 # Real vendor state written by scripts/telephony_check.py - never commit it.
 .telephony-check/
+
+# Local Docker stack env - generated from docker/.env.example on first run.
+docker/.env
