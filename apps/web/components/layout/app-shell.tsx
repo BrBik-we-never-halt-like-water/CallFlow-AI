@@ -34,6 +34,7 @@ import { hasRole } from '@/lib/hooks/use-permission';
 import { useSidebarCollapsed } from '@/lib/hooks/use-sidebar-collapsed';
 import { usePrefersReducedMotion } from '@/lib/hooks/use-external-store';
 import { useAppStore } from '@/lib/app-store';
+import { useChatUnreadCount } from '@/lib/hooks/use-chat-unread';
 import { AppTabBar, isActive, OrgMark, PRIMARY_NAV_ITEMS } from './app-nav';
 import { type SessionProfile, useSession } from '@/lib/hooks/use-session';
 
@@ -93,6 +94,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const { escalations } = useAppStore();
   const session = useSession();
   const profile = session.status === 'signed-in' ? session.profile : null;
+  const chatUnreadCount = useChatUnreadCount();
 
   if (minimalRoute) {
     return (
@@ -136,6 +138,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         profile={profile}
         refreshSession={session.refresh}
         escalationCount={escalations.length}
+        chatUnreadCount={chatUnreadCount}
       />
 
       {/* No more per-page opt-in (`pathname === '/app' && 'app-canvas'`) -
@@ -229,10 +232,12 @@ function AppSidebar({
   profile,
   refreshSession,
   escalationCount,
+  chatUnreadCount,
 }: {
   profile: SessionProfile | null;
   refreshSession: () => void;
   escalationCount: number;
+  chatUnreadCount: number;
 }) {
   const pathname = usePathname() ?? '';
   const [collapsed, setCollapsed] = useSidebarCollapsed();
@@ -287,6 +292,10 @@ function AppSidebar({
         {PRIMARY_NAV_ITEMS.map((item) => {
           const active = isActive(pathname, item.href);
           const badge = item.href === '/app/escalations' ? escalationCount : 0;
+          // A plain unread count, not a lamp colour - this is a chat inbox
+          // total, not call/run/escalation state, so it takes --primary (the
+          // one non-lamp colour) rather than the flare dot below.
+          const chatBadge = item.href === '/app/chat' ? chatUnreadCount : 0;
 
           const link = (
             <Link
@@ -323,6 +332,18 @@ function AppSidebar({
               ) : null}
               {badge > 0 ? (
                 <span className="sr-only">{badge} waiting for a person</span>
+              ) : null}
+              {chatBadge > 0 ? (
+                <span
+                  aria-hidden
+                  className="absolute right-1 top-1 flex min-w-4 items-center justify-center rounded-full px-1 text-[0.625rem] font-bold leading-4 text-primary-on"
+                  style={{ background: 'var(--primary)' }}
+                >
+                  {chatBadge > 99 ? '99+' : chatBadge}
+                </span>
+              ) : null}
+              {chatBadge > 0 ? (
+                <span className="sr-only">{chatBadge} unread messages</span>
               ) : null}
             </Link>
           );

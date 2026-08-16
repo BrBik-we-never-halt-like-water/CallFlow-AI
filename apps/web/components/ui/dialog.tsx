@@ -106,8 +106,10 @@ export function Sheet({
   footer,
   className,
 }: {
-  title: string;
-  description?: string;
+  /** Usually a string; a small inline-editable form (e.g. a rename control)
+   *  is also fine - Radix only needs something to label the sheet with. */
+  title: React.ReactNode;
+  description?: React.ReactNode;
   children?: React.ReactNode;
   footer?: React.ReactNode;
   className?: string;

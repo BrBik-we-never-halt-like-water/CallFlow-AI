@@ -117,6 +117,25 @@ exist in this repo**; `SYSTEM.md` §12 is the closest real gap map until it's wr
 | [#87](#87--every-theme-switch-flashed-white-because-chrome-adds-the-two-view-transition-frames-together)                          | S3  | Every theme switch flashed white, because Chrome adds the two view-transition frames together (renumbered from #74 on merge) | web            | it-31 | **FIXED**        |
 | [#88](#88--87s-fix-was-scoped-to-an-attribute-that-comes-off-before-the-transition-ends)                                          | S3  | `#87`'s fix was scoped to an attribute that comes off before the transition ends (renumbered from #75 on merge) | web            | it-31 | **FIXED**        |
 | [#89](#89--canvases-kept-painting-the-previous-themes-ink-until-something-remounted-them)                                         | S3  | Canvases kept painting the previous theme's ink until something remounted them (renumbered from #76 on merge) | web            | it-31 | **FIXED**        |
+| [#90](#90--channel_members_insert-s-rls-check-verified-the-inserter-never-the-person-being-added)                                  | S1  | `channel_members_insert`'s RLS check verified the inserter, never the person being added                             | database       | it-32 | **FIXED**        |
+| [#91](#91--invitations_repoaccept-could-abort-its-own-transaction-on-a-wrong-email-or-racing-accept)                              | S2  | `invitations_repo.accept()` could abort its own transaction on a wrong-email or racing accept                        | backend        | it-32 | **FIXED**        |
+| [#92](#92--messages_repo-send_message-never-inserted-org_id-so-every-real-send-500d)                                              | S1  | `messages_repo.send_message()` never inserted `org_id`, so every real send 500'd                                     | backend        | it-32 | **FIXED**        |
+| [#93](#93--test_anonymous_sees_nothing-assumed-anon-s-access-is-always-denied-via-rls-never-via-a-missing-grant)                  | S4  | `test_anonymous_sees_nothing` assumed `anon`'s access is always denied via RLS, never via a missing grant             | backend        | it-32 | **FIXED**        |
+| [#94](#94--channel_members-had-a-delete-policy-but-no-delete-grant)                                                                | S2  | `channel_members` had a `DELETE` policy but no `DELETE` grant                                                          | database       | it-33 | **FIXED**        |
+| [#95](#95--an-org-admin-renaming-a-channel-they-hadnt-joined-got-back-nothing-even-though-the-rename-worked)                       | S2  | An org admin renaming a channel they hadn't joined got back nothing, even though the rename worked                     | database       | it-33 | **FIXED**        |
+| [#96](#96--useorgrealtime-broke-entirely-the-moment-a-second-component-watched-the-same-table)                                    | S1  | `useOrgRealtime` broke entirely the moment a second component watched the same table                                   | web            | it-33 | **FIXED**        |
+| [#97](#97--patch-messagesid-edit-500d-on-every-real-edit)                                                                          | S1  | `PATCH .../messages/{id}` (edit) 500'd on every real edit                                                              | backend        | it-33 | **FIXED**        |
+| [#98](#98--starting-a-dm-with-the-same-teammate-twice-created-two-separate-conversations)                                          | S2  | Starting a DM with the same teammate twice created two separate conversations                                          | database       | it-34 | **FIXED**        |
+| [#99](#99--the-chat-unread-badge-hook-re-ran-chats-heaviest-query-on-every-message-sent-anywhere-in-the-organisation-for-every-open-tab) | S2  | The chat unread-badge hook re-ran chat's heaviest query on every message sent anywhere in the org, for every open tab | web + backend  | it-34 | **FIXED**        |
+| [#100](#100--cursor-pagination-could-silently-skip-or-repeat-a-message-under-an-exact-timestamp-tie)                               | S3  | Cursor pagination could silently skip or repeat a message under an exact-timestamp tie                                | backend        | it-34 | **FIXED**        |
+| [#101](#101--chat-rls-treated-channel_memberscreated_by-as-permanent-never-re-checking-current-organisation-membership)            | S1  | Chat RLS treated `channel_members`/`created_by` as permanent, never re-checking current organisation membership       | database       | it-35 | **FIXED**        |
+| [#102](#102--channel_members_select-s-member-branch-had-no-live-organisation-membership-check)                                     | S2  | `channel_members_select`'s member branch had no live organisation-membership check                                    | database       | it-36 | **FIXED**        |
+| [#103](#103--opening-a-different-conversation-remounted-the-whole-chat-page)                                                       | S2  | Opening a different conversation remounted the whole chat page                                                        | web            | it-37 | **FIXED**        |
+| [#104](#104--the-message-pane-never-auto-scrolled-to-the-newest-message)                                                           | S3  | The message pane never auto-scrolled to the newest message                                                            | web            | it-37 | **FIXED**        |
+| [#105](#105--the-realtime-debounce-coalesced-a-burst-down-to-only-its-last-payload)                                                | S2  | The Realtime debounce coalesced a burst down to only its last payload                                                 | web            | it-38 | **FIXED**        |
+| [#106](#106--no-replica-identity-full-on-the-three-chat-tables)                                                                    | S2  | No `replica identity full` on the three chat tables                                                                   | database       | it-38 | **FIXED**        |
+| [#107](#107--messages_insert-had-no-org_id-check-channel_members_insert-already-had)                                               | S2  | `messages_insert` had no `org_id` check `channel_members_insert` already had                                          | database       | it-38 | **FIXED**        |
+| [#108](#108--gitignores-supabase-entry-was-un-anchored)                                                                            | S3  | `.gitignore`'s `supabase` entry was un-anchored                                                                       | web            | it-38 | **FIXED**        |
 
 ---
 
@@ -3721,6 +3740,643 @@ now test our own logic without a vendor in the loop at all. Only the genuine dia
 tests were removed; `RUNBOOK_HET_PART_1.md` P1-T7 rewrites them against the LiveKit client.
 
 **Blocks:** every other CallFlow feature that needs a live call. **Depends on:** nothing.
+
+## Iteration 32 - 2026-08-15 · internal team chat (RUNBOOK_JATIN_PART_3.md)
+
+### #90 - `channel_members_insert`'s RLS check verified the inserter, never the person being added
+
+**S1 · FIXED · database · `apps/api/alembic/versions/202608100000_team_chat_channels_and_messages.py`**
+
+Found and fixed before ever shipping, while implementing the internal team chat feature's
+RLS from the source plan's own specified SQL: `channel_members_insert`'s `WITH CHECK` read
+`is_channel_member(channel_id) and is_org_member(channel_org_id(channel_id))` - both halves
+resolve against `current_user_id()`, since that's what `is_org_member()` always checks. It
+verifies the *caller* is already seated and still belongs to the organisation. Nothing in
+the check touches the new row's own `user_id` - the actual person being added, who is not
+necessarily the caller. An existing member could seat **any real user id in the system**,
+including someone from a completely different organisation, into their channel. That row
+would then satisfy `is_channel_member()` for the outsider, and with it, `channels_select`/
+`messages_select` access to this organisation's channel and every message in it - the same
+`create_channel()`-bypasses-RLS reasoning applied in reverse, and exactly the class of bug
+CLAUDE.md calls the most expensive one this product can ship.
+
+**Impact.** Cross-tenant data exposure: a teammate in Org A could hand a user from Org B
+read access to Org A's channel and its message history, with no admin action and no audit
+trail beyond the insert itself.
+
+**Fix.** Added `public.is_user_org_member(target_org, target_user)`, the two-argument,
+`SECURITY DEFINER` sibling of `is_org_member()` that checks an arbitrary target user rather
+than always `current_user_id()`. `channel_members_insert` now also requires
+`is_user_org_member(channel_org_id(channel_id), user_id)` on the row being inserted.
+`create_channel()` needed the identical fix independently - it's `SECURITY DEFINER` and so
+bypasses this policy entirely for its own body, meaning an outsider's id in its `member_ids`
+argument would otherwise seat them with no RLS check at all; it now validates every id
+against `is_user_org_member()` itself before either insert runs, raising rather than
+seating. Verified by `test_channel_members_insert_rejects_seating_a_non_org_member` and
+`test_create_channel_rejects_a_member_id_outside_the_organisation_and_leaves_no_orphaned_channel`
+(`apps/api/tests/test_rls_isolation.py`), both against the real database.
+
+### #91 - `invitations_repo.accept()` could abort its own transaction on a wrong-email or racing accept
+
+**S2 · FIXED · backend · `apps/api/app/database/repositories/invitations.py`**
+
+Found while fixing `#90` - the exact same shape of bug, in code this phase didn't touch
+until now. `accept()` catches `InsufficientPrivilegeError`/`UniqueViolationError` from the
+membership `INSERT` (a caller whose email doesn't match the invitation, or two concurrent
+accepts of the same invitation racing each other) and returns `None`. But the `INSERT` ran
+as a bare statement, not inside a nested transaction - so once Postgres aborted it, the
+connection's transaction stayed aborted, and the very next statement (the `invitations`
+`UPDATE`, or, under `database.as_user()`, that context manager's own cleanup on the way out)
+raised `InFailedSqlTransactionError` instead of ever reaching `accept()`'s intended clean
+`None`. `organisations_repo.set_member_role()` already documents this exact Postgres
+behaviour and already uses the fix; `accept()` and this phase's own new
+`messages_repo.send_message()` both needed it independently.
+
+**Impact.** A real, reachable path: anyone signed in with a different email than an
+invitation's target, or a double-clicked/retried accept, would surface as an unhandled 500
+instead of the honest "couldn't accept" outcome the route is supposed to report.
+
+**Fix.** Wrapped the `INSERT` in `async with conn.transaction():` (asyncpg issues a
+`SAVEPOINT`), so the caught error rolls back only that statement - the outer request
+transaction stays usable. Verified by
+`test_accept_by_the_wrong_email_returns_none_without_aborting_the_transaction`
+(`apps/api/tests/test_rls_isolation.py`), which fails with `InFailedSqlTransactionError` on
+the pre-fix code (checked directly) and passes with the fix.
+
+### #92 - `messages_repo.send_message()` never inserted `org_id`, so every real send 500'd
+
+**S1 · FIXED · backend · `apps/api/app/database/repositories/messages.py`, `apps/api/app/api/v1/routes/messages.py`**
+
+Found by driving the chat feature end to end for real - the first time anything in this
+phase called `POST /api/v1/channels/{id}/messages` through the actual HTTP API rather than
+inserting `messages` directly via SQL. `messages.org_id` is `NOT NULL` (deliberately
+denormalised - this migration's own docstring), but `send_message()`'s `INSERT` only ever
+listed `channel_id, sender_id, body`. Every real send failed with
+`asyncpg.exceptions.NotNullViolationError: null value in column "org_id"`, surfaced to the
+caller as an unhandled `500`. Every one of this phase's other chat tests supplies `org_id`
+by hand in a raw SQL `INSERT` (to seed a message for an RLS check), which is exactly why
+none of them exercised the repository's own `INSERT` and none caught this - a real, and
+instructive, gap: RLS-focused tests proved the *policies* were right without ever proving
+the *repository code* those policies sit in front of actually ran successfully.
+
+**Impact.** The one write operation the whole feature exists to support - sending a
+message - was completely broken. `GET` endpoints, `create_channel()`, and every RLS
+guarantee were all fine in isolation; nothing before this exercised the write path for
+real.
+
+**Fix.** `send_message()` takes `org_id` and includes it in the `INSERT`; the route passes
+`user.org_id`. Verified two ways: `test_owner_can_send_a_real_message_through_the_repository`
+(`apps/api/tests/test_rls_isolation.py`), checked directly against the pre-fix code (fails
+with the same `NotNullViolationError`); and manually, end to end, against a real local
+Supabase stack (`supabase start`) - real signup, real signed JWT, real
+`POST /api/v1/channels` and `POST .../messages` calls, both succeeding and the message
+readable back via `GET .../messages`.
+
+**Method note.** This is the reason a fresh local Postgres (rather than only the shared
+cloud dev project) was worth setting up mid-phase: cross-tenant/RLS correctness was already
+proven against the cloud database, but nothing had yet driven the write path through the
+real API surface end to end. A local stack made that cheap enough (a few `curl` calls,
+seconds each) to actually do rather than defer.
+
+### #93 - `test_anonymous_sees_nothing` assumed `anon`'s access is always denied via RLS, never via a missing grant
+
+**S4 · FIXED · backend (test only) · `apps/api/tests/test_rls_isolation.py`**
+
+Found spinning up a second, independent Postgres instance for local development
+(`supabase start`) and running the full suite against it. This migration's own `GRANTS`
+block never grants `anon` anything on `organisations`/`users`/`memberships`/`suppressions`
+("anon gets nothing: every read here requires a signed-in user") - so a bare Postgres
+provisioned purely from these migrations denies an `anon` query with `permission denied`,
+before RLS is ever consulted. The Supabase-hosted dev project apparently carries its own
+platform-default grants underneath (a provisioning detail outside this repo's own
+migrations), so the identical query there returns zero rows via RLS instead. The test
+asserted the second outcome specifically (`count == 0`) and had never been run anywhere
+that would exercise the first.
+
+**Impact.** None to the product - both outcomes equally prove `anon` cannot read a row,
+and this is the only test in the suite that would have told them apart. Impact is entirely
+to whether this suite runs clean on a second, independently-provisioned Postgres.
+
+**Fix.** Accepts either a successful zero-row result or a caught `InsufficientPrivilegeError`
+per table (a nested transaction/`SAVEPOINT`, so one table failing doesn't stop the loop from
+reaching the next). Confirmed this suite now passes unmodified against both the shared
+cloud dev project and a fresh local stack.
+
+## Iteration 33 - 2026-08-15 · Teams-parity chat: search, group management, read state, message edit/delete, pagination
+
+Bringing chat toward Microsoft-Teams-level parity (member search, 1:1/group management,
+add/remove/rename with real authorisation, read/unread, message edit/delete, cursor
+pagination, `/app/chat/[id]` URLs, `channel_members` Realtime) - the gap analysis this
+iteration closes is its own artifact, not repeated here. Four real bugs found and fixed
+along the way, two caught by the new tests before anything ever ran for real, two that
+passed every existing test and only broke against the actual running app - the same
+pattern iteration 24's #92 already established, repeating here because the fix for it
+(build a local dev stack, drive the feature over real HTTP and a real browser) is exactly
+what caught these too.
+
+### #94 - `channel_members` had a `DELETE` **policy** but no `DELETE` **grant**
+
+**S2 · FIXED · database · `apps/api/alembic/versions/202608100000_team_chat_channels_and_messages.py (now folded into the single consolidated chat migration)`**
+
+Caught by `test_channel_members_delete_leave_creator_remove_and_admin_moderate` before this
+migration ever left this machine - every "remove a member" call failed with
+`InsufficientPrivilegeError: permission denied for table channel_members`, not because the
+policy was wrong, but because RLS and grants are two separate, both-required layers
+(`initial_schema.py`'s own framing: "grants decide which tables are reachable at all") and
+this migration wrote the policy without the matching `grant delete`.
+
+**Fix.** Added `grant delete on public.channel_members to authenticated;` alongside the
+policy.
+
+### #95 - An org admin renaming a channel they hadn't joined got back nothing, even though the rename worked
+
+**S2 · FIXED · database · `apps/api/alembic/versions/202608100000_team_chat_channels_and_messages.py (now folded into the single consolidated chat migration)`**
+
+`channels_select` (`b3f7d2a891c5`) was `is_channel_member(id)` only. `channels_update`'s new
+policy correctly lets an org owner/admin rename *any* channel in their org, including one
+they never joined - but `UPDATE ... RETURNING` re-checks the updated row against the
+table's own `SELECT` policy before handing it back, the identical mechanism
+`create_organisation()`'s docstring describes for `INSERT ... RETURNING`, here showing up
+on `UPDATE` instead. An admin who wasn't a member failed `is_channel_member(id)`, so the
+rename silently applied while `rename_channel()` returned `None` - a real update the caller
+could never see confirmed.
+
+**Impact.** Not a security hole (the admin was authorised to make the change) - a
+correctness bug that would have read as "renaming isn't working" with no error to explain
+why, for the one moderation case the feature exists to support.
+
+**Fix.** `channels_select` gained the same owner/admin branch `channel_members_select`
+already has. Deliberately scoped to `channels` only - `messages_select` keeps no such
+branch, so this does not let an admin read a channel's contents, only see that it exists
+and rename it. Verified by `test_channels_update_rename_matrix`.
+
+### #96 - `useOrgRealtime` broke entirely the moment a second component watched the same table
+
+**S1 · FIXED · web · `apps/web/lib/hooks/use-org-realtime.ts`**
+
+Found live, not by any test - the chat page loaded to a hard `500` the moment the new
+"Chat" nav unread badge (`use-chat-unread.ts`) started also subscribing to the `channels`
+table. `supabase-js` deduplicates `.channel(name)` calls by name within one client; this
+hook named its channel deterministically from `table` + `orgId` alone
+(`realtime:channels:{orgId}`), which was fine when exactly one caller ever watched a given
+table (true for all of Part 3) and broke the instant a second one did: the second `.channel()`
+call got handed back the *first* caller's already-`.subscribe()`d channel object, and
+calling `.on()` on an already-subscribed channel throws
+`cannot add postgres_changes callbacks ... after subscribe()` - which the console reported,
+but the rendered page just showed the site's generic 500 boundary, with nothing pointing at
+Realtime at all.
+
+**Impact.** Total, silent breakage of the entire chat page (and, by the same mechanism,
+would have hit any two features that ever watched the same org-scoped table) - and the
+error message named a Supabase internal, not this hook, which is exactly the kind of
+regression a written spec or a mocked test would not have caught; only actually loading the
+page did.
+
+**Fix.** The channel name now includes `useId()`, so every call site - regardless of how
+many others watch the same table - gets its own channel. Verified two ways: a live
+Playwright session confirmed the page loads and a `channel_members` change (a real add,
+issued from outside the browser) appears in an already-open members panel with no reload;
+and, before settling on that result, a first pass at this same check used an unscoped text
+match and produced a false pass (it matched a *different* channel's "2 members" text in the
+list behind the open sheet) - corrected to assert against the open sheet specifically,
+which is the version that actually caught this bug.
+
+### #97 - `PATCH .../messages/{id}` (edit) 500'd on every real edit
+
+**S1 · FIXED · backend · `apps/api/app/api/v1/routes/messages.py`**
+
+Same shape as `#92`: `messages_repo.edit_message()`'s `UPDATE ... RETURNING` has no join to
+`users` (unlike `list_messages()`), so its Record never carries `sender_name` - but the
+route built its response with `_message_json()`, written for `list_messages()`'s joined
+rows. Every real edit raised `KeyError: 'sender_name'`. `send_message()`'s route had
+already solved this exact mismatch for the same reason (its own insert has no join either)
+by building `MessageOut` from `user.name` directly instead of calling `_message_json()`;
+`edit_message()` just hadn't followed that precedent.
+
+**Impact.** The entire edit feature was unusable - caught only by driving a real edit
+through the live API, not by `test_messages_update_only_the_sender_can_edit_or_delete`
+(which calls the repository directly and never touches the route or `_message_json()` at
+all).
+
+**Fix.** `edit_message()`'s route now builds `MessageOut` the same way `send_message()`'s
+does. Verified by a new route-level test,
+`test_edit_message_route_does_not_need_sender_name_from_the_repo`
+(`apps/api/tests/test_messages_routes.py` - the first route-level test file for chat),
+checked directly against the pre-fix code (reproduces the identical `KeyError`); and again
+live, end to end, against the running local stack.
+
+## Iteration 34 - 2026-08-16 · deep technical audit of chat: correctness, scalability, concurrency
+
+A system-design-level audit of chat only (frontend, API, repositories, schema, RLS,
+Realtime, tests), not a re-run of Iteration 33's feature checklist. Three real, verified
+gaps, all confirmed against the actual code and - where practical - the live running stack
+and the real dev database, not assumed from reading. No security boundary was ever actually
+open; every fix here is either a correctness bug (duplicate DMs, a pagination edge case) or
+a scalability bug (a hot path re-fetching far more than it needs), plus the error-handling
+gap that made one of the correctness bugs' own guard rails surface as a `500` instead of a
+clean rejection.
+
+### #98 - Starting a DM with the same teammate twice created two separate conversations
+
+**S2 · FIXED · database · `apps/api/alembic/versions/202608100000_team_chat_channels_and_messages.py (now folded into the single consolidated chat migration)`, `channels.py`**
+
+`create_channel()` never checked for an existing DM between the same two people - every
+"message this person" click made a brand-new `channels` row and a brand-new pair of
+`channel_members` rows. This is a direct violation of `CLAUDE.md`'s idempotency
+non-negotiable ("every mutating endpoint... safe to run twice"), not merely an inconvenience:
+a relationship's message history silently scattered across N channels, with no way for
+either person to find the "real" one. Confirmed against this codebase's own local dev
+database, not hypothetically - applying the migration's backfill found three separate
+pre-existing DM channels for the same pair of test users, left over from earlier manual
+testing sessions in this project.
+
+**Impact.** Every DM in the product before this fix. Not a cross-tenant or security issue -
+both users were always in the same organisation - but a real, user-visible correctness bug
+central to "1:1 chat" working at all.
+
+**Fix.** `channels.dm_pair` (a sorted 2-element `uuid[]` of the two members, set only for
+`kind = 'dm'`) plus a partial unique index on `(org_id, dm_pair)`. `create_channel()` now
+checks for an existing row first (no contention, the common case) and falls back to
+re-selecting the winner if a concurrent call raced it into the unique index instead (an
+implicit savepoint from the function's own `exception` block, not a new Python-side
+transaction dance). A `dm` is also now validated as actually 1:1 - exactly one other member,
+never the caller's own id - which was previously unenforced at any layer. Pre-existing
+duplicate DMs from before this migration are not merged (that is a data decision, not a
+schema one); one representative per pair becomes the discoverable channel going forward,
+and any other duplicate keeps working exactly as before, just outside the new dedup index.
+Verified by `test_create_channel_dm_is_idempotent_and_reuses_the_existing_channel`,
+`test_create_channel_dm_rejects_wrong_member_count_and_self_dm`,
+`test_channels_dm_pair_unique_index_rejects_a_duplicate_at_the_database_level`, and a real
+concurrency test across two independent physical connections
+(`test_concurrent_dm_creation_from_two_connections_converges_on_one_channel`); also checked
+live against the running API with real signed JWTs (two `POST /channels` calls for the same
+pair returned the identical channel id).
+
+While in this function: `create_channel()`'s own pre-existing guards ("not a member of this
+organisation", "one or more member_ids are not members of this organisation") were never
+caught anywhere between the database and the HTTP response - a member id from another
+organisation submitted through `POST /channels` raised a bare `asyncpg.exceptions.RaiseError`
+that FastAPI's default handler turned into a generic `500`. The rejection itself already
+worked correctly (no channel was ever created; this was never a cross-tenant leak), only its
+shape was wrong. `channels_repo.create_channel()` now catches `RaiseError` and re-raises
+`ValueError`, which the route turns into a clean `400`. Verified by
+`test_create_channel_repo_turns_a_cross_org_member_into_a_value_error` and, live, by
+submitting a real user id from a genuinely different organisation through the running API
+and confirming a `400` with the plain-English rejection message, not a `500`.
+
+### #99 - The chat unread-badge hook re-ran chat's heaviest query on every message sent anywhere in the organisation, for every open tab
+
+**S2 · FIXED · web + backend · `use-chat-unread.ts`, `channels.py`, `messages.py` route**
+
+`useChatUnreadCount()` is mounted in `AppShell` - every `/app/*` page, for every signed-in
+user, not just the chat page - and until this fix, every one of its three Realtime
+subscriptions (`channels`/`messages`/`channel_members`) called `api.listChannels()` on every
+event. That endpoint's query (`_CHANNEL_COLUMNS`) does an `array_agg` of every member of
+every channel the caller is in, plus two correlated subqueries per channel row, just so the
+badge could sum one field back out of the response and discard the rest. At the scale this
+audit was asked to evaluate against - thousands of users per organisation, high-volume
+concurrent messaging - one message sent anywhere in an organisation that a hundred people
+had open in a browser tab meant a hundred full channel-list queries landing on the database
+at once, member arrays and all, to compute a single integer. This is the kind of bottleneck
+that doesn't show up in any single-user test or in normal development traffic, and would
+have been the first thing to fall over under real concurrent load.
+
+A second, related gap in the same area: `useOrgRealtime()`'s callback discarded the Postgres
+Changes payload entirely, so every subscriber re-fetched on every org-wide event on a table
+regardless of whether the changed row had anything to do with what was currently open. In
+`chat-shell.tsx`, a message sent in channel A re-fetched and re-marked-read whatever
+different channel (B) happened to be open in that tab, on every send.
+
+**Fix.** A dedicated `GET /api/v1/channels/unread-count` endpoint backed by
+`channels_repo.total_unread_count()` - one join between `messages` and the caller's own
+`channel_members` rows, no per-channel fan-out, no member-list aggregation - replaces
+`listChannels()` in the badge hook. `useOrgRealtime()` now passes the changed row's payload
+through to its caller instead of a bare trigger, and debounces its own callback (300ms,
+trailing) so a burst of events coalesces into one refetch rather than one per event;
+`chat-shell.tsx`'s message and `channel_members` subscriptions use the payload to skip a
+refetch of the open conversation when the change was actually about a different one, while
+the channel list itself still refetches unconditionally (a membership change can add or
+remove a channel from the caller's list regardless of which one was open). Verified by
+`test_total_unread_count_matches_the_sum_of_per_channel_counts` and
+`test_total_unread_count_is_scoped_to_the_callers_own_organisation` (RLS, not the `org_id`
+parameter, is what actually confines the new endpoint - passing the wrong organisation's id
+returns 0, not a leak), plus route-level and live-HTTP checks; frontend type-check, lint, and
+build all pass with the payload-typed hook signature.
+
+### #100 - Cursor pagination could silently skip or repeat a message under an exact-timestamp tie
+
+**S3 · FIXED · backend · `apps/api/app/database/repositories/messages.py`**
+
+`created_at` is Postgres's transaction-start time, not per-statement wall-clock, so two
+messages committed by genuinely concurrent requests can land on the exact same timestamp.
+`list_messages()`'s cursor was a bare `created_at < $before` - if the boundary message and
+the next one down were tied, a strict `<` comparison would resolve the tie by silently
+dropping whichever one didn't make the earlier page, a message that would then never appear
+in the conversation's history again on that client. Rare at today's traffic (a single
+channel needs two sends to genuinely overlap at transaction-start-time resolution), but
+"millions of messages, high concurrent writes" - the scale this audit was asked to evaluate
+against - is exactly where rare-per-request becomes routine-per-day.
+
+**Fix.** `list_messages()` accepts an optional `before_id` alongside `before`; when both are
+given, ties on `created_at` are broken by `id` (`order by created_at desc, id desc`, `where
+... or (created_at = $before and id < $before_id)`). Additive and backward compatible - a
+caller that only sends `before` keeps the prior behaviour. `chat-shell.tsx`'s
+`loadOlderMessages()` now sends both. Verified by
+`test_pagination_with_identical_timestamps_uses_id_as_a_tiebreaker`, which forces three
+messages onto one identical timestamp directly (not relying on real concurrency to
+reproduce the tie) and pages through them one at a time, asserting none is skipped or
+repeated.
+
+## Iteration 35 - 2026-08-17 · chat RLS: org departure did not revoke Realtime/PostgREST access
+
+Follow-up to Iteration 34's #98 discussion of organisation isolation. That round's own re-evaluation
+(requested before any fix, to confirm the finding against a real already-active session rather than
+assume a stale row is automatically exploitable) precisely scoped what was and wasn't true: the
+FastAPI application was already safe - `current_user()` re-checks live `memberships` on every
+request, for an existing session exactly as much as a fresh one - but Supabase Realtime and direct
+PostgREST access, which authorise purely off RLS with no FastAPI dependency at all, were not.
+
+### #101 - Chat RLS treated `channel_members`/`created_by` as permanent, never re-checking current organisation membership
+
+**S1 · FIXED · database · `apps/api/alembic/versions/202608100000_team_chat_channels_and_messages.py (now folded into the single consolidated chat migration)`**
+
+`is_channel_member()` and `channel_created_by()` only ever queried `channel_members`/`channels`
+directly - neither joined back to `memberships`. `channel_members_insert` (migration `b3f7d2a891c5`)
+already required the inserter's *live* org membership via `is_org_member(channel_org_id(...))`; that
+check was never applied to `channels_select`, `messages_select`, `messages_insert`, or the
+creator-branch of `channels_update`/`channel_members_delete`.
+
+**Impact, precisely confirmed live, not assumed.** A user who left an organisation through the real,
+unprivileged `DELETE /api/v1/organisations/me/members/{self}` endpoint - using the exact same
+already-active browser session, never reloaded - could not reach any chat data through the CallFlow
+application itself (confirmed both for that pre-existing session and a freshly-issued one afterward:
+identical `403` either way). But the same session's already-open Realtime subscription kept receiving
+the full websocket frame (message body included) for new events in the organisation they'd left, and
+the same session's token, used directly against Supabase's own PostgREST endpoint with no CallFlow
+backend involved, could both read and insert messages in that organisation. A second, independent
+instance of the same root cause: a departed user who had created a channel was still recognised as
+its creator and could still rename it or remove other members from it via the identical RLS path.
+
+**Fix.** Added `and public.is_org_member(...)` to `channels_select`, `messages_select`,
+`messages_insert`, and the creator-branch of `channels_update`/`channel_members_delete` - additive to
+each existing `USING`/`WITH CHECK` clause, not a replacement, so nothing previously correct (a live
+member's own access, an org owner/admin's moderation) changed. `channel_members_delete`'s
+self-removal branch (`user_id = current_user_id()`) deliberately keeps no org-membership requirement,
+since leaving a channel yourself must keep working even for an already-stale row. `channel_members_select`
+has the identical shape and was not changed - it wasn't part of what this round tested and confirmed,
+so it stays out of scope rather than being bundled in on assumption.
+
+Complementary, not a substitute: `organisations_repo.remove_member()` (the self-leave path) now also
+deletes the departed user's `channel_members` rows for that organisation, in the same transaction as
+the `memberships` delete - data hygiene (an honest member list/count for whoever remains), not the
+security boundary itself. The regression tests below (`test_departed_org_member_loses_chat_rls_access_even_with_a_stale_channel_members_row`)
+deliberately leave a stale row in place and confirm the *policies* reject it regardless, so the fix
+does not depend on every future code path remembering this cleanup.
+
+**Verified:**
+- 4 new tests in `test_rls_isolation.py` (278 total, all passing; full existing suite unaffected,
+  including every pre-existing cross-org isolation test): an active member's full chat access
+  (read/send/rename) is unaffected by the tightened policies; a departed member - identical identity,
+  stale `channel_members` row deliberately left in place - loses `channels_select`/`messages_select`/
+  `messages_insert`; a departed creator can no longer rename or remove another member via the
+  creator-branch; `remove_member()` actually clears the stale rows.
+- Live, post-fix, against the real running API, a real browser, and Supabase's own endpoints directly,
+  using one continuous already-active session throughout: FastAPI blocked before and after leaving
+  (unchanged, as expected); direct PostgREST `GET /rest/v1/messages` returned `200` with zero rows
+  (previously returned message content) and `POST` returned `403` "new row violates row-level
+  security policy" (previously `201`, a successful insert); the same already-open Realtime
+  subscription received no websocket frame at all for a new message sent after the user left
+  (previously the full frame, message body included, was delivered).
+
+**Depends on / Blocks:** Iteration 34 #98.
+
+## Iteration 36 - 2026-08-18 · chat RLS: `channel_members_select` was the one policy #101's fix didn't cover
+
+Direct follow-up to #101. That fix's own migration deliberately left `channel_members_select`
+untouched, flagging it for confirmation rather than assuming it shared the same gap. A dedicated
+audit pass confirmed it did, live.
+
+### #102 - `channel_members_select`'s member branch had no live organisation-membership check
+
+**S2 · FIXED · database · `apps/api/alembic/versions/202608100000_team_chat_channels_and_messages.py (now folded into the single consolidated chat migration)`**
+
+`is_channel_member(channel_id) or has_org_role(...)` - the first branch, like every other one #101
+fixed, never re-checked `memberships`. A departed member's stale `channel_members` row kept them
+visible to this policy indefinitely.
+
+**Impact, confirmed live.** A user who left an organisation (a plain `memberships` delete, their
+`channel_members` row deliberately left in place to isolate the policy from the cleanup #101 also
+added) could still read the full membership list of a channel they used to belong to - who else was
+in it, `org_id`, `joined_at` - directly via PostgREST, no CallFlow backend involved: `GET
+/rest/v1/channel_members?channel_id=eq...` returned `200` with the full member list both before and
+after the test, until the fix. No message content and no write path were exposed by this one - lower
+severity than #101, but the same root cause and the same reachable path.
+
+**Fix.** One line, the identical pattern: `is_channel_member(channel_id) and
+is_org_member(channel_org_id(channel_id))` for the member branch. The organisation admin/owner branch
+(`has_org_role(...)`) was already correct - it queries live `memberships` by construction - and is
+unchanged, so an admin/owner's ability to see membership of any channel in their org for moderation
+purposes (`test_admin_can_see_channel_membership_but_not_messages_for_a_channel_they_are_not_in`) is
+untouched.
+
+**Verified**, following the same before/after discipline as #101:
+- The new regression test (`test_departed_member_can_no_longer_read_channel_membership_via_a_stale_row`)
+  was written and confirmed to **fail** against the pre-fix policy, then confirmed to **pass** after
+  the migration - 279 backend tests total, full suite green, `ruff` clean.
+- Live, post-fix: the identical PostgREST call that returned the full member list before the fix now
+  returns `200` with zero rows, stale row and all.
+- Live Realtime, with clear before/after markers: an active member's already-open `channel_members`
+  subscription received the row's `UPDATE` event normally (10 delivered frames, matching known
+  pre-departure activity); the identical `UPDATE` issued immediately after simulating departure -
+  same stale row, same subscription, never reloaded - produced zero delivered frames.
+
+**Depends on / Blocks:** Iteration 35 #101.
+
+## Iteration 37 - 2026-08-16 · chat page: search-to-DM, a persistent list pane, and @mentions
+
+Landed three requested features on `/app/chat` (inline organisation-member search to start a DM
+directly from the list, the channel list and an open conversation visible side by side instead of
+the conversation as a full-screen modal, and Teams-style `@mention` autocomplete/highlighting scoped
+to a conversation's own members) - the group-creation dialog was left untouched by request. Restructuring
+the page to a persistent two-pane layout surfaced both bugs below, live, before either shipped.
+
+### #103 - Opening a different conversation remounted the whole chat page
+
+**S2 · FIXED · web · `apps/web/app/(app)/app/chat/`**
+
+The two-pane layout's whole point is that the channel list, its search box, and an open conversation
+stay on screen together so a person can switch between conversations directly. The first shape of
+this (a `chat/[id]/page.tsx` dynamic route, `channelId` passed down as a prop) defeated that on its
+own: Next.js remounts a `[id]/page.tsx` on every change to its own dynamic segment - by design, not a
+framework bug, since a detail page is often meant to treat a new param as a fresh identity - which
+wiped the channel list, the search box, and every other bit of `ChatShell`'s state on every single
+click between conversations.
+
+**Impact, confirmed live** by the person testing it, mid-session: switching conversations visibly
+re-rendered the entire section - list, header, composer - rather than only the conversation content,
+which is the opposite of what a persistent list pane is for.
+
+**Fix.** The open conversation now lives in a query param (`/app/chat?c={id}`) on one stable page
+rather than a route segment, so there is no dynamic-segment identity for Next to remount on. Reading
+that query param still requires `useSearchParams()`, which Next.js requires to sit under a
+`<Suspense>` boundary - and a Suspense boundary is itself torn down and rebuilt on navigation, which
+would have reintroduced the identical remount if `ChatShell` read it directly. It's isolated instead
+in a small stateless leaf (`ChannelIdSync`) that does nothing but report the current id upward via an
+effect; that leaf remounting on every navigation is harmless, since it holds no state of its own.
+
+**Verified live**, end to end (Playwright against the local dev stack): a `window`-level marker set
+before switching conversations was confirmed to survive the switch (proving the navigation itself is
+a soft client transition, not a full reload) together with a mount/unmount instrumentation effect on
+`ChatShell` confirming it mounts exactly once across an arbitrary number of conversation switches -
+list state (an in-progress search box value) and the rendered channel buttons were confirmed intact
+after switching conversations twice. `npm run build` (which prerenders and would fail immediately if
+`useSearchParams()` were not correctly boundaried) passes.
+
+### #104 - The message pane never auto-scrolled to the newest message
+
+**S3 · FIXED · web · `apps/web/app/(app)/app/chat/chat-shell.tsx`**
+
+The previous full-screen-modal conversation view had no fixed height, so the page (and, incidentally,
+whatever was newest) was usually already in view. Giving the conversation its own bounded,
+independently-scrollable pane - required for the list and the conversation to be visible together,
+`#103`'s whole point - removed that incidental behaviour without replacing it: nothing set `scrollTop`
+on open, on send, or on a live message arriving, so the newest content could sit below the fold with
+no indication anything had changed.
+
+**Impact, confirmed live** via a screenshot taken immediately after sending a message in a conversation
+with enough history to overflow the pane: the composer cleared (confirming the send succeeded) but the
+just-sent message was not visible without the reader scrolling down manually.
+
+**Fix.** A `useLayoutEffect` keyed on the open conversation and its message list sets the pane's
+`scrollTop` to its `scrollHeight` after every render, except when the render was triggered by
+`loadOlderMessages()` paging in history - that one case anchors the scroll position to what was
+already on screen instead, or paging in older messages would otherwise yank the reader back down to
+the bottom they were trying to scroll away from. Ship order mattered here: a later change gave the
+loading state a minimum-visible floor (`useMinVisible`, so a fast/cached fetch doesn't flash a loader
+for under a second) which decoupled *when data arrives* from *when it actually reaches the DOM* -
+the auto-scroll effect's dependency list has to include that loader's own visibility, or it fires
+too early, against content that has not been rendered yet.
+
+**Verified live**, in a viewport short enough to force real overflow (confirmed via `scrollHeight >
+clientHeight` on the actual message-pane element, not assumed): before the fix, `scrollTop` sat at `0`
+after opening a conversation with overflowing history; after the fix, `scrollTop` reads exactly
+`scrollHeight - clientHeight` (bottom) both on opening a conversation and immediately after sending a
+new message into it.
+
+**Depends on / Blocks:** Iteration 37 #103 (same restructure exposed both).
+
+## Iteration 38 - 2026-08-16 · team chat code review: four must-fix findings
+
+A full review of the chat feature against `RUNBOOK_JATIN_PART_3.md` (26 files, +5538/-56)
+found four issues serious enough to block the PR - "careful work... but #1 and #2 mean live
+chat doesn't reliably deliver, which is the feature." All four are fixed below. The review's
+"should fix" and "nit" findings (edit-then-403 ordering in `edit_message`, the admin-branch
+product question on `channels_select`/`list_my_channels`, non-idempotent DELETE endpoints,
+`supabase/config.toml`'s overlap with `DEV_SETUP.md`'s own local-database path, a migration
+filename that sorts out of apply order, a stale `Revises:` docstring, a dead grant on
+`channels`) are deliberately not addressed here - several want an explicit product decision
+(the admin-branch scope, whether to keep the Supabase CLI path at all) rather than a
+unilateral fix.
+
+### #105 - The Realtime debounce coalesced a burst down to only its last payload
+
+**S2 · FIXED · web · `apps/web/lib/hooks/use-org-realtime.ts`**
+
+`useOrgRealtime`'s debounce reset a single timeout on every event and, when it fired, handed
+the callback only the payload from whichever event arrived last. Two call sites filter on
+that payload (`chat-shell.tsx`'s `messages`/`channel_members` subscriptions): a message
+landing in channel A and one in channel B within the same 300ms window meant only B's payload
+survived, so A's message was never refetched until a channel switch or reload. Debouncing the
+refetch and filtering by payload are each fine in isolation; combined, the filter silently
+discarded whichever event didn't win the race - the normal case, not an edge case, in a busy
+organisation.
+
+**Fix.** The debounce now accumulates every payload it coalesces into an array and clears it
+only when the timer actually fires, so the callback receives the whole burst rather than its
+last member - still one refetch per burst, but zero events dropped. Both consuming call sites
+in `chat-shell.tsx` (`channel_members`, `messages`) were updated to check the whole batch
+(`payloads.some(...)`) rather than a single payload; the three call sites that ignore the
+payload entirely (`use-chat-unread.ts`, `app-store.tsx`, `organisation/page.tsx`) needed no
+change - a `() => void` callback is assignable wherever the array-typed one is expected.
+
+**Verified.** `tsc --noEmit` clean across all six call sites. Not covered by an automated
+test - simulating a genuine sub-300ms two-channel Realtime burst deterministically wasn't
+attempted; the fix was verified by inspection of the corrected coalescing logic instead.
+
+### #106 - No `replica identity full` on the three chat tables
+
+**S2 · FIXED · database · `apps/api/alembic/versions/202608100000_team_chat_channels_and_messages.py`**
+
+The migration adds `channels`/`channel_members`/`messages` to `supabase_realtime` but never
+sets replica identity - the one line `202608101000_escalations_realtime.py` already sets
+defensively, and that migration's own docstring says why: Supabase's docs note RLS cannot be
+applied to a DELETE event at all without it. Escalations set it for a delete path that
+doesn't exist; chat has one - `channel_members` rows are deleted on leave/removal and
+subscribed with `event: '*'`. Without the full row, a DELETE's `old` record ships primary-key
+columns only (`org_id` isn't part of any of these three tables' primary key), so being
+removed from a channel - or leaving in another tab - never propagated live, and the
+`org_id=eq.<org>` Realtime filter couldn't match the delete's old record either.
+
+**Fix.** `replica identity full` for all three tables, executed right before they're added to
+the publication (mirroring escalations' order), with the reverse in `downgrade()`.
+
+**Verified.** New regression test `test_chat_tables_have_full_replica_identity` asserts
+`pg_class.relreplident = 'f'` for all three tables directly - confirmed to fail before the
+migration change, pass after. Applied directly to the local dev database (`alter table ...
+replica identity full`) rather than a destructive downgrade/upgrade cycle, so existing seeded
+conversations were preserved. Full backend suite: 274 passed (272 + this + #107's test),
+`ruff` clean.
+
+### #107 - `messages_insert` had no `org_id` check `channel_members_insert` already had
+
+**S2 · FIXED · database · `apps/api/alembic/versions/202608100000_team_chat_channels_and_messages.py`**
+
+`channel_members_insert` ends with `and org_id = public.channel_org_id(channel_id)`;
+`messages_insert` never constrained `messages.org_id` at all. Reachable without PostgREST: a
+user who belongs to both organisation A and organisation B, seated in a channel that belongs
+to A, sends with an active-org header of B. `sender_id`/`is_channel_member`/`is_org_member`
+all pass - none of them look at the `org_id` column being written - and the row lands with
+`org_id = B`. No read leak (`messages_select` keys off membership, not `org_id`), but the row
+becomes invisible to every recipient's own `org_id=eq.A` Realtime filter - the message goes
+undelivered live for the whole channel - and `messages.org_id` stops being trustworthy for
+anything downstream that assumes it agrees with its own `channel_id`.
+
+**Fix.** Added the identical clause - `and org_id = public.channel_org_id(channel_id)` - to
+`messages_insert`'s `WITH CHECK`.
+
+**Verified.** New regression test `test_messages_insert_rejects_a_mismatched_org_id_from_a_multi_org_member`
+seats one tenant in both organisations, confirms the exact scenario above (`send_message`
+called with the channel's own org and a different, mismatched `org_id`) is rejected and
+leaves no row - confirmed to fail against the pre-fix policy, pass after. Applied directly to
+the local dev database (`drop policy` + recreate) rather than a destructive migration replay.
+Full backend suite: 274 passed, `ruff` clean.
+
+### #108 - `.gitignore`'s `supabase` entry was un-anchored
+
+**S3 · FIXED · web · `.gitignore`**
+
+An un-anchored `supabase` line matched any path segment named `supabase` anywhere in the
+repository, confirmed with `git check-ignore` against `apps/web/lib/supabase/newfile.ts`. The
+four files already there stayed tracked (an ignore rule doesn't retroactively untrack
+anything), so nothing broke today - but the next file added to the browser/server Supabase
+clients would have been silently ignored. It also lacked a trailing newline and duplicated,
+imprecisely, what `supabase/.gitignore` (this same PR's own addition) already excludes
+precisely: `.branches` and `.temp`, relative to that nested file.
+
+**Fix.** Removed the redundant, incorrectly-scoped root-level line entirely rather than
+re-anchoring it to `/supabase/` - the nested `supabase/.gitignore` already handles the actual
+exclusion correctly, and a root-level `/supabase/` would additionally ignore any future
+top-level file added under `supabase/` (a seed file, say), which is a product decision (see
+`ISSUES.md` #106's neighbour, the "should fix" note on `supabase/config.toml` itself) rather
+than something this fix should decide unilaterally.
+
+**Verified.** `git check-ignore -v apps/web/lib/supabase/newfile.ts` no longer matches;
+`git check-ignore -v supabase/.branches/_current_branch` and `.../temp/...` still correctly
+match via the nested `supabase/.gitignore`, confirming no loss of the intended exclusion.
+Trailing newline confirmed via a byte-level check of the file's tail.
+
+**Depends on / Blocks:** none - independent of #105-#107, filed together as the same review's
+findings.
 
 ## Template for the next iteration
 

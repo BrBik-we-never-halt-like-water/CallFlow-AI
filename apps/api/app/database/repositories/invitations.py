@@ -36,7 +36,18 @@ async def accept(conn: asyncpg.Connection, token: str) -> asyncpg.Record | None:
     addressed to a different email - the last surfaces as an RLS violation on
     the INSERT (`memberships_insert`'s invitation branch failing its
     `WITH CHECK`) rather than a silently-filtered row, so that's caught here and
-    folded into the same "couldn't accept" outcome the route reports.
+    folded into the same "couldn't accept" outcome the route reports. Same
+    outcome for a concurrent accept of the same invitation racing this one - the
+    loser's INSERT hits the `memberships` primary key instead of the RLS check,
+    but it's still just "couldn't accept", not an error.
+
+    The INSERT runs inside a nested transaction (asyncpg issues a `SAVEPOINT`,
+    same reasoning as `organisations_repo.set_member_role()`): once Postgres
+    aborts a transaction, every statement other than `ROLLBACK` raises
+    `InFailedSqlTransactionError` until one runs - including the `UPDATE`
+    below and `database.as_user()`'s own cleanup on the way out. Catching the
+    error alone, without a savepoint to roll back to, would turn this
+    function's clean `None` into an unhandled 500 instead.
     """
     invitation = await conn.fetchrow(
         "select * from public.lookup_invitation_for_accept($1)", token
@@ -55,15 +66,16 @@ async def accept(conn: asyncpg.Connection, token: str) -> asyncpg.Record | None:
     )
     if not already_member:
         try:
-            await conn.execute(
-                """
-                insert into public.memberships (org_id, user_id, role, invited_by)
-                values ($1, public.current_user_id(), $2, $3)
-                """,
-                invitation["org_id"],
-                invitation["role"],
-                invitation["invited_by"],
-            )
+            async with conn.transaction():
+                await conn.execute(
+                    """
+                    insert into public.memberships (org_id, user_id, role, invited_by)
+                    values ($1, public.current_user_id(), $2, $3)
+                    """,
+                    invitation["org_id"],
+                    invitation["role"],
+                    invitation["invited_by"],
+                )
         except (asyncpg.exceptions.InsufficientPrivilegeError, asyncpg.exceptions.UniqueViolationError):
             return None
 
