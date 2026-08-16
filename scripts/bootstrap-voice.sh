@@ -118,13 +118,42 @@ fi
 
 # pm2 starts the worker and ecosystem.config.js is JavaScript, so both are hard
 # requirements even though nothing here serves HTTP.
-for tool in node pm2; do
-  if ! command -v "$tool" > /dev/null; then
-    echo "FATAL: $tool is not installed. The worker is started by pm2 from" >&2
-    echo "       ecosystem.config.js, which is a node module." >&2
+#
+# Installed system-wide rather than under $HOME, deliberately. The deploy job
+# reaches this box over a non-interactive ssh, which reads neither .bashrc nor
+# .profile - so a node in ~/.local would be on PATH for a person and absent for
+# the very job that needs to run `pm2 start`. /usr/bin is on the default PATH
+# either way.
+#
+# Node 20 rather than the newest: this host is Ubuntu 20.04, and NodeSource's
+# later lines want a glibc it does not have. pm2 asks nothing of the runtime.
+NODE_MAJOR=20
+
+if ! command -v node > /dev/null; then
+  if ! have_sudo; then
+    echo "FATAL: node is not installed and this user cannot sudo." >&2
+    echo "       Install Node ${NODE_MAJOR} on this host, then re-run the deploy." >&2
     exit 1
   fi
-done
+  log "installing Node ${NODE_MAJOR} (NodeSource)"
+  curl -fsSL "https://deb.nodesource.com/setup_${NODE_MAJOR}.x" | sudo -E bash - > /dev/null 2>&1 \
+    || { echo "FATAL: could not add the NodeSource repository." >&2; exit 1; }
+  sudo apt-get install -y nodejs > /dev/null 2>&1 \
+    || { echo "FATAL: apt could not install nodejs." >&2; exit 1; }
+fi
+
+if ! command -v pm2 > /dev/null; then
+  if ! have_sudo; then
+    echo "FATAL: pm2 is not installed and this user cannot sudo." >&2
+    echo "       Run: npm install -g pm2" >&2
+    exit 1
+  fi
+  log "installing pm2"
+  sudo npm install -g pm2 > /dev/null 2>&1 \
+    || { echo "FATAL: npm could not install pm2." >&2; exit 1; }
+fi
+
+log "node $(node -v), pm2 $(pm2 -v 2>/dev/null | tail -1)"
 
 # ---------------------------------------------------------------- python env
 # Rebuilt when the existing venv is too old - a box upgraded from 3.8 keeps a
