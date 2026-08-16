@@ -133,8 +133,12 @@ function ToastItem({
         // notification chrome, not something that should adapt to whatever
         // page happens to be under it.
         'toast-dark-overlay',
+        // Enter, exit and swipe all live in `globals.css` under `.toast-item`.
+        // This used to be `data-[state=open]:animate-in`, a `tailwindcss-animate`
+        // utility from a plugin this project does not install - so it resolved
+        // to nothing and every toast appeared and vanished on a single frame.
+        'toast-item',
         'flex items-start gap-3 rounded-md border border-rule-strong bg-surface-raised p-3 shadow-overlay',
-        'data-[state=open]:animate-in data-[swipe=end]:translate-x-full',
       )}
     >
       <span className="mt-1">

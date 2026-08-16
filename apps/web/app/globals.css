@@ -1819,6 +1819,77 @@ button[data-menu][data-state='open']:focus-visible {
 }
 
 /* --------------------------------------------------------------------------
+   Toast.
+
+   `toast.tsx` carried `data-[state=open]:animate-in`, which is a
+   `tailwindcss-animate` utility - a plugin this project does not install. The
+   class resolved to nothing, so every toast appeared and vanished on one frame
+   and a swipe snapped rather than followed the finger.
+
+   It enters from the right because that is the edge it lives on, and leaves the
+   same way so dismissing reads as putting it back rather than deleting it.
+   `--dur-micro` on the way out: an exit the reader is no longer looking at
+   should not hold the slot open.
+   -------------------------------------------------------------------------- */
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateX(12px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+@keyframes toast-out {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+}
+
+.toast-item[data-state='open'] {
+  animation: toast-in var(--dur-base) var(--ease-out);
+}
+
+.toast-item[data-state='closed'] {
+  animation: toast-out var(--dur-micro) var(--ease-out) forwards;
+}
+
+/* Follows the finger while dragging, then leaves along the same axis. Without
+   the move rule the toast stays put until the gesture ends and then jumps. */
+.toast-item[data-swipe='move'] {
+  transform: translateX(var(--radix-toast-swipe-move-x));
+}
+
+.toast-item[data-swipe='cancel'] {
+  transform: translateX(0);
+  transition: transform var(--dur-micro) var(--ease-out);
+}
+
+.toast-item[data-swipe='end'] {
+  animation: toast-out var(--dur-micro) var(--ease-out) forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toast-item[data-state='open'],
+  .toast-item[data-state='closed'],
+  .toast-item[data-swipe='end'] {
+    animation: none;
+  }
+
+  .toast-item[data-swipe='cancel'] {
+    transition: none;
+  }
+}
+
+/* --------------------------------------------------------------------------
    Page transition.
 
    Next remounts `template.tsx` on every navigation, so a fresh `.page-enter`

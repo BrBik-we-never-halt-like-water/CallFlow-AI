@@ -334,3 +334,20 @@ async def connect_provider(
         phone_number=body.phone_number,
         label=body.label,
     )
+
+
+@router.delete("/providers/{provider}", status_code=status.HTTP_204_NO_CONTENT)
+async def disconnect_provider(
+    provider: str,
+    user: Annotated[CurrentUser, Depends(RequirePermission(Permission.INTEGRATIONS_WRITE))],
+) -> None:
+    """Forget one provider's credentials entirely.
+
+    A delete, not a soft flag: the row exists to hold a secret, so leaving it
+    behind marked inactive would keep a live vendor credential in the database
+    that nothing in the product can see or rotate.
+    """
+    async with database.as_user(user.auth_user_id) as conn:
+        deleted = await credentials_repo.remove(conn, user.org_id, provider)
+    if deleted is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not connected.")
