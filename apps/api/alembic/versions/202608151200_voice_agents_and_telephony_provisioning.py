@@ -110,14 +110,17 @@ alter table public.provider_credentials
   add constraint provider_credentials_provider_not_blank check (provider <> '');
 """
 
+# The type narrows back, but the `in ('twilio','plivo')` check deliberately does
+# not. By the time anyone downgrades, the Integrations page has stored sarvam /
+# openrouter / deepgram / elevenlabs rows, and re-adding that check would fail
+# against existing data - turning `npm run db:reset` into an error nobody can
+# clear without hand-deleting credentials. A downgrade's job is to undo this
+# revision, not to make the database refuse rows it already holds.
 RESTORE_PROVIDER_CHECK = """
 alter table public.provider_credentials
   drop constraint if exists provider_credentials_provider_not_blank;
 alter table public.provider_credentials
   alter column provider type varchar(16);
-alter table public.provider_credentials
-  add constraint provider_credentials_provider_check
-  check (provider in ('twilio', 'plivo'));
 """
 
 

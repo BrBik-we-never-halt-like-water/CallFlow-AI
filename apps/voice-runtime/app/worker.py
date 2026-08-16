@@ -11,14 +11,21 @@ its own.
 
 Kept deliberately thin. The two pieces with real logic - choosing plugins
 (`pipeline.py`) and delivering the result (`reporter.py`) - are separate and
-tested on their own; what remains here is the LiveKit lifecycle, which cannot
-be tested without a live room and so should contain as little as possible.
+tested on their own.
+
+What remains is the LiveKit lifecycle. `wait_for_call_end()` is written against
+a duck-typed context rather than `JobContext` precisely so it *can* be tested
+without a live room: it is the one piece of ordering that decides whether a call
+is held or dropped, and the first version of this file got it wrong in a way
+only a live call would have shown.
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+import time
 from typing import Any
 
 from app.config import config
@@ -102,6 +109,49 @@ def completion_payload(
     }
 
 
+async def wait_for_call_end(ctx: Any, *, answer_timeout: float, max_seconds: float) -> bool:
+    """Block while the contact is on the line. Returns whether anyone joined.
+
+    This is the whole reason a job outlives its own setup. Returning as soon as
+    the session starts would close the room while the phone was still ringing,
+    and every call would report an empty transcript.
+
+    Two waits, not one, because they mean different things: nobody arriving is
+    an unanswered call, while somebody arriving and then leaving is a finished
+    one. `max_seconds` is the backstop for the third case - a room that never
+    reports either.
+    """
+    try:
+        await asyncio.wait_for(ctx.wait_for_participant(), timeout=answer_timeout)
+    except TimeoutError:
+        log.info("nobody joined within %ss - the call went unanswered", answer_timeout)
+        return False
+
+    ended = asyncio.Event()
+    loop = asyncio.get_running_loop()
+
+    def _on_left(*_args: Any) -> None:
+        # `Event.set` is not thread-safe and LiveKit's room events cross a
+        # thread boundary from the Rust bridge.
+        loop.call_soon_threadsafe(ended.set)
+
+    room = ctx.room
+    room.on("participant_disconnected", _on_left)
+    room.on("disconnected", _on_left)
+
+    # Checked *after* the handlers are armed: a very short call can end between
+    # the join above and this line, and a handler registered afterwards would
+    # never fire, leaving the worker waiting out the full ceiling.
+    if not getattr(room, "remote_participants", None):
+        return True
+
+    try:
+        await asyncio.wait_for(ended.wait(), timeout=max_seconds)
+    except TimeoutError:
+        log.warning("call ran past the %ss ceiling - closing it from this side", max_seconds)
+    return True
+
+
 async def run_call(ctx: Any) -> None:
     """One call, start to finish.
 
@@ -122,16 +172,27 @@ async def run_call(ctx: Any) -> None:
 
     transcript = ""
     error: str | None = None
+    duration_seconds = 0
     started = ctx.job.id if hasattr(ctx.job, "id") else ""
     log.info("starting call for run %s (job %s)", run_id, started)
 
     session: Any = None
     try:
         pipeline = build_pipeline(spec)
+        # Connect before the session starts: `session.start()` publishes the
+        # agent's own track into the room, which needs the connection to exist.
+        await ctx.connect()
         session = AgentSession(stt=pipeline.stt, tts=pipeline.tts, llm=pipeline.llm)
         await session.start(agent=Agent(instructions=goal), room=ctx.room)
-        await ctx.connect()
-        await session.aclose()
+
+        began_at = time.monotonic()
+        answered = await wait_for_call_end(
+            ctx,
+            answer_timeout=config.answer_timeout_seconds,
+            max_seconds=float(metadata.get("max_call_duration_seconds") or config.max_call_seconds),
+        )
+        if answered:
+            duration_seconds = int(time.monotonic() - began_at)
     except Exception as exc:
         # The reason is logged in full but only the exception *type* is
         # reported: a vendor message can carry an API key or the dialled
@@ -140,12 +201,17 @@ async def run_call(ctx: Any) -> None:
         error = type(exc).__name__
     finally:
         if session is not None:
+            # Read before closing - `aclose()` is free to drop the history.
             transcript = transcript_from_history(getattr(session, "history", None))
+            try:
+                await session.aclose()
+            except Exception:
+                log.exception("run %s: closing the session failed", run_id)
 
         payload = completion_payload(
             metadata,
             transcript=transcript,
-            duration_seconds=0,
+            duration_seconds=duration_seconds,
             error=error,
         )
         try:

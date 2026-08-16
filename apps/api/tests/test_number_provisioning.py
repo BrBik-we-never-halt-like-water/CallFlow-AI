@@ -256,9 +256,11 @@ async def test_a_resumed_attempt_does_not_create_a_second_livekit_trunk(
     retry must pick up from there, not make a second inbound trunk that nothing
     will ever clean up."""
     first = StubGateway()
-    with pytest.raises(CarrierError):
-        await _connect(db, agent, "k-resume", gateway=first, carrier_fails=True)
+    failed = await _connect(db, agent, "k-resume", gateway=first, carrier_fails=True)
 
+    # Reported on the row, not raised: the caller's transaction has to commit or
+    # the trunk ids below are rolled back and the retry orphans a second pair.
+    assert failed["status"] == ProvisioningStatus.PROVISIONING.value
     assert first.created == ["inbound", "dispatch"]
 
     # Same key, so this resumes rather than starting over. No status reset is
@@ -276,8 +278,7 @@ async def test_a_partial_failure_records_what_was_already_created(
 ) -> None:
     """Each step writes the moment it succeeds. Batching the writes to the end
     would lose exactly the ids a retry needs."""
-    with pytest.raises(CarrierError):
-        await _connect(db, agent, "k-partial", carrier_fails=True)
+    await _connect(db, agent, "k-partial", carrier_fails=True)
 
     row = await provisioning_repo.latest_for_agent(db, agent.id)
     assert row["livekit_inbound_trunk_id"] == "ST_in_1"
@@ -289,11 +290,13 @@ async def test_a_failure_leaves_the_carriers_own_reason_on_the_row(
     db: asyncpg.Connection, agent: Agent
 ) -> None:
     """Shown to the operator verbatim, so it has to name what to fix."""
-    with pytest.raises(CarrierError):
-        await _connect(db, agent, "k-error", carrier_fails=True)
+    returned = await _connect(db, agent, "k-error", carrier_fails=True)
 
     row = await provisioning_repo.latest_for_agent(db, agent.id)
     assert "the number is not yours." in row["last_error"]
+    # The same row the caller got back, so a route can render it without
+    # re-reading - which is the whole reason failure is returned, not raised.
+    assert returned["last_error"] == row["last_error"]
 
 
 async def test_the_same_credentials_are_used_across_a_resume(
@@ -301,8 +304,7 @@ async def test_the_same_credentials_are_used_across_a_resume(
 ) -> None:
     """Regenerating would leave LiveKit dialling with a password the carrier no
     longer expects - a failure that shows up only as silently rejected calls."""
-    with pytest.raises(CarrierError):
-        await _connect(db, agent, "k-creds", carrier_fails=True)
+    await _connect(db, agent, "k-creds", carrier_fails=True)
     first_password = StubCarrier.calls[0]["auth_password"]
 
     StubCarrier.calls = []
@@ -320,8 +322,7 @@ async def test_a_part_way_failure_stays_resumable_rather_than_terminal(
     """The distinction ADR-4 draws. Real LiveKit objects exist by now, so the
     only safe path forward is resuming this attempt and skipping them - which
     marking it terminal would make illegal."""
-    with pytest.raises(CarrierError):
-        await _connect(db, agent, "k-partial-status", carrier_fails=True)
+    await _connect(db, agent, "k-partial-status", carrier_fails=True)
 
     row = await provisioning_repo.latest_for_agent(db, agent.id)
     assert row["status"] == ProvisioningStatus.PROVISIONING.value
@@ -333,8 +334,7 @@ async def test_a_superseded_attempt_cannot_be_resumed(
 ) -> None:
     """Once a newer attempt exists, the old one is terminal - resuming it would
     configure against objects the newer attempt has moved past."""
-    with pytest.raises(CarrierError):
-        await _connect(db, agent, "k-old", carrier_fails=True)
+    await _connect(db, agent, "k-old", carrier_fails=True)
     await _connect(db, agent, "k-new")
 
     with pytest.raises(ProvisioningRefused) as caught:
@@ -359,8 +359,7 @@ async def test_a_verified_attempt_replayed_is_a_no_op_not_an_error(
 async def test_a_new_key_starts_a_clean_attempt_beside_the_failed_one(
     db: asyncpg.Connection, agent: Agent
 ) -> None:
-    with pytest.raises(CarrierError):
-        await _connect(db, agent, "attempt-1", carrier_fails=True)
+    await _connect(db, agent, "attempt-1", carrier_fails=True)
     row = await _connect(db, agent, "attempt-2")
 
     assert row["status"] == ProvisioningStatus.VERIFIED.value
@@ -368,6 +367,26 @@ async def test_a_new_key_starts_a_clean_attempt_beside_the_failed_one(
         "select count(*) from public.telephony_provisioning where voice_agent_id = $1", agent.id
     )
     assert count == 2, "the failed attempt must survive as the record of what went wrong"
+
+
+async def test_a_carrier_failure_does_not_propagate_out_of_the_workflow(
+    db: asyncpg.Connection, agent: Agent
+) -> None:
+    """The rollback this was written to prevent.
+
+    `as_user()` wraps a request in one transaction. Raising from the error
+    handler would discard the note it just wrote *and* every trunk id the
+    successful steps recorded - leaving a row claiming nothing exists while two
+    real LiveKit trunks do, so the next attempt creates a second pair. The
+    ledger has to outlive the failure, which means the failure cannot unwind
+    the transaction carrying it.
+    """
+    row = await _connect(db, agent, "k-no-raise", carrier_fails=True)
+
+    assert row["status"] == ProvisioningStatus.PROVISIONING.value
+    assert row["last_error"]
+    assert row["livekit_inbound_trunk_id"] == "ST_in_1"
+    assert row["livekit_dispatch_rule_id"] == "SDR_1"
 
 
 async def test_an_unknown_carrier_is_refused_before_anything_is_created(

@@ -31,13 +31,24 @@ from app.api.v1.routes.campaigns import resolve_campaign
 from app.core.config import config
 from app.core.logging import CallContext
 from app.database import database
+from app.database.repositories import escalations as escalations_repo
 from app.database.repositories import runs as runs_repo
-from app.domain.entities import TERMINAL_STATUSES, CallOutcome
+from app.domain.entities import (
+    NEEDS_A_PERSON_DISPOSITIONS,
+    TERMINAL_STATUSES,
+    CallOutcome,
+)
 from app.domain.triage import triage
 
 log = logging.getLogger("app.api.v1.internal")
 
 router = APIRouter(prefix="/internal/v1", tags=["internal"])
+
+# When an in-flight row is old enough that its worker is certainly gone. The
+# carrier enforces `max_call_duration_seconds` on the call itself, so anything
+# past that plus a margin for the callback's own retries never reported and
+# never will.
+_STALE_AFTER_SECONDS = int(config.poll_timeout_seconds) * 2
 
 
 class CallCompletion(BaseModel):
@@ -144,10 +155,25 @@ async def complete_call(
 
             record = outcome.model_dump(mode="json")
             record["provider_call_id"] = record.pop("run_id", None)
-            await runs_repo.append_outcome(
+            call_outcome_id = await runs_repo.append_outcome(
                 conn, run_id=run_id, org_id=owner["org_id"], outcome=record
             )
-            closed = await runs_repo.finish_if_all_settled(conn, run_id)
+            # The only place a real conversation can raise one. `run_one()`
+            # returns while the call is still in flight, so the disposition it
+            # reports is never a needs-a-person one - the escalation check that
+            # lives beside the run's own progress write can only ever fire for
+            # a contact that failed to dial. Without this, triage would run,
+            # decide someone has to call back, and nothing would ever act on it.
+            if outcome.disposition in NEEDS_A_PERSON_DISPOSITIONS:
+                await escalations_repo.create_for_outcome(
+                    conn,
+                    org_id=owner["org_id"],
+                    run_id=run_id,
+                    call_outcome_id=call_outcome_id,
+                )
+            closed = await runs_repo.finish_if_all_settled(
+                conn, run_id, stale_after_seconds=_STALE_AFTER_SECONDS
+            )
 
     if closed:
         log.info("run %s closed - every contact has settled", run_id)

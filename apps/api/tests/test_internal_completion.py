@@ -33,6 +33,7 @@ from app.api.v1.routes import internal as internal_module
 from app.api.v1.routes.internal import CallCompletion, complete_call
 from app.core.config import config
 from app.database import database
+from app.database.repositories import runs as runs_repo
 from app.domain.campaigns import TRAVEL_DISCOVERY
 
 pytestmark = [
@@ -316,3 +317,164 @@ async def test_only_one_callback_ever_reports_closing_the_run(started_run: Run) 
     ]
 
     assert closings.count(True) == 1
+
+
+# --- escalations, which only a real conversation can raise --------------------
+
+
+async def test_a_call_needing_a_person_raises_an_escalation(
+    started_run: Run, db: asyncpg.Connection
+) -> None:
+    """The only place this can happen for a call that actually connected.
+
+    `run_one()` returns while the call is still in flight, so the disposition it
+    reports is never a needs-a-person one - the escalation check beside the
+    run's own progress write can only ever fire for a contact that failed to
+    dial. Without this, triage would decide someone has to call back and the
+    "Needs a person" worklist would stay empty forever.
+    """
+    await _complete(
+        started_run.id,
+        transcript="Contact: Please have a human call me back.",
+        extracted={"wants_human_callback": True, "sentiment": "neutral"},
+    )
+
+    escalations = await db.fetch(
+        """
+        select e.status from public.escalations e
+        join public.call_outcomes o on o.id = e.call_outcome_id
+        where o.run_id = $1 and o.contact_name = $2
+        """,
+        started_run.id,
+        CONTACT,
+    )
+    assert len(escalations) == 1
+
+
+async def test_a_clean_call_raises_no_escalation(
+    started_run: Run, db: asyncpg.Connection
+) -> None:
+    """Clean calls close themselves - that is the product's whole claim."""
+    await _complete(
+        started_run.id,
+        transcript="Contact: Yes, that works, thanks.",
+        extracted={"outcome": "interested", "sentiment": "positive"},
+    )
+
+    count = await db.fetchval(
+        """
+        select count(*) from public.escalations e
+        join public.call_outcomes o on o.id = e.call_outcome_id
+        where o.run_id = $1
+        """,
+        started_run.id,
+    )
+    assert count == 0
+
+
+# --- the two writers racing ---------------------------------------------------
+
+
+async def test_a_settled_row_is_not_dragged_back_to_in_flight(
+    started_run: Run, db: asyncpg.Connection
+) -> None:
+    """A short call finishes before origination's own IN_FLIGHT write lands.
+
+    Both writers upsert the same key. Without the guard, the late in-flight
+    write overwrites the terminal row - discarding the transcript and leaving
+    `finish_if_all_settled` permanently unable to close the run.
+    """
+    await _complete(started_run.id, transcript="Agent: Hello. Contact: Yes.")
+
+    async with database.as_user(str(started_run.auth_user_id)) as conn:
+        await runs_repo.append_outcome(
+            conn,
+            run_id=started_run.id,
+            org_id=started_run.org_id,
+            outcome={
+                "contact_name": CONTACT,
+                "phone_masked": MASKED,
+                "status": "IN_PROGRESS",
+                "sentiment": "unknown",
+                "disposition": "in_flight",
+                "disposition_reason": "In conversation…",
+            },
+        )
+
+    row = await db.fetchrow(
+        "select disposition, transcript from public.call_outcomes"
+        " where run_id = $1 and contact_name = $2",
+        started_run.id,
+        CONTACT,
+    )
+    assert row["disposition"] != "in_flight"
+    assert row["transcript"]
+
+
+async def test_the_late_write_still_returns_the_rows_id(started_run: Run) -> None:
+    """The caller needs it to link an escalation, even when its update was
+    suppressed."""
+    await _complete(started_run.id)
+
+    async with database.as_user(str(started_run.auth_user_id)) as conn:
+        outcome_id = await runs_repo.append_outcome(
+            conn,
+            run_id=started_run.id,
+            org_id=started_run.org_id,
+            outcome={
+                "contact_name": CONTACT,
+                "phone_masked": MASKED,
+                "status": "IN_PROGRESS",
+                "sentiment": "unknown",
+                "disposition": "in_flight",
+            },
+        )
+
+    assert outcome_id is not None
+
+
+# --- a worker that never reports ----------------------------------------------
+
+
+async def test_a_call_whose_worker_died_stops_holding_the_run_open(
+    started_run: Run, db: asyncpg.Connection
+) -> None:
+    """Every call carries a hard carrier-enforced ceiling, so an in-flight row
+    older than that cannot still be live. Left alone it blocks the run forever."""
+    await db.execute(
+        "update public.call_outcomes set created_at = now() - interval '2 hours'"
+        " where run_id = $1 and contact_name = $2",
+        started_run.id,
+        OTHER_CONTACT,
+    )
+
+    result = await _complete(started_run.id)
+
+    assert result["run_closed"] is True
+    abandoned = await db.fetchrow(
+        "select status, disposition, error from public.call_outcomes"
+        " where run_id = $1 and contact_name = $2",
+        started_run.id,
+        OTHER_CONTACT,
+    )
+    # Recorded as a real failure, never as a completed call - nobody knows what
+    # was said (CLAUDE.md non-negotiable #9).
+    assert abandoned["disposition"] == "unreachable"
+    assert abandoned["status"] == "FAILED"
+    assert abandoned["error"] == "timed_out"
+
+
+async def test_a_call_still_within_its_ceiling_is_left_alone(
+    started_run: Run, db: asyncpg.Connection
+) -> None:
+    """The sweep must not cut off a conversation that is simply still going."""
+    result = await _complete(started_run.id)
+
+    assert result["run_closed"] is False
+    still_live = await db.fetchval(
+        "select disposition from public.call_outcomes"
+        " where run_id = $1 and contact_name = $2",
+        started_run.id,
+        OTHER_CONTACT,
+    )
+    assert still_live == "in_flight"

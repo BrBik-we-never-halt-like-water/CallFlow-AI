@@ -67,12 +67,20 @@ class StubSip:
 
 
 class StubDispatch:
-    def __init__(self) -> None:
+    def __init__(self, *, delete_fails: bool = False) -> None:
         self.requests: list[Any] = []
+        self.deleted: list[tuple[str, str]] = []
+        self._delete_fails = delete_fails
 
     async def create_dispatch(self, request: Any) -> Any:
         self.requests.append(request)
         return type("Dispatch", (), {"id": "AD_1"})()
+
+    async def delete_dispatch(self, dispatch_id: str, room_name: str) -> Any:
+        if self._delete_fails:
+            raise RuntimeError("dispatch already gone")
+        self.deleted.append((dispatch_id, room_name))
+        return None
 
 
 class StubClient:
@@ -383,3 +391,83 @@ def test_every_dial_failure_is_reachable_from_some_vendor_error() -> None:
 
     produced = set(_SIP_STATUS_FAILURES.values()) | set(_TWIRP_CODE_FAILURES.values())
     assert produced == set(DialFailure), f"unreachable: {set(DialFailure) - produced}"
+
+
+# --- undoing a dispatch when the dial fails -----------------------------------
+
+
+async def test_a_failed_dial_cancels_the_agent_dispatch_it_created() -> None:
+    """Dispatching first is right; leaving the dispatch behind is not.
+
+    A surviving dispatch puts a worker into a room nobody will ever join. It
+    waits out its answer timeout and POSTs NO_ANSWER, overwriting the accurate
+    busy-or-unreachable outcome `classify_error()` produced from the carrier's
+    own SIP status - so the operator is told the wrong thing about a real call.
+    """
+    gateway, _sip, made = _gateway(StubSip(fail_with=_twirp("internal", sip_status=486)))
+
+    async with gateway as g:
+        with pytest.raises(EngineError):
+            await g.start_call(
+                trunk_id="T",
+                phone="+15555550100",
+                room_name="call-run1-abc",
+                participant_identity="contact-abc",
+            )
+
+    assert made[0].agent_dispatch.deleted == [("AD_1", "call-run1-abc")]
+
+
+async def test_a_dispatch_that_cannot_be_cancelled_does_not_replace_the_real_error() -> None:
+    """Cleanup is best-effort on purpose. Letting its failure surface would turn
+    "486 Busy Here" into an internal error - strictly worse information about
+    what happened on the call."""
+    gateway, _sip, made = _gateway(StubSip(fail_with=_twirp("internal", sip_status=486)))
+
+    async with gateway as g:
+        made_client = None
+        with pytest.raises(EngineError) as caught:
+            # Swap in a dispatch stub whose delete fails, after __aenter__ built
+            # the client.
+            made_client = made[0]
+            made_client.agent_dispatch = StubDispatch(delete_fails=True)
+            await g.start_call(
+                trunk_id="T",
+                phone="+15555550100",
+                room_name="call-run1-abc",
+                participant_identity="contact-abc",
+            )
+
+    assert classify_error(caught.value) is DialFailure.BUSY
+
+
+async def test_nothing_is_cancelled_when_no_agent_was_dispatched() -> None:
+    """A gateway with no agent name places verification calls that hold no
+    conversation - there is no dispatch to undo."""
+    stub_sip = StubSip(fail_with=_twirp("unavailable"))
+    made: list[StubClient] = []
+
+    def factory(*, url: str, api_key: str, api_secret: str) -> StubClient:
+        client = StubClient(stub_sip)
+        made.append(client)
+        return client
+
+    gateway = LiveKitGateway(
+        url="wss://test.livekit.cloud",
+        api_key="k",
+        api_secret="s",
+        agent_name="",
+        client_factory=factory,
+    )
+
+    async with gateway as g:
+        with pytest.raises(EngineError):
+            await g.start_call(
+                trunk_id="T",
+                phone="+15555550100",
+                room_name="call-run1-abc",
+                participant_identity="contact-abc",
+            )
+
+    assert made[0].agent_dispatch.requests == []
+    assert made[0].agent_dispatch.deleted == []

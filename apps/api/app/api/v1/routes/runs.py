@@ -14,6 +14,7 @@ from __future__ import annotations
 import logging
 import secrets
 import uuid
+from collections.abc import Iterable
 from typing import Annotated, Any
 from uuid import UUID
 
@@ -52,6 +53,30 @@ class ContactIn(BaseModel):
 class RunRequest(BaseModel):
     campaign_id: str
     contacts: list[ContactIn]
+
+
+def _deduplicate(contacts: Iterable[Contact]) -> list[Contact]:
+    """Collapse contacts that would share one `call_outcomes` row.
+
+    That table is keyed on (run_id, contact_name, phone_masked), so a CSV
+    listing the same person twice produces one row however many times it is
+    dialled - while `runs.total` counted both. The settled count could then
+    never reach the total and the run stayed "running" forever.
+
+    Deduplicating beats loosening the key: a run should not dial the same
+    person twice anyway, and the row that would have been overwritten was a
+    real call whose transcript was being discarded.
+    """
+    seen: set[tuple[str, str]] = set()
+    unique: list[Contact] = []
+    for contact in contacts:
+        key = (contact.name, contact.phone)
+        if key in seen:
+            log.info("skipping a repeated contact in this run's list")
+            continue
+        seen.add(key)
+        unique.append(contact)
+    return unique
 
 
 def _is_owner(request: Request) -> bool:
@@ -114,7 +139,9 @@ async def _run_and_persist(
             # contact was blocked or failed to dial: those settle immediately,
             # so the check below closes the run right away.
             async with database.as_user(auth_user_id) as conn:
-                await runs_repo.finish_if_all_settled(conn, run_id)
+                await runs_repo.finish_if_all_settled(
+                    conn, run_id, stale_after_seconds=int(config.poll_timeout_seconds) * 2
+                )
         except Exception as exc:
             log.exception("run %s failed", run_id)
             async with database.as_user(auth_user_id) as conn:
@@ -138,7 +165,7 @@ async def start_run(
         raise HTTPException(status_code=400, detail="At least one contact is required.")
 
     try:
-        contacts = [Contact(**c.model_dump()) for c in req.contacts]
+        contacts = _deduplicate(Contact(**c.model_dump()) for c in req.contacts)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

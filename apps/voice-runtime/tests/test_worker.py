@@ -1,18 +1,26 @@
-"""The worker's pure parts: metadata parsing, transcript shaping, and the
-payload the completion callback sends.
+"""The worker's decisions: metadata parsing, transcript shaping, the payload the
+completion callback sends, and how long a call is held.
 
-The LiveKit lifecycle itself needs a live room and is deliberately not tested;
-what is tested is everything the lifecycle hands off to, which is where the
-decisions actually are.
+That last one used to be excluded here as "needs a live room", and it was the
+one that was wrong: the first version closed the session immediately after
+starting it, so every call reported an empty transcript and NO_ANSWER.
+`wait_for_call_end` is written against a duck-typed context precisely so the
+fake room below can exercise it.
 """
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 import pytest
 
-from app.worker import completion_payload, parse_job_metadata, transcript_from_history
+from app.worker import (
+    completion_payload,
+    parse_job_metadata,
+    transcript_from_history,
+    wait_for_call_end,
+)
 
 
 class FakeItem:
@@ -132,3 +140,111 @@ def test_extraction_is_left_empty_rather_than_guessed() -> None:
 def test_the_payload_never_carries_a_real_phone_number() -> None:
     payload = completion_payload(_metadata(), transcript="Agent: Hi.", duration_seconds=1)
     assert "5555550100" not in str(payload)
+
+
+# --- holding the call ---------------------------------------------------------
+
+
+class FakeRoom:
+    """Just enough of `rtc.Room`: an event registry and a participant list."""
+
+    def __init__(self, *, participants: int = 1) -> None:
+        self.remote_participants = {f"p{i}": object() for i in range(participants)}
+        self._handlers: dict[str, list[Any]] = {}
+
+    def on(self, event: str, handler: Any) -> None:
+        self._handlers.setdefault(event, []).append(handler)
+
+    def emit(self, event: str) -> None:
+        for handler in self._handlers.get(event, []):
+            handler()
+
+    def everyone_leaves(self) -> None:
+        self.remote_participants = {}
+        self.emit("participant_disconnected")
+
+
+class FakeContext:
+    def __init__(
+        self, room: FakeRoom, *, joins_after: float = 0.0, never_joins: bool = False
+    ) -> None:
+        self.room = room
+        self._joins_after = joins_after
+        self._never_joins = never_joins
+
+    async def wait_for_participant(self) -> Any:
+        if self._never_joins:
+            await asyncio.Event().wait()  # blocks until the caller's timeout
+        await asyncio.sleep(self._joins_after)
+        return object()
+
+
+async def test_the_call_is_held_until_the_contact_hangs_up() -> None:
+    """The regression this file exists for. Returning as soon as the session
+    starts closed the room while the phone was still ringing, so every call
+    reported an empty transcript."""
+    room = FakeRoom()
+    ctx = FakeContext(room)
+
+    async def hang_up_shortly() -> None:
+        await asyncio.sleep(0.05)
+        room.everyone_leaves()
+
+    task = asyncio.create_task(hang_up_shortly())
+    answered = await wait_for_call_end(ctx, answer_timeout=1.0, max_seconds=5.0)
+    await task
+
+    assert answered is True
+
+
+async def test_nobody_joining_is_an_unanswered_call_not_an_error() -> None:
+    ctx = FakeContext(FakeRoom(), never_joins=True)
+
+    answered = await wait_for_call_end(ctx, answer_timeout=0.05, max_seconds=5.0)
+
+    assert answered is False
+
+
+async def test_a_call_that_ends_before_the_handlers_are_armed_still_returns() -> None:
+    """The race the ordering guards against: a very short call can end between
+    the participant joining and the disconnect handler being registered. A
+    handler armed after that check would never fire and the worker would wait
+    out the whole ceiling."""
+    room = FakeRoom(participants=0)
+    ctx = FakeContext(room)
+
+    answered = await asyncio.wait_for(
+        wait_for_call_end(ctx, answer_timeout=1.0, max_seconds=30.0), timeout=1.0
+    )
+
+    assert answered is True
+
+
+async def test_a_room_that_never_reports_is_cut_off_at_the_ceiling() -> None:
+    """The third case: somebody joined, nothing ever says they left. Without
+    the ceiling the worker holds the job open indefinitely."""
+    ctx = FakeContext(FakeRoom())
+
+    answered = await asyncio.wait_for(
+        wait_for_call_end(ctx, answer_timeout=1.0, max_seconds=0.05), timeout=2.0
+    )
+
+    assert answered is True, "somebody was on the line - this is a long call, not a missed one"
+
+
+async def test_a_room_level_disconnect_ends_the_wait_too() -> None:
+    """A dropped connection ends the call as surely as a hang-up does."""
+    room = FakeRoom()
+    ctx = FakeContext(room)
+
+    async def drop() -> None:
+        await asyncio.sleep(0.05)
+        room.emit("disconnected")
+
+    task = asyncio.create_task(drop())
+    answered = await asyncio.wait_for(
+        wait_for_call_end(ctx, answer_timeout=1.0, max_seconds=5.0), timeout=2.0
+    )
+    await task
+
+    assert answered is True

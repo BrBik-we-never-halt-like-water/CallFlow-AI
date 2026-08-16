@@ -308,18 +308,26 @@ class LiveKitGateway:
         dispatching first means the worker is already waiting. LiveKit holds a
         dispatch for a room that does not exist yet, so the ordering is safe.
 
+        It is also undone if the dial then fails. A surviving dispatch puts a
+        worker into a room nobody will ever join; it waits out its answer
+        timeout and POSTs NO_ANSWER, overwriting the accurate busy-or-
+        unreachable outcome `classify_error()` produced from the carrier's own
+        SIP status.
+
         `max_call_duration_seconds` is a hard ceiling the carrier enforces even
         if the worker hangs - without it, a wedged agent bills for a call that
         never ends.
         """
+        dispatch_id = ""
         if self._agent_name:
-            await self._dispatch.create_dispatch(
+            dispatch = await self._dispatch.create_dispatch(
                 _vendor_api.CreateAgentDispatchRequest(
                     agent_name=self._agent_name,
                     room=room_name,
                     metadata=_json.dumps(metadata) if metadata else "",
                 )
             )
+            dispatch_id = str(getattr(dispatch, "id", "") or "")
 
         request = _vendor_api.CreateSIPParticipantRequest(
             sip_trunk_id=trunk_id,
@@ -331,13 +339,38 @@ class LiveKitGateway:
         )
         if max_call_duration_seconds is not None:
             request.max_call_duration.FromSeconds(max_call_duration_seconds)
-        info = await self._sip.create_sip_participant(request)
+
+        try:
+            info = await self._sip.create_sip_participant(request)
+        except Exception:
+            await self._cancel_dispatch(dispatch_id, room_name)
+            raise
         return {
             "participant_id": str(getattr(info, "participant_id", "") or ""),
             "participant_identity": str(getattr(info, "participant_identity", "") or ""),
             "room_name": room_name,
             "sip_call_id": str(getattr(info, "sip_call_id", "") or ""),
         }
+
+    async def _cancel_dispatch(self, dispatch_id: str, room_name: str) -> None:
+        """Best effort, and deliberately so.
+
+        The caller is already unwinding a failed dial and has a classified,
+        accurate failure to report. Letting a cleanup error replace it would
+        turn "486 Busy Here" into an internal error, which is strictly worse
+        information. A dispatch that outlives this is logged and left.
+        """
+        if not dispatch_id:
+            return
+        try:
+            await self._dispatch.delete_dispatch(dispatch_id, room_name)
+        except Exception:  # noqa: BLE001 - see the docstring: nothing here may mask the dial's own failure
+            log.warning(
+                "dial failed and its agent dispatch %s could not be cancelled - "
+                "a worker may join room %s and find nobody",
+                dispatch_id,
+                room_name,
+            )
 
 
 __all__ = [

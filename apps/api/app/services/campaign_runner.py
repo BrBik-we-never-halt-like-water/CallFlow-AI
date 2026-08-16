@@ -75,6 +75,7 @@ class CampaignRunner:
         run_id: str | None = None,
         max_concurrent_calls: int | None = None,
         trunk_id: str | None = None,
+        voice_agent: JsonObject | None = None,
         gateway_factory: GatewayFactory | None = None,
         credit_ceiling: int | None = None,
         credits_used_before_run: int = 0,
@@ -86,6 +87,13 @@ class CampaignRunner:
         # than looked up per contact. `None` means no number is connected, and
         # every contact is refused with that reason rather than dialled.
         self._trunk_id = trunk_id
+        # Which STT, TTS and LLM the worker runs this call on, and the keys for
+        # each - resolved by the caller from the same voice agent `trunk_id`
+        # came from. This travels to the worker verbatim under the
+        # `voice_agent` metadata key, which is the *only* thing
+        # `AgentSpec.from_metadata()` reads on the other side; the two names
+        # have to match or every dispatched job dies resolving providers.
+        self._voice_agent = voice_agent
         self._gateway_factory = gateway_factory or LiveKitGateway
         # Held open for the length of a `run()` so one batch shares a single
         # aiohttp session instead of opening one per contact.
@@ -170,13 +178,11 @@ class CampaignRunner:
         semaphore = asyncio.Semaphore(self._max_concurrent_calls)
 
         async def _dial(contact: Contact) -> CallOutcome:
-            # `on_progress` doubles as the live-status sink so an in-flight
-            # call is visible while it happens, not only once it ends. Held
-            # only around origination, not the final progress write below -
-            # that's our own database, and doesn't need to compete for the
-            # same concurrency budget as the carrier.
+            # The semaphore is held only around origination, not the progress
+            # write below - that's our own database, and doesn't need to
+            # compete for the same concurrency budget as the carrier.
             async with semaphore:
-                outcome = await self.run_one(campaign, contact, on_status=on_progress)
+                outcome = await self.run_one(campaign, contact)
             if on_progress:
                 await on_progress(outcome)
             return outcome
@@ -231,13 +237,7 @@ class CampaignRunner:
             return f"{campaign.id}-{contact.phone}-{uuid.uuid4().hex[:8]}"
         return f"{self._run_id}:{phone_hash(contact.phone)}"
 
-    async def run_one(
-        self,
-        campaign: Campaign,
-        contact: Contact,
-        *,
-        on_status: ProgressHook | None = None,
-    ) -> CallOutcome:
+    async def run_one(self, campaign: Campaign, contact: Contact) -> CallOutcome:
         base = CallOutcome(
             contact_name=contact.name,
             phone_masked=mask(contact.phone),
@@ -305,6 +305,25 @@ class CampaignRunner:
                     "disposition_reason": (
                         "This campaign has no connected number to call from. "
                         "Connect one to its voice agent, then start the run again."
+                    ),
+                }
+            )
+
+        # Refused here rather than discovered by the worker. Without a voice
+        # agent the worker has no provider to resolve, so it would raise
+        # `UnknownProvider` *after* the phone was already ringing - a person
+        # saying "hello?" into silence. The gate belongs before the dial.
+        if not self._voice_agent:
+            log.info("dial refused for %s - no voice agent", mask(contact.phone))
+            await release_credit()
+            return base.model_copy(
+                update={
+                    "status": "FAILED",
+                    "error": DialFailure.PROVIDER_UNAVAILABLE.value,
+                    "disposition": Disposition.SKIPPED,
+                    "disposition_reason": (
+                        "This campaign's voice agent has no speech or language providers set. "
+                        "Finish setting it up, then start the run again."
                     ),
                 }
             )
@@ -400,7 +419,14 @@ class CampaignRunner:
         # would insert a second row beside the in-flight one instead of
         # resolving it. The masked form is safe to send - it is the same value
         # the product displays, and masking is the guarantee (CLAUDE.md #4).
+        # `contact.context` is spread **first**, so CallFlow's own keys win. It
+        # is uploaded CSV columns - a column happening to be named `goal` would
+        # otherwise rewrite the agent's instructions, and one named
+        # `phone_masked` would misaddress the completion callback's row. The
+        # customer's data is context for the conversation, never control of it.
+        max_call_seconds = int(config.poll_timeout_seconds)
         metadata: JsonObject = {
+            **contact.context,
             "goal": goal,
             "campaign_id": campaign.id,
             "campaign_name": campaign.name,
@@ -408,7 +434,15 @@ class CampaignRunner:
             "phone_masked": mask(contact.phone),
             "result_schema": self.result_schema,
             "language": contact.language or campaign.language,
-            **contact.context,
+            # The key `AgentSpec.from_metadata()` reads. Both sides of this
+            # contract live in this repo and are tested against each other
+            # (`test_dispatch_contract.py`) - they were written apart once, and
+            # every dispatched job died before its pipeline existed.
+            "voice_agent": self._voice_agent,
+            # The worker's own backstop for a call that connects and never
+            # ends. Sent alongside the carrier-enforced ceiling below so both
+            # halves agree rather than each inventing a number.
+            "max_call_duration_seconds": max_call_seconds,
         }
         if self._run_id is not None:
             metadata["run_id"] = self._run_id
@@ -419,7 +453,7 @@ class CampaignRunner:
             "room_name": room,
             "participant_identity": identity,
             "metadata": metadata,
-            "max_call_duration_seconds": int(config.poll_timeout_seconds),
+            "max_call_duration_seconds": max_call_seconds,
         }
 
         if self._gateway is not None:

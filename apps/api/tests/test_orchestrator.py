@@ -35,6 +35,17 @@ UNDIALLABLE_STATUS = "FAILED"
 BLOCKED_STATUS = "BLOCKED"
 TRUNK = "ST_test_trunk"
 
+# A dial needs a connected number *and* a configured agent - the trunk says
+# which line to call from, this says what to run the conversation on. Both are
+# resolved from the same voice agent, so a runner that has one and not the
+# other is a caller bug, not a state the product reaches.
+VOICE_AGENT = {
+    "stt_provider": "sarvam",
+    "tts_provider": "sarvam",
+    "llm_provider": "openrouter",
+    "llm_model": "openai/gpt-4o-mini",
+}
+
 
 class StubGateway:
     """Stands in for `LiveKitGateway`, recording what it was asked to dial."""
@@ -64,6 +75,7 @@ class StubGateway:
 
 def _dialling_runner(gateway: StubGateway | None = None, **kwargs: Any) -> tuple[CampaignRunner, StubGateway]:
     stub = gateway or StubGateway()
+    kwargs.setdefault("voice_agent", VOICE_AGENT)
     runner = CampaignRunner(trunk_id=TRUNK, gateway_factory=lambda: stub, **kwargs)
     return runner, stub
 

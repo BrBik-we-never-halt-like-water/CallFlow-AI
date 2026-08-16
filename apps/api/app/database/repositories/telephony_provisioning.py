@@ -79,6 +79,23 @@ async def start_attempt(
     return existing, False
 
 
+async def agent_is_visible(conn: asyncpg.Connection, voice_agent_id: UUID) -> bool:
+    """Whether this connection may see that voice agent at all.
+
+    RLS answers the question: `voice_agents_select` narrows to the caller's own
+    organisation, so an agent id from another org simply is not there. Needed
+    because an attempt row carries its *own* `org_id` - without this check a
+    caller could pair their own org_id with someone else's agent, and the
+    insert policy would happily allow it.
+
+    Lives here rather than in a `voice_agents` repository on purpose: agent CRUD
+    is Part 2's, and this one-line read is not worth colliding with it over.
+    """
+    return await conn.fetchval(
+        "select true from public.voice_agents where id = $1", voice_agent_id
+    ) is not None
+
+
 async def get_attempt(
     conn: asyncpg.Connection, attempt_id: UUID
 ) -> asyncpg.Record | None:

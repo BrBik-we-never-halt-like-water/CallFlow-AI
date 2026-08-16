@@ -56,7 +56,15 @@ class Config:
     # A call that outlives this is abandoned. The carrier enforces its own
     # ceiling too (`max_call_duration` on the SIP participant); this is the
     # worker's own backstop for a conversation that connects but never ends.
+    # A job's own metadata overrides it, so both halves agree on one number.
     max_call_seconds: int = field(default_factory=lambda: _int("CALLFLOW_MAX_CALL_SECONDS", 900))
+
+    # How long to wait for the contact to appear in the room. The worker is
+    # dispatched *before* the number is dialled, so this has to cover dial
+    # setup plus a full ring - not just the moment of answering.
+    answer_timeout_seconds: int = field(
+        default_factory=lambda: _int("CALLFLOW_ANSWER_TIMEOUT_SECONDS", 120)
+    )
 
     # How long to keep retrying the completion callback. A transcript that
     # cannot be delivered is a call the operator never sees the result of, so

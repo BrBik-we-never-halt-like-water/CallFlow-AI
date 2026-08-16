@@ -107,8 +107,15 @@ async def connect_number(
 ) -> asyncpg.Record:
     """Run the workflow, resuming whatever this attempt already finished.
 
-    Returns the attempt row. A caller polls it rather than waiting: the whole
-    thing crosses two vendors and can take tens of seconds.
+    Returns the attempt row, **whether or not it worked**. `status` and
+    `last_error` on that row are the result: `verified` means done, anything
+    else with a `last_error` means a step failed and a retry with this same key
+    will resume from there. Failure is reported rather than raised so the
+    ledger of what was really created survives the caller's transaction - see
+    the error handler below.
+
+    Raises only for a refusal that happens *before* any attempt row exists, and
+    so has nothing to record.
     """
     carrier_cls = carrier_factory or CARRIERS.get(provider)
     if carrier_cls is None:
@@ -191,10 +198,19 @@ async def connect_number(
             "The steps already completed are recorded and a retry will resume from there."
         )
         log.exception("provisioning attempt %s stopped", row["id"])
-        await provisioning_repo.record_error(conn, row["id"], detail)
-        raise
+        # Returned, not re-raised, and that is the whole point. `as_user()`
+        # wraps a request in a single transaction, so propagating from here
+        # would roll back this note *and* every trunk id the steps that did
+        # succeed recorded - leaving a row claiming nothing exists while real
+        # LiveKit trunks do, so the retry orphans a second pair. The row is the
+        # ledger, and `last_error` beside a non-verified status is how the
+        # caller learns this failed.
+        return _require(await provisioning_repo.record_error(conn, row["id"], detail), row["id"])
 
-    return await provisioning_repo.set_status(conn, row["id"], ProvisioningStatus.VERIFIED)
+    return _require(
+        await provisioning_repo.set_status(conn, row["id"], ProvisioningStatus.VERIFIED),
+        row["id"],
+    )
 
 
 async def _run_steps(
