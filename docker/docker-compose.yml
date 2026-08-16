@@ -66,13 +66,26 @@ services:
       GOTRUE_API_PORT: 9999
       API_EXTERNAL_URL: ${SUPABASE_PUBLIC_URL}
       GOTRUE_DB_DRIVER: postgres
-      GOTRUE_DB_DATABASE_URL: postgres://supabase_auth_admin:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-postgres}
+      # `?search_path=auth` is load-bearing, not decoration. GoTrue's migrator
+      # creates `schema_migrations` in whatever schema the *connection* resolves
+      # to, and Postgres 15 removed the default CREATE grant on `public` - so
+      # without it every boot dies on "permission denied for schema public" and
+      # the container crash-loops. The `alter role ... set search_path` in
+      # 02-schemas.sql is not enough on its own: the migrator opens its own
+      # session and the URL is what settles it.
+      GOTRUE_DB_DATABASE_URL: postgres://supabase_auth_admin:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-postgres}?search_path=auth
       GOTRUE_SITE_URL: ${SITE_URL}
       GOTRUE_URI_ALLOW_LIST: ${SITE_URL},${SITE_URL}/**
       GOTRUE_JWT_SECRET: ${JWT_SECRET}
       GOTRUE_JWT_EXP: ${JWT_EXPIRY:-3600}
       GOTRUE_JWT_AUD: authenticated
       GOTRUE_JWT_DEFAULT_GROUP_NAME: authenticated
+      # Must equal what `auth/tokens.py` derives - `{SUPABASE_URL}/auth/v1` -
+      # because it verifies the issuer whenever SUPABASE_URL is set, and PyJWT
+      # treats an absent `iss` as MissingRequiredClaimError rather than as
+      # "nothing to check". GoTrue omits the claim entirely without this, so
+      # every locally-issued token was signed correctly and rejected anyway.
+      GOTRUE_JWT_ISSUER: ${SUPABASE_PUBLIC_URL}/auth/v1
       # No inbox locally. Signup returns a session immediately, which is what
       # makes "one command to a working login" true rather than nearly true.
       GOTRUE_MAILER_AUTOCONFIRM: "true"
@@ -212,7 +225,10 @@ services:
       KONG_DATABASE: "off"
       KONG_DECLARATIVE_CONFIG: /home/kong/kong.yml
       KONG_DNS_ORDER: LAST,A,CNAME
-      KONG_PLUGINS: request-transformer,cors,key-auth
+      # `acl` is not optional: kong.yml gates the service-role routes on it,
+      # and Kong rejects the entire declarative config - not just that route -
+      # when a referenced plugin is missing from this list.
+      KONG_PLUGINS: request-transformer,cors,key-auth,acl
       KONG_NGINX_PROXY_PROXY_BUFFER_SIZE: 160k
       KONG_NGINX_PROXY_PROXY_BUFFERS: 64 160k
     volumes:
@@ -225,6 +241,10 @@ services:
   # Runs to completion, then everything waiting on it starts. Separate from the
   # api service so a failed migration is a failed migration rather than an API
   # that boots and 500s on its first query.
+  # NOTE: our own services use postgresql://, not postgres://. SQLAlchemy
+  # dropped the postgres:// alias in 1.4 and raises NoSuchModuleError on it;
+  # GoTrue, PostgREST and Storage accept either, which is why only these
+  # three carry the longer scheme.
   migrate:
     build:
       context: ..
@@ -236,21 +256,27 @@ services:
       auth:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-postgres}
-      DIRECT_URL: postgres://postgres:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-postgres}
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-postgres}
+      DIRECT_URL: postgresql://postgres:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-postgres}
     volumes:
       - ../apps/api:/app/apps/api
     working_dir: /app/apps/api
     # `auth` being healthy is not the same as its migrations having finished, and
     # our first migration references `auth.users`.
-    command: >
-      sh -c "
-      until python -c \"
-      import os,psycopg;
-      psycopg.connect(os.environ['DIRECT_URL']).cursor().execute('select 1 from auth.users limit 1')
-      \" 2>/dev/null; do echo 'waiting for the auth schema...'; sleep 2; done;
-      alembic upgrade head
-      "
+    # A literal block, and single quotes outside the Python with double quotes
+    # inside it. The previous version used `>` with escaped double quotes, and a
+    # backslash in a folded block is literal - so the probe never ran, the loop
+    # never exited, and `2>/dev/null` meant it never said why.
+    command:
+      - sh
+      - -c
+      - |
+        until python -c 'import os, psycopg; psycopg.connect(os.environ["DIRECT_URL"]).cursor().execute("select 1 from auth.users limit 1")' 2>/dev/null
+        do
+          echo "waiting for the auth schema..."
+          sleep 2
+        done
+        alembic upgrade head
     restart: "no"
 
   api:
@@ -265,8 +291,8 @@ services:
       migrate:
         condition: service_completed_successfully
     environment:
-      DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-postgres}
-      DIRECT_URL: postgres://postgres:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-postgres}
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-postgres}
+      DIRECT_URL: postgresql://postgres:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-postgres}
       SUPABASE_URL: ${SUPABASE_PUBLIC_URL}
       SUPABASE_PUBLISHABLE_KEY: ${ANON_KEY}
       SUPABASE_SECRET_KEY: ${SERVICE_ROLE_KEY}
