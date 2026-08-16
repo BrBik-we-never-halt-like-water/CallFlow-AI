@@ -187,7 +187,7 @@ async def finish_if_all_settled(
     `stale_after_seconds` sweeps abandoned rows first, so one dead worker
     cannot hold a whole run open. It only runs when something asks - a run
     whose *every* worker dies has nobody left to ask, and stays open until the
-    next callback or run-completion check touches it (`ISSUES.md` #98).
+    next callback or run-completion check touches it (`ISSUES.md` #117).
     """
     if stale_after_seconds is not None:
         expired = await expire_stale_in_flight(

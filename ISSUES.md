@@ -3805,7 +3805,7 @@ healthy.
 
 ## Iteration 25 - 2026-08-16 · platform pivot, phase A1 review pass (PR #23)
 
-Nine defects found by review of the LiveKit/telephony PR before it merged. Eight of the
+Nine defects found by review of the LiveKit/telephony PR before it merged. Numbered #109-#117 after the merge with dev: these were written as #90-#98 on a branch, and team chat had already merged those ids into the shared log. Eight of the
 nine sit in a **seam between two modules that each mocked the other's half** - the dispatch
 contract, the run/worker completion race, the escalation hand-off, the transaction boundary
 between a service and its caller. None was a design error; every one was wiring, and every
@@ -3817,7 +3817,7 @@ Where both halves live in this repo, test them against each other -
 `apps/api/tests/test_dispatch_contract.py` loads the worker's real parser by path and feeds
 it metadata the real orchestrator built.
 
-### #90 - The two halves of the agent-dispatch contract disagreed, so no call could ever start
+### #109 - The two halves of the agent-dispatch contract disagreed, so no call could ever start
 
 **S1 · FIXED · api + voice-runtime · `apps/api/app/services/campaign_runner.py`, `apps/voice-runtime/app/pipeline.py`**
 
@@ -3839,7 +3839,7 @@ phone has rung. `test_dispatch_contract.py` builds metadata through the real `_o
 and feeds it to the real `AgentSpec.from_metadata()`, so the two can no longer drift apart
 silently.
 
-### #91 - The worker closed the session the instant it opened it, so every call reported empty
+### #110 - The worker closed the session the instant it opened it, so every call reported empty
 
 **S1 · FIXED · voice-runtime · `apps/voice-runtime/app/worker.py`**
 
@@ -3858,7 +3858,7 @@ them to leave, with a hard ceiling for a room that reports neither. Duration is 
 *is* testable without a live room - it had been excluded from tests as "needs a live room",
 and it was the one block that was wrong.
 
-### #92 - Triage ran on every finished call and its result went nowhere
+### #111 - Triage ran on every finished call and its result went nowhere
 
 **S1 · FIXED · api · `apps/api/app/api/v1/routes/internal.py`**
 
@@ -3875,7 +3875,7 @@ The check that remained could only fire for a contact that failed to dial.
 **Fix.** The escalation is created in the completion callback, where the terminal disposition
 actually exists.
 
-### #93 - The provisioning error handler rolled back the ledger it had just written
+### #112 - The provisioning error handler rolled back the ledger it had just written
 
 **S1 · FIXED · api · `apps/api/app/services/number_provisioning.py`**
 
@@ -3893,7 +3893,7 @@ The unit tests passed because they mock the connection, so no rollback ever happ
 whichever way it goes, and `status` plus `last_error` are the result. The ledger now outlives
 the failure, because the failure no longer unwinds the transaction carrying it.
 
-### #94 - The connect-number workflow had no HTTP caller, so no number could be connected
+### #113 - The connect-number workflow had no HTTP caller, so no number could be connected
 
 **S1 · FIXED · api · `apps/api/app/api/v1/routes/telephony.py`**
 
@@ -3910,7 +3910,7 @@ That is the honest permission rather than a placeholder: the endpoint reconfigur
 organisation's own Twilio or Plivo account using credentials stored on the Integrations page.
 No new enum member, and no collision with Part 2's `permissions.py`.
 
-### #95 - An uploaded CSV column could overwrite the agent's own instructions
+### #114 - An uploaded CSV column could overwrite the agent's own instructions
 
 **S2 · FIXED · api · `apps/api/app/services/campaign_runner.py`**
 
@@ -3927,7 +3927,7 @@ conversation; it was in a position to control it.
 **Fix.** The spread moved to the front, so CallFlow's own keys win. Asserted directly with a
 contact whose context tries to overwrite `goal`, `phone_masked`, `run_id` and `voice_agent`.
 
-### #96 - A failed dial left its agent dispatch behind, and the orphan overwrote the real outcome
+### #115 - A failed dial left its agent dispatch behind, and the orphan overwrote the real outcome
 
 **S2 · FIXED · api · `apps/api/app/integrations/livekit/client.py`**
 
@@ -3944,7 +3944,7 @@ the wrong thing about a real call, and a retryable failure reads as unretryable.
 never replaces the dial's own classified error - letting it surface would turn "486 Busy Here"
 into an internal error, which is strictly worse information.
 
-### #97 - A settled call outcome could be dragged back to in-flight, losing its transcript
+### #116 - A settled call outcome could be dragged back to in-flight, losing its transcript
 
 **S2 · FIXED · api · `apps/api/app/database/repositories/runs.py`**
 
@@ -3962,7 +3962,7 @@ never called; it is removed rather than left as an unwired hook.
 **Fix.** The upsert refuses to downgrade a settled row, and falls back to reading the id when
 its update is suppressed, since the caller still needs it to link an escalation.
 
-### #98 - A run could stay "running" forever, from two independent causes
+### #117 - A run could stay "running" forever, from two independent causes
 
 **S3 · PARTLY FIXED · api · `apps/api/app/database/repositories/runs.py`, `apps/api/app/api/v1/routes/runs.py`**
 

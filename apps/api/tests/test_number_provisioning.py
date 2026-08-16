@@ -73,6 +73,11 @@ class StubCarrier:
     """A carrier that records the credentials it was told to expect."""
 
     calls: ClassVar[list[dict[str, Any]]] = []
+    # Read off the class by `_run_steps`, not off the returned `CarrierTrunk` -
+    # a resumed attempt reaches the outbound-trunk step with the trunk long out
+    # of scope. A stub missing it fails the whole workflow with an
+    # `AttributeError`, which is how this file broke without CI noticing.
+    outbound_transport: ClassVar[str | None] = None
 
     def __init__(self, fail: bool = False, **credentials: Any) -> None:
         self._fail = fail

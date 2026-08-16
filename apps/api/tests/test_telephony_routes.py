@@ -82,6 +82,9 @@ class StubCarrier:
 
     seen: ClassVar[list[dict[str, str]]] = []
     fail: ClassVar[bool] = False
+    # Every carrier declares which SIP transport its outbound trunk must name;
+    # `_run_steps` reads it off the class, not off a returned `CarrierTrunk`.
+    outbound_transport: ClassVar[str | None] = None
 
     def __init__(self, **credentials: str) -> None:
         StubCarrier.seen.append(credentials)
