@@ -370,7 +370,19 @@ services:
       - /app/apps/web/node_modules
       - /app/apps/web/.next
     working_dir: /app/apps/web
-    command: npm run dev
+    # webpack, not Turbopack, and only in the container.
+    #
+    # Next 16 defaults to Turbopack, whose Rust resolver cannot find the `next`
+    # package here: `node_modules` is an anonymous volume mounted *inside* the
+    # bind-mounted source tree, and crossing that boundary makes it report
+    # "Next.js package not found" and panic on every compile - while Node's own
+    # `require.resolve` finds it in the same container without trouble.
+    #
+    # The pages still served, so this was a log flood rather than an outage, but
+    # a FATAL per request is not something to leave in a tool people are meant
+    # to trust on their first day. `npm run dev` on the host is unaffected and
+    # still uses Turbopack.
+    command: npx next dev --webpack --hostname 0.0.0.0 --port 3000
 
 volumes:
   db-data:
