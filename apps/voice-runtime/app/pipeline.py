@@ -4,11 +4,19 @@ A voice agent stores provider names and credentials; this turns them into plugin
 instances. It is the whole of the "BYO stack" promise in one file: a new vendor
 is a row in a registry here and nothing else changes.
 
-**Plugins are imported inside the factory, not at module scope.** Each
+**No vendor package is imported by this module itself.** Each
 `livekit-plugins-*` package pulls a substantial dependency tree, and a deployment
 whose organisations all use Sarvam should not need Deepgram installed to boot. It
 also means this module imports - and so the registry can be tested - with no
 vendor packages present at all.
+
+The import still cannot be left until a call needs it. `livekit-agents` refuses
+to register a plugin off the main thread and runs every job in a worker thread,
+so a plugin first imported inside a job raises "Plugins must be registered on
+the main thread" and the job dies before the contact hears anything - which is
+what the first live call did, on every vendor, not just one. `PLUGIN_MODULES`
+names what to import, `worker.main()` does it at startup on the main thread, and
+whatever is not installed is skipped there. Both properties survive.
 
 **Arguments are filtered against each plugin's real signature.** There are 40-odd
 vendors here and their constructors disagree: some take `language`, some
@@ -130,6 +138,19 @@ class AgentSpec:
         return merged
 
 
+#: Every `livekit.plugins.*` module any factory here can reach.
+#:
+#: `livekit-agents` refuses to register a plugin off the main thread, and it
+#: runs each job in a worker thread - so a plugin first imported *inside* a job
+#: raises "Plugins must be registered on the main thread" and the job dies
+#: before the call connects. `worker.main()` imports everything named here at
+#: startup, on the main thread, skipping whatever is not installed.
+#:
+#: Populated by `PluginSpec` itself rather than hand-listed, which is why every
+#: spec below is built at module scope even where only one factory uses it.
+PLUGIN_MODULES: set[str] = set()
+
+
 @dataclass(frozen=True)
 class PluginSpec:
     """Where a vendor's class lives, and what to try passing it."""
@@ -139,6 +160,9 @@ class PluginSpec:
     extra: str
     #: Fixed arguments the vendor needs regardless of the agent (a default model).
     defaults: dict[str, Any] | None = None
+
+    def __post_init__(self) -> None:
+        PLUGIN_MODULES.add(self.module)
 
 
 def _construct(spec_: PluginSpec, attr: str, candidates: dict[str, Any]) -> Any:
@@ -217,6 +241,13 @@ def _llm(spec_: PluginSpec) -> Factory:
 
 
 # --- the vendors whose wiring is genuinely different --------------------------
+# Their specs live at module scope so `PLUGIN_MODULES` sees them at import time;
+# building one inside a factory would register it only once a job already ran,
+# which is exactly too late.
+
+_OPENAI = PluginSpec("openai", "openai")
+_PLAYAI = PluginSpec("playai", "playai")
+_SARVAM = PluginSpec("sarvam", "sarvam")
 
 
 def _openai_compatible(name: str, factory: str) -> Factory:
@@ -270,7 +301,7 @@ def _playai_tts(agent: AgentSpec) -> Any:
     """PlayAI authenticates with a user id alongside the key."""
     creds = agent.credentials_for("tts")
     return _construct(
-        PluginSpec(module="playai", extra="playai"),
+        _PLAYAI,
         "TTS",
         {**creds, "voice": agent.voice_id, "user_id": creds.get("user_id")},
     )
@@ -279,7 +310,7 @@ def _playai_tts(agent: AgentSpec) -> Any:
 def _sarvam_stt(agent: AgentSpec) -> Any:
     creds = agent.credentials_for("stt")
     return _construct(
-        PluginSpec(module="sarvam", extra="sarvam"),
+        _SARVAM,
         "STT",
         {**creds, "language": agent.language or "en-IN"},
     )
@@ -288,12 +319,17 @@ def _sarvam_stt(agent: AgentSpec) -> Any:
 def _sarvam_tts(agent: AgentSpec) -> Any:
     creds = agent.credentials_for("tts")
     return _construct(
-        PluginSpec(module="sarvam", extra="sarvam"),
+        _SARVAM,
         "TTS",
         {
             **creds,
             "target_language_code": agent.language or "en-IN",
-            "speaker": agent.voice_id or "anushka",
+            # No fallback speaker. Sarvam ties its speaker list to the TTS model
+            # and changed both between bulbul v2 and v3, so a hardcoded default
+            # here goes stale silently and the plugin then refuses the whole
+            # pipeline mid-call. Omitting it lets the vendor pick one that its
+            # own current model actually supports.
+            "speaker": agent.voice_id,
         },
     )
 

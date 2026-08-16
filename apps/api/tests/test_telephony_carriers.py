@@ -57,6 +57,20 @@ class Recorder:
     def paths(self) -> list[str]:
         return [r.url.path for r in self.requests]
 
+    @property
+    def writes(self) -> list[httpx.Request]:
+        """POSTs only. The adapters GET first to stay resumable, and a test
+        indexing into every request counts those lookups as steps."""
+        return [r for r in self.requests if r.method == "POST"]
+
+    def write_to(self, suffix: str) -> dict[str, str]:
+        """The body of the first POST to a path ending in `suffix`."""
+        index = next(
+            i for i, r in enumerate(self.requests)
+            if r.method == "POST" and r.url.path.endswith(suffix)
+        )
+        return self.body_of(index)
+
     def body_of(self, index: int) -> dict[str, str]:
         request = self.requests[index]
         raw = request.content.decode()
@@ -130,10 +144,7 @@ async def test_twilio_sends_the_livekit_uri_with_a_transport() -> None:
             auth_password="p",
         )
 
-    origination = next(
-        i for i, p in enumerate(recorder.paths) if p.endswith("/OriginationUrls")
-    )
-    assert recorder.body_of(origination)["SipUrl"] == f"sip:{LIVEKIT_HOST};transport=tcp"
+    assert recorder.write_to("/OriginationUrls")["SipUrl"] == f"sip:{LIVEKIT_HOST};transport=tcp"
 
 
 async def test_twilio_creates_outbound_credentials() -> None:
@@ -150,8 +161,7 @@ async def test_twilio_creates_outbound_credentials() -> None:
             auth_password="lk-pass",
         )
 
-    creds = next(i for i, p in enumerate(recorder.paths) if p.endswith("/Credentials.json"))
-    body = recorder.body_of(creds)
+    body = recorder.write_to("/Credentials.json")
     assert body["Username"] == "lk-user"
     assert body["Password"] == "lk-pass"
 
@@ -195,7 +205,9 @@ async def test_a_twilio_error_surfaces_the_vendors_own_message() -> None:
     message = str(caught.value)
     assert "PhoneNumberSid is not valid." in message
     assert "21421" in message
-    assert "Twilio could not create a SIP trunk" in message
+    # The first thing the adapter does is look for a trunk it already made, so
+    # that is where a broken account surfaces now.
+    assert "Twilio could not look for an existing SIP trunk" in message
 
 
 async def test_an_unreachable_twilio_says_so_rather_than_raising_a_transport_error() -> None:

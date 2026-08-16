@@ -80,6 +80,21 @@ def _sip_auth(idempotency_key: str) -> tuple[str, str]:
     password from the same attempt id - which is a guessable SIP credential on
     a trunk that can place real calls, and it would work, so nothing would ever
     reveal the problem (CLAUDE.md non-negotiable #2: fail closed).
+
+    **The `Cf1` prefix is not decoration.** Twilio rejects a SIP credential
+    password that is not at least 12 characters with an uppercase letter, a
+    lowercase letter and a digit (error 21240). A hex digest is `[0-9a-f]` and
+    so has no uppercase character at all, which failed *every* Twilio
+    provisioning attempt at the store-credentials step - found the first time
+    this ran against a real account, because a stub has no password policy to
+    violate. The prefix guarantees one of each class by construction rather
+    than hoping the digest happens to contain them, and the whole password
+    stays alphanumeric so no carrier has to escape it.
+
+    The username dropped its hyphen in the same change. That one is
+    precautionary rather than observed - Twilio documents SIP credential
+    usernames as alphanumeric, and finding out the hard way costs another
+    half-provisioned trunk on someone's real account.
     """
     if not config.provider_credentials_key:
         raise ProvisioningRefused(
@@ -91,7 +106,7 @@ def _sip_auth(idempotency_key: str) -> tuple[str, str]:
         idempotency_key.encode(),
         hashlib.sha256,
     ).hexdigest()
-    return f"cf-{digest[:16]}", digest[16:48]
+    return f"cf{digest[:14]}", f"Cf1{digest[16:44]}"
 
 
 async def connect_number(

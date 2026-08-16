@@ -50,6 +50,7 @@ from app.integrations.livekit.client import LiveKitGateway, SipTransport
 from app.integrations.telephony import CarrierError, sip_uri
 from app.integrations.telephony.twilio import TwilioCarrier
 from app.services.campaign_runner import CampaignRunner
+from app.services.number_provisioning import _sip_auth
 
 STATE_DIR = REPO_ROOT / ".telephony-check"
 SNAPSHOT = STATE_DIR / "twilio-snapshot.json"
@@ -95,7 +96,7 @@ DUBAI_TRIP_PLANNER = Campaign(
         "duration_days": "number of days they plan to stay",
     },
     region="AE",
-    language="en",
+    language="en-IN",
     escalate_on_negative=True,
 )
 
@@ -174,11 +175,11 @@ async def cmd_snapshot(args: argparse.Namespace) -> int:
 
         if number.get("trunk_sid"):
             _say("")
-            _say("  ⚠ This number is already attached to a SIP trunk. Connecting it")
+            _say("  !! This number is already attached to a SIP trunk. Connecting it")
             _say("    to CallFlow will move it to a different one.")
         elif number.get("voice_url") or number.get("voice_application_sid"):
             _say("")
-            _say("  ⚠ This number currently routes inbound voice somewhere. Attaching")
+            _say("  !! This number currently routes inbound voice somewhere. Attaching")
             _say("    it to a CallFlow trunk replaces that routing.")
 
         _save(SNAPSHOT, number)
@@ -198,8 +199,13 @@ async def cmd_connect(args: argparse.Namespace) -> int:
         _say("now, which is the only way back if connecting it breaks something.")
         return 1
     if not args.yes:
-        _say("This creates a Twilio SIP trunk and attaches the number to it, which")
-        _say("repoints the number's inbound routing. Re-run with --yes to proceed.")
+        _say("This creates a new Twilio SIP trunk and new LiveKit trunks.")
+        if args.attach_number:
+            _say("--attach-number will ALSO repoint the number's inbound routing away")
+            _say("from whatever handles it today. Everything else is additive.")
+        else:
+            _say("The number keeps its current inbound routing (outbound only).")
+        _say("Re-run with --yes to proceed.")
         return 1
 
     number_sid = snapshot.get("sid")
@@ -207,14 +213,21 @@ async def cmd_connect(args: argparse.Namespace) -> int:
         _say("The snapshot has no number SID - re-run `snapshot`.")
         return 1
 
-    # Derived exactly as the product derives it, so a mismatch here is a real
-    # mismatch and not an artefact of the script.
-    username = f"cf-{LABEL}"
-    password = uuid.uuid5(uuid.NAMESPACE_URL, f"callflow:{number_sid}").hex[:32]
+    # The product's own derivation, called directly. An earlier version of this
+    # script derived its own lookalike credentials, which meant the first live
+    # run tested the script's hex string rather than `_sip_auth`'s - and both
+    # happened to be wrong in the same way, so the bug still surfaced. Calling
+    # the real function is the only way a pass here means the product passes.
+    username, password = _sip_auth(f"telephony-check:{number_sid}")
 
     created = _load(CREATED)
 
-    _say("1/4  Twilio: trunk, origination URI, outbound credentials, attach number")
+    if args.attach_number:
+        _say("1/4  Twilio: trunk, origination URI, outbound credentials, attach number")
+        _say("     this MOVES the number inbound routing away from whatever has it now")
+    else:
+        _say("1/4  Twilio: trunk, origination URI, outbound credentials (outbound only)")
+        _say("     the number keeps its current inbound routing - nothing existing changes")
     async with _twilio(args) as carrier:
         trunk = await carrier.configure_number(
             number_ref=number_sid,
@@ -222,6 +235,7 @@ async def cmd_connect(args: argparse.Namespace) -> int:
             label=LABEL,
             auth_username=username,
             auth_password=password,
+            attach_number=args.attach_number,
         )
     _say(f"     trunk {trunk.trunk_id} · termination {trunk.termination_domain}")
     created["twilio_trunk_sid"] = trunk.trunk_id
@@ -286,7 +300,7 @@ async def cmd_call(args: argparse.Namespace) -> int:
         _say("No outbound trunk. Run `connect` first, or pass --trunk-id.")
         return 1
 
-    contact = Contact(name=args.name, phone=args.to)
+    contact = Contact(name=args.name, phone=args.to, language=args.language)
 
     if not args.agent:
         _say(f"Placing a bare verification call to {args.to} (no agent, expect silence)")
@@ -324,11 +338,18 @@ async def cmd_call(args: argparse.Namespace) -> int:
     _say("  silence. See this file's header for the command.")
     _say("")
 
+    # The worker refuses a job with no run id, and rightly so - it would have
+    # nowhere to report the transcript. Without --run-id this is a throwaway one,
+    # so the call happens and the completion callback 404s; pass a real run's id
+    # to close the loop against the database.
+    run_id = args.run_id or f"chk{uuid.uuid4().hex[:9]}"
+    _say(f"  run_id={run_id}" + ("" if args.run_id else "  (throwaway - completion will 404)"))
+
     runner = CampaignRunner(
         result_schema=DUBAI_SCHEMA,
         trunk_id=trunk_id,
         voice_agent=voice_agent,
-        run_id=args.run_id,
+        run_id=run_id,
         allowlist=frozenset({args.to}),
         max_calls_per_run=1,
     )
@@ -412,6 +433,13 @@ def main() -> int:
 
     connect = sub.add_parser("connect", help="provision the number (DESTRUCTIVE)")
     connect.add_argument("--yes", action="store_true")
+    # Default OFF: attaching the number is the one step that changes behaviour
+    # somebody else may be relying on. Opt in to it, never default into it.
+    connect.add_argument(
+        "--attach-number",
+        action="store_true",
+        help="also route inbound to LiveKit (destructive - replaces existing routing)",
+    )
 
     call = sub.add_parser("call", help="place a real call")
     call.add_argument("--to", required=True, help="Who to ring, E.164")
@@ -423,7 +451,9 @@ def main() -> int:
     call.add_argument("--tts", default="sarvam")
     call.add_argument("--llm", default="openrouter")
     call.add_argument("--model", default="openai/gpt-4o-mini")
-    call.add_argument("--voice", default="anushka")
+    # Left unset so Sarvam picks a speaker its current model supports.
+    call.add_argument("--voice", default=None, help="Vendor voice id, if you want a specific one")
+    call.add_argument("--language", default="en-IN", help="Locale code the vendors expect")
     call.add_argument("--stt-key", default=None)
     call.add_argument("--tts-key", default=None)
     call.add_argument("--llm-key", default=None)

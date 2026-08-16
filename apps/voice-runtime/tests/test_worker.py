@@ -248,3 +248,42 @@ async def test_a_room_level_disconnect_ends_the_wait_too() -> None:
     await task
 
     assert answered is True
+
+
+async def test_the_agent_is_told_to_speak_only_once_the_contact_has_joined() -> None:
+    """The bug the first live call found. CallFlow only dials out, and whoever
+    picks up an outbound call waits to be spoken to. An agent that waits back
+    leaves both sides in silence until someone hangs up - which is exactly what
+    the caller reported. Greeting any earlier plays into an empty room."""
+    room = FakeRoom()
+    ctx = FakeContext(room, joins_after=0.05)
+    greeted_with_participants: list[int] = []
+
+    async def greet() -> None:
+        greeted_with_participants.append(len(room.remote_participants))
+        room.everyone_leaves()
+
+    answered = await asyncio.wait_for(
+        wait_for_call_end(ctx, answer_timeout=1.0, max_seconds=5.0, on_answered=greet),
+        timeout=2.0,
+    )
+
+    assert answered is True
+    assert greeted_with_participants == [1], "greeted before the contact was in the room"
+
+
+async def test_nobody_is_greeted_when_the_call_goes_unanswered() -> None:
+    """Generating a reply for a call nobody took bills a model for nothing."""
+    ctx = FakeContext(FakeRoom(), never_joins=True)
+    greeted = False
+
+    async def greet() -> None:
+        nonlocal greeted
+        greeted = True
+
+    answered = await wait_for_call_end(
+        ctx, answer_timeout=0.05, max_seconds=5.0, on_answered=greet
+    )
+
+    assert answered is False
+    assert greeted is False

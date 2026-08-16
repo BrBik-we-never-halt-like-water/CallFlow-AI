@@ -23,13 +23,15 @@ only a live call would have shown.
 from __future__ import annotations
 
 import asyncio
+import importlib
 import json
 import logging
 import time
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from app.config import config
-from app.pipeline import AgentSpec, build_pipeline
+from app.pipeline import PLUGIN_MODULES, AgentSpec, build_pipeline
 from app.reporter import ReportFailed, report_completion
 
 log = logging.getLogger("voice-runtime.worker")
@@ -40,6 +42,65 @@ log = logging.getLogger("voice-runtime.worker")
 _ANSWERED = "COMPLETED"
 _NO_ANSWER = "NO_ANSWER"
 _FAILED = "FAILED"
+
+# The agent's own instructions already say how to open; this only tells it that
+# now is the moment. Spelling the greeting out here would override whatever the
+# campaign's goal asked for.
+_OPENING = "The contact has just answered. Open the call as your instructions describe."
+
+
+#: Voice activity detection, needed by every STT pipeline regardless of vendor -
+#: without it nothing knows when the contact stopped talking, so the agent never
+#: takes a turn. Not in `PLUGIN_MODULES` because no provider selects it.
+_VAD_MODULE = "silero"
+
+
+def register_plugins() -> list[str]:
+    """Import every vendor plugin this deployment has, on the main thread.
+
+    `livekit-agents` raises "Plugins must be registered on the main thread" if a
+    plugin is first imported anywhere else, and it runs each job in a worker
+    thread. So importing lazily inside a factory - which is where the plugin
+    choice actually lives - kills the job at launch with `DuplexClosed`, before
+    the contact hears a thing. That is what the first live call did.
+
+    Doing it here keeps the property the lazy import was for: a deployment
+    installs only the vendors its organisations use, and anything absent is
+    skipped rather than being a startup error.
+    """
+    registered: list[str] = []
+    for module in sorted({*PLUGIN_MODULES, _VAD_MODULE}):
+        try:
+            importlib.import_module(f"livekit.plugins.{module}")
+        except ImportError:
+            continue
+        registered.append(module)
+    return registered
+
+
+def prewarm(proc: Any) -> None:
+    """Load the voice-activity model once per worker process, not per call.
+
+    Silero is a few megabytes of ONNX. Loading it inside `run_call` would add
+    that to the moment the contact says hello, which is the one moment in a call
+    that cannot afford it. The module itself is already imported by
+    `register_plugins()` - this only builds the model.
+    """
+    from livekit.plugins import silero
+
+    proc.userdata["vad"] = silero.VAD.load()
+
+
+def _vad(ctx: Any) -> Any:
+    """The prewarmed model, or one loaded now if this worker skipped prewarm."""
+    cached = getattr(getattr(ctx, "proc", None), "userdata", {}) or {}
+    if cached.get("vad") is not None:
+        return cached["vad"]
+
+    from livekit.plugins import silero
+
+    log.warning("voice activity model was not prewarmed - loading it mid-call")
+    return silero.VAD.load()
 
 
 def parse_job_metadata(raw: str | None) -> dict[str, Any]:
@@ -109,7 +170,13 @@ def completion_payload(
     }
 
 
-async def wait_for_call_end(ctx: Any, *, answer_timeout: float, max_seconds: float) -> bool:
+async def wait_for_call_end(
+    ctx: Any,
+    *,
+    answer_timeout: float,
+    max_seconds: float,
+    on_answered: Callable[[], Awaitable[None]] | None = None,
+) -> bool:
     """Block while the contact is on the line. Returns whether anyone joined.
 
     This is the whole reason a job outlives its own setup. Returning as soon as
@@ -120,6 +187,11 @@ async def wait_for_call_end(ctx: Any, *, answer_timeout: float, max_seconds: flo
     an unanswered call, while somebody arriving and then leaving is a finished
     one. `max_seconds` is the backstop for the third case - a room that never
     reports either.
+
+    `on_answered` fires between them, once the contact is actually in the room.
+    That is where the agent's opening line belongs: speaking any earlier plays
+    it into an empty room, and the person who then says "hello?" is answered by
+    silence.
     """
     try:
         await asyncio.wait_for(ctx.wait_for_participant(), timeout=answer_timeout)
@@ -138,6 +210,9 @@ async def wait_for_call_end(ctx: Any, *, answer_timeout: float, max_seconds: flo
     room = ctx.room
     room.on("participant_disconnected", _on_left)
     room.on("disconnected", _on_left)
+
+    if on_answered is not None:
+        await on_answered()
 
     # Checked *after* the handlers are armed: a very short call can end between
     # the join above and this line, and a handler registered afterwards would
@@ -182,14 +257,30 @@ async def run_call(ctx: Any) -> None:
         # Connect before the session starts: `session.start()` publishes the
         # agent's own track into the room, which needs the connection to exist.
         await ctx.connect()
-        session = AgentSession(stt=pipeline.stt, tts=pipeline.tts, llm=pipeline.llm)
+        session = AgentSession(
+            stt=pipeline.stt,
+            tts=pipeline.tts,
+            llm=pipeline.llm,
+            # Without voice activity detection an STT pipeline has no way to
+            # know when the contact stopped talking, so it never takes a turn.
+            vad=_vad(ctx),
+        )
         await session.start(agent=Agent(instructions=goal), room=ctx.room)
 
         began_at = time.monotonic()
+
+        async def greet() -> None:
+            # CallFlow only ever dials out, and the person who picks up an
+            # outbound call waits to be spoken to. An agent that waits back
+            # leaves both sides listening to each other in silence until one
+            # hangs up - which is exactly what the first live call did.
+            await session.generate_reply(instructions=_OPENING)
+
         answered = await wait_for_call_end(
             ctx,
             answer_timeout=config.answer_timeout_seconds,
             max_seconds=float(metadata.get("max_call_duration_seconds") or config.max_call_seconds),
+            on_answered=greet,
         )
         if answered:
             duration_seconds = int(time.monotonic() - began_at)
@@ -240,7 +331,18 @@ def main() -> None:
 
     from livekit.agents import WorkerOptions, cli
 
-    cli.run_app(WorkerOptions(entrypoint_fnc=run_call, agent_name=config.agent_name))
+    # Before any job exists, and before `cli.run_app` hands control to the
+    # worker's own threads.
+    registered = register_plugins()
+    log.info("registered %d vendor plugin(s): %s", len(registered), ", ".join(registered))
+
+    cli.run_app(
+        WorkerOptions(
+            entrypoint_fnc=run_call,
+            prewarm_fnc=prewarm,
+            agent_name=config.agent_name,
+        )
+    )
 
 
 if __name__ == "__main__":
