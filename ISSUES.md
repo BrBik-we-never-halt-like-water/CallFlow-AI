@@ -136,6 +136,7 @@ exist in this repo**; `SYSTEM.md` §12 is the closest real gap map until it's wr
 | [#106](#106--no-replica-identity-full-on-the-three-chat-tables)                                                                    | S2  | No `replica identity full` on the three chat tables                                                                   | database       | it-38 | **FIXED**        |
 | [#107](#107--messages_insert-had-no-org_id-check-channel_members_insert-already-had)                                               | S2  | `messages_insert` had no `org_id` check `channel_members_insert` already had                                          | database       | it-38 | **FIXED**        |
 | [#108](#108--gitignores-supabase-entry-was-un-anchored)                                                                            | S3  | `.gitignore`'s `supabase` entry was un-anchored                                                                       | web            | it-38 | **FIXED**        |
+| [#109](#109--appchat-served-a-cached-frozen-shell-to-every-visitor---opening-any-conversation-hung-on-the-loader-permanently)      | S1  | `/app/chat` served a cached, frozen shell to every visitor - opening any conversation hung forever                    | web            | it-39 | **FIXED**        |
 
 ---
 
@@ -4318,14 +4319,19 @@ removed from a channel - or leaving in another tab - never propagated live, and 
 `org_id=eq.<org>` Realtime filter couldn't match the delete's old record either.
 
 **Fix.** `replica identity full` for all three tables, executed right before they're added to
-the publication (mirroring escalations' order), with the reverse in `downgrade()`.
+the publication (mirroring escalations' order), with the reverse in `downgrade()`. Edited into
+this migration directly rather than shipped as a follow-up - this table set is brand new to
+every environment beyond this developer's own local one, so there is nothing anywhere to
+migrate *through*, only the corrected end state to ship, the same reasoning the migration's
+own docstring already gives for consolidating five earlier migrations into it in the first
+place.
 
 **Verified.** New regression test `test_chat_tables_have_full_replica_identity` asserts
 `pg_class.relreplident = 'f'` for all three tables directly - confirmed to fail before the
 migration change, pass after. Applied directly to the local dev database (`alter table ...
 replica identity full`) rather than a destructive downgrade/upgrade cycle, so existing seeded
 conversations were preserved. Full backend suite: 274 passed (272 + this + #107's test),
-`ruff` clean.
+`ruff` clean, single alembic head.
 
 ### #107 - `messages_insert` had no `org_id` check `channel_members_insert` already had
 
@@ -4342,14 +4348,14 @@ undelivered live for the whole channel - and `messages.org_id` stops being trust
 anything downstream that assumes it agrees with its own `channel_id`.
 
 **Fix.** Added the identical clause - `and org_id = public.channel_org_id(channel_id)` - to
-`messages_insert`'s `WITH CHECK`.
+`messages_insert`'s `WITH CHECK`, in the same migration (see `#106`'s note on why editing it
+directly is correct here, unlike a migration that has already shipped elsewhere).
 
 **Verified.** New regression test `test_messages_insert_rejects_a_mismatched_org_id_from_a_multi_org_member`
 seats one tenant in both organisations, confirms the exact scenario above (`send_message`
 called with the channel's own org and a different, mismatched `org_id`) is rejected and
-leaves no row - confirmed to fail against the pre-fix policy, pass after. Applied directly to
-the local dev database (`drop policy` + recreate) rather than a destructive migration replay.
-Full backend suite: 274 passed, `ruff` clean.
+leaves no row - confirmed to fail against the pre-fix policy, pass after. Full backend suite:
+274 passed, `ruff` clean.
 
 ### #108 - `.gitignore`'s `supabase` entry was un-anchored
 
@@ -4377,6 +4383,24 @@ Trailing newline confirmed via a byte-level check of the file's tail.
 
 **Depends on / Blocks:** none - independent of #105-#107, filed together as the same review's
 findings.
+
+## Iteration 39 - 2026-08-16 · chat unusable on dev: a cached static shell froze `channelId` forever
+
+### #109 - `/app/chat` served a cached, frozen shell to every visitor - opening any conversation hung on the loader permanently
+
+**S1 · FIXED · web · `apps/web/app/(app)/app/chat/page.tsx`**
+
+Reported live: after deploying to `dev`, every conversation opened into the `WavesLoader` (`#105`-`#108`'s own iteration) and never resolved - confirmed stuck past 20 seconds against the real deployment (Playwright, `jatinorg@yopmail.com`), even though the network log showed `GET /api/v1/channels/{id}` and `GET .../messages` both returning `200` with well-formed bodies and zero console errors. A local production build (`next build && next start`, not `next dev`) of the identical code resolved in under a second - so the bug wasn't in the React logic, the API, or "dev vs prod build" as such.
+
+The actual difference: `curl`/Playwright response headers on `/app/chat` itself showed `x-nextjs-cache: HIT`, `x-nextjs-prerender: 1`, `x-nextjs-stale-time: 300`, and `x-nextjs-postponed: 2` on the streamed RSC payload. `ChatShell` reads the open conversation via a `useSearchParams()` call (isolated in a stateless `ChannelIdSync` leaf per `#103`'s fix, under its own `<Suspense>` boundary, which Next.js requires for `useSearchParams()`). That exact shape - a `Suspense` boundary around a `useSearchParams()` read, on an otherwise-static page (`○` in the build output, true of every `/app/*` page since none does server-side data fetching) - is what Next.js treats as one static, cacheable "shell" with a dynamic "hole" to resume per request. On `dev`'s deployed pm2 process, that shell got cached once - `channelId` frozen at whatever it read on the very first request that built it (effectively `null`, before `ChannelIdSync`'s effect ever ran) - and served to every subsequent visitor for the page's 300s stale window, regardless of the real URL each of them actually requested. `cf-cache-status: DYNAMIC` on the same response rules out Cloudflare's edge cache as a second layer to purge - this was entirely Next.js's own server-side route cache, on the origin.
+
+**Impact.** Every conversation, for every user, on `dev`, hung on the loading state permanently - not an edge case, the whole feature.
+
+**Fix.** `export const dynamic = 'force-dynamic'` on `chat/page.tsx`, which required first turning it back into a Server Component (dropping `'use client'`, since route segment config isn't available from a Client Component file) that renders `ChatShell` as a child - matching the split `#103` already introduced for the same reason. Forces this route to render fresh every request; costs nothing in practice, since the entire page's real content is a client component with no server-rendered data to reuse anyway. Confirmed in the build output: `/app/chat` moved from `○` (Static) to `ƒ` (Dynamic).
+
+**The same shape exists in three other pages already in this codebase, pre-existing, not introduced by this work**: `app/(app)/app/organisation/page.tsx`, `app/(app)/app/runs/new/page.tsx`, and `app/(auth)/login/page.tsx` all wrap a `useSearchParams()` read in `Suspense` on a page the build marks `○` Static, with no `force-dynamic`. None is fixed here - each reads a narrower value (a redirect target, an invite token, a prefilled campaign id) than chat's does, so a frozen shell there likely misroutes or drops a prefill rather than hanging the whole page, but the mechanism is identical and worth a deliberate look rather than a silent fix bundled into this one.
+
+**Verified.** Reproduced live against the real `dev` deployment (stuck past 20s, `.loader-bar` present, composer never rendered). Reproduced the *absence* of the bug locally under `next build && next start` (resolved in ~1s) before the fix, confirming it wasn't a build-mode difference. After the fix: `npm run build` shows `ƒ /app/chat`; `tsc --noEmit` and `eslint` both clean. Not re-verified against the live `dev` deployment after the fix - that requires an actual redeploy, which is the user's next step, not something done from here.
 
 ## Template for the next iteration
 
