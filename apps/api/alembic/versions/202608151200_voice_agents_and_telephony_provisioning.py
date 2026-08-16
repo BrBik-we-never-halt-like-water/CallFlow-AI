@@ -32,7 +32,7 @@ breath - a 16-character ceiling would put a future vendor right back into a
 migration, which is the exact cost this change exists to remove.
 
 Revision ID: a7c4e2f9b813
-Revises: f3d8a1c6e492
+Revises: b938fa82e54d
 Created: 2026-08-15 12:00:00
 """
 
@@ -45,7 +45,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "a7c4e2f9b813"
-down_revision: str | None = "f3d8a1c6e492"
+down_revision: str | None = "b938fa82e54d"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

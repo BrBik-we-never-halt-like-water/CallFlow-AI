@@ -74,3 +74,13 @@ alter table storage.objects enable row level security;
 grant usage on schema storage to anon, authenticated, service_role;
 grant select on storage.buckets to anon, authenticated, service_role;
 grant select, insert, update, delete on storage.objects to anon, authenticated, service_role;
+
+-- Supabase ships a `supabase_realtime` publication and migrations opt tables
+-- into it (`alter publication supabase_realtime add table ...`). Created empty
+-- here: the publication only has to exist for those statements to succeed -
+-- nothing locally consumes the replication stream.
+do $$ begin
+  if not exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
+    create publication supabase_realtime;
+  end if;
+end $$;

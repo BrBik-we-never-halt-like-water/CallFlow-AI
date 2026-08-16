@@ -108,6 +108,63 @@ export interface Outcome {
   created_at: string;
 }
 
+/**
+ * A real, persisted "needs a person" item - a superset of `Outcome`, so it
+ * can be handed anywhere an `Outcome` is expected (the transcript sheet,
+ * `lampForOutcome`) with no adapter. `escalation_status` is this
+ * escalation's own open/resolved lifecycle; `status` is the call's own
+ * status, same meaning as `Outcome.status`.
+ */
+export interface Escalation extends Outcome {
+  id: string;
+  campaign_id: string;
+  escalation_status: 'open' | 'resolved';
+  assigned_to: string | null;
+  assigned_to_name: string | null;
+  assigned_by: string | null;
+  assigned_by_name: string | null;
+  resolved_by: string | null;
+  resolved_by_name: string | null;
+  resolved_at: string | null;
+}
+
+export type ShareResourceType = 'campaign' | 'escalation';
+export type ShareRequestStatus = 'pending' | 'approved' | 'rejected';
+
+/** Name + owner only - never a campaign's goal, fields, or results. What an
+ *  operator sees to decide what's worth requesting (Phase 4). */
+export interface CampaignDirectoryEntry {
+  id: string;
+  name: string;
+  owner_user_id: string | null;
+  owner_name: string | null;
+}
+
+/** Contact + campaign + current owner for an *open* escalation - never the
+ *  transcript, sentiment, or disposition detail. */
+export interface EscalationDirectoryEntry {
+  id: string;
+  contact_name: string;
+  campaign_name: string;
+  owner_user_id: string | null;
+  owner_name: string | null;
+}
+
+export interface ShareRequest {
+  id: string;
+  resource_type: ShareResourceType;
+  resource_id: string;
+  resource_name: string | null;
+  status: ShareRequestStatus;
+  message: string | null;
+  created_at: string;
+  decided_at: string | null;
+  requested_by: string;
+  requested_by_name: string | null;
+  owner_user_id: string;
+  owner_name: string | null;
+}
+
 export interface RunStats {
   completed: number;
   total: number;
@@ -211,6 +268,34 @@ export interface PendingInvite {
 export interface Team {
   members: Member[];
   pending: PendingInvite[];
+}
+
+export interface TeamMemberSummary {
+  user_id: string | null;
+  name: string | null;
+  avatar_url: string | null;
+  total_runs: number;
+  total_calls: number;
+}
+
+export interface TeamPerformance {
+  user_id: string | null;
+  name: string | null;
+  avatar_url: string | null;
+  total_runs: number;
+  runs_active: number;
+  runs_completed: number;
+  runs_failed: number;
+  total_calls: number;
+  calls_closed: number;
+  open_escalations: number;
+  daily_allocation: number;
+  credits_used_today: number;
+}
+
+export interface MyCredits {
+  daily_allocation: number;
+  used_today: number;
 }
 
 export interface InvitationPreview {
@@ -389,6 +474,59 @@ export const api = {
     }),
   listRuns: () => authReq<RunSummary[]>('/api/v1/runs'),
   getRun: (id: string) => authReq<Run>(`/api/v1/runs/${id}`),
+  /** Stops a run from dialling further contacts. Can't interrupt a call
+   *  already in progress - see the endpoint's own docstring. */
+  cancelRun: (id: string) =>
+    authReq<{ status: string }>(`/api/v1/runs/${id}/cancel`, {
+      method: 'POST',
+    }),
+  teamSummary: () =>
+    authReq<TeamMemberSummary[]>('/api/v1/runs/team-summary'),
+
+  // --- escalations - authenticated -----------------------------------------
+  listEscalations: () => authReq<Escalation[]>('/api/v1/escalations'),
+  escalationDirectory: () =>
+    authReq<EscalationDirectoryEntry[]>('/api/v1/escalations/directory'),
+  assignEscalation: (id: string, userId: string) =>
+    authReq<void>(`/api/v1/escalations/${id}/assign`, {
+      method: 'POST',
+      body: JSON.stringify({ user_id: userId }),
+    }),
+  resolveEscalation: (id: string) =>
+    authReq<void>(`/api/v1/escalations/${id}/resolve`, { method: 'POST' }),
+
+  // --- sharing (Phase 4) - authenticated ------------------------------------
+  campaignDirectory: () =>
+    authReq<CampaignDirectoryEntry[]>('/api/v1/campaigns/directory'),
+  listShareRequests: () => authReq<ShareRequest[]>('/api/v1/share-requests'),
+  createShareRequest: (
+    resourceType: ShareResourceType,
+    resourceId: string,
+    message?: string,
+  ) =>
+    authReq<ShareRequest>('/api/v1/share-requests', {
+      method: 'POST',
+      body: JSON.stringify({
+        resource_type: resourceType,
+        resource_id: resourceId,
+        message: message || undefined,
+      }),
+    }),
+  approveShareRequest: (id: string) =>
+    authReq<void>(`/api/v1/share-requests/${id}/approve`, { method: 'POST' }),
+  rejectShareRequest: (id: string) =>
+    authReq<void>(`/api/v1/share-requests/${id}/reject`, { method: 'POST' }),
+
+  // --- team performance + credits - authenticated --------------------------
+  teamPerformance: () =>
+    authReq<TeamPerformance[]>('/api/v1/organisations/me/team-performance'),
+  myCredits: () =>
+    authReq<MyCredits>('/api/v1/organisations/me/members/me/credits'),
+  setMemberCredits: (userId: string, dailyAllocation: number) =>
+    authReq<void>(`/api/v1/organisations/me/members/${userId}/credits`, {
+      method: 'PATCH',
+      body: JSON.stringify({ daily_allocation: dailyAllocation }),
+    }),
 
   // --- organisations, team, profile - authenticated -----------------------
   listOrganisations: () => authReq<Organisation[]>('/api/v1/organisations'),

@@ -9,14 +9,16 @@ import {
 } from 'react';
 import {
   api,
+  type Escalation,
   type Outcome,
   type Run,
   type RunSummary,
   type SafetySettings,
 } from '@/lib/api';
 import { useConnection, type Connection } from '@/lib/hooks/use-connection';
+import { useOrgRealtime } from '@/lib/hooks/use-org-realtime';
 import { useOrgScopedEffect } from '@/lib/hooks/use-org-scoped-effect';
-import { lampForOutcome } from '@/lib/lamp';
+import { useSession } from '@/lib/hooks/use-session';
 
 /**
  * Shared app state.
@@ -34,17 +36,6 @@ import { lampForOutcome } from '@/lib/lamp';
 /** How many recent runs to fetch in full. Enough for the overview's 100-call strip. */
 const HYDRATE_LIMIT = 10;
 
-/**
- * A stable-enough key for one outcome, for tracking local-only escalation
- * resolution (see `resolveEscalation` below). The API has no per-outcome id yet -
- * `provider_call_id` is only set for a live call, and `run_id` can be null - so this
- * is a content key, not a real identifier: good enough to dedupe within one loaded
- * session, not a replacement for the `escalations` table `ISSUES.md #7` still wants.
- */
-function outcomeKey(outcome: Outcome): string {
-  return `${outcome.run_id ?? ''}|${outcome.provider_call_id ?? ''}|${outcome.contact_name}|${outcome.created_at}`;
-}
-
 /** While any listed run is still going, re-fetch this often so the dashboard and
  * the runs list don't sit on a "running" row for a run that finished seconds ago -
  * only the run-detail page itself polls today. */
@@ -56,14 +47,14 @@ export interface AppState extends Connection {
   hydratedRuns: Run[];
   /** Every outcome across the hydrated runs, newest first. */
   outcomes: Outcome[];
-  /** Outcomes that need a person, oldest first - the worklist order. Excludes
-   *  anything resolved this session (see `resolveEscalation`). */
-  escalations: Outcome[];
-  /** Mark one escalation resolved for the rest of this session: it drops out of
-   *  `escalations` immediately, everywhere that list is read (the worklist, the
-   *  dashboard panel, the nav badge) - not persisted (`ISSUES.md #7`), so it comes
-   *  back on reload. */
-  resolveEscalation: (outcome: Outcome) => void;
+  /** Real, persisted escalations this session can see, oldest first - the
+   *  worklist order. Assigning or resolving one (`api.assignEscalation`/
+   *  `api.resolveEscalation`) survives a reload and reaches every other
+   *  signed-in teammate live, via Supabase Realtime on the `escalations`
+   *  table - not local component state (closes `ISSUES.md` #7). */
+  escalations: Escalation[];
+  loadingEscalations: boolean;
+  refreshEscalations: () => void;
   loadingRuns: boolean;
   refresh: () => void;
   /** This organisation's own safety overrides + live usage. Null until loaded. */
@@ -90,19 +81,24 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
     null,
   );
   const [safetyNonce, setSafetyNonce] = useState(0);
-  const [resolvedKeys, setResolvedKeys] = useState<Set<string>>(
-    () => new Set(),
-  );
+  const [escalations, setEscalations] = useState<Escalation[]>([]);
+  const [loadingEscalations, setLoadingEscalations] = useState(true);
+  const [escalationsNonce, setEscalationsNonce] = useState(0);
+  const session = useSession();
+  const activeOrgId =
+    session.status === 'signed-in' ? session.profile.active.org_id : null;
 
   const refresh = useCallback(() => setNonce((n) => n + 1), []);
   const refreshSafety = useCallback(() => setSafetyNonce((n) => n + 1), []);
-  const resolveEscalation = useCallback((outcome: Outcome) => {
-    setResolvedKeys((prev) => {
-      const next = new Set(prev);
-      next.add(outcomeKey(outcome));
-      return next;
-    });
-  }, []);
+  const refreshEscalations = useCallback(
+    () => setEscalationsNonce((n) => n + 1),
+    [],
+  );
+
+  // Live sync: an assignment or resolution anyone on the team makes shows up
+  // here immediately, not on the next poll - see the hook's own docstring
+  // for why RLS, not this filter, is the actual security boundary.
+  useOrgRealtime('escalations', activeOrgId, refreshEscalations);
 
   // Runs are organisation-scoped - re-fetching on every org switch (not just on
   // mount, or when `refresh()`/the live poll bump `nonce`) is what makes the
@@ -170,28 +166,38 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
     };
   }, [connection.phase, safetyNonce]);
 
+  // Same reasoning again: escalations are organisation-scoped, real rows now
+  // (not derived from `outcomes`) - re-fetch on org switch, on `refresh()`,
+  // and whenever the realtime subscription above says something changed.
+  useOrgScopedEffect(() => {
+    if (connection.phase !== 'up') return;
+    let cancelled = false;
+    api
+      .listEscalations()
+      .then((rows) => {
+        if (cancelled) return;
+        // Oldest first: the oldest escalation is the most expensive one.
+        setEscalations(
+          [...rows].sort((a, b) => a.created_at.localeCompare(b.created_at)),
+        );
+      })
+      .catch(() => {
+        // Leaves the previous list in place - same reasoning as safety settings.
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingEscalations(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [connection.phase, escalationsNonce]);
+
   const outcomes = useMemo(
     () =>
       hydratedRuns
         .flatMap((run) => run.outcomes)
         .sort((a, b) => b.created_at.localeCompare(a.created_at)),
     [hydratedRuns],
-  );
-
-  const escalations = useMemo(
-    () =>
-      outcomes
-        // "Needs a person" is defined once, by the lamp a call gets - flare - not by
-        // a second, independent list of dispositions here. The two drifted apart
-        // before: this queue showed only `escalated`, while the dashboard's own
-        // outcome-distribution counted `escalated` and `unreachable` alike as
-        // needing a person, so the two disagreed about the same three calls.
-        .filter((outcome) => lampForOutcome(outcome).state === 'flare')
-        // Drops anything resolved this session - see `resolveEscalation`.
-        .filter((outcome) => !resolvedKeys.has(outcomeKey(outcome)))
-        // Oldest first: the oldest escalation is the most expensive one.
-        .sort((a, b) => a.created_at.localeCompare(b.created_at)),
-    [outcomes, resolvedKeys],
   );
 
   const value = useMemo<AppState>(
@@ -201,7 +207,8 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
       hydratedRuns,
       outcomes,
       escalations,
-      resolveEscalation,
+      loadingEscalations,
+      refreshEscalations,
       loadingRuns,
       refresh,
       safetySettings,
@@ -213,7 +220,8 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
       hydratedRuns,
       outcomes,
       escalations,
-      resolveEscalation,
+      loadingEscalations,
+      refreshEscalations,
       loadingRuns,
       refresh,
       safetySettings,
