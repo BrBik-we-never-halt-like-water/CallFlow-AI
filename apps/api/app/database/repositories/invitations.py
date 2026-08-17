@@ -12,7 +12,8 @@ async def lookup_public(conn: asyncpg.Connection, token: str) -> asyncpg.Record:
     the one place a plain table SELECT would not work even with the right grants.
     """
     return await conn.fetchrow(
-        "select org_name, role, email, valid, reason from public.lookup_invitation($1)",
+        "select org_name, role, email, valid, reason, account_exists "
+        "from public.lookup_invitation($1)",
         token,
     )
 
