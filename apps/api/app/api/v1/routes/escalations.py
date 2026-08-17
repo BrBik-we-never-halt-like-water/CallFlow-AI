@@ -32,7 +32,8 @@ class EscalationOut(BaseModel):
 
     id: str
     run_id: str
-    campaign_id: str
+    voice_agent_id: str | None = None
+    agent_name: str | None = None
     escalation_status: str
     contact_name: str
     phone_masked: str
@@ -73,7 +74,8 @@ def _row_to_out(row) -> EscalationOut:
     return EscalationOut(
         id=str(row["id"]),
         run_id=row["run_id"],
-        campaign_id=row["campaign_id"],
+        voice_agent_id=str(row["voice_agent_id"]) if row["voice_agent_id"] else None,
+        agent_name=row["agent_name"],
         escalation_status=row["escalation_status"],
         contact_name=row["contact_name"],
         phone_masked=row["phone_masked"],

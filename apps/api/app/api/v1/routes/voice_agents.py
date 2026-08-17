@@ -1,4 +1,4 @@
-"""Voice agents: an org's reusable STT/TTS/LLM/telephony configurations for
+"""Voice agents: an org's reusable STT/TTS/LLM configurations for
 the Agentic tab, plus the provider catalog and preview endpoints the builder
 UI needs to populate itself.
 
@@ -25,18 +25,14 @@ from app.database import database
 from app.database.repositories import (
     ai_provider_credentials as ai_provider_credentials_repo,
 )
-from app.database.repositories import provider_credentials as provider_credentials_repo
 from app.database.repositories import voice_agents as voice_agents_repo
-from app.domain.campaigns import FIELD_TYPES
-from app.domain.safety import mask
+from app.domain.entities import FIELD_TYPES
 from app.integrations.ai_providers import catalog
 from app.services import voice_preview
 
 router = APIRouter(prefix="/api/v1/voice-agents", tags=["voice-agents"])
 
-TelephonyProvider = Literal["twilio", "plivo"]
 
-_TELEPHONY_DISPLAY_NAMES: dict[str, str] = {"twilio": "Twilio", "plivo": "Plivo"}
 
 
 class CollectFieldIn(BaseModel):
@@ -63,7 +59,6 @@ class VoiceAgentIn(BaseModel):
     voice_id: str | None = None
     system_prompt: str | None = None
     prebuilt_persona: str | None = None
-    telephony_provider: TelephonyProvider | None = None
     collect_fields: list[CollectFieldIn] = Field(default_factory=list)
 
 
@@ -76,17 +71,11 @@ class VoiceAgentOut(VoiceAgentIn):
     created_by_avatar_url: str | None = None
 
 
-class TelephonyOptionOut(BaseModel):
-    provider: TelephonyProvider
-    connected: bool
-    phone_number_masked: str | None
-
 
 class ProviderCatalogOut(BaseModel):
     stt: list[dict[str, Any]]
     tts: list[dict[str, Any]]
     llm: list[dict[str, Any]]
-    telephony: list[TelephonyOptionOut]
 
 
 class PreviewIn(BaseModel):
@@ -128,7 +117,6 @@ def _row_json(row: asyncpg.Record) -> VoiceAgentOut:
         voice_id=row["voice_id"],
         system_prompt=row["system_prompt"],
         prebuilt_persona=row["prebuilt_persona"],
-        telephony_provider=row["telephony_provider"],
         collect_fields=_decode_collect_fields(row["collect_fields"]),
         created_at=row["created_at"],
         created_by=str(created_by) if created_by else None,
@@ -164,16 +152,18 @@ async def provider_catalog(
     user: Annotated[CurrentUser, Depends(RequirePermission(Permission.AGENTS_READ))],
 ) -> ProviderCatalogOut:
     """Every role sees this, unlike `ai_providers.py`'s own admin-gated
-    credential management: whether Sarvam is connected, and a masked phone
-    number, is not the same sensitivity as reading or changing the secret
-    itself - just what a viewer needs while building or reviewing an agent.
+    credential management: whether Sarvam is connected is not the same
+    sensitivity as reading or changing the secret itself - just what a viewer
+    needs while building or reviewing an agent.
+
+    No telephony here any more. The numbers an organisation can dial from are
+    chosen per run (ADR-8), so they belong to `/api/v1/telephony/numbers` and to
+    the run composer, not to a catalogue about how an agent speaks and thinks.
     """
     async with database.as_user(user.auth_user_id) as conn:
         ai_rows = await ai_provider_credentials_repo.list_for_org(conn, user.org_id)
-        telephony_rows = await provider_credentials_repo.list_for_org(conn, user.org_id)
 
     connected_ai_providers = {r["provider"] for r in ai_rows}
-    telephony_by_provider = {r["provider"]: r for r in telephony_rows}
 
     stt = _serialize_catalog(catalog.STT_PROVIDERS, connected_ai_providers, lambda e: e.id)
     tts = _serialize_catalog(catalog.TTS_PROVIDERS, connected_ai_providers, lambda e: e.id)
@@ -184,20 +174,8 @@ async def provider_catalog(
         catalog.LLM_MODELS, connected_ai_providers, lambda _e: "openrouter"
     )
 
-    telephony = []
-    for provider in ("twilio", "plivo"):
-        row = telephony_by_provider.get(provider)
-        phone = row["phone_number"] if row else None
-        connected = row is not None and bool(phone)
-        telephony.append(
-            TelephonyOptionOut(
-                provider=provider,
-                connected=connected,
-                phone_number_masked=mask(phone) if connected and phone else None,
-            )
-        )
 
-    return ProviderCatalogOut(stt=stt, tts=tts, llm=llm, telephony=telephony)
+    return ProviderCatalogOut(stt=stt, tts=tts, llm=llm)
 
 
 def _encode_collect_fields(body: VoiceAgentIn) -> list[dict[str, Any]]:
@@ -235,22 +213,6 @@ async def _validate_agent_fields(
             ),
         )
 
-    if body.telephony_provider is not None:
-        telephony_rows = await provider_credentials_repo.list_for_org(conn, org_id)
-        # A credential row with no phone_number set isn't a usable connection -
-        # same "connected" definition provider_catalog() uses for its picker,
-        # so an agent can never be assigned a number-less telephony provider.
-        connected = {r["provider"] for r in telephony_rows if r["phone_number"]}
-        if body.telephony_provider not in connected:
-            display = _TELEPHONY_DISPLAY_NAMES[body.telephony_provider]
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=(
-                    f"Connect a {display} number in Settings → Integrations "
-                    "before assigning it to an agent."
-                ),
-            )
-
 
 @router.post("", response_model=VoiceAgentOut, status_code=status.HTTP_201_CREATED)
 async def create_voice_agent(
@@ -272,8 +234,7 @@ async def create_voice_agent(
             voice_id=body.voice_id,
             system_prompt=body.system_prompt,
             prebuilt_persona=body.prebuilt_persona,
-            telephony_provider=body.telephony_provider,
-            collect_fields=_encode_collect_fields(body),
+                collect_fields=_encode_collect_fields(body),
         )
     return _row_json(row)
 
@@ -299,8 +260,7 @@ async def update_voice_agent(
             voice_id=body.voice_id,
             system_prompt=body.system_prompt,
             prebuilt_persona=body.prebuilt_persona,
-            telephony_provider=body.telephony_provider,
-            collect_fields=_encode_collect_fields(body),
+                collect_fields=_encode_collect_fields(body),
         )
     if row is None:
         raise HTTPException(

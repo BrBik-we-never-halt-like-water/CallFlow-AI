@@ -11,7 +11,7 @@ import pytest
 from app.core import config as config_module
 from app.core import crypto
 from app.domain import safety
-from app.services import campaign_runner
+from app.services import run_dialer
 
 # A real (but test-only) Fernet key, so encrypt()/decrypt() work by default
 # without every test needing its own override.
@@ -28,5 +28,5 @@ def isolated_config(monkeypatch: pytest.MonkeyPatch) -> None:
         provider_credentials_key=TEST_FERNET_KEY,
     )
     # Each module imported `config` by value, so patch every binding.
-    for module in (config_module, safety, campaign_runner, crypto):
+    for module in (config_module, safety, run_dialer, crypto):
         monkeypatch.setattr(module, "config", pinned, raising=False)

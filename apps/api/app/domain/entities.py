@@ -100,18 +100,69 @@ class Contact(BaseModel):
         return v
 
 
-class Campaign(BaseModel):
-    """A goal applied across many contacts, with a typed result contract."""
+#: The types a collect field may declare. Moved here from the deleted
+#: `domain/campaigns.py`, where it described a campaign's `extra_fields` - the
+#: set is unchanged because the field shape is.
+FIELD_TYPES = {"string", "boolean", "integer", "number"}
+
+
+class CollectField(BaseModel):
+    """One thing the agent has to establish while the call is happening.
+
+    The stored shape of a `voice_agents.collect_fields` entry, and deliberately
+    the same field shape campaigns used for `extra_fields`: both end as
+    structured call results, and a second format would mean a second validator to
+    keep in step.
+
+    `required` is load-bearing rather than advisory - ADR-5 makes a missing
+    required field escalate a completed call to a person, with the field's own
+    `description` becoming what that person is told to ask.
+    """
+
+    key: str
+    type: str = "string"
+    description: str = ""
+    required: bool = False
+
+
+class RunAgent(BaseModel):
+    """A voice agent, as the run pipeline needs it.
+
+    The successor to `Campaign`. A campaign owned the goal template, the result
+    schema and the escalation policy; a voice agent owns all three better -
+    `system_prompt` is the instruction, `collect_fields` is the contract, and
+    both are configured once and reused across runs (ADR-8).
+
+    Deliberately narrower than the `voice_agents` row: this carries what deciding
+    and rendering a call needs, and nothing about who created the agent or which
+    vendors it runs on. The provider choices travel separately, as the opaque
+    `voice_agent` metadata dict the worker reads (`services/run_dispatch.py`), so
+    the domain never holds a decrypted credential.
+
+    Named `RunAgent` rather than `AgentSpec` on purpose: the voice runtime already
+    has an `AgentSpec` for the provider half, and two different types with one
+    name across two processes that talk to each other is a trap.
+    """
 
     id: str
     name: str
-    # Instruction template for the engine's `goal` field. Supports {name}, {context[key]}.
-    goal_template: str
-    # JSON-schema-ish description of what to extract from the transcript.
-    outcome_fields: dict[str, str] = Field(default_factory=dict)
-    region: str | None = None
+    #: What the agent is told, before this contact's own detail is added.
+    #: Supports `{name}` and `{context_key}` placeholders - see
+    #: `domain/prompt_assembly.py`.
+    system_prompt: str | None = None
+    #: What the agent has to come back with. An empty list is a
+    #: conversation-only agent, which is legal.
+    collect_fields: list[CollectField] = Field(default_factory=list)
     language: str | None = None
+    #: Whether a negative-sentiment call is worth one retry or a person. Carried
+    #: on the agent now that campaigns are gone; `triage()` still reads it as a
+    #: parameter rather than reaching for the agent itself.
     escalate_on_negative: bool = True
+
+    @property
+    def required_field_keys(self) -> list[str]:
+        """The fields whose absence sends a call to a person (ADR-5)."""
+        return [f.key for f in self.collect_fields if f.required]
 
 
 class AttemptSummary(BaseModel):
@@ -132,23 +183,48 @@ class CallOutcome(BaseModel):
 
     contact_name: str
     phone_masked: str
-    campaign_id: str
+    #: Which agent held this conversation. Nullable, unlike the `campaign_id` it
+    #: replaces: rows written before ADR-8 have no agent, and a call outcome is a
+    #: permanent record - backfilling a placeholder would invent history.
+    voice_agent_id: str | None = None
 
     status: str = "UNKNOWN"
     plan_id: str | None = None
     run_id: str | None = None
+    #: Which of the organisation's lines placed this call, masked. Without it the
+    #: records surface cannot say where a call came from, and a run spread across
+    #: several numbers is the case where that matters.
+    from_number_masked: str | None = None
 
     transcript: str | None = None
     summary: str | None = None
 
     sentiment: Sentiment = Sentiment.UNKNOWN
     sentiment_reason: str | None = None
+    #: The triage signals - `sentiment`, `wants_human_callback`, `do_not_call`,
+    #: `frustration_signals`. CallFlow's own contract, read by `triage()`.
     extracted: dict[str, Any] = Field(default_factory=dict)
+
+    #: The organisation's own business fields, from the agent's `collect_fields`.
+    #: Deliberately separate from `extracted`: merging them would let a field an
+    #: org happened to name `sentiment` rewrite triage's own input, the same
+    #: collision `campaign_runner`'s spread-first metadata dict already guards
+    #: against.
+    collected: dict[str, Any] = Field(default_factory=dict)
+    #: Required fields the call ended without (ADR-5). Empty means complete.
+    #: Orthogonal to `disposition` rather than a replacement for it - a call can
+    #: be clean in every other respect and still be missing an answer nobody
+    #: volunteered.
+    missing_required_fields: list[str] = Field(default_factory=list)
+    #: What a person still has to ask, in the agent's own words. Written for the
+    #: human reading the "needs a person" queue, so a callback asks only for what
+    #: is actually outstanding.
+    handoff_questions: list[str] = Field(default_factory=list)
 
     # CALL-E's own holistic judgment of whether the call accomplished its
     # task - confirmed against the live OpenAPI spec as task-level fields,
-    # never per-recipient. Independent of `extracted`: a campaign's own
-    # result_schema can be satisfied while CALL-E still judges the
+    # never per-recipient. Independent of `extracted`: an agent's own
+    # collect_fields can be satisfied while the model still judges the
     # conversation itself unresolved (see `triage()`'s use of
     # `task_completed`).
     task_completed: bool | None = None

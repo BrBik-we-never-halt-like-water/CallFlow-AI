@@ -34,7 +34,6 @@ from app.api.v1.routes.internal import CallCompletion, complete_call
 from app.core.config import config
 from app.database import database
 from app.database.repositories import runs as runs_repo
-from app.domain.campaigns import TRAVEL_DISCOVERY
 
 pytestmark = [
     pytest.mark.asyncio,
@@ -68,6 +67,17 @@ async def pool() -> AsyncIterator[None]:
 @pytest_asyncio.fixture
 async def db() -> AsyncIterator[asyncpg.Connection]:
     conn = await asyncpg.connect(config.database_url, timeout=30)
+    # The same jsonb codec `database.Database` installs on every pooled
+    # connection. Without it a raw test connection hands asyncpg a Python list
+    # for a jsonb column and fails with "expected str, got list" - a failure the
+    # repository never sees at runtime, so the test would be lying about it.
+    await conn.set_type_codec(
+        "jsonb",
+        encoder=json.dumps,
+        decoder=json.loads,
+        schema="pg_catalog",
+        format="text",
+    )
     try:
         yield conn
     finally:
@@ -107,15 +117,33 @@ async def started_run(db: asyncpg.Connection, pool: None) -> AsyncIterator[Run]:
         """,
         auth_user_id,
     )
+    # A real agent row: `runs.voice_agent_id` is a foreign key now, and the
+    # completion handler resolves it to read `collect_fields` - which is what
+    # decides whether a call came back complete. `destination` is required so
+    # the missing-field path is reachable from these tests.
+    agent_id = await db.fetchval(
+        """
+        insert into public.voice_agents
+            (org_id, created_by, name, kind, stt_provider, tts_provider,
+             llm_provider, llm_model, collect_fields)
+        values ($1, $2, 'Completion test agent', 'custom', 'deepgram', 'elevenlabs',
+                'openrouter', 'openai/gpt-4o', $3::jsonb)
+        returning id
+        """,
+        row["org_id"],
+        row["user_id"],
+        [{"key": "destination", "type": "string", "description": "Where to", "required": True}],
+    )
+
     run_id = uuid.uuid4().hex[:12]
     await db.execute(
         """
-        insert into public.runs (id, org_id, campaign_id, total, status, started_by)
+        insert into public.runs (id, org_id, voice_agent_id, total, status, started_by)
         values ($1, $2, $3, 2, 'running', $4)
         """,
         run_id,
         row["org_id"],
-        TRAVEL_DISCOVERY.id,
+        agent_id,
         row["user_id"],
     )
     for name, masked in ((CONTACT, MASKED), (OTHER_CONTACT, OTHER_MASKED)):
@@ -354,11 +382,18 @@ async def test_a_call_needing_a_person_raises_an_escalation(
 async def test_a_clean_call_raises_no_escalation(
     started_run: Run, db: asyncpg.Connection
 ) -> None:
-    """Clean calls close themselves - that is the product's whole claim."""
+    """Clean calls close themselves - that is the product's whole claim.
+
+    "Clean" now includes *complete*: the fixture agent requires `destination`, so
+    a call that never established it escalates however well it went (ADR-5). That
+    is the intended behaviour, and it means this test has to answer the question
+    the agent was sent to ask.
+    """
     await _complete(
         started_run.id,
-        transcript="Contact: Yes, that works, thanks.",
+        transcript="Contact: Yes, Dubai in December, thanks.",
         extracted={"outcome": "interested", "sentiment": "positive"},
+        collected={"destination": "Dubai"},
     )
 
     count = await db.fetchval(

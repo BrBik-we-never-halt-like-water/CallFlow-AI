@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import logging
 
+from app.domain.entities import CollectField
 from app.domain.prompt_assembly import (
-    CollectField,
     PromptContact,
     render_call_prompt,
     visible_context,

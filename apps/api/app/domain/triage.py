@@ -15,6 +15,14 @@ from app.domain.entities import CallOutcome, Disposition, Sentiment
 RETRYABLE_STATUSES = {"busy", "no_answer", "voicemail"}
 
 
+def _join_human(names: list[str]) -> str:
+    """"a", "a and b", "a, b and c" - the reason is read by a person."""
+    readable = [name.replace("_", " ") for name in names]
+    if len(readable) == 1:
+        return readable[0]
+    return ", ".join(readable[:-1]) + " and " + readable[-1]
+
+
 def _as_sentiment(raw: Any) -> Sentiment:
     try:
         return Sentiment(str(raw).lower())
@@ -79,6 +87,20 @@ def triage(outcome: CallOutcome, *, escalate_on_negative: bool = True) -> CallOu
     elif status in {"failed", "canceled"}:
         updates["disposition"] = Disposition.UNREACHABLE
         updates["disposition_reason"] = f"Call did not connect ({status})."
+
+    # Completeness is checked *only* for a call that actually connected, and this
+    # placement is ADR-5's own correction after review. The rules above for
+    # negative sentiment, busy/no-answer/voicemail and failed/canceled all cover
+    # calls that never had a chance to provide the data at all - escalating those
+    # for "missing fields" would replace a useful "worth retrying" signal with a
+    # useless one, for calls where of course nothing was collected.
+    elif status == "completed" and outcome.missing_required_fields:
+        updates["disposition"] = Disposition.ESCALATED
+        updates["disposition_reason"] = (
+            "The call ended without "
+            + _join_human(outcome.missing_required_fields)
+            + " - a person needs to ask."
+        )
 
     elif status == "completed":
         updates["disposition"] = Disposition.AUTO_CLOSED

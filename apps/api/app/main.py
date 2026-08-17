@@ -13,7 +13,6 @@ from fastapi.responses import JSONResponse
 
 from app.api.v1.routes.ai_providers import router as ai_providers_router
 from app.api.v1.routes.api_keys import router as api_keys_router
-from app.api.v1.routes.campaigns import router as campaigns_router
 from app.api.v1.routes.escalations import router as escalations_router
 from app.api.v1.routes.integrations import router as integrations_router
 from app.api.v1.routes.internal import router as internal_router
@@ -76,7 +75,6 @@ app.add_middleware(
 app.include_router(profile_router)
 app.include_router(organisations_router)
 app.include_router(invitations_router)
-app.include_router(campaigns_router)
 app.include_router(escalations_router)
 app.include_router(runs_router)
 app.include_router(safety_router)

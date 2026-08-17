@@ -31,7 +31,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Protocol
 
 log = logging.getLogger("app.domain.prompt_assembly")
 
@@ -101,18 +101,19 @@ class _Safe(dict):
         return ""
 
 
-@dataclass(frozen=True)
-class CollectField:
+class CollectField(Protocol):
     """One thing the agent has to come back with.
 
-    Mirrors `voice_agents.collect_fields`' stored shape. Declared here rather
-    than imported from the route so `domain/` keeps importing nothing outward.
+    Structural, not a class to instantiate: `entities.CollectField` is the
+    canonical type, and depending on it by shape rather than by import keeps this
+    module free to be read and tested on its own. Anything carrying these four
+    attributes renders.
     """
 
     key: str
-    type: str = "string"
-    description: str = ""
-    required: bool = False
+    type: str
+    description: str
+    required: bool
 
 
 @dataclass(frozen=True)

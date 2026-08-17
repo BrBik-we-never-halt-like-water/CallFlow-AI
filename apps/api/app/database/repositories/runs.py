@@ -16,20 +16,28 @@ async def create_run(
     *,
     run_id: str,
     org_id: UUID,
-    campaign_id: str,
+    voice_agent_id: UUID | None,
     total: int,
     started_by: UUID,
+    name: str | None = None,
+    run_instruction: str | None = None,
+    allocation_strategy: str = "round_robin",
 ) -> None:
     await conn.execute(
         """
-        insert into public.runs (id, org_id, campaign_id, total, started_by)
-        values ($1, $2, $3, $4, $5)
+        insert into public.runs
+            (id, org_id, voice_agent_id, total, started_by, name,
+             run_instruction, allocation_strategy)
+        values ($1, $2, $3, $4, $5, $6, $7, $8)
         """,
         run_id,
         org_id,
-        campaign_id,
+        voice_agent_id,
         total,
         started_by,
+        name,
+        run_instruction,
+        allocation_strategy,
     )
 
 
@@ -230,7 +238,8 @@ async def lookup_owner_for_webhook(conn: asyncpg.Connection, run_id: str) -> asy
     own docstring for why that's the deliberate choice.
     """
     return await conn.fetchrow(
-        "select org_id, campaign_id, auth_user_id from public.lookup_run_owner_for_webhook($1)",
+        "select org_id, voice_agent_id, auth_user_id "
+        "from public.lookup_run_owner_for_webhook($1)",
         run_id,
     )
 
@@ -242,11 +251,16 @@ async def get_run(conn: asyncpg.Connection, org_id: UUID, run_id: str) -> asyncp
     # admin/owner/viewer (who see every run) tell whose run each one is.
     return await conn.fetchrow(
         """
-        select r.id, r.org_id, r.campaign_id, r.total, r.status, r.started_at, r.finished_at,
-               r.error, r.started_by, u.name as started_by_name,
-               u.avatar_url as started_by_avatar_url
+        select r.id, r.org_id, r.voice_agent_id, r.total, r.status, r.started_at,
+               r.finished_at, r.error, r.started_by, r.name, r.run_instruction,
+               u.name as started_by_name, u.avatar_url as started_by_avatar_url,
+               va.name as agent_name
         from public.runs r
         left join public.users u on u.id = r.started_by
+        -- Left join, and the name is resolved here rather than in the client: a
+        -- run whose agent was removed still has to list, and nothing above this
+        -- keeps an agent list to look the name up in.
+        left join public.voice_agents va on va.id = r.voice_agent_id
         where r.org_id = $1 and r.id = $2
         """,
         org_id,
@@ -323,15 +337,20 @@ async def team_performance(conn: asyncpg.Connection, org_id: UUID) -> list[async
 async def list_runs(conn: asyncpg.Connection, org_id: UUID) -> list[asyncpg.Record]:
     return await conn.fetch(
         """
-        select r.id, r.campaign_id, r.total, r.status, r.started_at, r.finished_at, r.error,
-               r.started_by, u.name as started_by_name, u.avatar_url as started_by_avatar_url,
+        select r.id, r.voice_agent_id, r.name, r.total, r.status, r.started_at,
+               r.finished_at, r.error, r.started_by,
+               u.name as started_by_name, u.avatar_url as started_by_avatar_url,
+               va.name as agent_name,
                count(c.id) as completed
         from public.runs r
         left join public.call_outcomes c
           on c.run_id = r.id and c.disposition <> 'in_flight'
         left join public.users u on u.id = r.started_by
+        left join public.voice_agents va on va.id = r.voice_agent_id
         where r.org_id = $1
-        group by r.id, r.started_by, u.name, u.avatar_url
+        -- `va.name` has to be grouped too: it is selected but not aggregated, and
+        -- leaving it out is a query that fails rather than a wrong answer.
+        group by r.id, r.started_by, u.name, u.avatar_url, va.name
         order by r.started_at desc
         """,
         org_id,
