@@ -147,6 +147,7 @@ exist in this repo**; `SYSTEM.md` §12 is the closest real gap map until it's wr
 | [#125](#125--a-500ms-anti-flicker-floor-could-stay-raised-forever-and-it-gated-the-entire-conversation-panel) | S2  | A 500ms anti-flicker floor could stay raised forever, and it gated the whole conversation panel                       | web            | it-42 | **FIXED**        |
 | [#126](#126--accepting-an-invitation-offered-a-signup-form-to-people-who-already-have-an-account) | S2  | Accepting an invitation offered a signup form to people who already have an account                                   | web + backend  | it-43 | **FIXED**        |
 | [#127](#127--your-role-in-one-organisation-decided-whether-you-could-leave-it) | S2  | Your role in one organisation decided whether you could leave it - mixed-role members got stranded                    | web            | it-43 | **FIXED**        |
+| [#128](#128--agent-drafts-followed-you-into-the-next-organisation) | S2  | Agent drafts followed you into the next organisation and prefilled a new agent there                                  | web            | it-43 | **FIXED**        |
 
 ---
 
@@ -4968,6 +4969,29 @@ Losing scroll position and in-page state on a switch is the correct outcome: you
 **Impact.** Anyone with different roles across organisations could be trapped in one of them - which for a multi-tenant product is the switch feature not working at all for exactly the people who need it most. The chat leak is narrower but is literally one organisation's content displayed while inside another.
 
 **Verified.** `eslint` 0 errors on both changed files (one pre-existing `<img>` warning elsewhere in `app-shell.tsx`), `tsc` clean, cross-tenant probe above.
+
+### #128 - agent drafts followed you into the next organisation
+
+**S2 · FIXED · web · `apps/web/lib/agent-draft.ts`, `apps/web/lib/hooks/use-active-org.ts`**
+
+Reported live, and a hole in #127's own audit. That entry recorded locally-persisted state as safe because it is "keyed by entity id, and a campaign or agent belongs to exactly one organisation". True only once the entity exists. **A new agent has no id yet**, and every draft key was `callflow.agent.draft.<agentId|new>[.<fingerprint>]` - no organisation anywhere in it.
+
+Two consequences, both reported:
+
+- `listUnsavedAgentDrafts()` scanned a prefix shared by every organisation, so the Drafts tab in organisation B listed work started in A - including the draft of an agent that had already been created in A, whose real card had correctly disappeared on the switch.
+- `loadAgentDraft(null)` returned "the newest unsaved draft in this browser" with no organisation filter, so opening **Create agent** in B prefilled the name, prompt, providers and voice last used in A.
+
+**Impact.** One organisation's configuration presented as the starting point for another's, in the one part of the product where a wrong provider or prompt is invisible until a call is placed. It also made #127's isolation guarantee untrue in a place it claimed to have checked.
+
+**Fix.** The organisation is now part of the key: `callflow.agent.draft.v2.<orgId>.<agentId|new>[.<fingerprint>]`. Every read, write, clear and eviction is scoped to one organisation and no-ops when no organisation has resolved yet, rather than guessing.
+
+The `v2` segment exists to make the old keys identifiable: `<orgId>` and `<agentId>` are both UUIDs in the same position, so the two shapes are otherwise indistinguishable. `purgeLegacyAgentDrafts()` deletes everything under the old prefix on the next read - without it those drafts are merely *unreachable* rather than gone, which would leave the reporter's current bleeding drafts sitting in storage forever, and still on screen until a reload.
+
+**Which organisation id.** A new `useScopedOrgId()` prefers the switcher's value (`useActiveOrg()`) and falls back to the session's. Neither alone works: the switcher's is empty until someone switches for the first time, so early drafts would land under a key that becomes unreachable the moment they do; the session's lags a switch, because it only updates once `/me` returns - long enough to read the previous organisation's drafts into a freshly-opened editor. Together they give a real id at all times that moves when the rest of the app moves.
+
+**Checked at the same time:** `campaign-draft.ts` has the same `?? 'default'` shape (`settingsKey(existing?.id ?? '')`) but is **not** affected - `.default` is only ever read, never written, because every save goes through `saveLocalSettings(saved.id, …)` with a real id. So the key never exists and the read falls through to `DEFAULT_SETTINGS`. Left alone rather than changed for symmetry.
+
+**Verified.** `eslint` clean - it caught a real missing `scopedOrgId` dependency on the editor's persist effect - and `tsc` clean.
 
 ## Template for the next iteration
 

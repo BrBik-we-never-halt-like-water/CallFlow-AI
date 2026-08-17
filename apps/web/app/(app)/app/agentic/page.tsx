@@ -18,6 +18,7 @@ import {
 } from '@/lib/agent-draft';
 import { cn } from '@/lib/cn';
 import { api, type VoiceAgent } from '@/lib/api';
+import { useScopedOrgId } from '@/lib/hooks/use-active-org';
 import { useOrgScopedEffect } from '@/lib/hooks/use-org-scoped-effect';
 import { useSession, type SessionProfile } from '@/lib/hooks/use-session';
 
@@ -127,8 +128,9 @@ function AgenticContent({ profile }: { profile: SessionProfile }) {
   // error here, and this only ever runs on the client - `SessionGate` has
   // already resolved a session by the time this renders, so there is no
   // server pass whose markup this could disagree with.
+  const scopedOrgId = useScopedOrgId();
   const [drafts, setDrafts] = useState<StoredAgentDraft[]>(() =>
-    typeof window === 'undefined' ? [] : listUnsavedAgentDrafts(),
+    typeof window === 'undefined' ? [] : listUnsavedAgentDrafts(scopedOrgId),
   );
   const [tab, setTab] = useState<'agents' | 'drafts'>('agents');
 
@@ -251,7 +253,7 @@ function AgenticContent({ profile }: { profile: SessionProfile }) {
                 draft={entry.draft}
                 onDiscard={() => {
                   clearAgentDraftByKey(entry.key);
-                  setDrafts(listUnsavedAgentDrafts());
+                  setDrafts(listUnsavedAgentDrafts(scopedOrgId));
                 }}
               />
             </li>

@@ -23,6 +23,7 @@ import {
   loadAgentDraft,
   saveAgentDraft,
 } from '@/lib/agent-draft';
+import { useScopedOrgId } from '@/lib/hooks/use-active-org';
 import { useOrgScopedEffect } from '@/lib/hooks/use-org-scoped-effect';
 import { useSession } from '@/lib/hooks/use-session';
 import { AgentMetrics } from './agent-metrics';
@@ -61,8 +62,12 @@ export function AgentEditor({ existing }: { existing?: VoiceAgent }) {
   // effect - deriving during render is the rule here, and an effect would also
   // flash the server values before replacing them.
   const agentId = existing?.id ?? null;
+  // Drafts belong to one organisation. Read and written under the org the
+  // rest of the app is currently in, so a draft started elsewhere never
+  // prefills an agent being built here (`ISSUES.md` #128).
+  const scopedOrgId = useScopedOrgId();
   const [draft] = useState(() =>
-    typeof window === 'undefined' ? null : loadAgentDraft(agentId),
+    typeof window === 'undefined' ? null : loadAgentDraft(scopedOrgId, agentId),
   );
 
   const [name, setName] = useState(draft?.name ?? existing?.name ?? '');
@@ -135,7 +140,7 @@ export function AgentEditor({ existing }: { existing?: VoiceAgent }) {
   const saved = useRef(false);
   useEffect(() => {
     if (saved.current) return;
-    saveAgentDraft(agentId, {
+    saveAgentDraft(scopedOrgId, agentId, {
       name,
       sttProvider,
       ttsProvider,
@@ -147,6 +152,7 @@ export function AgentEditor({ existing }: { existing?: VoiceAgent }) {
       seed: seed.current,
     });
   }, [
+    scopedOrgId,
     agentId,
     name,
     sttProvider,
@@ -203,7 +209,7 @@ export function AgentEditor({ existing }: { existing?: VoiceAgent }) {
       // reappear over a later edit. Set before clearing so the persist effect
       // does not immediately write it back.
       saved.current = true;
-      clearAgentDraft(agentId);
+      clearAgentDraft(scopedOrgId, agentId);
       toast({ tone: 'success', title: 'Agent saved' });
       router.push('/app/agentic');
     } catch (error) {
