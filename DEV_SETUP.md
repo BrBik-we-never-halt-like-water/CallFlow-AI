@@ -177,6 +177,7 @@ It is warm after that.
 | A service is `unhealthy` and nothing works | look at the one *below* it | `npm run local:logs db auth` - a failed database init surfaces two services away |
 | `port is already allocated` | something else holds 3000/8000/54321/55432 | stop it, or set `WEB_PORT`/`API_PORT` in `docker/.env` |
 | Studio shows `unhealthy` | its healthcheck expects the analytics service, which this stack leaves out | ignore it - Studio works |
+| Chat does not update until you reload; escalations and share requests are stale too | your database predates the `realtime` schema being created at init, so Realtime has no `subscription` table | `npm run local:reset -- --yes` (rebuilds the volume), or apply it in place: `docker compose -f docker/docker-compose.yml exec db psql -U postgres -c "create schema if not exists realtime authorization supabase_admin;" && docker compose -f docker/docker-compose.yml restart realtime` |
 
 ---
 

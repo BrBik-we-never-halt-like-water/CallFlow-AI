@@ -86,8 +86,12 @@ services:
             - admin
             - anon
 
+  # `realtime-dev`, not `realtime`: Realtime reads its tenant's external_id from
+  # the first label of the Host header, and the only seeded tenant is
+  # `realtime-dev`. The name resolves via a network alias on the realtime
+  # service - see the comment there.
   - name: realtime-v1-ws
-    url: http://realtime:4000/socket
+    url: http://realtime-dev:4000/socket
     protocol: ws
     routes:
       - name: realtime-v1-ws

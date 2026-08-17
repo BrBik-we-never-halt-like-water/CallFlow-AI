@@ -10,6 +10,17 @@ create schema if not exists storage authorization supabase_storage_admin;
 create schema if not exists _realtime authorization supabase_admin;
 create schema if not exists extensions;
 
+-- Realtime needs BOTH schemas, and they are not the same thing. `_realtime`
+-- above holds its tenant metadata; `realtime` holds the per-tenant CDC tables
+-- (`realtime.subscription`, the `realtime.messages` partitions) that its own
+-- migrations create on a tenant's first connection. Those migrations do not
+-- create the schema - they fail with "Could not create schema migrations
+-- table", the tenant is left with no `subscription` table, and every
+-- subscribe returns RealtimeSubscriptionError while the socket itself looks
+-- healthy. Upstream Supabase creates this in its own `realtime.sql` init
+-- script, which this stack does not use (`ISSUES.md` #120).
+create schema if not exists realtime authorization supabase_admin;
+
 grant usage on schema auth to anon, authenticated, service_role, postgres;
 grant usage on schema storage to anon, authenticated, service_role, postgres;
 

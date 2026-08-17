@@ -170,6 +170,19 @@ services:
       APP_NAME: realtime
       SEED_SELF_HOST: "true"
       RUN_JANITOR: "true"
+    # Realtime is multi-tenant even self-hosted: it takes the tenant's
+    # external_id from the FIRST LABEL OF THE HOST HEADER it is called on, and
+    # `SEED_SELF_HOST` seeds exactly one tenant, `realtime-dev`. Kong forwards
+    # its upstream host, so reaching this container as `realtime:4000` asks for
+    # a tenant named `realtime`, which does not exist - every subscription dies
+    # with TenantNotFound and a 403 (`ISSUES.md` #120). The alias is how the
+    # host comes out as `realtime-dev`; kong.yml must point at it, not at the
+    # service name. Upstream Supabase gets the same effect by naming the
+    # container `realtime-dev.supabase-realtime`.
+    networks:
+      default:
+        aliases:
+          - realtime-dev
 
   storage:
     image: supabase/storage-api:v1.19.3
@@ -265,8 +278,24 @@ services:
       KONG_PLUGINS: request-transformer,cors,key-auth,acl
       KONG_NGINX_PROXY_PROXY_BUFFER_SIZE: 160k
       KONG_NGINX_PROXY_PROXY_BUFFERS: 64 160k
+      SUPABASE_ANON_KEY: ${ANON_KEY}
+      SUPABASE_SERVICE_KEY: ${SERVICE_ROLE_KEY}
     volumes:
-      - ./volumes/kong.yml:/home/kong/kong.yml:ro
+      - ./volumes/kong.yml:/home/kong/temp.yml:ro
+    # Kong 2.8 does not interpolate environment variables in a declarative
+    # config, so the two `$SUPABASE_*_KEY` placeholders in kong.yml have to be
+    # substituted before it starts - without this, key-auth stores the literal
+    # string as the credential and rejects every real key with a 401.
+    #
+    # `sed` on exactly those two names, not Supabase's `eval "echo ..."`: this
+    # kong.yml carries prose comments containing backticks, which eval would
+    # run as command substitution. Substituting the two names we mean is both
+    # safer and says what it does. Regenerating keys (`npm run local:keys`)
+    # therefore needs no edit here - the file stays a template.
+    entrypoint:
+      - bash
+      - -c
+      - sed -e "s|\$$SUPABASE_ANON_KEY|$$SUPABASE_ANON_KEY|g" -e "s|\$$SUPABASE_SERVICE_KEY|$$SUPABASE_SERVICE_KEY|g" /home/kong/temp.yml > /home/kong/kong.yml && exec /docker-entrypoint.sh kong docker-start
 
   # --------------------------------------------------------------------------
   # CallFlow
