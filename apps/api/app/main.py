@@ -25,6 +25,7 @@ from app.api.v1.routes.safety import router as safety_router
 from app.api.v1.routes.sharing import router as sharing_router
 from app.api.v1.routes.suppressions import router as suppressions_router
 from app.api.v1.routes.telephony import router as telephony_router
+from app.api.v1.routes.telephony_numbers import router as telephony_numbers_router
 from app.api.v1.routes.voice_agents import router as voice_agents_router
 from app.core.config import config
 from app.core.logging import configure_logging
@@ -86,6 +87,7 @@ app.include_router(ai_providers_router)
 app.include_router(voice_agents_router)
 app.include_router(messages_router)
 app.include_router(telephony_router)
+app.include_router(telephony_numbers_router)
 # Not a public API - the voice runtime's callback, guarded by a shared secret.
 app.include_router(internal_router)
 
