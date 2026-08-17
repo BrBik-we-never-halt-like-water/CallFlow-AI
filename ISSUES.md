@@ -149,6 +149,9 @@ exist in this repo**; `SYSTEM.md` §12 is the closest real gap map until it's wr
 | [#127](#127--your-role-in-one-organisation-decided-whether-you-could-leave-it) | S2  | Your role in one organisation decided whether you could leave it - mixed-role members got stranded                    | web            | it-43 | **FIXED**        |
 | [#128](#128--agent-drafts-followed-you-into-the-next-organisation) | S2  | Agent drafts followed you into the next organisation and prefilled a new agent there                                  | web            | it-43 | **FIXED**        |
 | [#129](#129--an-operator-could-build-an-agent-and-then-had-no-way-to-remove-it) | S2  | An operator could build an agent and then had no way to remove it, their own included                                 | backend + web  | it-43 | **FIXED**        |
+| [#130](#130--the-canvas-loop-measured-and-reallocated-itself-every-frame) | S3  | Every animated canvas forced a layout and reallocated its backing store 60x a second                                  | web            | it-44 | **FIXED**        |
+| [#131](#131--the-wheel-picker-read-scrolltop-back-after-writing-it-forcing-a-layout-every-frame) | S3  | The wheel picker read `scrollTop` back after writing it - layout thrash on preset selection                            | web            | it-44 | **FIXED**        |
+| [#132](#132--voice-agents-were-visible-to-every-member-missing-the-per-creator-silo-the-rest-of-the-product-already-had) | S2  | Voice agents were visible to every member - missing the per-creator silo campaigns and runs already had                | backend        | it-44 | **FIXED**        |
 
 ---
 
@@ -5033,6 +5036,97 @@ That third line is the one that justifies the 403: the row is readable and undel
 `test_permissions.py` caught the change, as it should have - the old test asserted an operator *cannot* delete agents. Rewritten to state the new rule and why the two questions are separate, rather than deleted. Backend suite back to its baseline exactly (1 pre-existing failure, 381 passed, 146 pre-existing errors), `ruff`, `eslint` and `tsc` clean.
 
 **Left alone deliberately: `voice_agents_update`.** Any operator may still edit any agent in the organisation, so you can edit a colleague's agent but not delete it. That asymmetry is real and worth a decision, but tightening it would silently break teams who share agents on purpose - it should not ride along inside a delete fix.
+
+## Iteration 44 - 2026-08-17 · scrolling was jittery because every canvas forced a layout sixty times a second
+
+### #130 - the canvas loop measured and reallocated itself every frame
+
+**S3 · FIXED · web · `apps/web/lib/hooks/use-canvas-animation.ts`, `apps/web/components/brand/voice-field.tsx`**
+
+Reported as "scrolling on the Agents page is very jittery". The cause is in the shared canvas driver, so it applied to every animated canvas in the product - the Agents hero, the brand wave, and four marketing sections.
+
+`useCanvasAnimation`'s frame loop opened with `const s = size()`, and `size()` did two of the most expensive things available, sixty times a second:
+
+- `getBoundingClientRect()` - a **forced synchronous layout**. During a scroll, when the browser is already mid-layout, this is the textbook way to produce jank.
+- `cv.width = …; cv.height = …` - assigning either **discards the canvas backing store and allocates a new one**, even when the value is unchanged. Plus a `getContext` and a `setTransform` behind it.
+
+None of it was needed per frame. The size only changes when the element changes size, and a `ResizeObserver` was already watching for exactly that - the per-frame call was redundant work, not a safeguard.
+
+On top of that, `VoiceField` called `getComputedStyle(document.documentElement)` once per frame to read `--field-ink` and `--field-gain` - a forced **style** resolution to go with the forced layout.
+
+**Fix.** `size()` now runs on mount and from the `ResizeObserver`, caches the context and dimensions, and only touches `width`/`height` when they actually differ. The frame loop reads the cache and draws. `VoiceField` samples its two tokens at 4Hz instead of 60Hz - neither is animated; the accent follows the theme and the gain dims a whole surface.
+
+**One trap in that sampling, worth recording.** The first version keyed the cache on the frame's own `t`, which restarts at zero for every canvas instance - a second field mounting would have sat on a cache stamped in the first one's future and never resampled. It also would have broken the reduced-motion path, which paints **exactly one frame and never again**: a stale sample there is not a quarter-second of the wrong accent, it is the wrong accent until a reload - precisely the bug the hook's `theme` dependency was added to prevent. Now keyed on `performance.now()`, and forced whenever `reduced` is set.
+
+**Impact.** Two forced layout/style passes per frame per canvas, removed. This was jitter rather than breakage, which is why it survived: nothing errors, the page just never feels settled.
+
+**Verified.** `eslint` 0 errors, `tsc` clean on source. **Not measured** - a before/after frame profile needs a browser, and the reasoning here is structural rather than empirical: forced layout and backing-store reallocation per frame are wrong regardless of what a profile would say. Worth a devtools performance trace on the Agents page to confirm the felt improvement.
+
+### #131 - the wheel picker read `scrollTop` back after writing it, forcing a layout every frame
+
+**S3 · FIXED · web · `apps/web/components/ui/wheel-picker.tsx`**
+
+Reported as "this section is very jittery when I select presets" - the Transcriber / Model / Voice wheels on the agent editor. The "when I select presets" part is the clue: a preset spins **several wheels at once**, each with its own animation loop.
+
+`scrollTop` is a layout property. Writing it invalidates layout; reading it again in the same frame forces the browser to flush that layout synchronously before it can answer. The eased spin did exactly that, twice:
+
+```ts
+element.scrollTop = from + distance * eased;                 // write
+… (element.scrollTop / ITEM_HEIGHT).toFixed(3)              // read  -> forced layout
+const row = Math.round(element.scrollTop / ITEM_HEIGHT);    // read  -> again
+```
+
+One wheel is survivable. Four wheels, each running that loop, interleaving writes and reads across the same frame, is layout thrashing - and the value being read back is the value that was just assigned, so none of it bought anything.
+
+The gesture path had a milder version: `recentre()` may write `scrollTop`, and `paintOffset()` plus the index calculation then each read it back.
+
+**Fix.** The animation loop computes the position once into a local and uses it for all three writes. `recentre()` returns where the wheel ended up and `paintOffset()` takes an optional position, so a gesture frame reads `scrollTop` exactly once. The remaining reads are all one-per-animation setup rather than per-frame.
+
+Nothing about the animation's design changed - the hand-driven `scrollTop` write per frame is still right, and the comment explaining why (`snap-mandatory` re-snapping a native smooth scroll) still stands. What changed is that the loop no longer asks the DOM to re-measure what it just set.
+
+**Impact.** Jitter, not breakage, on the one interaction where the product shows off - picking a voice stack. It got worse the more wheels a preset touched, which is why it read as "presets are janky" rather than "the wheel is janky".
+
+**Verified.** `eslint` clean, `tsc` clean on source, page serves. **Not measured** - same caveat as #130: confirming the felt improvement needs a devtools frame profile while selecting a preset, which needs a browser.
+
+### #132 - voice agents were visible to every member, missing the per-creator silo the rest of the product already had
+
+**S2 · FIXED · backend · `voice_agents_select` / `_update` / `_delete` (migration `c9f47a1e6b28`)**
+
+Requested: an operator should have access to their own agents and nobody else's; an admin should see everyone's.
+
+Campaigns, runs and call outcomes were narrowed to exactly that in `202608092000` - "operators see only what they created; owner, admin and viewer keep seeing everything". Voice agents were built afterwards and kept the older flat `is_org_member(org_id)`, so every operator could see every colleague's agent. This is that migration's rule, applied to the table that missed it.
+
+Viewer follows the precedent and keeps seeing everything, which is what makes it the read-only oversight role rather than a weaker operator.
+
+**Three policies moved, not one.** Visibility alone would have been a half-measure:
+
+| Policy | Before | After |
+| --- | --- | --- |
+| `select` | `is_org_member(org_id)` | owner/admin/viewer see all, everyone else their own |
+| `update` | **any** operator, **any** agent in the org | owner/admin any; operator their own |
+| `delete` | owner/admin, or `created_by` (from `b6d1e93af472`) | same, plus the role check below |
+
+`update` is the one that mattered. Left as it was, an operator would have been unable to *see* a colleague's agent while still being permitted to overwrite one whose id they happened to hold - visibility narrowed, write surface not. `202608092000` could leave its write policies alone because they were already creator-scoped; this table's were not. It also settles the asymmetry `#129` deliberately left open ("you may edit a colleague's agent but not delete it") - the requirement here decides it rather than a guess.
+
+**Each non-owner branch also requires the `operator` role**, not just a `created_by` match. Without it, someone demoted from operator to viewer would keep write access to agents they had created, because `created_by` does not change when a role does. The API blocks that anyway - viewer holds neither `AGENTS_WRITE` nor `AGENTS_DELETE` - but RLS has to be right on its own (CLAUDE.md §4b). `insert` is unchanged: who may create an agent is a role question and it already answers it.
+
+**Checked before narrowing.** `telephony_provisioning`'s agent existence check reads `voice_agents` through the caller's own RLS connection, and its docstring already leans on `voice_agents_select` for security ("an agent id from another org simply is not there"). Narrowing makes that check stricter, not broken: an operator can now only provision a number for an agent they own, which is the same rule. It is the only other reader; nothing else joins to the table.
+
+**Verified at the database level.** Two real members of one organisation, an agent created by each, claims installed exactly as `database.as_user()` does:
+
+```
+OPERATOR sees: silo-mine                      (their own only)
+OPERATOR edits another's agent -> rows: 0     (blocked)
+OWNER sees:    silo-mine, silo-theirs         (everything)
+```
+
+Both probes ran in transactions and were rolled back. `ruff` clean; backend suite at its baseline exactly (1 pre-existing failure, 381 passed, 146 pre-existing errors).
+
+**No frontend change was needed**, which is worth stating rather than assuming: for an operator the "Built by your team" group is now always empty, so `#129`'s split collapses to a single grid on its own, and Delete correctly appears on everything an operator can see.
+
+**Open question, deliberately not answered here.** Nothing tells an operator their view is scoped - they see their own agents and cannot tell whether others exist. Campaigns and runs have behaved this way since `202608092000` with no such copy either, so this follows the precedent rather than inventing a one-off. If it should be said, it should be said on all three surfaces at once.
+
+**Still no regression test**, for the third time in this area: the DB-backed tests cannot run locally (`gen_salt`, `pgcrypto` off the tests' `search_path`) and CI's API job finishes too fast to be running them. A per-creator RLS rule is exactly what a cross-tenant test exists to protect, so the database probe above is the verification of record. **Fixing that test environment should come before the next change here.**
 
 ## Template for the next iteration
 

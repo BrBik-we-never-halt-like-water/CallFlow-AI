@@ -122,6 +122,46 @@ const SIZE_WALL = 1.38;
 
 const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v));
 
+/** How often the CSS tokens below are re-read, in milliseconds. */
+const TOKEN_SAMPLE_MS = 250;
+
+/**
+ * The two CSS values this canvas needs, resampled at `TOKEN_SAMPLE_MS`.
+ *
+ * Read per frame they cost a forced style resolution sixty times a second, for
+ * values that change when the theme changes or when a surface dims the field -
+ * never within a frame. Cached here rather than in a React memo because
+ * `--field-gain` is deliberately set on `document.documentElement` at runtime,
+ * so it has to be observed rather than passed in.
+ *
+ * Keyed on the wall clock, not the frame's `t`: `t` restarts at zero for every
+ * canvas instance, so a second field mounting would have sat on a cache stamped
+ * in the first one's future and never resampled.
+ *
+ * `force` exists for the reduced-motion path, which paints exactly one frame and
+ * never again. A stale sample there is not a quarter-second of the wrong accent,
+ * it is the wrong accent until a reload - the same failure the canvas hook's own
+ * theme dependency was added to prevent.
+ */
+let tokenLast = Number.NEGATIVE_INFINITY;
+let tokenFill = "rgb(59, 47, 217)";
+let tokenGain = 1;
+
+function sampleTokens(force: boolean): { fill: string; gain: number } {
+  const now = performance.now();
+  if (force || now - tokenLast >= TOKEN_SAMPLE_MS) {
+    tokenLast = now;
+    const style = getComputedStyle(document.documentElement);
+    const accent =
+      style.getPropertyValue("--field-ink").trim() ||
+      style.getPropertyValue("--primary").trim() ||
+      "#3b2fd9";
+    tokenFill = `rgb(${hexToRgb(accent)})`;
+    tokenGain = Number.parseFloat(style.getPropertyValue("--field-gain")) || 1;
+  }
+  return { fill: tokenFill, gain: tokenGain };
+}
+
 /**
  * Feathers the two standing formations at their borders.
  *
@@ -282,21 +322,20 @@ export function VoiceField({ className }: { className?: string }) {
       const shapeA = FORMATIONS[from];
       const shapeB = FORMATIONS[to];
 
-      // The accent, read once a frame rather than per particle: this is the one
-      // value that has to follow the theme, and `getComputedStyle` inside the
-      // inner loop would be 12,000 style resolutions a frame.
-      const style = getComputedStyle(document.documentElement);
-      const accent =
-        style.getPropertyValue("--field-ink").trim() ||
-        style.getPropertyValue("--primary").trim() ||
-        "#3b2fd9";
-      const rgb = hexToRgb(accent);
-      ctx.fillStyle = `rgb(${rgb})`;
+      // Sampled a few times a second, not sixty. `getComputedStyle` forces a
+      // style resolution, and doing that every frame - alongside the layout the
+      // canvas hook used to force - is what made scrolling past this jitter
+      // (`ISSUES.md` #130). Neither value it reads is animated: the accent
+      // follows the theme, and `--field-gain` is set to dim the field for a
+      // whole surface. 4Hz is imperceptible for both and costs 4 style
+      // resolutions a second instead of 60.
+      const tokens = sampleTokens(reduced);
+      ctx.fillStyle = tokens.fill;
 
       // Applied to the final opacity rather than folded into ALPHA_BASE/RANGE,
       // which would push the buckets past ALPHA_STEPS and quietly lose the top
       // of the range to clamping.
-      const gain = Number.parseFloat(style.getPropertyValue("--field-gain")) || 1;
+      const gain = tokens.gain;
 
       // Slow drift terms: per frame, not per particle.
       phaseA = Math.sin(time * 0.05) * 0.8;

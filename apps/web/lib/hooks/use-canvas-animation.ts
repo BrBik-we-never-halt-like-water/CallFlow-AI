@@ -52,7 +52,20 @@ export function useCanvasAnimation(
   });
 
   const sized = useRef({ w: 0, h: 0 });
+  const ctxRef = useRef<CanvasRenderingContext2D | null>(null);
 
+  /**
+   * Measure and (re)allocate the backing store. Called on mount and on resize -
+   * never per frame.
+   *
+   * It used to run inside the frame loop, which cost two of the most expensive
+   * things you can do sixty times a second: `getBoundingClientRect()` forces a
+   * layout, and assigning `width`/`height` throws away the canvas backing store
+   * and allocates a new one. During a scroll - when the browser is already busy
+   * laying out - that is the whole jitter (`ISSUES.md` #130). The size only
+   * changes when the element changes size, and a `ResizeObserver` already knows
+   * when that happens.
+   */
   const size = useCallback(() => {
     const cv = ref.current;
     if (!cv) return null;
@@ -60,13 +73,23 @@ export function useCanvasAnimation(
     const rect = cv.getBoundingClientRect();
     const w = Math.max(1, rect.width);
     const h = Math.max(1, rect.height);
-    cv.width = Math.round(w * dpr);
-    cv.height = Math.round(h * dpr);
-    const ctx = cv.getContext("2d");
-    if (!ctx) return null;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const nextW = Math.round(w * dpr);
+    const nextH = Math.round(h * dpr);
+
+    // Guarded: assigning the same number still clears the canvas.
+    if (cv.width !== nextW || cv.height !== nextH || !ctxRef.current) {
+      cv.width = nextW;
+      cv.height = nextH;
+      const ctx = cv.getContext("2d");
+      if (!ctx) return null;
+      // The transform is part of the backing store, so it is reinstated here
+      // and only here.
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctxRef.current = ctx;
+    }
+
     sized.current = { w, h };
-    return { ctx, w, h };
+    return { ctx: ctxRef.current, w, h };
   }, []);
 
   useEffect(() => {
@@ -77,11 +100,14 @@ export function useCanvasAnimation(
     let start = 0;
     let visible = false;
 
+    // Reads the cached context and dimensions - no measuring, no reallocation.
+    // `size()` runs on mount and from the ResizeObserver below.
     const frame = (now: number) => {
-      const s = size();
-      if (!s) return;
+      const ctx = ctxRef.current;
+      if (!ctx) return;
       if (!start) start = now;
-      drawRef.current({ ...s, t: (now - start) / 1000, reduced: false });
+      const { w, h } = sized.current;
+      drawRef.current({ ctx, w, h, t: (now - start) / 1000, reduced: false });
       raf = requestAnimationFrame(frame);
     };
 
@@ -98,6 +124,10 @@ export function useCanvasAnimation(
       ro.observe(cv);
       return () => ro.disconnect();
     }
+
+    // Measured once up front, so the first frame has a context and dimensions
+    // to draw with.
+    size();
 
     const io = new IntersectionObserver(
       (entries) => {
