@@ -15,6 +15,7 @@ import {
   type RunSummary,
   type SafetySettings,
 } from '@/lib/api';
+import { useActiveOrg } from '@/lib/hooks/use-active-org';
 import { useConnection, type Connection } from '@/lib/hooks/use-connection';
 import { useOrgRealtime } from '@/lib/hooks/use-org-realtime';
 import { useOrgScopedEffect } from '@/lib/hooks/use-org-scoped-effect';
@@ -87,6 +88,38 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
   const session = useSession();
   const activeOrgId =
     session.status === 'signed-in' ? session.profile.active.org_id : null;
+
+  /**
+   * Drop the previous organisation's data the instant the org changes, before
+   * anything can render it.
+   *
+   * Re-fetching on switch is not the same as isolating. The effects below all
+   * re-fetch, but they only replace state when the new response *arrives* -
+   * so for the length of a request the dashboard showed the previous
+   * organisation's runs, escalations and safety numbers while the switcher
+   * already said you were somewhere else. Their `catch` branches make it
+   * worse: keeping stale data on a failed refresh is right for a refresh of
+   * the same org, and wrong across a switch, where it leaves the old
+   * organisation's rows on screen indefinitely (`ISSUES.md` #127).
+   *
+   * Keyed on `useActiveOrg()` rather than `session.profile.active.org_id`
+   * deliberately: that is the same value `useOrgScopedEffect` keys on, so the
+   * clear and the re-fetch are driven by one signal and land in the right
+   * order. The session's copy updates only after `/me` comes back, which is
+   * *after* the re-fetch - resetting on it would wipe the new organisation's
+   * freshly-loaded data and leave nothing to trigger another load.
+   */
+  const [scopedOrgId] = useActiveOrg();
+  const [loadedOrgId, setLoadedOrgId] = useState(scopedOrgId);
+  if (loadedOrgId !== scopedOrgId) {
+    setLoadedOrgId(scopedOrgId);
+    setRuns([]);
+    setHydratedRuns([]);
+    setLoadingRuns(true);
+    setEscalations([]);
+    setLoadingEscalations(true);
+    setSafetySettings(null);
+  }
 
   const refresh = useCallback(() => setNonce((n) => n + 1), []);
   const refreshSafety = useCallback(() => setSafetyNonce((n) => n + 1), []);

@@ -146,6 +146,7 @@ exist in this repo**; `SYSTEM.md` §12 is the closest real gap map until it's wr
 | [#124](#124--a-conversation-stuck-on-its-loader-forever-after-both-of-its-requests-returned-200) | S2  | Conversation stuck on its loader forever, after both its requests returned 200                                        | web            | it-42 | **FIXED**        |
 | [#125](#125--a-500ms-anti-flicker-floor-could-stay-raised-forever-and-it-gated-the-entire-conversation-panel) | S2  | A 500ms anti-flicker floor could stay raised forever, and it gated the whole conversation panel                       | web            | it-42 | **FIXED**        |
 | [#126](#126--accepting-an-invitation-offered-a-signup-form-to-people-who-already-have-an-account) | S2  | Accepting an invitation offered a signup form to people who already have an account                                   | web + backend  | it-43 | **FIXED**        |
+| [#127](#127--your-role-in-one-organisation-decided-whether-you-could-leave-it) | S2  | Your role in one organisation decided whether you could leave it - mixed-role members got stranded                    | web            | it-43 | **FIXED**        |
 
 ---
 
@@ -4921,6 +4922,52 @@ The card's own copy follows the branch - "Sign in to join the team" rather than 
 **Verified.** Migration `f4b2c9e17a35` applied locally, single head. The function was exercised directly against the real schema with two invitations - one to an address that has an account, one to an address that does not - asserting `account_exists` is `true` and `false` respectively, with the probe rows deleted afterwards. `ruff` clean, backend suite 381 passed against the same baseline, `eslint` and `tsc` clean.
 
 **No regression test.** The DB-backed tests cannot run locally (`gen_salt` is unavailable - `pgcrypto` sits in `extensions`, off the tests' `search_path`, the same cause behind the 146 pre-existing errors) and CI's API job completes in ~20s, which is too fast to be running them either. Until that environment works, a test here would be written and never executed, so the direct database probe above is the verification of record. Worth fixing the test environment before this area changes again.
+
+### #127 - your role in one organisation decided whether you could leave it
+
+**S2 · FIXED · web · `apps/web/components/layout/app-shell.tsx`, `apps/web/app/(app)/app/chat/chat-shell.tsx`**
+
+Two defects found while auditing whether one organisation's data can reach another.
+
+**1. The org switcher was gated on role, and the gate read the *current* org.**
+
+```tsx
+// Switching between organisations ... is an admin/owner concern.
+if (!hasRole(profile, 'owner', 'admin')) {  // <- static label, no switcher
+```
+
+The reasoning reads sensibly and is wrong in a way that only shows up with mixed roles: someone who owns organisation A and is a *viewer* in B loses the switcher the moment they arrive in B - the control that would take them back is the one being hidden. **They are stranded there**, with no route out short of clearing site data, because the pinned org lives in `localStorage`.
+
+The API never agreed with the gate: `GET /organisations` (`list_mine`) takes a plain `Depends(current_user)` with no permission requirement and has always returned every membership to every member. This was a UI-only restriction, so lifting it needed no backend change.
+
+Membership is what entitles someone to move between organisations; role governs what they can do *inside* one. The condition is now `list.length > 1 || hasRole(profile, 'owner', 'admin')` - the admin half stays only because this menu is also where **New organisation** lives, and a single-org owner still needs it.
+
+**2. An open conversation survived an org switch.**
+
+Chat's channel list and member list both key on `orgId` and refetch on a switch, but the open conversation lives in the `?c=` query param, which does not change - so the right-hand pane went on showing the **previous organisation's conversation and its already-fetched messages** beside a list that had moved on. RLS blocks any new read of that channel, but nothing un-renders what is already on screen. Now the conversation closes when the active org changes: a channel id from another organisation has no meaning in this one, so no selection is the honest result.
+
+**3. The previous organisation's data stayed on screen during the switch.**
+
+Re-fetching on switch is not the same as isolating, and every org-scoped surface got this wrong in the same way. `app-store` and each page replace their state only when the *new* response arrives, so for the length of a request the dashboard showed organisation A's runs, escalations and safety numbers while the switcher already said B. The `catch` branches make it worse: keeping stale data on a failed refresh is right for a refresh of the same organisation and wrong across a switch, where it leaves A's rows up **indefinitely** while you are in B.
+
+Fixed in two places, because they sit either side of the provider boundary:
+
+- `AppStoreProvider` clears runs, escalations and safety settings during render the moment the org changes, before anything can render them.
+- `AppShell` keys the page subtree on the active org (`<Fragment key={activeOrgId}>`), so **every page remounts** on a switch and every `useState` in it returns to its initial value. Auditing ten pages would have fixed ten pages; keying the subtree fixes the class, including pages nobody has written yet.
+
+Both key on `useActiveOrg()` rather than `session.profile.active.org_id`, deliberately. That is the same value `useOrgScopedEffect` and the API client's `X-Org-Id` read, so the clear and the re-fetch are driven by one signal in the right order. The session's copy only updates once `/me` returns - *after* the re-fetch - so resetting on it would wipe the new organisation's freshly-loaded data and leave nothing to trigger another load.
+
+Losing scroll position and in-page state on a switch is the correct outcome: you are looking at a different tenant.
+
+**What was checked and found already correct.** Worth recording so the next audit is shorter:
+
+- Every other org-scoped page refetches on switch, via `useOrgScopedEffect` or `useAppStore` (which uses it). `runs/new` and `settings/safety` looked exposed but read through the store; `profile` and `organisation/new` are not org-scoped.
+- Locally persisted state is keyed by entity id (`callflow.campaign.settings.<campaignId>`, `callflow.agent.draft.<agentId>`), and a campaign or agent belongs to exactly one organisation, so those cannot bleed. `callflow.campaign.draft` is a one-shot `sessionStorage` handoff, read and removed immediately.
+- **Server-side isolation verified directly**, not assumed: with `request.jwt.claims` and `role` set exactly as `database.as_user()` installs them, a user belonging to 2 of the 8 organisations in the database saw 2 organisations, 3 memberships, and **zero rows belonging to an organisation they are not a member of**. RLS is doing its job.
+
+**Impact.** Anyone with different roles across organisations could be trapped in one of them - which for a multi-tenant product is the switch feature not working at all for exactly the people who need it most. The chat leak is narrower but is literally one organisation's content displayed while inside another.
+
+**Verified.** `eslint` 0 errors on both changed files (one pre-existing `<img>` warning elsewhere in `app-shell.tsx`), `tsc` clean, cross-tenant probe above.
 
 ## Template for the next iteration
 
