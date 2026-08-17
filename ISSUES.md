@@ -5128,6 +5128,120 @@ Both probes ran in transactions and were rolled back. `ruff` clean; backend suit
 
 **Still no regression test**, for the third time in this area: the DB-backed tests cannot run locally (`gen_salt`, `pgcrypto` off the tests' `search_path`) and CI's API job finishes too fast to be running them. A per-creator RLS rule is exactly what a cross-tenant test exists to protect, so the database probe above is the verification of record. **Fixing that test environment should come before the next change here.**
 
+## Iteration 45 - 2026-08-18 · a run could never place a call, and two concepts described one thing
+
+### #133 - the dial path was fully built and never connected
+
+**S1 · FIXED · api · `app/api/v1/routes/runs.py`, `app/services/run_dialer.py`**
+
+`CampaignRunner` accepted `trunk_id` and `voice_agent`, and its own docstrings
+said both were "resolved by the caller from the campaign's voice agent". Nothing
+resolved them. Grepping the whole of `apps/api` found those kwargs passed in
+tests and nowhere else, so every contact hit the guards at `campaign_runner.py`
+lines 297 and 316 and was refused with "no connected number" / "no speech or
+language providers set" before the phone rang.
+
+**Impact.** Total: no organisation could place a call through the product, and the
+failure read as a configuration problem the operator was expected to fix rather
+than a missing wire. `telephony_provisioning` had been producing verified LiveKit
+outbound trunks the whole time and nothing ever read one back out.
+
+**Fix.** `services/run_dispatch.py` resolves an agent plus the numbers a run
+picked into the trunks and decrypted keys the dialer already knew how to use,
+failing closed with a message naming what to connect. The dialer itself needed no
+new dialling machinery - only a pool where a single trunk used to be.
+
+**Depends on / Blocks:** unblocks every call the product places.
+
+### #134 - a run's numbers had nowhere to live
+
+**S2 · FIXED · db · `alembic/versions/202608180900_agent_driven_runs_replace_campaigns.py`**
+
+`provider_credentials` is uniquely keyed `(org_id, provider)` with a single
+`phone_number` column, so an organisation with five Twilio numbers had nowhere to
+put four of them. `telephony_provisioning.voice_agent_id` was `NOT NULL`, making
+provisioning per-agent - the opposite of "any agent through any carrier".
+
+**Impact.** "Pick one, several, or all of our numbers" was unrepresentable, and an
+agent was bound to one number at build time.
+
+**Fix.** ADR-8. `telephony_numbers` is the aggregate, `run_numbers` binds a run to
+its lines, and provisioning targets a number. The first draft of the plan stored
+the numbers as `runs.from_numbers jsonb`, which was wrong: a number's trunk id and
+status are per-number state with their own lifecycle, and denormalising them into
+each run means a number verified *after* a run started stays recorded unverified.
+
+### #135 - `required` on a collect field was written and never read
+
+**S2 · FIXED · api · `app/domain/collection.py`, `app/domain/triage.py`**
+
+A field could be marked required, and that value was used exactly once - to build
+the schema the model was asked to satisfy. Nothing re-checked the answer against
+it, so a call could come back with none of the required fields and still be
+recorded `auto_closed` because the status said `completed`.
+
+**Impact.** Silent data loss: the product claimed a call was clean while the thing
+it was sent to find out was missing, and nobody was told.
+
+**Fix.** ADR-5's design, followed rather than reinvented - including the placement
+its own review corrected. The new triage rule is gated on `status == "completed"`,
+so a busy or no-answer call keeps its more actionable "worth retrying" signal
+instead of being escalated for fields it never had a chance to collect. The
+implementation plan had this rule ranked above `task_completed`, which is the bug
+ADR-5 was written to prevent.
+
+`is_present()` treats `False` and `0` as answers: a yes/no field answered "no" was
+collected, and a bare falsiness check would send a person to ask something the
+contact had already answered.
+
+### #136 - a hostile spreadsheet column stopped colliding, so it stopped being blocked
+
+**S2 · FIXED · api · `app/services/run_dialer.py`, `app/domain/prompt_assembly.py`**
+
+`contact.context` was spread first into the dispatch metadata so a CSV column
+named `goal` lost to CallFlow's own `goal` key - a defence that worked by
+collision. Renaming that key to `prompt` removed the collision, and a hostile
+`goal` column began riding along untouched. Inert today; live again the moment a
+future reader adds a `goal` key back.
+
+**Impact.** None yet, which is the point - it was a defence that had quietly
+stopped defending, and nothing would have failed to say so.
+
+**Fix.** Reserved keys are stripped from the metadata *and* the prompt, against
+one shared list (`prompt_assembly.RESERVED_CONTEXT_KEYS`) so the two cannot
+drift. Dropped column *names* are logged, never their values - a discarded column
+may hold exactly the PII that must not reach a log line. Pinned by
+`test_dispatch_contract.py`, and verified by mutation.
+
+### #137 - four bugs the migration rehearsal caught before dev saw them
+
+**S2 · FIXED · db · same revision**
+
+Running the migration inside a rolled-back transaction against the real schema
+found four faults, two of which would have failed silently:
+
+1. `create or replace` cannot change a function's return type, and two of these
+   change theirs - including `lookup_run_owner_for_webhook`, on the completion
+   hot path. The migration would have aborted mid-flight.
+2. The new functions read `runs.voice_agent_id` but name `public.campaigns`, so
+   there is exactly one window they can be created in. The first version had them
+   first and failed on a column that did not exist yet.
+3. The member-removal rewrite silently left `update public.campaigns` in place. A
+   `search_path`-pinned `SECURITY DEFINER` function, so it fails when someone
+   removes a teammate, not when the migration runs.
+4. Supabase's default ACL on `public` grants DELETE to `authenticated` on every
+   new table, so granting select/insert/update still left both new tables
+   deletable - the same miss `202608161700` already had to correct once.
+
+**Impact.** Prevented. Worth recording because the rehearsal is what found them,
+and three of the four would not have shown up in any test.
+
+**Fix.** Applied. The rehearsal pattern - run the real migration in a transaction
+against the real schema, assert the end state, roll back - is worth repeating for
+anything that touches a `SECURITY DEFINER` function or adds a tenant table.
+
+**Depends on / Blocks:** nothing.
+
 ## Template for the next iteration
 
 ```

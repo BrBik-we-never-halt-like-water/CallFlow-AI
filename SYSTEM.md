@@ -15,7 +15,9 @@ What exists **today**, verified against the running system on 2026-08-07. Not a 
 > **State of play.** Identity, tenancy, and the calling domain are now all real:
 > Supabase Postgres, RLS on every tenant-scoped table, working signup/sign-in, and
 > campaigns/runs/call outcomes persisted per-organisation (`ISSUES.md` #1, #2 closed -
-> `app/database/run_store.py` and the module-global campaign registry are both gone).
+> `app/database/run_store.py`, the module-global campaign registry, and campaigns
+> themselves are all gone - a run is an agent dialling the organisation's own
+> numbers now (ADR-8).
 > **`dry_run` no longer exists anywhere in the product** - every run dials for real,
 > unconditionally, from an org's very first run (CLAUDE.md, ADR-3). The guards that
 > now matter are E.164 validation, the allowlist, the per-run ceiling, rate limiting, the
@@ -41,7 +43,7 @@ What exists **today**, verified against the running system on 2026-08-07. Not a 
 | Backend     | Python 3.11, FastAPI, Pydantic v2, SQLAlchemy 2 + Alembic, asyncpg                                                                                                        |
 | Frontend    | Next.js 16.2.12 (App Router, Turbopack), React 19, TypeScript strict, Tailwind v4                                                                                         |
 | UI deps     | Radix primitives, Phosphor icons, framer-motion, nuqs, clsx + tailwind-merge, MDX                                                                                         |
-| Persistence | Supabase Postgres 17. Identity, tenancy, campaigns, runs, and call outcomes are all org-scoped Postgres rows under RLS - **nothing calling-related is in-memory anymore** |
+| Persistence | Supabase Postgres 17. Identity, tenancy, agents, numbers, runs, and call outcomes are all org-scoped Postgres rows under RLS - **nothing calling-related is in-memory anymore** |
 | Auth        | Supabase Auth, email + password. Cookie sessions, RLS-enforced tenancy                                                                                                    |
 | Deployment  | Single VM, nginx + pm2, at `callflow-ai.brbik.com`. `render.yaml` is stale                                                                                                |
 | CI          | GitHub Actions `ci-cd.yml` - 3 jobs, deploys on push to `main`                                                                                                            |
@@ -57,14 +59,14 @@ CallFlow-AI/
 │   ├── api/                        FastAPI service
 │   │   ├── app/
 │   │   │   ├── main.py             app assembly, lifespan, CORS, router includes
-│   │   │   ├── api/v1/routes/      campaigns, runs, organisations, invitations, profile,
+│   │   │   ├── api/v1/routes/      runs, voice_agents, telephony, organisations, profile,
 │   │   │   │                       api_keys, integrations, suppressions, safety
 │   │   │   ├── core/               config, rate_limit, crypto
 │   │   │   ├── auth/               tokens, dependencies, permissions
 │   │   │   ├── database/           models, session, privileged, repositories/
 │   │   │   ├── domain/             entities, safety, triage, result_schemas,
-│   │   │   │                       campaigns, api_keys  - pure, no I/O
-│   │   │   ├── services/           campaign_runner (async)
+│   │   │   │                       numbers, collection, api_keys  - pure, no I/O
+│   │   │   ├── services/           run_dialer, run_dispatch (async)
 │   │   │   └── integrations/voice/ protocol.py - no adapter implements it yet
 │   │   ├── alembic/                env.py + 20 revisions
 │   │   ├── tests/                  12 files, 202 tests
@@ -101,17 +103,17 @@ What a user can actually do, which endpoint it hits, and what survives a restart
 
 | Feature area                      | User actions available                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | Endpoint(s)                                                                                                                       | Persists?                                                                                                                                                                           |
 | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Campaigns**                     | List, create, edit in place (name + goal + extraction fields, id/slug never changes), duplicate, delete, live goal/schema preview                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | `GET/POST /api/v1/campaigns`, `PATCH/DELETE /api/v1/campaigns/{id}`                                                               | ✅ org-scoped Postgres row (built-ins stay Python constants)                                                                                                                        |
-| **Goal preview**                  | Render the goal per contact - free, no dialling                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | `POST /api/v1/campaigns/preview` (authenticated; currently unused by any UI - the editor and run composer render locally, see §5) | n/a (stateless)                                                                                                                                                                     |
+| **Agents**                        | List, create, edit in place (name, prompt, STT/TTS/LLM, the fields to collect), delete. An agent is reusable across runs and carriers                                                                                    | `GET/POST /api/v1/voice-agents`, `PATCH/DELETE /api/v1/voice-agents/{id}`                                                          | ✅ org-scoped Postgres row                                                                                                                                                          |
+| **Numbers**                       | List the numbers the org owns, sync them from the carrier account, retire or restore one                                                                                                                                 | `GET /api/v1/telephony/numbers`, `POST /api/v1/telephony/numbers/sync`, `PATCH /api/v1/telephony/numbers/{id}`                     | ✅ `telephony_numbers`, org-scoped                                                                                                                                                  |
 | **Voice agents** (the Agentic tab) | Create/edit/delete a reusable agent: an STT provider, a TTS provider + voice, an LLM model (always routed through OpenRouter today), a system prompt, and one of the org's already-connected Twilio/Plivo numbers. Browse the provider catalog (cost/latency/quality per vendor, as prose notes and as machine-unit figures) and connect/disconnect the org's own Sarvam/Deepgram/ElevenLabs/OpenAI/OpenRouter API keys. Preview a connected provider - a real TTS/STT vendor call, Sarvam only today. "Prebuilt agents" is an honest "coming soon" notice, not a working picker | `GET/POST /api/v1/voice-agents`, `PATCH/DELETE /api/v1/voice-agents/{id}`, `GET /api/v1/voice-agents/providers`, `POST /api/v1/voice-agents/preview`, `GET/PUT/DELETE /api/v1/ai-providers[/{provider}]` | ✅ org-scoped Postgres row (`voice_agents`, `ai_provider_credentials` - key Fernet-encrypted at rest). ⚠️ No agent can place or receive a real call yet - depends on the not-yet-built LiveKit voice runtime (§9, `ISSUES.md` #90) |
 | **Contacts (in a run)**           | Paste, CSV drop, manual grid entry, per-row E.164 validation, remove-all-invalid                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | none - client-side only, sent inline with the run                                                                                 | ❌ never stored                                                                                                                                                                     |
 | **Runs**                          | Start (always live), watch live, open a call's transcript, export CSV                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | `POST /api/v1/runs`, `GET /api/v1/runs`, `GET /api/v1/runs/{id}`                                                                  | ✅ org-scoped Postgres, updated as each call resolves                                                                                                                               |
 | **Safety guards**                 | View and edit this org's own overrides (per-run ceiling, rate limit, daily budget, allowlist); enforced server-side per dial                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | `GET/PATCH /api/v1/safety`                                                                                                        | ✅ org-scoped Postgres row (`org_safety_settings`), falls back to deployment env vars when unset                                                                                    |
-| **Escalations**                   | Filter by reason/campaign/age, sort oldest-first, open transcript, assign to a teammate (admin/owner), mark resolved - live-synced across teammates                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | `GET /api/v1/escalations`, `POST .../assign`, `POST .../resolve`                                                                  | ✅ org-scoped Postgres row (`escalations`), one per escalating call outcome; Realtime-pushed to every signed-in teammate                                                            |
-| **Sharing** (Phase 4)              | Operator: browse a name-only, org-wide directory of teammates' campaigns/open escalations, request access/to help (with an optional message). Owner of a resource: approve (clones the campaign, or hands off the escalation) or reject, from the Organisation page's "Sharing" tab - live-synced across teammates                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | `GET .../campaigns/directory`, `GET .../escalations/directory`, `GET/POST /api/v1/share-requests`, `POST .../{id}/approve\|reject` | ✅ org-scoped Postgres row (`share_requests`); Realtime-pushed to requester and owner                                                                                              |
+| **Escalations**                   | Filter by reason/agent/age, sort oldest-first, open transcript, assign to a teammate (admin/owner), mark resolved - live-synced across teammates                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | `GET /api/v1/escalations`, `POST .../assign`, `POST .../resolve`                                                                  | ✅ org-scoped Postgres row (`escalations`), one per escalating call outcome; Realtime-pushed to every signed-in teammate                                                            |
+| **Sharing** (Phase 4)              | Operator: browse a name-only, org-wide directory of teammates' open escalations, request to help (with an optional message). Owner: approve (hands the escalation off) or reject, from the Organisation page's "Sharing" tab - live-synced across teammates. Campaign sharing went with campaigns (ADR-8); an agent is not offered in its place, because agents are already org-wide readable and there would be nothing to request                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | `GET .../escalations/directory`, `GET/POST /api/v1/share-requests`, `POST .../{id}/approve\|reject` | ✅ org-scoped Postgres row (`share_requests`); Realtime-pushed to requester and owner                                                                                              |
 | **Contacts list**                 | Search, view call history                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | none - derived from run outcomes                                                                                                  | ❌                                                                                                                                                                                  |
 | **Suppression list**              | View, add, and remove (owner-only) - org-wide, checked before every dial                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | `GET/POST /api/v1/suppressions`, `DELETE /api/v1/suppressions/{id}`                                                               | ✅ org-scoped Postgres row; the same table `check_dial_allowed()` checks (see §7)                                                                                                   |
-| **Calling window / retry policy** | Edit per campaign                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | none                                                                                                                              | ⚠️ `localStorage`, never sent to the API, not enforced                                                                                                                              |
+| **Calling window / retry policy** | Edit per run                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | none                                                                                                                              | ⚠️ `localStorage`, never sent to the API, not enforced                                                                                                                              |
 | **Org setup gate**                | Mandatory, non-skippable name confirmation on a fresh organisation, then a skippable profile-details step                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | `POST /api/v1/organisations/me/complete-onboarding`, `PATCH /api/v1/me`                                                           | ✅ `organisations.onboarded_at`, server-verified - not `localStorage`                                                                                                               |
 | **Onboarding**                    | 4-step walkthrough ending in a real, live call, reached only after the org-setup gate clears                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | `POST /api/v1/runs`                                                                                                               | ⚠️ step index in `localStorage`                                                                                                                                                     |
 | **Status page**                   | Live health check with latency                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | `GET /api/health`                                                                                                                 | n/a                                                                                                                                                                                 |
@@ -142,17 +144,16 @@ Legend: ✅ persists · ⚠️ persists locally/partially · ❌ lost on restart
 | `auth/tokens.py`                                | JWKS/HS256 verification with 30s clock-skew leeway                                                                                                                                                                                                                                                                                                   | `TokenVerifier`, `TokenClaims`, `InvalidToken`                                                                |
 | `auth/dependencies.py`                          | Bearer token → `(user, org, role)`. **Two paths**: a Supabase access token, or a `cfk_…` CallFlow API key routed through `_resolve_api_key()`; both produce the same `CurrentUser`                                                                                                                                                                   | `CurrentUser`, `current_user`, `RequirePermission`                                                            |
 | `auth/permissions.py`                           | The one role→permission matrix, plus the role-hierarchy checks for _which_ role a caller may grant and _whose_ row they may act on (owner > admin > operator > viewer)                                                                                                                                                                               | `Permission`, `ROLE_PERMISSIONS`, `role_has()`, `can_grant_role()`, `can_act_on_member()`                     |
-| `database/models.py`                            | SQLAlchemy tables for identity/tenancy only - structure, no RLS. `campaigns`, `runs`, `call_outcomes` are **not** ORM classes; they're hand-authored in the migration and read only through raw asyncpg in the repositories below                                                                                                                    | `User`, `Organisation`, `Membership`, `Suppression`, `OrgRole`                                                |
+| `database/models.py`                            | SQLAlchemy tables for identity/tenancy only - structure, no RLS. `runs`, `call_outcomes`, `telephony_numbers` are **not** ORM classes; they're hand-authored in the migration and read only through raw asyncpg in the repositories below                                                                                                                    | `User`, `Organisation`, `Membership`, `Suppression`, `OrgRole`                                                |
 | `database/session.py`                           | Pool + the RLS-scoped connection + jsonb codec registration                                                                                                                                                                                                                                                                                          | `Database`, `database`                                                                                        |
 | `database/privileged.py`                        | The only RLS bypass. Demands a reason, logs every use                                                                                                                                                                                                                                                                                                | `PrivilegedAccess`, `privileged`                                                                              |
-| `database/repositories/campaigns.py`            | Org-owned campaign CRUD, raw asyncpg. List/get join `users` for `created_by_name`/`created_by_avatar_url` - RLS does the actual visibility narrowing, this join is only for attribution                                                                                                                                                             | `list_org_campaigns()`, `get_org_campaign()`, `create_campaign()`, `delete_campaign()`                        |
 | `database/repositories/runs.py`                 | Run + call-outcome persistence, raw asyncpg. `lookup_owner_for_webhook()` is the one exception - runs on an anonymous connection, via a SECURITY DEFINER function, for the webhook receiver. `summarize_by_member()` backs the admin/owner team-summary route and has no ownership filter of its own - it leans entirely on RLS                    | `create_run()`, `append_outcome()`, `finish_run()`, `get_run()`, `list_outcomes()`, `list_runs()`, `summarize_by_member()`, `lookup_owner_for_webhook()` |
 | `database/repositories/suppressions.py`         | Do-not-call list, raw asyncpg                                                                                                                                                                                                                                                                                                                        | `is_suppressed()`, `list_suppressions()`, `add_suppression()`, `remove_suppression()`                         |
 | `database/repositories/safety_settings.py`      | An org's own safety-guard overrides, raw asyncpg                                                                                                                                                                                                                                                                                                     | `get_for_org()`, `upsert()`                                                                                   |
 | `database/repositories/api_keys.py`             | Org-scoped API key CRUD, raw asyncpg. RLS restricts every query to owner/admin                                                                                                                                                                                                                                                                       | `list_for_org()`, `create()`, `revoke()`                                                                      |
 | `database/repositories/provider_credentials.py` | Org-owned Twilio/Plivo credential storage, raw asyncpg. Only ever sees ciphertext - encryption happens in the route layer                                                                                                                                                                                                                            | `list_for_org()`, `upsert()`, `remove()`                                                                      |
 | `database/repositories/ai_provider_credentials.py` | Org-owned AI-vendor (Sarvam/Deepgram/ElevenLabs/OpenAI/OpenRouter) credential storage for the Agentic tab, raw asyncpg - same shape and encrypted-at-rest posture as `provider_credentials.py`, deliberately a separate table (migration `a1c48e7f2b93`)                                                                                            | `list_for_org()`, `get_credential()`, `upsert()`, `remove()`                                                  |
-| `database/repositories/voice_agents.py`         | Org-owned voice agent (Agentic tab) configuration CRUD, raw asyncpg. Unlike campaigns, list/get read access is org-wide, not per-creator - `voice_agents_select`'s RLS is `is_org_member()` - joined to `public.users` only for `created_by_name`/`created_by_avatar_url` attribution                                                                | `list_org_agents()`, `get_org_agent()`, `create_agent()`, `update_agent()`, `delete_agent()`                   |
+| `database/repositories/voice_agents.py`         | Org-owned voice agent (Agentic tab) configuration CRUD, raw asyncpg. List/get read access follows the per-creator silo for operators (`ISSUES.md` #132); owner, admin and viewer see every agent - joined to `public.users` only for `created_by_name`/`created_by_avatar_url` attribution                                                                | `list_org_agents()`, `get_org_agent()`, `create_agent()`, `update_agent()`, `delete_agent()`                   |
 
 | `database/repositories/channels.py`             | Internal team chat: channel CRUD + group management, raw asyncpg. `create_channel()` calls the `SECURITY DEFINER` SQL function of the same name (migration `b3f7d2a891c5`) rather than a two-step insert, avoiding the `RETURNING`-before-membership-exists race `create_organisation()` already fixed once; for a `dm` it's also idempotent and race-safe (same migration - `channels.dm_pair` plus a partial unique index), and the repository wrapper converts every rejection the SQL function can raise (`RaiseError`) into a plain `ValueError`, so a bad request 400s instead of 500ing (`ISSUES.md` #98). Every `_CHANNEL_COLUMNS` read (`list_my_channels`/`get_channel`) carries a correlated `unread_count` subquery against the caller's own `channel_members.last_read_at`; `total_unread_count()` is a separate, cheaper single-join aggregate for the nav badge specifically, deliberately not `sum()` over the per-channel query - that one pays for every channel's full member list and was being re-run on every Realtime event for every open tab in the organisation (`ISSUES.md` #99). `add_member()`/`remove_member()` are plain insert/delete - safe without a definer function since neither asks for its own row back via `RETURNING`; `add_member()` still wraps its insert in a nested `SAVEPOINT`, since `channel_members.org_id` means the insert can fail its `WITH CHECK` the same way `send_message()` always could. `rename_channel()`/`mark_read()` are plain `UPDATE`s, authorised entirely by `channels_update`/`channel_members_update`                | `create_channel()`, `list_my_channels()`, `get_channel()`, `total_unread_count()`, `add_member()`, `remove_member()`, `rename_channel()`, `mark_read()` |
 | `database/repositories/messages.py`             | Internal team chat: message list/send/edit/delete, raw asyncpg. RLS (`messages_select`/`messages_insert`/`messages_update`) does the actual per-channel-membership and per-sender narrowing. `list_messages()` takes a `before`/`before_id`/`limit` cursor against `messages_channel_created_idx`, always returning oldest-first regardless of pagination - `before_id` breaks a tie when two messages share the exact same `created_at` (transaction-start time, so two genuinely concurrent sends can collide), which a bare `created_at <` cursor would otherwise silently skip one side of (`ISSUES.md` #100). `send_message()` catches a `WITH CHECK` failure (non-member posting) inside a nested `SAVEPOINT`, returning `None` instead of letting it abort the outer request transaction - same pattern `invitations_repo.accept()` uses. `edit_message()`/`delete_message()` (soft delete, `deleted_at`) both scope their `UPDATE` to `sender_id = $2` as a first filter, with `messages_update`'s RLS policy as the actual guard | `list_messages()`, `send_message()`, `edit_message()`, `delete_message()`                                     |
@@ -161,13 +162,20 @@ Legend: ✅ persists · ⚠️ persists locally/partially · ❌ lost on restart
 | `domain/safety.py`                              | Pre-dial gate and phone masking. No I/O                                                                                                                                                                                                                                                                                                              | `is_e164()`, `mask()`, `phone_hash()`, `check_dial_allowed()`, `EffectiveSafety`, `resolve_safety_settings()` |
 | `domain/provisioning.py`                        | The provisioning status machine, pure. `pending -> provisioning -> verified \| failed`, one-way: no edge leaves a terminal state, so "try again" must start a new attempt rather than revive a half-built one | `ProvisioningStatus`, `check_transition()`, `InvalidTransition`, `TERMINAL` |
 | `domain/triage.py`                              | Pure disposition decision from typed fields only                                                                                                                                                                                                                                                                                                     | `triage()`, `needs_human()`                                                                                   |
-| `domain/result_schemas.py`                      | The shared result contract every campaign inherits                                                                                                                                                                                                                                                                                                   | `BASE_PROPERTIES`, `build_result_schema()`                                                                    |
-| `domain/campaigns.py`                           | 2 built-in constants + `slugify()`. **No runtime registry anymore** - custom campaigns are real rows, resolved through the repository above                                                                                                                                                                                                          | `TRAVEL_DISCOVERY`, `APPOINTMENT_REMINDER`, `REGISTRY`, `SCHEMAS`, `BUILT_IN_IDS`, `FIELD_TYPES`, `slugify()` |
+| `domain/result_schemas.py`                      | The shared triage contract every call inherits - `sentiment`, `wants_human_callback`, `do_not_call`, `frustration_signals`                                                                                                                                                                                                                                                                                                   | `BASE_PROPERTIES`, `build_result_schema()`                                                                    |
 | `domain/api_keys.py`                            | Generating and hashing CallFlow API keys. Pure - no I/O, no database                                                                                                                                                                                                                                                                                 | `generate_api_key()`, `hash_api_key()`, `looks_like_api_key()`                                                |
 | `services/number_provisioning.py`               | The connect-a-number workflow across two vendors: LiveKit inbound trunk → dispatch rule → carrier config → LiveKit outbound trunk, in that order because each step needs the one before. **Nothing is transactional**, so every step records what it created immediately and a retry of the same key skips what is already done - re-running blindly is what orphans a LiveKit trunk. A part-way failure stays `provisioning` (resumable) with `last_error`; `failed` means superseded by a newer attempt | `connect_number()`, `ProvisioningRefused`, `CARRIERS` |
-| `services/campaign_runner.py`                   | Per-contact pipeline - **fully `async def`**, awaiting the aiohttp-based LiveKit gateway directly (no `to_thread`). `run()` dials up to `CALLFLOW_MAX_CONCURRENT_CALLS` contacts at once (`asyncio.Semaphore`); the per-run ceiling check-and-reserve is one atomic step under a lock, race-safe under that concurrency (`ISSUES.md` #54/#60). Needs **both** a `trunk_id` and a `voice_agent`, resolved by the caller from the same voice agent - the agent travels to the worker as the `voice_agent` metadata key, which is the only key `AgentSpec.from_metadata()` reads, and a runner holding one without the other refuses before dialling (`ISSUES.md` #109). `contact.context` is spread **first** into that metadata so an uploaded CSV column cannot overwrite the goal or misaddress the completion row (`ISSUES.md` #114) | `CampaignRunner`, `render_goal()`                                                                             |
+| `services/run_dialer.py`                        | Per-contact pipeline - **fully `async def`**, awaiting the aiohttp-based LiveKit gateway directly. `run()` dials up to `CALLFLOW_MAX_CONCURRENT_CALLS` contacts at once (`asyncio.Semaphore`); the per-run ceiling check-and-reserve **and the line allocation** are one atomic step under a single lock, race-safe under that concurrency (`ISSUES.md` #54/#60). Needs **both** `lines` and a `voice_agent`, resolved by `services/run_dispatch.py` - the agent travels to the worker as the `voice_agent` metadata key, the only key `AgentSpec.from_metadata()` reads, and a dialer holding one without the other refuses before dialling (`ISSUES.md` #109, #133). `contact.context` is **stripped of reserved keys and spread first** into that metadata so an uploaded CSV column can neither overwrite the prompt nor misaddress the completion row (`ISSUES.md` #114, #136) | `RunDialer` |
+| `domain/numbers.py`                             | The status machine for a number an org owns - `discovered -> provisioning -> verified`, `verified <-> disabled`, `failed` retryable. Pure. Deliberately not `provisioning.py`'s machine: a number is live infrastructure that is retired and brought back, not a finished attempt | `NumberStatus`, `check_transition()`, `is_diallable()` |
+| `domain/number_allocation.py`                   | Which line places each call. Round-robin, because the reason to hold several numbers is that one line placing every call reads as spam. `Allocator` is a protocol so a region-matching strategy is additive | `DialLine`, `RoundRobin`, `build_allocator()` |
+| `domain/prompt_assembly.py`                     | What one contact's agent is told: the agent's `system_prompt` first, then that person's own detail and context, then the fields to collect, then CallFlow's behaviour rules. Successor to `goal_rendering.py`; `_Safe` carried over verbatim so a renamed spreadsheet column leaves a gap rather than killing the run | `render_call_prompt()`, `visible_context()`, `RESERVED_CONTEXT_KEYS` |
+| `domain/collection.py`                          | Did the call come back with what was asked (ADR-5)? Pure. `is_present()` treats `False` and `0` as answers - a yes/no field answered "no" was collected | `missing_required()`, `handoff_questions()`, `is_present()` |
+| `database/repositories/telephony_numbers.py`     | The org's numbers, raw asyncpg. No `delete` - the table has no delete grant, and `disabled` is retirement | `list_for_org()`, `list_by_ids()`, `upsert_discovered()`, `set_status()` |
+| `database/repositories/run_numbers.py`          | Which lines a run was allowed to dial from. Write-once: select and insert grants only | `attach()`, `list_for_run()` |
+| `services/run_dispatch.py`                      | **The seam that was missing** (`ISSUES.md` #133). An agent plus the numbers a run picked in, verified trunks and decrypted provider keys out. Fails closed, and every refusal names what to fix | `resolve_run_plan()`, `RunPlan`, `RunNotDispatchable` |
+| `services/number_directory.py`                  | Reconciles the carrier's own number list into `telephony_numbers`. Never walks a number backwards: the carrier knows which numbers exist, not whether CallFlow has pointed one at LiveKit | `sync_numbers()` |
+| `api/v1/routes/telephony_numbers.py`            | `/api/v1/telephony/numbers` - list, sync from the carrier, retire/restore. Masked in every response | `router` |
 | `services/voice_preview.py`                     | Orchestrates the Agentic tab's one-shot STT/TTS demo: decrypts the org's stored AI-vendor key and dispatches to a real adapter when one exists and the catalog marks that vendor `preview_available`; otherwise returns an honest `available=False` with a reason distinguishing "no key connected" from "not wired up yet" (CLAUDE.md non-negotiable #9). Does real I/O, so lives here rather than in `domain/` (dependency rule, §4b)             | `PreviewResult`, `preview_tts()`, `preview_stt()`                                                              |
-| `api/v1/routes/campaigns.py`                    | `/api/v1/campaigns` - list/create/update/delete/preview, org-scoped                                                                                                                                                                                                                                                                                  | `router`, `resolve_campaign()`                                                                                |
 | `api/v1/routes/internal.py`                     | `/internal/v1/runs/{run_id}/complete` - the voice runtime's callback. Not a public API: no session, trust is the `X-CallFlow-Internal-Key` shared secret compared in constant time, and a bad key and an unknown run both give 404 so the secret cannot be used to enumerate runs. Resolves identity via `database.anonymous()` + `lookup_run_owner_for_webhook`, triages, upserts the outcome, **raises the escalation if triage asks for a person**, then closes the run if that was the last contact. The escalation belongs here and nowhere else: `run_one()` returns while the call is in flight, so the only needs-a-person disposition the run's own progress write can ever see is a contact that failed to dial (`ISSUES.md` #111) | `router`, `CallCompletion` |
 | `api/v1/routes/runs.py`                         | `/api/v1/runs` - start/list/get, org-scoped, background execution | `router`                                                                                                      |
 | `api/v1/routes/suppressions.py`                 | `/api/v1/suppressions` - list/add/remove the org's do-not-call list. Add is operator+, remove is owner-only, matching the RLS policy                                                                                                                                                                                                                 | `router`                                                                                                      |
@@ -187,14 +195,18 @@ Legend: ✅ persists · ⚠️ persists locally/partially · ❌ lost on restart
 | `api/v1/routes/ai_providers.py`                 | `/api/v1/ai-providers[/{provider}]` - connect/list/disconnect an org's AI-vendor (Sarvam/Deepgram/ElevenLabs/OpenAI/OpenRouter) credentials for the Agentic tab. Reuses `INTEGRATIONS_READ`/`WRITE` (owner/admin) rather than a new permission - same sensitivity tier as telephony credentials                                                   | `router`                                                                                                      |
 | `api/v1/routes/voice_agents.py`                 | `/api/v1/voice-agents` - list/create/update/delete an org's voice agents (`AGENTS_READ`/`WRITE`/`DELETE`), plus `/providers` (the serialized catalog + this org's connection status, `AGENTS_READ`) and `/preview` (a real, possibly-billed vendor call, `AGENTS_WRITE`)                                                                          | `router`, `_validate_agent_fields()`                                                                          |
 | `integrations/ai_providers/protocol.py`         | The `SpeechToText`/`TextToSpeech` structural protocols every STT/TTS adapter conforms to for the Agentic tab - mirrors `integrations/voice/protocol.py`'s shape, `supports(capability)` over one fat interface. Sarvam is still the only implementation                                                                                          | `SpeechToText`, `TextToSpeech`, `SttCapability`, `TtsCapability`, `AdapterUnavailable`                        |
-| `integrations/ai_providers/catalog.py`          | The static STT/TTS/LLM provider catalog (cost/latency/quality notes plus the same figures in machine units, `preview_available`) the builder UI and `GET /api/v1/voice-agents/providers` render from - a plain module constant, no I/O, same convention as `domain/campaigns.py`'s built-ins. 2 STT (Sarvam, Deepgram), 2 TTS (Sarvam, ElevenLabs), 8 curated OpenRouter LLM models     | `STT_PROVIDERS`, `TTS_PROVIDERS`, `LLM_MODELS`, `ProviderCatalogEntry`, `all_providers()`                     |
+| `integrations/ai_providers/catalog.py`          | The static STT/TTS/LLM provider catalog (cost/latency/quality notes plus the same figures in machine units, `preview_available`) the builder UI and `GET /api/v1/voice-agents/providers` render from - a plain module constant, no I/O, a plain module constant, no I/O. 2 STT (Sarvam, Deepgram), 2 TTS (Sarvam, ElevenLabs), 8 curated OpenRouter LLM models     | `STT_PROVIDERS`, `TTS_PROVIDERS`, `LLM_MODELS`, `ProviderCatalogEntry`, `all_providers()`                     |
 | `integrations/ai_providers/sarvam.py`           | The one real adapter today: Sarvam Bulbul (TTS) and Saarika (STT) over Sarvam's public REST API (`api.sarvam.ai/text-to-speech`, `/speech-to-text`) - the only vendor pair with a working preview                                                                                                                                                 | `SarvamAdapter`                                                                                               |
 
-**Per-contact pipeline** (`CampaignRunner.run_one`, in `services/campaign_runner.py`):
+**Per-contact pipeline** (`RunDialer.run_one`, in `services/run_dialer.py`):
 
 ```
 build base outcome (masked phone)
-  → render_goal(campaign, contact)        {name} / {context[key]}, missing keys → ""
+  → allocator.next_for(contact.phone)     which of the org'''s lines places this call;
+                                           inside the same lock as the ceiling reserve
+  → render_call_prompt(agent, contact)    the agent'''s prompt, then THIS person'''s own
+                                           detail and context, then the fields to collect;
+                                           {name} / {context_key}, missing keys → ""
   → check_dial_allowed(is_suppressed=…)   fails closed → SKIPPED. Suppression is checked
                                            here too now - the caller resolves the org's
                                            real suppressions table once per run and passes
@@ -203,7 +215,9 @@ build base outcome (masked phone)
                                            so a busy/unreachable number is distinguishable
   → return IN_FLIGHT                      the call is answered, NOT finished
   ... the worker holds the conversation, then POSTs the transcript back (P1-T4)
-  → _extract_result() / triage()          run against that callback, not here
+  → missing_required() / triage()         run against that callback, not here;
+                                           a completed call missing a required
+                                           field escalates (ADR-5)
 ```
 
 **A run no longer ends when `run()` returns.** CALL-E was request/response and could be
@@ -213,7 +227,7 @@ worker POSTs the transcript and terminal status back when the conversation actua
 Anything reading a run's outcomes must expect rows that resolve later rather than every row
 being terminal immediately.
 
-A campaign whose voice agent has no connected number is refused per contact with that
+A run with no verified number is refused per contact with that
 reason - `run_one()` takes its `trunk_id` from the caller, the same way the allowlist and
 suppression set are resolved once per run and passed in.
 
@@ -342,170 +356,6 @@ displaying. `allowlist` entries are validated E.164 (`400` listing which ones fa
 _Used by:_ Settings → Safety (`apps/web/app/(app)/app/settings/safety/page.tsx`), the run
 composer's guard bar (`guardsFromSafety()`).
 
-### `GET /api/v1/campaigns`
-
-Any org member. Returns the 2 built-in constants (`app/domain/campaigns.py`) followed by
-this organisation's own rows (`campaigns_repo.list_org_campaigns`). **Role-based UI
-roadmap, Phase 1:** an operator's connection only ever gets back campaigns they created -
-`campaigns_select`'s RLS policy (migration `202608092000`) narrows the row set itself, not
-this handler; owner/admin/viewer still see every campaign in the org.
-
-```json
-[
-  {
-    "id": "travel-discovery",
-    "name": "Travel enquiry follow-up",
-    "region": "IN",
-    "language": "en",
-    "outcome_fields": {
-      "service_interest": "flight | hotel | tour | package | none",
-      "destination": "destination city or country"
-    },
-    "goal_template": "You are CallFlow AI, a friendly travel consultant…",
-    "goal_preview": "You are CallFlow AI, a friendly travel consultant…",
-    "built_in": true,
-    "created_by": null,
-    "created_by_name": null,
-    "created_by_avatar_url": null
-  },
-  {
-    "id": "holiday-enquiry-follow-up",
-    "...": "…",
-    "built_in": false,
-    "created_by": "2c7e1a4b-...",
-    "created_by_name": "Aditi Rao",
-    "created_by_avatar_url": "https://.../avatar.png"
-  }
-]
-```
-
-All three are `null` for the two built-in templates (no owner). `created_by_name`/
-`created_by_avatar_url` are joined to `public.users` so an admin/owner/viewer's org-wide
-list can attribute each row; `POST`/`PATCH`'s own response still has a real `created_by`
-(the actor's own id) but leaves the two name/avatar fields `null`, since the actor already
-knows it's their own edit and those two calls skip the join.
-
-`goal_preview` is `goal_template[:280]`. `outcome_fields` is a flat
-`{field_name: human description}` map - _not_ JSON Schema; the real schema lives
-server-side (`SCHEMAS[campaign_id]` or the row's `result_schema` jsonb column) and is
-never exposed over the API.
-_Used by:_ campaigns index, run composer, campaign editor.
-
-### `POST /api/v1/campaigns`
-
-Requires `Permission.CAMPAIGNS_WRITE` (operator role or above).
-
-```json
-{
-  "name": "Holiday enquiry follow-up",
-  "goal_template": "You are calling {name} about their enquiry…",
-  "extra_fields": [
-    {
-      "key": "party_size",
-      "type": "integer",
-      "description": "Number of travellers."
-    }
-  ],
-  "region": "IN",
-  "language": "en",
-  "escalate_on_negative": true
-}
-```
-
-| Constraint                                                   | Enforced by                                                                                                                                                                                                                 |
-| ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `name` 2–80 chars                                            | Pydantic `Field(min_length=2, max_length=80)`                                                                                                                                                                               |
-| `goal_template` ≥ 40 chars                                   | Pydantic **and** an explicit re-check with a friendlier message                                                                                                                                                             |
-| `extra_fields[].key` 1–40 chars                              | Pydantic                                                                                                                                                                                                                    |
-| `extra_fields[].type` ∈ `{string, boolean, integer, number}` | Handler, 400 listing the valid set                                                                                                                                                                                          |
-| `extra_fields[].required`                                    | Appended to the schema's `required` array alongside `BASE_REQUIRED` (`domain/result_schemas.py`) - a field marked required in the editor is actually required in the schema sent to the engine, not just a description hint |
-
-→ `201` the created campaign (same shape as the list) · `400` bad field type · `400` goal too short
-
-**Side effects:** inserts a real row into `public.campaigns` (`org_id`, `created_by`).
-The id is slugified from the name with a numeric suffix on collision, checked against both
-`BUILT_IN_IDS` and this organisation's existing rows - so two organisations can each have
-a campaign called "Holiday enquiry follow-up" with the same id, and neither collides with
-the other (`org_id` scopes everything). Keys are slugified to `snake_case`; a key that
-slugifies to empty is silently dropped.
-
-### `PATCH /api/v1/campaigns/{campaign_id}`
-
-Requires `Permission.CAMPAIGNS_WRITE`. Same body and validation as `POST`. The id/slug
-never changes on update, only the row's content - so existing runs that reference this
-`campaign_id` keep pointing at the right campaign after an edit.
-
-→ `200` the updated campaign · `400` if built-in ("Built-in campaigns cannot be edited.")
-· `404` unknown or belongs to another organisation
-
-Before this route existed, the campaign editor's "Edit" entry point called the same
-`createCampaign` the "New campaign" button used - so editing a real campaign silently
-created a second, independent one and left the original untouched, while the toast said
-"Campaign saved." Fixed by adding this route and branching the frontend's `save()` on
-whether `existing` is set.
-
-### `DELETE /api/v1/campaigns/{campaign_id}`
-
-Requires `Permission.CAMPAIGNS_DELETE`.
-→ `204` no body · `400` if built-in ("Built-in campaigns cannot be deleted.") · `404` unknown
-or belongs to another organisation (RLS plus an explicit `org_id` filter in the delete).
-
-### `POST /api/v1/campaigns/preview`
-
-Any org member. Renders goals without touching the voice engine - free, instant, no
-dialling, no rate limit.
-
-```json
-{
-  "campaign_id": "travel-discovery",
-  "contacts": [
-    {
-      "name": "Aditi",
-      "phone": "+15555550100",
-      "context": { "enquiry_note": "Bali in December" }
-    }
-  ]
-}
-```
-
-```json
-{
-  "campaign_id": "travel-discovery",
-  "previews": [
-    { "name": "Aditi", "goal": "You are CallFlow AI… calling Aditi back…" },
-    {
-      "name": "Bad Row",
-      "error": "phone must be E.164 (e.g. +15555550100), got '98765'"
-    }
-  ]
-}
-```
-
-An invalid contact yields a per-entry `error` instead of failing the whole request.
-→ `404` unknown campaign. **Currently unused by the frontend** - the campaign editor and
-the run composer both render the goal preview locally via `renderGoalPreview` in
-`lib/campaign-fields.ts` rather than calling this endpoint; `api.preview` exists in
-`lib/api.ts` with no caller.
-
-### `GET /api/v1/campaigns/directory`
-
-Any org member - no special permission beyond being signed in. Role-based UI roadmap,
-**Phase 4 (peer-to-peer sharing)**: name + owner only, org-wide, so an operator whose
-`campaigns_select` RLS narrows them to their own rows (Phase 1) can still see *what
-exists* to request without seeing its goal template, extraction fields, or any content.
-Backed by the `SECURITY DEFINER` SQL function `public.list_campaign_directory()`
-(migration `202608101100`), which bypasses that same RLS narrowing on purpose - the whole
-point of a directory is showing rows the caller's own `SELECT` policy would otherwise hide.
-
-```json
-[
-  { "id": "holiday-enquiry-follow-up", "name": "Holiday enquiry follow-up", "owner_user_id": "2c7e1a4b-...", "owner_name": "Aditi Rao" }
-]
-```
-
-_Used by:_ the Campaigns page's "Team campaigns" directory panel (operators only) - filters
-out rows the caller already owns, then offers "Request access" per remaining row.
-
 ### `POST /api/v1/runs`
 
 Requires `Permission.RUNS_START`. **Every run dials for real - there is no `dry_run`
@@ -513,14 +363,18 @@ field, and no way to simulate a run through this endpoint.**
 
 ```json
 {
-  "campaign_id": "travel-discovery",
+  "voice_agent_id": "3f7c1e28-9a44-4b21-8d10-6c2f5b8e4a91",
+  "number_ids": ["a1d4c9e2-1f38-4c7b-9e05-2b6a8d3f7c14"],
+  "name": "Diwali follow-ups",
+  "run_instruction": "Mention the Diwali offer if they sound interested.",
+  "allocation_strategy": "round_robin",
   "contacts": [
     {
       "name": "Aditi",
       "phone": "+15555550100",
       "region": null,
       "language": null,
-      "context": { "enquiry_note": "Bali in December" }
+      "context": { "detail": "asked about Dubai in December", "party_size": "4" }
     }
   ]
 }
@@ -536,7 +390,7 @@ field, and no way to simulate a run through this endpoint.**
 | `400`  | `"At least one contact is required."`                                       |
 | `400`  | A contact fails E.164 validation (Pydantic message)                         |
 | `400`  | No Voice API key configured                                                 |
-| `404`  | Unknown `campaign_id`                                                       |
+| `400`  | No agent, no verified number, or an agent missing a provider (the message names which) |
 | `429`  | Per-IP window or shared daily budget exceeded; `Retry-After` set when known |
 
 Rate limiting now applies to **every** run, since there is no non-dialling mode left to
@@ -560,14 +414,15 @@ ends. `finish_run` marks the run `completed` or `failed` when the loop exits.
 ### `GET /api/v1/runs`
 
 Org-scoped list (`runs_repo.list_runs`). **Role-based UI roadmap, Phase 1:** same silo as
-campaigns - an operator's connection only gets back runs they started (`runs_select`,
+agents - an operator's connection only gets back runs they started (`runs_select`,
 migration `202608092000`); owner/admin/viewer see every run in the org.
 
 ```json
 [
   {
     "id": "8f2a1c4d9e7b",
-    "campaign_id": "travel-discovery",
+    "voice_agent_id": "3f7c1e28-9a44-4b21-8d10-6c2f5b8e4a91",
+    "agent_name": "Travel discovery",
     "total": 3,
     "status": "completed",
     "started_at": "2026-08-05T09:12:04.221Z",
@@ -618,7 +473,8 @@ Org-scoped. Full run, plus `outcomes[]` (see §6 for every field), plus computed
 ```json
 {
   "id": "8f2a1c4d9e7b",
-  "campaign_id": "travel-discovery",
+  "voice_agent_id": "3f7c1e28-9a44-4b21-8d10-6c2f5b8e4a91",
+  "agent_name": "Travel discovery",
   "total": 3,
   "status": "completed",
   "started_at": "2026-08-05T09:12:04.221Z",
@@ -682,14 +538,14 @@ superset of an `Outcome` (contact, transcript, disposition, sentiment, ...) plus
 ### `GET /api/v1/escalations/directory`
 
 Requires `Permission.SHARING_REQUEST` (operator, admin, owner - not viewer). Stricter than
-the campaign directory above, deliberately: this one surfaces which customers are
-currently frustrated org-wide (contact name + campaign + owner), not just a resource name.
+a resource directory, deliberately: this one surfaces which customers are
+currently frustrated org-wide (contact name + agent + owner), not just a resource name.
 Only **open** escalations - a resolved one has nothing left to request. Backed by
 `public.list_escalation_directory()` (`SECURITY DEFINER`, migration `202608101100`).
 
 ```json
 [
-  { "id": "b7e2...", "contact_name": "Rohan Mehta", "campaign_name": "Holiday enquiry follow-up", "owner_user_id": "2c7e1a4b-...", "owner_name": "Aditi Rao" }
+  { "id": "b7e2...", "contact_name": "Rohan Mehta", "agent_name": "Holiday enquiry follow-up", "owner_user_id": "2c7e1a4b-...", "owner_name": "Aditi Rao" }
 ]
 ```
 
@@ -720,7 +576,7 @@ splits them into "Requests you've sent" / "Waiting on you" by comparing `request
 
 ```json
 {
-  "id": "9f3c...", "resource_type": "campaign", "resource_id": "holiday-enquiry-follow-up",
+  "id": "9f3c...", "resource_type": "escalation", "resource_id": "b7e2c419-3f8a-4d21-9c05-1e6b2a7f4d38",
   "resource_name": "Holiday enquiry follow-up", "status": "pending", "message": "Can I take this over while Aditi's on leave?",
   "created_at": "2026-08-10T09:00:00Z", "decided_at": null,
   "requested_by": "7b1e...", "requested_by_name": "Rohan Mehta",
@@ -730,13 +586,13 @@ splits them into "Requests you've sent" / "Waiting on you" by comparing `request
 
 `resource_name` is `null` whenever this connection's own RLS can't resolve the underlying
 resource - always true for a requester's own *sent, still-pending* row (their
-`campaigns_select`/escalation RLS can't see a campaign they don't own yet), non-null once
+escalation RLS can't see one they don't own yet), non-null once
 they're viewing it as the owner deciding on it, or after approval flips ownership.
 
 ### `POST /api/v1/share-requests`
 
 Requires `Permission.SHARING_REQUEST` (operator, admin, owner - not viewer). Body
-`{"resource_type": "campaign" | "escalation", "resource_id": "...", "message": "..." }`
+`{"resource_type": "escalation", "resource_id": "...", "message": "..." }`
 (`message` optional, ≤280 chars). The owner is resolved **server-side** via
 `public.resolve_resource_owner()` - never trusted from the client, since the whole reason
 this flow exists is that the requester's own RLS scope can't see the resource (or its
@@ -761,11 +617,6 @@ silently overriding whoever holds it now. Otherwise the pending→approved trans
 (`WHERE status = 'pending'`, race-safe against a second concurrent decision) commits
 **before** the grant, not after, so two concurrent approvals can't both perform the grant:
 
-- **campaign**: clones it - a new id, `created_by = requester`, independent from that
-  point on (edits after this never write back to the original). Goes through the
-  `SECURITY DEFINER` function `clone_campaign_for_share()` (migration `202608101200`), not
-  a plain insert - see `ISSUES.md` #85 for why a plain insert fails under RLS for any
-  non-admin/owner approver.
 - **escalation**: reassigns it (`assigned_to = requester`, via `escalations_repo.assign()`)
   - a hand-off, not a clone, since there's only one real underlying event. → `404` if the
   escalation was resolved or deleted in the meantime.
@@ -868,11 +719,13 @@ Requires `Permission.INTEGRATIONS_WRITE`.
 
 ### `GET /api/v1/voice-agents`
 
-Requires `Permission.AGENTS_READ` (every role). Unlike campaigns, read access here is
-**org-wide, not per-creator** - `voice_agents_select`'s RLS policy is plain
-`is_org_member(org_id)` (migration `a1c48e7f2b93`), because an agent configuration is
-shared infrastructure a teammate needs to see to run or share a campaign against, not a
-personal work product the way a campaign is.
+Requires `Permission.AGENTS_READ` (every role). Read access follows the **per-creator
+silo**: an operator sees only the agents they built, while owner, admin and viewer see
+every agent in the organisation (`voice_agents_select`, migration
+`202608171900_agents_per_creator_visibility_silo`). This was org-wide when the table was
+created (`a1c48e7f2b93`) and was deliberately narrowed - an agent is someone's work, and
+the roles that oversee an organisation are the ones that need to see all of it
+(`ISSUES.md` #132).
 
 ### `GET /api/v1/channels`
 
@@ -910,7 +763,7 @@ resets to 0 after `POST .../read`.
 ```
 
 Newest first (`created_at` descending). `created_by_name`/`created_by_avatar_url` are
-joined to `public.users` for attribution, same pattern as campaigns/runs.
+joined to `public.users` for attribution, same pattern as runs.
 
 ### `POST /api/v1/voice-agents`
 
@@ -938,7 +791,7 @@ Requires `Permission.AGENTS_WRITE` (operator role or above).
 | `telephony_provider`, if set, must be a provider this org has connected **with a phone number on file** | `_validate_agent_fields()`, `400` naming which provider to connect first - a credential row with no `phone_number` doesn't count as connected, the same definition `GET .../providers` uses for its own picker |
 
 → `201` the created agent (same shape as the list, `created_by_name`/`created_by_avatar_url`
-left `null` since the actor already knows it's their own edit - same convention campaigns
+left `null` since the actor already knows it's their own edit - same convention runs
 uses) · `400` on either validation failure above.
 
 ### `PATCH /api/v1/voice-agents/{agent_id}`
@@ -1213,7 +1066,11 @@ listed at the top of this section.
 | -------------------- | ---------------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `contact_name`       | `str`            | required    |                                                                                                                                                                                                                                                                                                                                                                       |
 | `phone_masked`       | `str`            | required    | **Already masked** - the raw number never leaves `CampaignRunner`                                                                                                                                                                                                                                                                                                     |
-| `campaign_id`        | `str`            | required    |                                                                                                                                                                                                                                                                                                                                                                       |
+| `voice_agent_id`     | `str \| None`     | `None`      | Which agent held the conversation. Nullable: rows written before ADR-8 have no agent, and an outcome is a permanent record |
+| `collected`          | `dict`           | `{}`        | The organisation's own business fields, kept apart from `extracted` so a field an org happened to name `sentiment` cannot rewrite triage's input |
+| `missing_required_fields` | `list[str]`  | `[]`        | Required fields the call ended without (ADR-5). Empty means complete |
+| `handoff_questions`  | `list[str]`      | `[]`        | What a person still has to ask, in the agent's own words |
+| `from_number_masked` | `str \| None`     | `None`      | Which of the organisation's lines placed the call, masked |                                                                                                                                                                                                                                                                                                                                                                       |
 | `status`             | `str`            | `"UNKNOWN"` | Engine status, uppercased. `"BLOCKED"` when a safety guard skips the contact                                                                                                                                                                                                                                                                                          |
 | `plan_id`            | `str \| None`    | `None`      | **Unused** - set nowhere, read nowhere                                                                                                                                                                                                                                                                                                                                |
 | `run_id`             | `str \| None`    | `None`      | Set by `campaign_runner.py` to the **provider's own call id** while a call is in flight - this domain object never held the run id. `routes/runs.py` fixes this at the persistence boundary: it remaps this field to `provider_call_id` before writing, and the API always serves the real run id in its place (see §13, ISSUES.md #1, now closed at the API surface) |
@@ -1244,7 +1101,7 @@ Note `integrations/voice/engine.TERMINAL` is a _separate_, lowercase set (`compl
 
 ### The shared result contract (`domain/result_schemas.py`)
 
-Every campaign inherits these six, so triage is uniform regardless of the vertical:
+Every call inherits these six, so triage is uniform regardless of the agent:
 
 | Field                  | Type                                                                      | Drives                                 |
 | ---------------------- | ------------------------------------------------------------------------- | -------------------------------------- |
@@ -1315,7 +1172,7 @@ The Agentic tab's two tables have no `domain/entities.py` representation - unlik
 `Contact`/`Campaign`/`CallOutcome` above, they're plain asyncpg rows shaped only by
 route-level Pydantic models (`VoiceAgentIn`/`Out` in `routes/voice_agents.py`,
 `AiProviderCredentialIn`/`Out` in `routes/ai_providers.py`), the same "hand-authored row,
-not an ORM class" treatment `campaigns`/`runs` already get (§4). Both added by migration
+not an ORM class" treatment `runs` already gets (§4). Both added by migration
 `a1c48e7f2b93`.
 
 **`voice_agents`**
@@ -1332,13 +1189,13 @@ not an ORM class" treatment `campaigns`/`runs` already get (§4). Both added by 
 | `llm_provider`       | `text \| null`| `'openrouter'`| Always `"openrouter"` today - no other LLM vendor is wired                               |
 | `llm_model`          | `text \| null`| null          | e.g. `"openai/gpt-4o"` - required by the route whenever `llm_provider` is `"openrouter"`  |
 | `voice_id`           | `text \| null`| null          | TTS voice/speaker id, e.g. `"anushka"`                                                    |
-| `system_prompt`      | `text \| null`| null          | What the agent should do - the same job a campaign's `goal_template` does                |
+| `system_prompt`      | `text \| null`| null          | What the agent should do. Rendered per contact with that person's own detail and context (`domain/prompt_assembly.py`) |
 | `prebuilt_persona`   | `text \| null`| null          | Reserved for `kind = 'prebuilt'`; nothing currently sets it - the Agentic tab's "Prebuilt" section is a placeholder notice |
 | `telephony_provider` | `text \| null`| null          | Check constraint: `twilio` \| `plivo` - must be a provider this org has connected **with a phone number on file**, enforced at the route layer, not by the check constraint |
 | `created_at`/`updated_at` | `timestamptz` | `now()` |                                                                                       |
 
 `select` RLS is `is_org_member(org_id)` - **org-wide, not per-creator**, deliberately
-broader than campaigns/runs (§4b's per-creator narrowing doesn't apply here): an agent is
+the same as runs (§4b's per-creator narrowing applies here too, since `202608171900`): an agent is
 shared org infrastructure. `insert`/`update` need operator role or above; `delete` needs
 admin or above.
 
@@ -1586,8 +1443,6 @@ and `ViewTransitions` as siblings.
 | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------- |
 | `/app` (Dashboard)                                 | View volume/disposition/outcome-distribution summaries, a "Needs a person" preview, "Team performance" (admin/owner/viewer), open a recent run, navigate                                   | `GET /api/v1/runs`, `GET /api/v1/runs/{id}`, `GET /api/v1/organisations/me/team-performance`     |
 | Org-setup modal (any `/app/*` page, not a route)   | Confirm the org's real name - the one mandatory, non-skippable step - then a skippable name + avatar step                                                                                  | `POST /api/v1/organisations/me/complete-onboarding`, `PATCH /api/v1/me`                         |
-| `/app/campaigns`                                   | Filter all/template/custom, duplicate, delete, run. Operators additionally see a "Team campaigns" directory (name + owner only) with a "Request access" action per row                    | `GET`/`DELETE /api/v1/campaigns`, `GET .../directory`, `POST /api/v1/share-requests`             |
-| `/app/campaigns/new`, `/[id]`                      | Edit name/goal/fields/region/language/window/retry, preview with a different contact (rendered locally, not via the API), save                                                             | `POST /api/v1/campaigns`                                                                        |
 | `/app/runs`                                        | Sort, paginate, change page size, export CSV, open run                                                                                                                                     | `GET /api/v1/runs`                                                                              |
 | `/app/runs/new`                                    | Paste/import/edit contacts, remove invalid, pick campaign, preview the goal (rendered locally), start - **no dry-run toggle; Start run always dials**                                      | `POST /api/v1/runs`                                                                             |
 | `/app/runs/[id]`                                   | Watch lamps settle, pause updates (browser polling only), cancel the run for real (stops the next contact from being dialled, not one already in conversation), open transcript in a centered dialog. No "Guards for this run" display and no visible run id anywhere on the page as of it-17 (`ISSUES.md`) - the run id is still the URL segment and still round-trips through the API | `GET /api/v1/runs/{id}` every 2.5s, `POST /api/v1/runs/{id}/cancel`                                                              |
