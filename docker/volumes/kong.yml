@@ -1,0 +1,121 @@
+_format_version: "2.1"
+_transform: true
+
+# One origin for every Supabase service, because that is what the Supabase
+# client libraries expect: `createClient(url, key)` takes a single URL and
+# derives `/auth/v1`, `/rest/v1`, `/storage/v1` from it. Without a gateway the
+# web app would need a different port per service and `lib/supabase/` would stop
+# being ordinary Supabase code.
+
+consumers:
+  - username: anon
+    keyauth_credentials:
+      - key: $SUPABASE_ANON_KEY
+  - username: service_role
+    keyauth_credentials:
+      - key: $SUPABASE_SERVICE_KEY
+
+acls:
+  - consumer: anon
+    group: anon
+  - consumer: service_role
+    group: admin
+
+services:
+  # GoTrue's admin surface, matched *before* the catch-all below because Kong
+  # prefers the longer path. Behind key-auth so the service role is required
+  # rather than assumed.
+  #
+  # The endpoint lives in the service URL, not only in the route: `strip_path`
+  # removes the whole matched prefix, and whatever is left is appended to the
+  # service's own path. So `/auth/v1/admin/users` strips to `/users`, which the
+  # `/admin` here turns back into `/admin/users`.
+  - name: auth-v1-admin
+    url: http://auth:9999/admin
+    routes:
+      - name: auth-v1-admin
+        strip_path: true
+        paths:
+          - /auth/v1/admin
+    plugins:
+      - name: cors
+      - name: key-auth
+        config:
+          hide_credentials: false
+      - name: acl
+        config:
+          hide_groups_header: true
+          allow:
+            - admin
+
+  # Everything else on GoTrue: signup, token, user, recover, health. Open by
+  # design - these are the endpoints a not-yet-authenticated person has to reach.
+  #
+  # A trailing slash on the path is what makes this work, and its absence is what
+  # broke the previous version. Listing `/auth/v1/signup` exactly meant
+  # `strip_path` consumed the entire path and every request arrived at GoTrue's
+  # root as `/`, which answers 404 - so signup, the one flow this whole stack
+  # exists for, was unreachable. `/auth/v1/` leaves `signup` behind to be
+  # appended, the same way the rest-v1 and storage-v1 routes below already work.
+  - name: auth-v1
+    url: http://auth:9999/
+    routes:
+      - name: auth-v1-all
+        strip_path: true
+        paths:
+          - /auth/v1/
+    plugins:
+      - name: cors
+
+  - name: rest-v1
+    url: http://rest:3000/
+    routes:
+      - name: rest-v1-all
+        strip_path: true
+        paths:
+          - /rest/v1/
+    plugins:
+      - name: cors
+      - name: key-auth
+        config:
+          hide_credentials: true
+      - name: acl
+        config:
+          hide_groups_header: true
+          allow:
+            - admin
+            - anon
+
+  # `realtime-dev`, not `realtime`: Realtime reads its tenant's external_id from
+  # the first label of the Host header, and the only seeded tenant is
+  # `realtime-dev`. The name resolves via a network alias on the realtime
+  # service - see the comment there.
+  - name: realtime-v1-ws
+    url: http://realtime-dev:4000/socket
+    protocol: ws
+    routes:
+      - name: realtime-v1-ws
+        strip_path: true
+        paths:
+          - /realtime/v1/
+    plugins:
+      - name: cors
+      - name: key-auth
+        config:
+          hide_credentials: false
+      - name: acl
+        config:
+          hide_groups_header: true
+          allow:
+            - admin
+            - anon
+
+  - name: storage-v1
+    url: http://storage:5000/
+    routes:
+      - name: storage-v1-all
+        strip_path: true
+        paths:
+          - /storage/v1/
+    plugins:
+      - name: cors

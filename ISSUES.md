@@ -137,6 +137,9 @@ exist in this repo**; `SYSTEM.md` §12 is the closest real gap map until it's wr
 | [#107](#107--messages_insert-had-no-org_id-check-channel_members_insert-already-had)                                               | S2  | `messages_insert` had no `org_id` check `channel_members_insert` already had                                          | database       | it-38 | **FIXED**        |
 | [#108](#108--gitignores-supabase-entry-was-un-anchored)                                                                            | S3  | `.gitignore`'s `supabase` entry was un-anchored                                                                       | web            | it-38 | **FIXED**        |
 | [#109](#109--appchat-served-a-cached-frozen-shell-to-every-visitor---opening-any-conversation-hung-on-the-loader-permanently)      | S1  | `/app/chat` served a cached, frozen shell to every visitor - opening any conversation hung forever                    | web            | it-39 | **FIXED**        |
+| [#118](#118--resend_api_key-set-in-the-repo-root-env-never-reached-the-api-container-so-every-local-invitation-failed)            | S3  | `RESEND_API_KEY` never reached the API container - every local invitation failed                                      | infra + backend | it-40 | **FIXED**        |
+| [#119](#119--password-reset-silently-sent-nothing-gotrue-had-no-smtp-transport-and-its-links-pointed-at-a-path-kong-does-not-route) | S2  | Password reset silently sent nothing - no SMTP transport, and emailed links 404 at the gateway                        | infra          | it-40 | **FIXED**        |
+| [#120](#120--chat-never-updated-live---supabase-realtime-was-broken-at-three-separate-layers-each-hidden-behind-the-one-in-front-of-it) | S2  | Chat never updated live - Realtime broken at three layers (Kong keys, tenant host, missing `realtime` schema)         | infra          | it-41 | **FIXED**        |
 
 ---
 
@@ -4688,6 +4691,72 @@ The actual difference: `curl`/Playwright response headers on `/app/chat` itself 
 **The same shape exists in three other pages already in this codebase, pre-existing, not introduced by this work**: `app/(app)/app/organisation/page.tsx`, `app/(app)/app/runs/new/page.tsx`, and `app/(auth)/login/page.tsx` all wrap a `useSearchParams()` read in `Suspense` on a page the build marks `○` Static, with no `force-dynamic`. None is fixed here - each reads a narrower value (a redirect target, an invite token, a prefilled campaign id) than chat's does, so a frozen shell there likely misroutes or drops a prefill rather than hanging the whole page, but the mechanism is identical and worth a deliberate look rather than a silent fix bundled into this one.
 
 **Verified.** Reproduced live against the real `dev` deployment (stuck past 20s, `.loader-bar` present, composer never rendered). Reproduced the *absence* of the bug locally under `next build && next start` (resolved in ~1s) before the fix, confirming it wasn't a build-mode difference. After the fix: `npm run build` shows `ƒ /app/chat`; `tsc --noEmit` and `eslint` both clean. Not re-verified against the live `dev` deployment after the fix - that requires an actual redeploy, which is the user's next step, not something done from here.
+
+## Iteration 40 - 2026-08-17 · no email works locally: invitations never had the key, password reset never had a transport
+
+### #118 - `RESEND_API_KEY` set in the repo-root `.env` never reached the API container, so every local invitation failed
+
+**S3 · FIXED · infra + backend · `docker/docker-compose.yml`, `docker/.env.example`, `apps/api/app/core/config.py`**
+
+Reported live: inviting a teammate on the local stack returned *"No Resend API key is set - RESEND_API_KEY must be configured before invitations can be sent."* The key was in fact configured - `RESEND_API_KEY` and `RESEND_FROM_EMAIL` were both set in the **repo-root** `.env`, which is the file a developer naturally opens.
+
+Two independent gaps, either one sufficient to break it:
+
+1. **Compose never reads the repo-root `.env`.** `scripts/local.js` runs `docker compose` against `docker/docker-compose.yml`, so variable interpolation resolves from `docker/.env` (created from `docker/.env.example` on first run). Neither file mentioned `RESEND_*` at all. The repo-root `.env` is read by Alembic and the `npm run db:*` scripts, not by compose - the two files look interchangeable and are not.
+2. **The `api` service declares an explicit `environment:` map with no `env_file:`.** Even with the variables present in `docker/.env`, nothing forwarded them into the container - the list ends at `CALLFLOW_ALLOWLIST` / `CALLFLOW_LOG_FORMAT`.
+
+The error message itself was correct and honest throughout (non-negotiable #9 - `EmailGateway` refuses rather than pretending to send); it named a real missing value. It just could not say *which* of two `.env` files it wanted.
+
+**Impact.** Developer-facing, local stack only. Invitations are the one feature that depends on Resend, and they were unreachable on every fresh local checkout. Deployed environments are unaffected: pm2 inherits the shell environment, which is populated from the repo-root `.env`.
+
+**Fix.** `RESEND_API_KEY` / `RESEND_FROM_EMAIL` added to the `api` service's `environment:` map and to `docker/.env.example`, the latter documented in the same "optional, blank still works" shape LiveKit already uses, with an explicit note that this file - not the repo-root one - is what compose reads.
+
+Adding them surfaced a third, wider problem worth fixing at the source rather than in compose: `config.resend_from_email` used `os.getenv("RESEND_FROM_EMAIL", "<default>")`, and a `getenv` default only applies when the variable is **absent**. Compose (and pm2, and CI) pass a declared-but-unset variable through as an empty string, which would have beaten the default and sent `from: ""` to Resend. Changed to `os.getenv(...) or "<default>"`, which fixes it for every caller at once instead of duplicating the default string into `docker-compose.yml`.
+
+**Verified.** `docker compose exec api python -c "from app.core.config import config; ..."` reports `resend_api_key` length 36 (`re_` prefix) and the expected `resend_from_email` inside the running container. `ruff check app tests --ignore EXE002` clean; `pytest tests/test_email.py tests/test_config.py` 10 passed. **Not verified end to end** - confirming an invitation actually arrives means sending real mail to a real address, which was left to the reporter rather than done from here.
+
+**Note on running the checks in-container:** `ruff check app tests` reports `EXE002` on all 101 files, and `pytest` fails with `ModuleNotFoundError: No module named 'app'`. Both are artifacts of the Windows bind mount, not the code - every file appears mode 755 to Linux, and `app` resolves via the working directory rather than an installed package, which `python` honours and `pytest` does not. Use `--ignore EXE002` and `-e PYTHONPATH=/app/apps/api` respectively. Neither is fixed here.
+
+### #119 - password reset silently sent nothing: GoTrue had no SMTP transport, and its links pointed at a path Kong does not route
+
+**S2 · FIXED · infra · `docker/docker-compose.yml`, `docker/.env.example`**
+
+Reported live: no password-reset email ever arrives on the local stack. The frontend is genuinely wired - `requestPasswordReset()` really calls `supabase.auth.resetPasswordForEmail` (`apps/web/lib/auth/actions.ts:56`) - and the failure is invisible from every surface a developer would check.
+
+Two defects, stacked, the second hidden behind the first:
+
+1. **No mail transport.** The `auth` service declared no `GOTRUE_SMTP_*` at all and the stack had no mail catcher. GoTrue with an empty SMTP host does not refuse and does not warn - it mints the recovery token, writes `recovery_sent_at`, returns `200 {}`, and discards the message. Verified directly: `POST /auth/v1/recover` returned `200`, `select count(*) from auth.users where recovery_sent_at > now() - interval '5 minutes'` returned `2`, and `docker compose logs auth` contained not one mail-related line. Every layer reports success; the mail simply never exists.
+2. **The emailed link 404s.** GoTrue defaults `GOTRUE_MAILER_URLPATHS_*` to `/verify` and builds links as `API_EXTERNAL_URL + path` - but it sits behind Kong, which routes it at `/auth/v1/*`. Verified against the running gateway: `/verify` → `404` (no Kong route), `/auth/v1/verify` → `400` (reached GoTrue, rejected the empty token). So even once mail flowed, every link in it was dead. This one was only reachable *after* fixing #1, which is why it had never been observed.
+
+**Impact.** Password reset was completely non-functional locally, in the way that costs the most time: the UI shows the correct "check your inbox" state, the API returns 200, the database records that a mail was sent, and nothing is wrong anywhere you would look. Deployed environments configure SMTP on the Supabase project and are unaffected by #1; **#2 is worth checking there**, since the same `MAILER_URLPATHS` default applies to any self-hosted GoTrue behind a gateway - not verified from here.
+
+**Fix.** A `mailpit` container (`axllent/mailpit:v1.21`, UI on `${MAILPIT_PORT:-54324}`) now catches every auth email locally, and the `auth` service reads `GOTRUE_SMTP_*` from a `SMTP_*` block in `docker/.env` that defaults to it. Defaults live in the compose file as `${SMTP_HOST:-mailpit}` and friends, so an existing `docker/.env` from before this change works untouched; pointing the block at `smtp.resend.com` sends for real without a second code path. `GOTRUE_SMTP_ADMIN_EMAIL` is deliberately a bare address rather than `RESEND_FROM_EMAIL`, which carries a `Name <addr>` form GoTrue rejects. All four `GOTRUE_MAILER_URLPATHS_*` are set to `/auth/v1/verify`, not just recovery - they share the endpoint and each would have broken identically.
+
+`GOTRUE_MAILER_AUTOCONFIRM` stays `true`: it governs signup confirmation, not recovery, and dropping it would cost the "one command to a working login" property for no gain here.
+
+**Verified.** Full round trip against the running stack: `POST /auth/v1/recover?redirect_to=http://localhost:3000/reset-password` → `200`; mailpit holds one message, subject *"Reset Your Password"*, from `noreply@callflow-ai.local`; following the link in it → `303` to `http://localhost:3000/reset-password` with `access_token`, `refresh_token`, `expires_at`, `token_type` and `type` in the fragment - which is what the browser client consumes to establish the session `updatePassword()` needs. The final in-browser password change was not driven from here.
+
+## Iteration 41 - 2026-08-17 · Realtime has never worked locally: three independent breaks between the browser and the WAL
+
+### #120 - chat never updated live - Supabase Realtime was broken at three separate layers, each hidden behind the one in front of it
+
+**S2 · FIXED · infra · `docker/docker-compose.yml`, `docker/volumes/kong.yml`, `docker/volumes/db/02-schemas.sql`**
+
+Reported live: messages don't arrive and the history doesn't refresh while the chat stays open - you have to reload. The frontend is not at fault and was not changed: `chat-shell.tsx` and `use-chat-unread.ts` already subscribe through `useOrgRealtime`, which is a correct `postgres_changes` subscription. Nothing on the path from Postgres to that hook worked, and it appears **no Realtime feature has ever worked in this stack** - escalations and share requests (`SYSTEM.md` F27) ride the same hook and were equally dead, they just have no second-by-second expectation attached to notice it.
+
+Three defects in series. Each had to be fixed before the next became visible, which is why none had been diagnosed:
+
+1. **Kong rejected every API key on the Realtime route (401).** `kong.yml` declares its consumers with `key: $SUPABASE_ANON_KEY`, but Kong 2.8 does **not** interpolate environment variables in a declarative config, and the kong service had neither those variables nor the templating entrypoint upstream Supabase uses. So the stored credential was the literal 18-character string `$SUPABASE_ANON_KEY`. Proven rather than inferred: authenticating with the literal placeholder as the apikey moved the response from `401` to `403`, i.e. Kong accepted it and proxied. `/rest/v1/` (PostgREST) shares the same key-auth and was broken identically; nothing in the product calls it today, which is why only chat surfaced this.
+2. **Realtime rejected the tenant (403).** Realtime is multi-tenant even self-hosted and takes the tenant's `external_id` from the first label of the Host header. `SEED_SELF_HOST` seeds exactly one tenant, `realtime-dev`, but `kong.yml` pointed at `http://realtime:4000`, so Kong forwarded `Host: realtime:4000` and Realtime looked up a tenant named `realtime`: `TenantNotFound`. Upstream Supabase avoids this by naming the container `realtime-dev.supabase-realtime`; this stack names it `callflow-realtime`.
+3. **The `realtime` schema did not exist, so no subscription could be registered.** `02-schemas.sql` created `_realtime` (tenant metadata) but not `realtime` (the per-tenant CDC tables). Realtime's own tenant migrations create `realtime.subscription` and the `realtime.messages` partitions but **not the schema that holds them**, so they died on "Could not create schema migrations table" and every subscribe returned `RealtimeSubscriptionError: relation "realtime.subscription" does not exist`. Upstream creates the schema in a `realtime.sql` init script this stack does not use. The tell was that `pg_replication_slots` was empty even with a socket open and `SUBSCRIBED` reported to the client - the WAL was never being read at all.
+
+**Impact.** Every live-updating surface in the product was silently static locally: team chat, the chat unread badge, escalations, share requests. The failure is entirely invisible from the app - `subscribe()` reports `SUBSCRIBED`, the socket stays open, and no error reaches the UI - so it reads as "chat is a bit slow" rather than as a broken subsystem. **Deployed environments use hosted Supabase, where all three of these are the provider's concern, so this is local-only** - but it also means no deployed environment has ever exercised the local path.
+
+**Fix.** (1) `SUPABASE_ANON_KEY`/`SUPABASE_SERVICE_KEY` added to the kong service, with an entrypoint that `sed`s exactly those two placeholders into `kong.yml` before Kong starts. Deliberately not upstream's `eval "echo \"$(cat …)\""`: this `kong.yml` carries prose comments containing backticks, which `eval` would execute as command substitution. Keys stay a template, so `npm run local:keys` needs no edit here. (2) A `realtime-dev` network alias on the realtime service, with `kong.yml` pointing at it, so the forwarded Host resolves to the seeded tenant. (3) `create schema if not exists realtime authorization supabase_admin` in `02-schemas.sql`.
+
+**Existing databases need one manual step.** `02-schemas.sql` runs only on an empty data directory, so a stack created before this change still has no `realtime` schema after pulling. Either `npm run local:reset -- --yes` (drops the volume, replays init) or create the schema in place and restart the realtime container - both spelled out in `DEV_SETUP.md`'s troubleshooting table. Fixes (1) and (2) need only a container recreate.
+
+**Verified.** End to end against the running stack, with a probe subscribing exactly as the app does - authenticated user JWT, `postgres_changes` on `messages`, `filter: org_id=eq.<org>`. Before: `CHANNEL_ERROR - transport failure`. After all three: `STATUS SUBSCRIBED`, then a row inserted straight into `messages` via psql produced `EVENT INSERT` at the subscriber, with `supabase_realtime_replication_slot_` and `supabase_realtime_messages_replication_slot_` both present and `active=true`. Probe script and its two test rows were removed afterwards. Not driven through an actual browser - the two open-tab checks are the reporter's to make.
 
 ## Template for the next iteration
 
