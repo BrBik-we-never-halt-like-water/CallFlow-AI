@@ -7,6 +7,7 @@ import {
   MagnifyingGlassIcon,
 } from '@phosphor-icons/react/dist/ssr';
 import { BrandMark } from '@/components/app/brand-mark';
+import { VoiceField } from '@/components/brand/voice-field';
 import { NotWiredNotice } from '@/components/app/settings-section';
 import { SessionGate } from '@/components/app/session-gate';
 import { Tag } from '@/components/ui/badge';
@@ -158,7 +159,24 @@ function IntegrationsContent({ profile }: { profile: SessionProfile }) {
   const loading = catalogue === null || credentials === null;
 
   return (
-    <div className="flex flex-col gap-6">
+    // `isolate` for the same reason the Agents page needs it: the field below
+    // sits at `-z-10`, and without a stacking context here that escapes to the
+    // page root and lands behind `.app-canvas`'s own background, which paints
+    // over it. The field renders and is simply never visible.
+    <div className="relative isolate flex flex-col gap-6">
+      {/* The same atmosphere the Agents page opens with, at the same weight -
+          `opacity-40` plus a radial mask so it fades out well before it reaches
+          the cards, where it would compete with every provider mark on the
+          page. Dimmed with `opacity` rather than `--field-gain`: that variable
+          is read off `document.documentElement`, so setting it on this wrapper
+          would do nothing and only look like it should. */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 -top-8 -z-10 h-96 opacity-40 [mask-image:radial-gradient(ellipse_80%_70%_at_50%_30%,#000_20%,transparent_78%)] [-webkit-mask-image:radial-gradient(ellipse_80%_70%_at_50%_30%,#000_20%,transparent_78%)]"
+      >
+        <VoiceField />
+      </div>
+
       <Readiness
         catalogue={catalogue}
         connectedIds={connectedIds}
@@ -222,18 +240,55 @@ function IntegrationsContent({ profile }: { profile: SessionProfile }) {
       ) : shown.length === 0 ? (
         <EmptyResult query={query} onClear={() => { setQuery(''); setFilter('all'); }} />
       ) : (
-        <ul className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-          {shown.map((spec) => (
-            <ProviderCard
-              key={spec.id}
-              spec={spec}
-              credential={(credentials ?? []).find((c) => c.provider === spec.id) ?? null}
-              canWrite={canWrite}
-              onEdit={() => setEditing(spec)}
-              onChanged={load}
-            />
-          ))}
-        </ul>
+        /* Connected first, then the rest - the same split the Agents page makes
+           between what is yours and what is the team's, and for the same
+           reason: the accounts you have already wired up are the ones you come
+           back to change, and hunting them out of a grid of fifty-seven by
+           reading each card's state is work the page can do for you.
+
+           This is not a return to the seven role sections this page removed.
+           Those were a *taxonomy* imposed on a search problem, which is why the
+           roles became a filter instead. Two groups answer a question someone
+           actually arrives with - "what do I have" versus "what could I add" -
+           and collapse to a single grid the moment one side is empty, so a
+           fresh organisation sees no headings at all. */
+        (() => {
+          const isConnected = (spec: ProviderSpec) => connectedIds.has(spec.id);
+          const connected = shown.filter(isConnected);
+          const available = shown.filter((s) => !isConnected(s));
+
+          const grid = (list: ProviderSpec[]) => (
+            <ul className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+              {list.map((spec) => (
+                <ProviderCard
+                  key={spec.id}
+                  spec={spec}
+                  credential={(credentials ?? []).find((c) => c.provider === spec.id) ?? null}
+                  canWrite={canWrite}
+                  onEdit={() => setEditing(spec)}
+                  onChanged={load}
+                />
+              ))}
+            </ul>
+          );
+
+          if (connected.length === 0 || available.length === 0) {
+            return grid(shown);
+          }
+
+          return (
+            <div className="flex flex-col gap-8">
+              <section className="flex flex-col gap-3">
+                <GroupHeading count={connected.length}>Connected</GroupHeading>
+                {grid(connected)}
+              </section>
+              <section className="flex flex-col gap-3">
+                <GroupHeading count={available.length}>Available</GroupHeading>
+                {grid(available)}
+              </section>
+            </div>
+          );
+        })()
       )}
 
       {editing ? (
@@ -315,6 +370,25 @@ function Readiness({
         </ul>
       )}
     </header>
+  );
+}
+
+/** Words, a count and a hairline - the same quiet group label the Agents page
+ *  uses. A filled header band here would be a third piece of chrome competing
+ *  with the readiness line above and the filter pills between them. */
+function GroupHeading({
+  children,
+  count,
+}: {
+  children: React.ReactNode;
+  count: number;
+}) {
+  return (
+    <div className="flex items-center gap-3">
+      <h2 className="text-small font-medium text-text">{children}</h2>
+      <span className="text-small tabular-nums text-text-mute">{count}</span>
+      <span aria-hidden className="h-px flex-1 bg-rule" />
+    </div>
   );
 }
 
