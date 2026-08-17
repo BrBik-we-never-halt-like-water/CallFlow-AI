@@ -148,6 +148,7 @@ exist in this repo**; `SYSTEM.md` §12 is the closest real gap map until it's wr
 | [#126](#126--accepting-an-invitation-offered-a-signup-form-to-people-who-already-have-an-account) | S2  | Accepting an invitation offered a signup form to people who already have an account                                   | web + backend  | it-43 | **FIXED**        |
 | [#127](#127--your-role-in-one-organisation-decided-whether-you-could-leave-it) | S2  | Your role in one organisation decided whether you could leave it - mixed-role members got stranded                    | web            | it-43 | **FIXED**        |
 | [#128](#128--agent-drafts-followed-you-into-the-next-organisation) | S2  | Agent drafts followed you into the next organisation and prefilled a new agent there                                  | web            | it-43 | **FIXED**        |
+| [#129](#129--an-operator-could-build-an-agent-and-then-had-no-way-to-remove-it) | S2  | An operator could build an agent and then had no way to remove it, their own included                                 | backend + web  | it-43 | **FIXED**        |
 
 ---
 
@@ -4992,6 +4993,46 @@ The `v2` segment exists to make the old keys identifiable: `<orgId>` and `<agent
 **Checked at the same time:** `campaign-draft.ts` has the same `?? 'default'` shape (`settingsKey(existing?.id ?? '')`) but is **not** affected - `.default` is only ever read, never written, because every save goes through `saveLocalSettings(saved.id, …)` with a real id. So the key never exists and the read falls through to `DEFAULT_SETTINGS`. Left alone rather than changed for symmetry.
 
 **Verified.** `eslint` clean - it caught a real missing `scopedOrgId` dependency on the editor's persist effect - and `tsc` clean.
+
+### #129 - an operator could build an agent and then had no way to remove it
+
+**S2 · FIXED · backend + web · `app/auth/permissions.py`, `voice_agents_delete`, `apps/web/app/(app)/app/agentic/page.tsx`**
+
+Reported live. An operator creates a voice agent and cannot delete it - not someone else's, their own. The only way to remove it was to ask an owner or admin.
+
+Wrong in two independent layers, which is why it was total rather than partial:
+
+| Layer | Before |
+| --- | --- |
+| `app/auth/permissions.py` | `AGENTS_DELETE` sat in `_ADMIN` only, so the route rejected an operator before RLS was ever consulted |
+| `voice_agents_delete` | `has_org_role(org_id, ['owner','admin'])` - no creator branch at all |
+
+Meanwhile `voice_agents_insert` has always allowed an operator. A role that can create something and can never remove it accumulates its own mess and needs someone senior to clean it up.
+
+**Fix.** The two layers now answer two different questions, which is the division the rest of the schema already uses (`channels_update`, `messages_update`):
+
+- `AGENTS_DELETE` moves to `_OPERATOR`, and means "may delete agents **at all**". Viewer still cannot.
+- `voice_agents_delete` becomes `has_org_role(org_id, ['owner','admin']) or created_by = public.current_user_id()` - owner or admin may remove any agent in the organisation, everyone else only what they created.
+
+`created_by` has been on the table since `202608151200`, so no backfill: rows written before it existed have `created_by is null` and stay owner/admin-only, which is the safe side.
+
+**The route no longer lies about why.** A delete that removes nothing had one message - `404 Unknown voice agent` - for two very different causes. Since `voice_agents_select` is plain org membership, the caller is usually *looking at* the agent they were just told does not exist. The route now re-reads it: still visible means `403` naming the actual rule ("This agent was created by someone else. You can delete agents you created; an owner or admin can delete any of them"), genuinely absent still means `404`.
+
+**UI.** The Delete control now appears only where it would succeed - `agents:delete` **and** (owner/admin **or** you created it) - rather than on every card for a role that mostly could not use it. The agents list also splits into **Built by you** and **Built by your team** when there is something on both sides, so the agents you can edit and remove are findable without reading every card's "by" line. One group on its own stays ungrouped: a heading over the only section you have is a label, not information.
+
+**Verified at the database level**, not just in the UI. Two real members of one organisation, an agent created by each, acting with `request.jwt.claims` set exactly as `database.as_user()` installs them:
+
+```
+operator deletes OWN agent       -> rows deleted: 1
+operator deletes ANOTHER's agent -> rows deleted: 0
+operator can still SEE that agent -> visible: 1
+```
+
+That third line is the one that justifies the 403: the row is readable and undeletable, so "unknown" would have been false. Probe ran inside a transaction and was rolled back.
+
+`test_permissions.py` caught the change, as it should have - the old test asserted an operator *cannot* delete agents. Rewritten to state the new rule and why the two questions are separate, rather than deleted. Backend suite back to its baseline exactly (1 pre-existing failure, 381 passed, 146 pre-existing errors), `ruff`, `eslint` and `tsc` clean.
+
+**Left alone deliberately: `voice_agents_update`.** Any operator may still edit any agent in the organisation, so you can edit a colleague's agent but not delete it. That asymmetry is real and worth a decision, but tightening it would silently break teams who share agents on purpose - it should not ride along inside a delete fix.
 
 ## Template for the next iteration
 
