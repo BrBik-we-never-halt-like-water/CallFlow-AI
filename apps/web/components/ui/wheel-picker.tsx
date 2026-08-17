@@ -157,13 +157,13 @@ export function WheelPicker({
    *  rather than fight it frame by frame. */
   const animation = useRef<number | null>(null);
 
-  const paintOffset = useCallback(() => {
+  /** `position` lets a caller that already knows where the wheel is pass it in,
+   *  rather than making this read `scrollTop` back and force a layout flush. */
+  const paintOffset = useCallback((position?: number) => {
     const element = scrollRef.current;
     if (!element) return;
-    element.style.setProperty(
-      '--wheel-offset',
-      (element.scrollTop / ITEM_HEIGHT).toFixed(3),
-    );
+    const top = position ?? element.scrollTop;
+    element.style.setProperty('--wheel-offset', (top / ITEM_HEIGHT).toFixed(3));
   }, []);
 
   const scrollToIndex = useCallback(
@@ -214,7 +214,19 @@ export function WheelPicker({
         // over a long spin reads as a lurch followed by a stall rather than
         // as a wheel turning.
         const eased = t < 0.5 ? 4 * t ** 3 : 1 - (-2 * t + 2) ** 3 / 2;
-        element.scrollTop = from + distance * eased;
+        // Computed once and used for all three of the writes below, rather than
+        // read back off the element after setting it.
+        //
+        // `scrollTop` is a layout property: writing it invalidates layout, and
+        // reading it again in the same frame forces the browser to flush that
+        // layout synchronously before it can answer. This loop used to write it
+        // and then read it twice, so every frame paid two forced layouts - and
+        // selecting a preset spins several wheels at once, each with its own
+        // loop, interleaving writes and reads across all of them. That is the
+        // judder on preset selection (`ISSUES.md` #131). The value we just
+        // assigned is the value we want; the DOM has nothing to add.
+        const position = from + distance * eased;
+        element.scrollTop = position;
 
         // Painted and ticked here rather than from the scroll events this
         // generates: one loop owns the frame, so the curvature and the clicks
@@ -222,10 +234,10 @@ export function WheelPicker({
         // DOM/audio writes - no React state - so a spin costs no renders.
         element.style.setProperty(
           '--wheel-offset',
-          (element.scrollTop / ITEM_HEIGHT).toFixed(3),
+          (position / ITEM_HEIGHT).toFixed(3),
         );
 
-        const row = Math.round(element.scrollTop / ITEM_HEIGHT);
+        const row = Math.round(position / ITEM_HEIGHT);
         if (row !== lastTickedIndex.current) {
           lastTickedIndex.current = row;
           if (audible) playTick();
@@ -336,19 +348,25 @@ export function WheelPicker({
    * road ahead of it again. Done during a scroll frame rather than on settle,
    * because a flick has to be able to keep going.
    */
-  function recentre(element: HTMLDivElement) {
-    if (!looping) return;
+  /** Returns where the wheel ended up, so the caller does not have to read
+   *  `scrollTop` back after this may have written it. */
+  function recentre(element: HTMLDivElement): number {
+    let position = element.scrollTop;
+    if (!looping) return position;
     const copyHeight = items.length * ITEM_HEIGHT;
     const lowerBound = copyHeight;
     const upperBound = (loops - 2) * copyHeight;
 
-    if (element.scrollTop < lowerBound) {
-      element.scrollTop += copyHeight;
+    if (position < lowerBound) {
+      position += copyHeight;
+      element.scrollTop = position;
       lastTickedIndex.current += items.length;
-    } else if (element.scrollTop > upperBound) {
-      element.scrollTop -= copyHeight;
+    } else if (position > upperBound) {
+      position -= copyHeight;
+      element.scrollTop = position;
       lastTickedIndex.current -= items.length;
     }
+    return position;
   }
 
   function handleScroll() {
@@ -365,15 +383,15 @@ export function WheelPicker({
       const element = scrollRef.current;
       if (!element) return;
 
-      recentre(element);
-      paintOffset();
+      // One read of `scrollTop` per gesture frame, threaded through the three
+      // things that need it. Reading it again after `recentre` may have written
+      // it would force the layout flush this frame is trying to avoid.
+      const position = recentre(element);
+      paintOffset(position);
 
       const index = Math.max(
         0,
-        Math.min(
-          rendered.length - 1,
-          Math.round(element.scrollTop / ITEM_HEIGHT),
-        ),
+        Math.min(rendered.length - 1, Math.round(position / ITEM_HEIGHT)),
       );
 
       if (index !== lastTickedIndex.current) {
