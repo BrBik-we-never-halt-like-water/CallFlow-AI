@@ -143,21 +143,57 @@ function useMemberSearch(excludeUserId: string | null) {
  * for 20ms on a fast/cached fetch reads as a glitch, not as feedback. */
 function useMinVisible(active: boolean, minMs: number): boolean {
   const [holding, setHolding] = useState(active);
+  // Stamped from the effect below, never during render - `Date.now()` in a
+  // render body is impure and the lint rule that says so is right.
+  const startedAt = useRef<number | null>(null);
 
-  // Reset during render, the same discipline `channelDetail`/`view` use
-  // below - the floor has to start in the very render `active` goes true,
-  // or there would be one frame where this still read false.
+  // Reset during render, the same discipline `channelDetail`/`view` use below.
   if (active && !holding) {
     setHolding(true);
   }
 
+  // Winds down only once `active` is false. The previous version armed this
+  // timer off `holding` alone, so while `active` stayed true the two fought
+  // each other forever: the timer cleared the flag, the next render set it
+  // straight back, the effect re-ran and armed another. A component
+  // re-rendering every `minMs` for as long as anything was loading - a good
+  // part of why `/api/v1/me` was being refetched a dozen times a page - and a
+  // floor that could never actually lift (`ISSUES.md` #125).
   useEffect(() => {
+    if (active) {
+      startedAt.current = Date.now();
+      return;
+    }
     if (!holding) return;
-    const timeout = setTimeout(() => setHolding(false), minMs);
+    const elapsed = startedAt.current === null ? minMs : Date.now() - startedAt.current;
+    const timeout = setTimeout(() => setHolding(false), Math.max(0, minMs - elapsed));
     return () => clearTimeout(timeout);
-  }, [holding, minMs]);
+  }, [active, holding, minMs]);
 
   return active || holding;
+}
+
+/** True once `active` has stayed true for `afterMs` without resolving.
+ *
+ * The backstop for a loading state that never ends. A loader says "wait"; it
+ * cannot say "this is not going to finish", and after twenty seconds that is
+ * the more honest thing to tell someone. */
+function useStalled(active: boolean, afterMs: number): boolean {
+  const [stalled, setStalled] = useState(false);
+
+  // Cleared during render rather than from an effect, same discipline as
+  // `useMinVisible` above: whatever was stalling has resolved.
+  if (!active && stalled) {
+    setStalled(false);
+  }
+
+  useEffect(() => {
+    if (!active) return;
+    const timeout = setTimeout(() => setStalled(true), afterMs);
+    return () => clearTimeout(timeout);
+  }, [active, afterMs]);
+
+  return stalled;
 }
 
 /** The only thing that reads `useSearchParams()` - Next.js requires that to
@@ -379,7 +415,11 @@ export function ChatShell() {
   });
 
   const selectedChannel = channelDetail.status === 'ready' ? channelDetail.channel : null;
-  const showChannelLoader = useMinVisible(channelDetail.status === 'loading', 500);
+  // A conversation that never resolves has to end in something a person can
+  // act on. Whatever the cause - a stalled request, a state transition that
+  // never lands - an indefinite spinner tells the reader nothing and offers
+  // them nothing, which is how this page burned a day (`ISSUES.md` #125).
+  const channelStalled = useStalled(channelDetail.status === 'loading', 20_000);
   const canManageChannel =
     selectedChannel !== null &&
     (selectedChannel.created_by === currentUserId || isOrgAdminOrOwner);
@@ -887,7 +927,16 @@ export function ChatShell() {
                 />
               </div>
             </Panel>
-          ) : selectedChannel && !showChannelLoader ? (
+          ) : selectedChannel ? (
+            // Gated on the channel having loaded, and nothing else. This used
+            // to also require `!showChannelLoader`, which put a 500ms cosmetic
+            // anti-flicker floor in charge of whether the entire conversation -
+            // header, message list and composer - existed. Any way for that
+            // floor to stay raised (and `useMinVisible` above had one) turned a
+            // presentation detail into a conversation that never opens, which
+            // is exactly what shipped (`ISSUES.md` #125). A loading floor may
+            // delay content inside a panel; it must never decide whether the
+            // panel renders.
             <Panel className="flex min-h-0 flex-1 flex-col overflow-hidden">
               <div className="flex items-start justify-between gap-4 border-b border-rule p-4 md:p-5">
                 <div className="flex min-w-0 flex-1 items-start gap-2">
@@ -1165,6 +1214,18 @@ export function ChatShell() {
                   </p>
                 )}
               </div>
+            </Panel>
+          ) : channelStalled ? (
+            <Panel className="flex flex-1 items-center justify-center p-4 md:p-5">
+              <EmptyState
+                title="This conversation didn't open"
+                body="It has been loading for a while without finishing. Retrying usually clears it."
+                action={
+                  <Button variant="secondary" onClick={refetchChannelDetail}>
+                    Try again
+                  </Button>
+                }
+              />
             </Panel>
           ) : (
             <Panel className="flex flex-1 items-center justify-center p-4 md:p-5">
