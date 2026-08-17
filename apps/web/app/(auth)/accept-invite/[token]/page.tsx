@@ -17,7 +17,11 @@ import {
 import { useToast } from '@/components/ui/toast';
 import { PENDING_WELCOME_KEY } from '@/components/app/welcome-modal';
 import { api, type InvitationPreview } from '@/lib/api';
-import { signOut, signUpWithPassword } from '@/lib/auth/actions';
+import {
+  signInWithPassword,
+  signOut,
+  signUpWithPassword,
+} from '@/lib/auth/actions';
 import { useActiveOrg } from '@/lib/hooks/use-active-org';
 import { useSession } from '@/lib/hooks/use-session';
 
@@ -65,6 +69,7 @@ export default function AcceptInvitePage() {
             org_name: null,
             role: null,
             email: null,
+            account_exists: false,
           });
       })
       .finally(() => {
@@ -133,6 +138,28 @@ export default function AcceptInvitePage() {
     await acceptAndEnter();
   }
 
+  /** Sign in and join, for an invitee who already has an account. Signing in
+   *  first and accepting second is the whole point: the previous flow offered
+   *  this person a signup form, which could only ever fail. */
+  async function submitExistingAccount(event: React.FormEvent) {
+    event.preventDefault();
+    if (!preview?.email) return;
+    if (!password) {
+      setErrors({ password: 'Enter your password to continue.' });
+      return;
+    }
+    setErrors({});
+    setSubmitting(true);
+    setFormError(null);
+    const result = await signInWithPassword(preview.email, password);
+    if (!result.ok) {
+      setFormError(result.error ?? "That didn't work.");
+      setSubmitting(false);
+      return;
+    }
+    await acceptAndEnter();
+  }
+
   if (loadingPreview || session.status === 'loading') {
     return (
       <AuthCard title="Accept your invitation">
@@ -174,7 +201,11 @@ export default function AcceptInvitePage() {
     <AuthCard
       title="Accept your invitation"
       description={
-        alreadySignedIn ? undefined : "Set a password and you'll join the team."
+        alreadySignedIn
+          ? undefined
+          : preview.account_exists
+            ? 'Sign in to join the team.'
+            : "Set a password and you'll join the team."
       }
       footer={
         alreadySignedIn ? undefined : (
@@ -186,7 +217,8 @@ export default function AcceptInvitePage() {
             >
               Ignore it
             </Link>{' '}
-            - nothing happens until you set a password.
+            - nothing happens until you{' '}
+            {preview.account_exists ? 'sign in' : 'set a password'}.
           </>
         )
       }
@@ -240,6 +272,51 @@ export default function AcceptInvitePage() {
               </Button>
             </>
           )
+        ) : preview.account_exists ? (
+          <form
+            onSubmit={submitExistingAccount}
+            noValidate
+            className="flex flex-col gap-4"
+          >
+            <p className="text-small text-text-dim">
+              You already have a CallFlow account for this address. Sign in and
+              you&apos;ll join {preview.org_name} straight away.
+            </p>
+
+            <Field
+              label="Email"
+              help="This invitation was sent to this address - it can't be changed here."
+            >
+              <Input value={preview.email ?? ''} readOnly />
+            </Field>
+
+            <Field label="Password" error={errors.password ?? formError} required>
+              <Input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                autoComplete="current-password"
+                autoFocus
+                disabled={submitting}
+              />
+            </Field>
+
+            <Button
+              type="submit"
+              size="lg"
+              className="w-full"
+              loading={submitting}
+            >
+              Sign in and join
+            </Button>
+
+            <Link
+              href="/forgot-password"
+              className="text-small text-text-dim underline decoration-rule-strong underline-offset-2 hover:text-text hover:decoration-current"
+            >
+              Forgot your password?
+            </Link>
+          </form>
         ) : (
           <form
             onSubmit={submitNewAccount}

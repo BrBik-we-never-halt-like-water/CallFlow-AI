@@ -145,6 +145,7 @@ exist in this repo**; `SYSTEM.md` §12 is the closest real gap map until it's wr
 | [#123](#123--every-deploy-to-dev-has-failed-for-20-hours-its-database-is-stamped-at-an-alembic-revision-that-exists-nowhere-in-this-repository) | S1  | Every deploy to dev fails - dev's database is stamped at a revision that exists nowhere in the repo                   | infra          | it-42 | **FIXED**        |
 | [#124](#124--a-conversation-stuck-on-its-loader-forever-after-both-of-its-requests-returned-200) | S2  | Conversation stuck on its loader forever, after both its requests returned 200                                        | web            | it-42 | **FIXED**        |
 | [#125](#125--a-500ms-anti-flicker-floor-could-stay-raised-forever-and-it-gated-the-entire-conversation-panel) | S2  | A 500ms anti-flicker floor could stay raised forever, and it gated the whole conversation panel                       | web            | it-42 | **FIXED**        |
+| [#126](#126--accepting-an-invitation-offered-a-signup-form-to-people-who-already-have-an-account) | S2  | Accepting an invitation offered a signup form to people who already have an account                                   | web + backend  | it-43 | **FIXED**        |
 
 ---
 
@@ -4893,6 +4894,33 @@ Two defects here, and either alone is enough:
 **Honesty about what is proven.** The oscillation and the gating are both real and demonstrable by reading the code. Whether one of them is *the* trigger for the reported symptom is **not** proven - reproducing it needs a production build under load, and it was not reproduced from here. Four hypotheses were falsified before this one (an `anon`-role token, a join burst, an unstable `toast` identity, and #124's `cancelled` guard), so this is deliberately written as "remove the class of failure" rather than "found the culprit". The 20s backstop is what guarantees the user is never stranded even if the trigger is something else again.
 
 **Verified.** `eslint` clean (including `react-hooks/set-state-in-effect` and `react-hooks/purity`, both of which caught real problems in the first drafts of this fix), `tsc` clean.
+
+## Iteration 43 - 2026-08-17 · an invitee who already had an account was shown a signup form that could not succeed
+
+### #126 - accepting an invitation offered a signup form to people who already have an account
+
+**S2 · FIXED · web + backend · `apps/web/app/(auth)/accept-invite/[token]/page.tsx`, `public.lookup_invitation()`**
+
+Reported live. Someone with an existing CallFlow account, signed out, opens an invitation link:
+
+1. The page offers **"Set a password and you'll join the team"** - a signup form.
+2. They fill in name and password and submit.
+3. Supabase rejects it: a user with that email already exists, sign in or reset instead.
+4. The only way through is to leave the page, sign in by the normal route, and open the link a second time - at which point it works, because the signed-in branch just asks them to accept.
+
+The page branched on **whether the visitor was signed in**, and nothing else. Signed out meant "new person, collect a password", which is wrong for every invitee who already has an account - and inviting an existing user into a second organisation is a completely ordinary thing to do, not an edge case.
+
+**Impact.** Every existing user invited to another organisation hit a dead end that blamed them ("a user with this email already exists") for following the link they were sent. Recoverable only by knowing to sign in first and re-open the link, which nothing on the page said.
+
+**Fix.** `public.lookup_invitation()` gains `account_exists`, so the page can branch on *who the invitee is* rather than only on whether they happen to be signed in already. Signed out now has two branches: an address with an account gets a sign-in form (read-only email, password, "Sign in and join", and a **Forgot your password?** link); an address without one gets the signup form as before. Both accept the invitation immediately after authenticating, so the link works on the first click either way.
+
+The card's own copy follows the branch - "Sign in to join the team" rather than "Set a password" - since promising a password step and then not offering one is its own small lie.
+
+**Not an enumeration surface.** `account_exists` is reachable only through a valid invitation token, which is a secret delivered to that mailbox, and the same response already returns the invited address. There is no way to ask this question about an arbitrary email.
+
+**Verified.** Migration `f4b2c9e17a35` applied locally, single head. The function was exercised directly against the real schema with two invitations - one to an address that has an account, one to an address that does not - asserting `account_exists` is `true` and `false` respectively, with the probe rows deleted afterwards. `ruff` clean, backend suite 381 passed against the same baseline, `eslint` and `tsc` clean.
+
+**No regression test.** The DB-backed tests cannot run locally (`gen_salt` is unavailable - `pgcrypto` sits in `extensions`, off the tests' `search_path`, the same cause behind the 146 pre-existing errors) and CI's API job completes in ~20s, which is too fast to be running them either. Until that environment works, a test here would be written and never executed, so the direct database probe above is the verification of record. Worth fixing the test environment before this area changes again.
 
 ## Template for the next iteration
 

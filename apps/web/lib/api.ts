@@ -304,6 +304,9 @@ export interface InvitationPreview {
   org_name: string | null;
   role: string | null;
   email: string | null;
+  /** The invited address already has a CallFlow account, so this person needs
+   *  to sign in rather than create one. */
+  account_exists: boolean;
 }
 
 export interface Profile {
