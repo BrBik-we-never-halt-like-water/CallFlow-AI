@@ -43,18 +43,15 @@ const EASE_OUT = [0.22, 1, 0.36, 1] as const;
  * that is the point of a hero strip, and why the wording here is the claim
  * rather than the explanation.
  */
-const HERO_PROOF: { title: string; body: string }[] = [
+const HERO_PROOF: { title: string }[] = [
   {
     title: "Schema-validated fields",
-    body: "Outcome, sentiment, and the fields you defined — not a transcript to read.",
-  },
+    },
   {
     title: "Only escalations reach a person",
-    body: "Clean calls close themselves; opt-outs and frustration route to your team.",
   },
   {
     title: "Guarded before it dials",
-    body: "Allowlist, per-run ceiling, rate limit. Every guard fails closed.",
   },
 ];
 
@@ -151,7 +148,6 @@ export function Hero() {
               {HERO_PROOF.map((p) => (
                 <li key={p.title} className="flex flex-col gap-1 sm:flex-1">
                   <span className="text-small font-medium text-text">{p.title}</span>
-                  <span className="text-small text-text-mute">{p.body}</span>
                 </li>
               ))}
             </motion.ul>

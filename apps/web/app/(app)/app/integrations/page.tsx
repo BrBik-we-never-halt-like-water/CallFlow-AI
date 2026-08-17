@@ -46,8 +46,8 @@ type Filter = ProviderRole | 'all';
 const FILTERS: { id: Filter; label: string }[] = [
   { id: 'all', label: 'All' },
   { id: 'telephony', label: 'Phone' },
-  { id: 'transcriber', label: 'Speech in' },
-  { id: 'voice', label: 'Speech out' },
+  { id: 'transcriber', label: 'STT' },
+  { id: 'voice', label: 'TTS' },
   { id: 'intelligence', label: 'Intelligence' },
   { id: 'storage', label: 'Storage' },
   { id: 'automation', label: 'Automation' },
@@ -58,8 +58,8 @@ const FILTERS: { id: Filter; label: string }[] = [
  *  towards readiness would invent work nobody has to do. */
 const NEEDED: { id: ProviderRole; label: string }[] = [
   { id: 'telephony', label: 'Phone' },
-  { id: 'transcriber', label: 'Speech in' },
-  { id: 'voice', label: 'Speech out' },
+  { id: 'transcriber', label: 'STT' },
+  { id: 'voice', label: 'TTS' },
   { id: 'intelligence', label: 'Intelligence' },
 ];
 
@@ -286,12 +286,6 @@ function Readiness({
           </p>
         )}
       </div>
-
-      <p className="measure text-body text-text-dim">
-        Your own accounts, your own rates. Connect one of each below and a call
-        can run.
-      </p>
-
       {loading ? (
         <Skeleton className="h-9 w-full max-w-xl rounded-full" />
       ) : (

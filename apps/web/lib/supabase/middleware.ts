@@ -15,6 +15,17 @@ function matches(pathname: string, prefixes: string[]): boolean {
 }
 
 /**
+ * Does this path require a session?
+ *
+ * Exported so `middleware.ts` can refuse the same routes when Supabase is not
+ * configured at all. One list, so the unconfigured path can never gate less
+ * than the configured one.
+ */
+export function isProtected(pathname: string): boolean {
+  return matches(pathname, PROTECTED_PREFIXES);
+}
+
+/**
  * Refreshes the session cookie and gates protected routes.
  *
  * The response object must be the one carrying the cookies Supabase wrote - building

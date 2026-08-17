@@ -293,9 +293,46 @@ class ProviderCredential(TimestampedMixin, Base):
     phone_number: Mapped[str | None] = mapped_column(String(20))
 
 
+class AiProviderCredential(TimestampedMixin, Base):
+    """An org's own API key for an AI vendor used by its voice agents.
+
+    `api_key_encrypted` is Fernet ciphertext, never plaintext - see
+    `app/core/crypto.py`. One row per organisation per provider. Deliberately
+    a separate table from `ProviderCredential`: that one holds Twilio/Plivo
+    telephony credentials (identifier + secret); this one holds single-API-key
+    STT/TTS/LLM vendors.
+    """
+
+    __tablename__ = "ai_provider_credentials"
+    __table_args__ = (
+        UniqueConstraint("org_id", "provider", name="ai_provider_credentials_org_provider_key"),
+        CheckConstraint(
+            "provider in ('sarvam', 'deepgram', 'elevenlabs', 'openai', 'openrouter')",
+            name="ai_provider_credentials_provider_check",
+        ),
+        Index("ai_provider_credentials_org_idx", "org_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organisations.id", ondelete="CASCADE"), nullable=False
+    )
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    provider: Mapped[str] = mapped_column(Text, nullable=False)
+    label: Mapped[str | None] = mapped_column(Text)
+    api_key_encrypted: Mapped[str] = mapped_column(Text, nullable=False)
+
+
 class VoiceAgent(Base):
     """What a live conversation runs with: which STT, TTS and LLM to use, whose
     credentials to authenticate each with, and which number to dial from.
+
+    Read access is org-wide, not per-creator - an agent is infrastructure a
+    whole team dials against, not personal work product like a campaign.
 
     One number per agent for V1 - an org with several agents connects a number
     per agent rather than sharing a pool. Every provider/credential column is
@@ -307,6 +344,10 @@ class VoiceAgent(Base):
     __tablename__ = "voice_agents"
     __table_args__ = (
         CheckConstraint("kind in ('custom', 'prebuilt')", name="voice_agents_kind_check"),
+        # No `telephony_provider in (...)` check: the provisioning branch adds
+        # carriers (Telnyx, Vonage) behind `app/domain/providers.py`, and a
+        # constraint listing them here would have to be migrated every time
+        # one is added. The allowed set lives with the adapters instead.
         Index("voice_agents_org_idx", "org_id"),
     )
 
@@ -403,6 +444,7 @@ class TelephonyProvisioning(TimestampedMixin, Base):
 
 
 __all__ = [
+    "AiProviderCredential",
     "ApiKey",
     "Base",
     "Membership",

@@ -10,6 +10,7 @@ from typing import Any
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.v1.routes.ai_providers import router as ai_providers_router
 from app.api.v1.routes.api_keys import router as api_keys_router
 from app.api.v1.routes.campaigns import router as campaigns_router
 from app.api.v1.routes.escalations import router as escalations_router
@@ -24,6 +25,7 @@ from app.api.v1.routes.safety import router as safety_router
 from app.api.v1.routes.sharing import router as sharing_router
 from app.api.v1.routes.suppressions import router as suppressions_router
 from app.api.v1.routes.telephony import router as telephony_router
+from app.api.v1.routes.voice_agents import router as voice_agents_router
 from app.core.config import config
 from app.core.logging import configure_logging
 from app.database import database
@@ -80,6 +82,8 @@ app.include_router(sharing_router)
 app.include_router(suppressions_router)
 app.include_router(api_keys_router)
 app.include_router(integrations_router)
+app.include_router(ai_providers_router)
+app.include_router(voice_agents_router)
 app.include_router(messages_router)
 app.include_router(telephony_router)
 # Not a public API - the voice runtime's callback, guarded by a shared secret.

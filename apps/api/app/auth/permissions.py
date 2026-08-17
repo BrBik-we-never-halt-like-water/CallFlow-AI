@@ -22,6 +22,10 @@ class Permission(str, enum.Enum):
     CAMPAIGNS_WRITE = "campaigns:write"
     CAMPAIGNS_DELETE = "campaigns:delete"
 
+    AGENTS_READ = "agents:read"
+    AGENTS_WRITE = "agents:write"
+    AGENTS_DELETE = "agents:delete"
+
     RUNS_READ = "runs:read"
     # Every run dials for real, so starting one at all is the consequential action.
     RUNS_START = "runs:start"
@@ -82,6 +86,7 @@ _READ_ONLY = frozenset(
         Permission.ORG_READ,
         Permission.TEAM_READ,
         Permission.CAMPAIGNS_READ,
+        Permission.AGENTS_READ,
         Permission.RUNS_READ,
         Permission.CONTACTS_READ,
         Permission.SUPPRESSIONS_READ,
@@ -101,6 +106,7 @@ _READ_ONLY = frozenset(
 _OPERATOR = _READ_ONLY | {
     Permission.CAMPAIGNS_WRITE,
     Permission.CAMPAIGNS_DELETE,
+    Permission.AGENTS_WRITE,
     Permission.RUNS_START,
     Permission.CONTACTS_WRITE,
     Permission.SUPPRESSIONS_ADD,
@@ -116,6 +122,7 @@ _ADMIN = _OPERATOR | {
     Permission.TEAM_INVITE,
     Permission.TEAM_REMOVE,
     Permission.TEAM_SET_ROLE,
+    Permission.AGENTS_DELETE,
     Permission.CONTACTS_REVEAL,
     Permission.SAFETY_WRITE,
     Permission.API_KEYS_READ,

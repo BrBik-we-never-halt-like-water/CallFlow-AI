@@ -64,7 +64,7 @@ export function Tooltip({
             isDark && 'dark-overlay',
             'z-50 max-w-64 rounded-sm border border-rule-strong bg-surface-raised px-2.5 py-1.5',
             'text-small text-text shadow-overlay',
-            'data-[state=delayed-open]:animate-in',
+            'tooltip-content',
             className,
           )}
         >

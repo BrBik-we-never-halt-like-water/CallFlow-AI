@@ -1162,7 +1162,7 @@ the top and bottom and get culled - costs nothing.
 Two free-axis choices worth writing down, because both look like omissions.
 
 **The roles became a filter, not a layout.** The first version rendered a titled
-section per role - Phone numbers, Speech in, Speech out, Intelligence, Storage,
+section per role - Phone numbers, STT, TTS, Intelligence, Storage,
 Automation, Observability - each with its own paragraph and its own card grid.
 That reads fine with six providers and badly with fifty-seven: the two things an
 operator actually wants, "find Deepgram" and "what do I still need", ended up

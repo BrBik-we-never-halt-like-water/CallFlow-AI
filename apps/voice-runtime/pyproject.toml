@@ -14,7 +14,8 @@ dependencies = [
 # deployment installs the vendors its organisations use and nothing else -
 # `livekit-agents` pulls in a large dependency tree per plugin.
 [project.optional-dependencies]
-# Speech in
+
+# STT
 assemblyai = ["livekit-plugins-assemblyai>=1.0.0"]
 baseten = ["livekit-plugins-baseten>=1.0.0"]
 clova = ["livekit-plugins-clova>=1.0.0"]
@@ -26,7 +27,7 @@ rtzr = ["livekit-plugins-rtzr>=1.0.0"]
 soniox = ["livekit-plugins-soniox>=1.0.0"]
 speechmatics = ["livekit-plugins-speechmatics>=1.0.0"]
 
-# Speech out
+# TTS
 cartesia = ["livekit-plugins-cartesia>=1.0.0"]
 elevenlabs = ["livekit-plugins-elevenlabs>=1.0.0"]
 fishaudio = ["livekit-plugins-fishaudio>=1.0.0"]

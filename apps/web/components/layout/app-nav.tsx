@@ -10,6 +10,7 @@ import {
   GearSixIcon,
   MegaphoneIcon,
   PlugsConnectedIcon,
+  RobotIcon,
   UserFocusIcon,
 } from '@phosphor-icons/react/dist/ssr';
 import Link from 'next/link';
@@ -32,15 +33,17 @@ export interface NavItem {
  * two are lower-frequency and live in the account menu (`UserMenu`) instead,
  * since folding them into the sidebar too would mean either compressing type or
  * cramming more links into one column, both worse than one extra click for a
- * rare action. `Chat`, unlike those two, is a working feature someone checks
- * often, so it stays in the primary list rather than joining them. `Integrations`
- * moved out of Settings for the same reason: connecting a carrier and a speech
- * vendor is what a new organisation has to do before anything works at all, so
- * burying it two clicks deep put the first task behind the rarest menu.
+ * rare action. `Chat` and `Agents`, unlike those two, are working features
+ * someone checks often, so they stay in the primary list rather than joining
+ * them. `Integrations` moved out of Settings for the same reason: connecting a
+ * carrier and a speech vendor is what a new organisation has to do before
+ * anything works at all, so burying it two clicks deep put the first task
+ * behind the rarest menu.
  */
 export const NAV_ITEMS: Omit<NavItem, 'badge'>[] = [
   { label: 'Dashboard', href: '/app', icon: GaugeIcon },
   { label: 'Campaigns', href: '/app/campaigns', icon: MegaphoneIcon },
+  { label: 'Agents', href: '/app/agentic', icon: RobotIcon },
   { label: 'Runs', href: '/app/runs', icon: BroadcastIcon },
   { label: 'Needs a person', href: '/app/escalations', icon: UserFocusIcon },
   { label: 'Contacts', href: '/app/contacts', icon: AddressBookIcon },
@@ -50,7 +53,10 @@ export const NAV_ITEMS: Omit<NavItem, 'badge'>[] = [
   { label: 'Settings', href: '/app/settings', icon: GearSixIcon },
 ];
 
-/** The seven destinations shown as the sidebar's primary nav list. */
+/** The destinations shown as the sidebar's primary nav list - everything
+ *  except `Organisation` and `Settings` (see the account menu note above).
+ *  Deliberately not "the seven destinations": the count has changed twice
+ *  already, and a number in a comment goes stale silently. */
 export const PRIMARY_NAV_ITEMS = NAV_ITEMS.filter(
   (item) => item.href !== '/app/organisation' && item.href !== '/app/settings',
 );

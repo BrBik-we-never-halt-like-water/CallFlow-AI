@@ -23,6 +23,7 @@ import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Panel } from '@/components/ui/panel';
 import { Skeleton } from '@/components/ui/skeleton';
+import { ThemeToggle } from '@/components/ui/theme-toggle';
 import { formatAge, formatDuration } from '@/lib/format';
 import { countLamps, lampForOutcome, type LampState } from '@/lib/lamp';
 import {
@@ -916,7 +917,14 @@ function PageTitle({
       <div className="flex flex-col gap-1">
         <TeamControls session={session} />
       </div>
-      <div className="flex gap-2">
+      <div className="flex items-center gap-2">
+        {/* Relocated here from the sidebar footer - this header row (not a
+            persistent top bar, which this product deliberately doesn't have)
+            is the one place every page-level action already lives, so it's
+            also the one reachable spot for a preference control without
+            reintroducing a top bar just to hold it. Trade-off: only reachable
+            from the Dashboard now, not every /app/* page. */}
+        <ThemeToggle />
         <Button asChild variant="secondary">
           <Link href="/app/campaigns">Campaigns</Link>
         </Button>

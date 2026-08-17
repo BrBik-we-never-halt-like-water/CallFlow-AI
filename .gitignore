@@ -49,3 +49,6 @@ apps/web/AGENTS.md
 
 # Local Docker stack env - generated from docker/.env.example on first run.
 docker/.env
+
+.agents
+.claude

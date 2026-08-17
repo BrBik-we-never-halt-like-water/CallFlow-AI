@@ -1,13 +1,21 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
-import { updateSession } from "@/lib/supabase/middleware";
+import { isProtected, updateSession } from "@/lib/supabase/middleware";
 
 export async function middleware(request: NextRequest) {
-  // Without Supabase configured there is no session to refresh and no way to sign in,
-  // so gating /app would lock the dashboard behind a door with no key. Let it through:
-  // the auth pages explain what is missing.
+  // Without Supabase configured there is no session to refresh and no way to sign
+  // in. Public pages still render - the auth pages explain what is missing - but
+  // /app must still be refused: letting it through fails open, and a dev server
+  // started before .env.local existed would serve the whole dashboard to anyone.
+  // Fail closed, the same rule the API's safety checks follow (CLAUDE.md #2).
   if (!isSupabaseConfigured()) {
+    if (isProtected(request.nextUrl.pathname)) {
+      const login = request.nextUrl.clone();
+      login.pathname = '/login';
+      login.search = '';
+      return NextResponse.redirect(login);
+    }
     return NextResponse.next({ request });
   }
 

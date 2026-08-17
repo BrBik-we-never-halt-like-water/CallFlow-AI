@@ -80,7 +80,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
 
         <RadixToast.Viewport
           className={cn(
-            'fixed right-0 top-0 z-100 flex w-[min(400px,calc(100vw-24px))] flex-col gap-2 p-3',
+            'fixed right-0 top-0 z-100 flex w-[min(320px,calc(100vw-24px))] flex-col gap-2 p-3',
             // Clip horizontally so a toast animating in/out from off-screen right
             // (translate-x-full) can't extend the document width and add a
             // horizontal scrollbar on mobile. `clip` (not `hidden`) keeps the
@@ -126,12 +126,15 @@ function ToastItem({
       }}
       // An error interrupts; everything else waits its turn in the reading order.
       type={isError ? 'foreground' : 'background'}
-      duration={isError ? 10000 : 5000}
+      // A confirmation is read at a glance and then in the way, so it leaves
+      // quickly. An error is the opposite - it usually names something to go
+      // and fix, and 1.5s is not long enough to finish reading one.
+      duration={isError ? 10000 : 1500}
       className={cn(
-        // Always dark, on every page - not conditional on `/app` scope like
-        // Select/Tooltip/etc (DESIGN_NOTES.md §18): a toast is CallFlow's own
-        // notification chrome, not something that should adapt to whatever
-        // page happens to be under it.
+        // Follows the theme rather than being dark on every page: the black
+        // slab over a light dashboard is what this reverses (the earlier
+        // "CallFlow's own chrome everywhere" ask, DESIGN_NOTES.md §18). The
+        // class now only paints in dark - see globals.css.
         'toast-dark-overlay',
         // Enter, exit and swipe all live in `globals.css` under `.toast-item`.
         // This used to be `data-[state=open]:animate-in`, a `tailwindcss-animate`
@@ -146,7 +149,7 @@ function ToastItem({
           <CheckCircleIcon
             aria-hidden
             weight="fill"
-            className="size-4 text-lamp-jade-text"
+            className="size-5 text-lamp-jade-text"
           />
         ) : (
           <Lamp state={TONE_LAMP[tone]} size="sm" />

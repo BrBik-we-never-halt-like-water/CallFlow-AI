@@ -92,3 +92,34 @@ def test_viewer_cannot_request_sharing() -> None:
     """A read-only role has nothing to do with asking for someone else's
     resource - the same reasoning as every other viewer restriction."""
     assert role_has(OrgRole.VIEWER, Permission.SHARING_REQUEST) is False
+
+
+@pytest.mark.parametrize("role", ALL_ROLES)
+def test_every_role_can_read_agents(role: OrgRole) -> None:
+    """Voice agent configurations are org infrastructure any teammate needs
+    to see to run or share a campaign against - the same reasoning migration
+    `a1c48e7f2b93` gives `voice_agents_select` for making it org-wide, not
+    per-creator, RLS."""
+    assert role_has(role, Permission.AGENTS_READ) is True
+
+
+def test_viewer_cannot_write_agents() -> None:
+    assert role_has(OrgRole.VIEWER, Permission.AGENTS_WRITE) is False
+
+
+@pytest.mark.parametrize("role", [OrgRole.OPERATOR, OrgRole.ADMIN, OrgRole.OWNER])
+def test_operator_admin_and_owner_can_write_agents(role: OrgRole) -> None:
+    """Building and editing an agent is a day-to-day action, the same tier
+    as campaigns - operator included."""
+    assert role_has(role, Permission.AGENTS_WRITE) is True
+
+
+@pytest.mark.parametrize("role", [OrgRole.VIEWER, OrgRole.OPERATOR])
+def test_viewer_and_operator_cannot_delete_agents(role: OrgRole) -> None:
+    assert role_has(role, Permission.AGENTS_DELETE) is False
+
+
+@pytest.mark.parametrize("role", [OrgRole.ADMIN, OrgRole.OWNER])
+def test_admin_and_owner_can_delete_agents(role: OrgRole) -> None:
+    """An operator can create and edit an agent but not remove one."""
+    assert role_has(role, Permission.AGENTS_DELETE) is True
