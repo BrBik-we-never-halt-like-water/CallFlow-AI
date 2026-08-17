@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from uuid import UUID
@@ -21,6 +22,15 @@ IDLE_LIFETIME_SECONDS = 300.0
 
 class DatabaseNotReady(RuntimeError):
     """Raised when the pool is used before startup has run."""
+
+
+class DatabasePoolBusy(RuntimeError):
+    """Every pooled connection was in use for longer than a caller should wait.
+
+    A distinct type rather than the bare `TimeoutError` asyncpg raises, so
+    `main.py` can answer 503 for this and only this - a query that exceeds
+    `command_timeout` is a different fault with a different fix.
+    """
 
 
 class Database:
@@ -75,6 +85,53 @@ class Database:
             self._pool = None
             log.info("database pool closed")
 
+    def stats(self) -> dict[str, int]:
+        """Pool occupancy, for logs and the health endpoint.
+
+        `free` is the number that can be handed out right now without waiting;
+        it reaching zero under load is the shape of an outage, so it is worth
+        being able to read it before one rather than inferring it after.
+        """
+        if self._pool is None:
+            return {}
+        return {
+            "pool_size": self._pool.get_size(),
+            "pool_free": self._pool.get_idle_size(),
+            "pool_max": self._pool.get_max_size(),
+        }
+
+    @asynccontextmanager
+    async def _acquire(self) -> AsyncIterator[asyncpg.Connection]:
+        """Borrow a connection, refusing to wait indefinitely for one.
+
+        The timeout is the whole point. Without it asyncpg waits forever, so an
+        exhausted pool produces requests that never answer and never fail -
+        which is invisible in logs, invisible in metrics, and reaches the user
+        as a spinner (`ISSUES.md` #122).
+        """
+        started = time.monotonic()
+        try:
+            connection = await self.pool.acquire(timeout=config.db_acquire_timeout)
+        except TimeoutError as exc:
+            log.error("database pool exhausted", extra=self.stats())
+            raise DatabasePoolBusy(
+                f"No database connection came free within "
+                f"{config.db_acquire_timeout:g}s - the pool of "
+                f"{config.db_pool_max} is fully in use."
+            ) from exc
+
+        waited = time.monotonic() - started
+        if waited >= config.db_acquire_warn_seconds:
+            log.warning(
+                "slow database connection acquire",
+                extra={"waited_seconds": round(waited, 3), **self.stats()},
+            )
+
+        try:
+            yield connection
+        finally:
+            await self.pool.release(connection)
+
     @staticmethod
     async def _register_codecs(connection: asyncpg.Connection) -> None:
         """Round-trip `jsonb` as plain Python dicts/lists.
@@ -106,7 +163,7 @@ class Database:
         `auth.uid()` returns and what the RLS helpers join on. Everything above this
         layer still deals in `public.users.id`.
         """
-        async with self.pool.acquire() as connection, connection.transaction():
+        async with self._acquire() as connection, connection.transaction():
             await self._assume(connection, "authenticated", str(auth_user_id))
             yield connection
             # Only on the way out clean: if the body raised, the transaction is
@@ -119,7 +176,7 @@ class Database:
     @asynccontextmanager
     async def anonymous(self) -> AsyncIterator[asyncpg.Connection]:
         """A connection with no identity. Every tenant policy evaluates false."""
-        async with self.pool.acquire() as connection, connection.transaction():
+        async with self._acquire() as connection, connection.transaction():
             await connection.execute("select set_config('role', 'anon', true)")
             yield connection
             # See as_user()'s matching comment: skip cleanup on the error path, or a

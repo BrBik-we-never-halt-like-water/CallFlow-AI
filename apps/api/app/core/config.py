@@ -102,6 +102,15 @@ class Config:
     db_pool_min: int = field(default_factory=lambda: _int("DB_POOL_MIN", 2))
     db_pool_max: int = field(default_factory=lambda: _int("DB_POOL_MAX", 10))
     db_command_timeout: float = 30.0
+    # How long a request will wait for a free connection before giving up.
+    # asyncpg's own default is no timeout at all, which turns pool exhaustion
+    # into a request that hangs forever instead of an error anyone can see.
+    db_acquire_timeout: float = field(
+        default_factory=lambda: float(_int("DB_ACQUIRE_TIMEOUT_SECONDS", 10))
+    )
+    # A wait this long still succeeded, but means the pool is near its limit -
+    # logged so saturation is visible before it becomes an outage.
+    db_acquire_warn_seconds: float = 1.0
 
     # Pepper for the suppression phone_hash. Changing it orphans every existing
     # suppression row, so it is effectively permanent once live data exists.

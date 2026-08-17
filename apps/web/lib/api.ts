@@ -565,6 +565,19 @@ async function authHeaders(): Promise<Record<string, string>> {
   return headers;
 }
 
+/**
+ * A request that has not answered by now is not going to.
+ *
+ * `fetch()` has no default timeout, so a server that accepts a connection and
+ * then never replies - the API waiting on an exhausted database pool is the
+ * case that prompted this - leaves the promise pending forever. Every loader
+ * in the app is driven by one of these promises, so "forever" renders as a
+ * spinner that never resolves and never errors, with nothing in the console
+ * (`ISSUES.md` #122). Well above the API's own 30s query ceiling, so a slow
+ * query still returns its real error rather than being cut off here.
+ */
+const REQUEST_TIMEOUT_MS = 45_000;
+
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
   let res: Response;
   try {
@@ -572,8 +585,19 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
       ...init,
       headers: { 'Content-Type': 'application/json', ...init?.headers },
       cache: 'no-store',
+      signal: init?.signal ?? AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
-  } catch {
+  } catch (error) {
+    // Two different failures reach here and they need different advice: the
+    // timeout above means the server took the request and went quiet, which
+    // is not something the reader can fix by checking their wifi.
+    if (error instanceof DOMException && error.name === 'TimeoutError') {
+      throw new Error(
+        `The service accepted the request but never answered (waited ${
+          REQUEST_TIMEOUT_MS / 1000
+        }s). It may be overloaded - try again in a moment.`,
+      );
+    }
     // fetch() itself throwing means the request never reached a server at
     // all - DNS, a dropped connection, a dev server mid-restart. The raw
     // `TypeError: Failed to fetch` is meaningless to whoever is looking at
