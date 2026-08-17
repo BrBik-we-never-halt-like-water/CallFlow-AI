@@ -10,6 +10,7 @@ being invented twice.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Protocol, Self, runtime_checkable
 
 
 class CarrierError(Exception):
@@ -48,6 +49,65 @@ class CarrierTrunk:
     details: dict[str, str] = field(default_factory=dict)
 
 
+@dataclass(frozen=True)
+class CarrierNumber:
+    """One number an organisation already owns on its carrier account.
+
+    `number_ref` is whatever that vendor needs to address the number later, and
+    the vendors disagree: Twilio wants a Phone Number SID, Telnyx a number id,
+    Plivo and Vonage the E.164 itself. Carrying it alongside `e164` means the
+    caller can hand a chosen number straight back to `configure_number()`
+    without knowing which vendor convention applies.
+
+    `capabilities` is what the number can actually do. A number without `voice`
+    cannot be dialled from, and offering it would be a run that fails at the
+    carrier for a reason nobody could see in the picker.
+    """
+
+    provider: str
+    e164: str
+    number_ref: str
+    label: str | None = None
+    capabilities: frozenset[str] = field(default_factory=frozenset)
+
+    @property
+    def can_call(self) -> bool:
+        # Empty means the vendor did not say. Treated as capable rather than
+        # hiding a number someone can see in their own carrier dashboard.
+        return not self.capabilities or "voice" in self.capabilities
+
+
+@runtime_checkable
+class Carrier(Protocol):
+    """What every carrier adapter provides.
+
+    Declared rather than merely tested: conformance used to be pinned only by
+    `test_telephony_carriers.py`'s "same entry points" parametrisation, which
+    catches a missing method but cannot help a caller reason about the set. A
+    new vendor now fails type-checking rather than a test three files away.
+    """
+
+    outbound_transport: str | None
+
+    async def __aenter__(self) -> Self: ...
+    async def __aexit__(self, *exc: object) -> None: ...
+
+    async def list_numbers(self) -> list[CarrierNumber]: ...
+
+    async def configure_number(
+        self,
+        *,
+        number_ref: str,
+        livekit_sip_host: str,
+        label: str,
+        auth_username: str,
+        auth_password: str,
+    ) -> CarrierTrunk: ...
+
+    @staticmethod
+    def allowed_addresses() -> list[str]: ...
+
+
 def sip_uri(host: str, transport: str = "tcp") -> str:
     """The origination URI a carrier is told to send inbound calls to.
 
@@ -60,4 +120,4 @@ def sip_uri(host: str, transport: str = "tcp") -> str:
     return f"sip:{bare};transport={transport}"
 
 
-__all__ = ["CarrierError", "CarrierTrunk", "sip_uri"]
+__all__ = ["Carrier", "CarrierError", "CarrierNumber", "CarrierTrunk", "sip_uri"]

@@ -30,7 +30,12 @@ from typing import Any, Self
 
 import httpx
 
-from app.integrations.telephony import CarrierError, CarrierTrunk, sip_uri
+from app.integrations.telephony import (
+    CarrierError,
+    CarrierNumber,
+    CarrierTrunk,
+    sip_uri,
+)
 
 log = logging.getLogger("app.integrations.telephony.vonage")
 
@@ -38,6 +43,13 @@ _BASE = "https://api.nexmo.com/v1"
 _ACCOUNT = "https://rest.nexmo.com"
 
 DEFAULT_TRANSPORT = "tls"
+
+# Pagination. `_MAX_NUMBER_PAGES` is a ceiling, not an expected count: a vendor
+# that kept returning a next page would otherwise hold the request open, and a
+# picker that silently stopped at page one would hide an org's own numbers.
+_MAX_NUMBER_PAGES = 100
+_PAGE_SIZE = 100
+
 
 
 class VonageCarrier:
@@ -90,6 +102,71 @@ class VonageCarrier:
         except ValueError:
             return {}
         return body if isinstance(body, dict) else {}
+
+    async def list_numbers(self) -> list[CarrierNumber]:
+        """The voice-capable numbers already on this Vonage account.
+
+        The account API takes query parameters rather than a JSON body, so this
+        cannot go through `_request`. It pages with `index` (1-based) and `size`
+        and reports `count` as the total.
+
+        Vonage returns `msisdn` as bare digits with no `+`. Normalised here
+        rather than at the call site: `is_e164()` requires the plus, and the
+        org's own number would otherwise fail validation on the way into a run.
+        """
+        if self._client is None:
+            raise RuntimeError("VonageCarrier is not open. Use `async with VonageCarrier(...)`.")
+
+        numbers: list[CarrierNumber] = []
+        index = 1
+        action = "list the numbers on this account"
+
+        for _ in range(_MAX_NUMBER_PAGES):
+            try:
+                response = await self._client.get(
+                    f"{_ACCOUNT}/account/numbers",
+                    params={"index": index, "size": _PAGE_SIZE},
+                    auth=self._auth,
+                )
+            except httpx.HTTPError as exc:
+                raise CarrierError(
+                    "Vonage", action, f"could not be reached ({type(exc).__name__})."
+                ) from exc
+            if response.status_code >= 300:
+                raise CarrierError("Vonage", action, _detail(response))
+            try:
+                body = response.json()
+            except ValueError:
+                break
+            if not isinstance(body, dict):
+                break
+
+            items = body.get("numbers") or []
+            for item in items:
+                digits = str(item.get("msisdn") or "").strip().lstrip("+")
+                if not digits:
+                    continue
+                features = item.get("features") or []
+                capabilities = {
+                    f.lower() for f in features if isinstance(f, str)
+                } or {"voice"}
+                numbers.append(
+                    CarrierNumber(
+                        provider="vonage",
+                        e164=f"+{digits}",
+                        # Vonage addresses a number by the number itself.
+                        number_ref=f"+{digits}",
+                        label=None,
+                        capabilities=frozenset(capabilities),
+                    )
+                )
+
+            count = body.get("count")
+            index += 1
+            if not items or count is None or len(numbers) >= int(count):
+                break
+
+        return numbers
 
     async def configure_number(
         self,

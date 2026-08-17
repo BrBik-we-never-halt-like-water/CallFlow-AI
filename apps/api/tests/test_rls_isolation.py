@@ -4052,14 +4052,20 @@ async def test_ai_provider_credentials_are_invisible_across_tenants_for_agents(
     await db.execute("delete from public.ai_provider_credentials where org_id = $1", a.org_id)
 
 
-async def test_voice_agents_are_org_wide_readable_not_per_creator(
+async def test_voice_agents_follow_the_per_creator_silo_for_operators(
     db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
 ) -> None:
-    """The deliberate contrast with campaigns/runs (per-creator visibility
-    silo, migration `202608092000`): any org member, including a viewer,
-    must see an agent created by someone else entirely. A regression here -
-    accidentally narrowing this to per-creator - would be a silent behavior
-    change nothing else in this suite would catch."""
+    """`voice_agents` follows the per-creator visibility silo that campaigns and
+    runs already use (migration `202608092000`): an **operator** sees only the
+    agents they created, while owner, admin and viewer see every agent in the
+    organisation.
+
+    This test previously asserted the opposite - plain `is_org_member` read for
+    everyone - which is what `202608151200` originally created. It was narrowed
+    deliberately ("an operator sees only their own agents; an admin sees
+    everyone's"), so what is pinned here is the *asymmetry*: the roles that
+    oversee an organisation see all of it, and the role that builds sees its own
+    work."""
     a, _ = tenants
     await _as_postgres(db)
 
@@ -4072,13 +4078,21 @@ async def test_voice_agents_are_org_wide_readable_not_per_creator(
         await _as_user(db, a.auth_user_id)
         created = await _insert_voice_agent(db, org_id=a.org_id, created_by=a.user_id)
 
-    for member in (operator, viewer):
+    # The overseeing roles see an agent they did not create.
+    for member in (a, viewer):
         async with db.transaction():
             await _as_user(db, member.auth_user_id)
             rows = await voice_agents_repo.list_org_agents(db, a.org_id)
         assert [r["id"] for r in rows] == [created["id"]], (
             f"member {member.user_id} cannot see an agent created by another org member"
         )
+
+    # The operator does not - and this is the half worth pinning, because it is
+    # the one a well-meaning "why can't my teammate see this?" fix would undo.
+    async with db.transaction():
+        await _as_user(db, operator.auth_user_id)
+        rows = await voice_agents_repo.list_org_agents(db, a.org_id)
+    assert rows == [], "an operator saw an agent created by another org member"
 
     await _as_postgres(db)
     await db.execute("delete from public.voice_agents where org_id = $1", a.org_id)
@@ -4112,20 +4126,35 @@ async def test_only_operator_or_above_can_create_voice_agents_and_only_admin_or_
         )
     assert created is not None, "operator could not create a voice agent"
 
-    # RLS's `voice_agents_delete` policy is a `USING` clause (admin/owner
-    # only) - same shape as `test_admin_cannot_demote_an_owner_via_direct_update`
-    # above: it filters the row out of the delete rather than raising, so an
-    # operator's delete is silently a no-op, not a rejection.
+    # `voice_agents_delete` widened in `b6d1e93af472`: an owner or admin may
+    # remove any agent, and everyone else may remove the ones they created. An
+    # operator who could build an agent but never remove it had to ask an admin
+    # to undo their own work (`ISSUES.md` #129).
     async with db.transaction():
         await _as_user(db, operator.auth_user_id)
         deleted = await voice_agents_repo.delete_agent(db, a.org_id, created["id"])
-    assert deleted is None, "operator deleted a voice agent - delete should be admin/owner only"
+    assert deleted is not None, "an operator could not delete the agent they created"
+
+    # The other half of the same policy, and the half worth pinning: the widening
+    # is per-creator, not a blanket operator grant. A `USING` clause filters the
+    # row out rather than raising, so a refused delete is silently a no-op -
+    # which is why this asserts the row survives rather than expecting an error.
+    async with db.transaction():
+        await _as_user(db, a.auth_user_id)
+        colleagues = await _insert_voice_agent(
+            db, org_id=a.org_id, created_by=a.user_id, name="Owner's Agent"
+        )
+
+    async with db.transaction():
+        await _as_user(db, operator.auth_user_id)
+        refused = await voice_agents_repo.delete_agent(db, a.org_id, colleagues["id"])
+    assert refused is None, "an operator deleted an agent they did not create"
 
     await _as_postgres(db)
     still_there = await db.fetchval(
-        "select exists(select 1 from public.voice_agents where id = $1)", created["id"]
+        "select exists(select 1 from public.voice_agents where id = $1)", colleagues["id"]
     )
-    assert still_there, "the voice agent was actually deleted by an operator"
+    assert still_there, "a colleague's voice agent was actually deleted by an operator"
 
     await db.execute("delete from public.voice_agents where org_id = $1", a.org_id)
     await db.execute(
