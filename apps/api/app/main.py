@@ -7,8 +7,9 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.api.v1.routes.ai_providers import router as ai_providers_router
 from app.api.v1.routes.api_keys import router as api_keys_router
@@ -29,6 +30,7 @@ from app.api.v1.routes.voice_agents import router as voice_agents_router
 from app.core.config import config
 from app.core.logging import configure_logging
 from app.database import database
+from app.database.session import DatabasePoolBusy
 
 configure_logging(json_format=config.log_format == "json")
 log = logging.getLogger("app.main")
@@ -90,6 +92,22 @@ app.include_router(telephony_router)
 app.include_router(internal_router)
 
 
+@app.exception_handler(DatabasePoolBusy)
+async def _pool_busy(_: Request, exc: DatabasePoolBusy) -> JSONResponse:
+    """Answer saturation, rather than leaving the caller holding an open socket.
+
+    503 with `Retry-After`, because the condition is transient and the client's
+    correct move is to try again - not to treat this as a bad request. The
+    alternative is what this replaces: no response at all, which every caller
+    experiences as a permanent loading state.
+    """
+    return JSONResponse(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        content={"detail": f"{exc} Try again in a moment."},
+        headers={"Retry-After": "5"},
+    )
+
+
 @app.get("/")
 def root() -> dict[str, str]:
     """Cheapest possible liveness probe.
@@ -113,6 +131,10 @@ def health() -> dict[str, Any]:
     return {
         "ok": True,
         "calling_available": False,
+        # Occupancy, not credentials: how many pooled connections exist and how
+        # many are free right now. `pool_free: 0` under load is the signature of
+        # the stall this endpoint exists to make diagnosable without SSH.
+        "database": database.stats(),
         "max_calls_per_run": config.max_calls_per_run,
         "allowlist_active": bool(config.allowlist),
         "limits": {

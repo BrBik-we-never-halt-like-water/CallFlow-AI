@@ -140,6 +140,9 @@ exist in this repo**; `SYSTEM.md` §12 is the closest real gap map until it's wr
 | [#118](#118--resend_api_key-set-in-the-repo-root-env-never-reached-the-api-container-so-every-local-invitation-failed)            | S3  | `RESEND_API_KEY` never reached the API container - every local invitation failed                                      | infra + backend | it-40 | **FIXED**        |
 | [#119](#119--password-reset-silently-sent-nothing-gotrue-had-no-smtp-transport-and-its-links-pointed-at-a-path-kong-does-not-route) | S2  | Password reset silently sent nothing - no SMTP transport, and emailed links 404 at the gateway                        | infra          | it-40 | **FIXED**        |
 | [#120](#120--chat-never-updated-live---supabase-realtime-was-broken-at-three-separate-layers-each-hidden-behind-the-one-in-front-of-it) | S2  | Chat never updated live - Realtime broken at three layers (Kong keys, tenant host, missing `realtime` schema)         | infra          | it-41 | **FIXED**        |
+| [#121](#121--some-realtime-joins-are-rejected-with-invalid-column-for-filter-org_id-during-a-page-load-burst---not-reproduced-not-fixed) | S3  | Some Realtime joins rejected during page-load burst - unreproduced                                                    | infra + web    | it-41 | OPEN             |
+| [#122](#122--a-stalled-request-rendered-as-a-permanent-loader-because-nothing-on-the-path-from-fetch-to-poolacquire-had-a-timeout) | S2  | A stalled request rendered as a permanent loader - no timeout anywhere from `fetch()` to `pool.acquire()`             | web + backend  | it-42 | **FIXED**        |
+| [#123](#123--every-deploy-to-dev-has-failed-for-20-hours-its-database-is-stamped-at-an-alembic-revision-that-exists-nowhere-in-this-repository) | S1  | Every deploy to dev fails - dev's database is stamped at a revision that exists nowhere in the repo                   | infra          | it-42 | OPEN             |
 
 ---
 
@@ -4757,6 +4760,82 @@ Three defects in series. Each had to be fixed before the next became visible, wh
 **Existing databases need one manual step.** `02-schemas.sql` runs only on an empty data directory, so a stack created before this change still has no `realtime` schema after pulling. Either `npm run local:reset -- --yes` (drops the volume, replays init) or create the schema in place and restart the realtime container - both spelled out in `DEV_SETUP.md`'s troubleshooting table. Fixes (1) and (2) need only a container recreate.
 
 **Verified.** End to end against the running stack, with a probe subscribing exactly as the app does - authenticated user JWT, `postgres_changes` on `messages`, `filter: org_id=eq.<org>`. Before: `CHANNEL_ERROR - transport failure`. After all three: `STATUS SUBSCRIBED`, then a row inserted straight into `messages` via psql produced `EVENT INSERT` at the subscriber, with `supabase_realtime_replication_slot_` and `supabase_realtime_messages_replication_slot_` both present and `active=true`. Probe script and its two test rows were removed afterwards. Not driven through an actual browser - the two open-tab checks are the reporter's to make.
+
+### #121 - some Realtime joins are rejected with `invalid column for filter org_id` during a page-load burst - not reproduced, not fixed
+
+**S3 · OPEN · infra + web · `apps/web/lib/hooks/use-org-realtime.ts`, Realtime's `realtime.subscription_check_filters()`**
+
+Found while verifying #120. With all three of that issue's fixes in place and live updates demonstrably working, Realtime still rejects a minority of subscription attempts:
+
+```
+RealtimeSubscriptionError: [event: *, filter: org_id=eq.<org>, schema: public, table: messages].
+Exception: ERROR P0001 (raise_exception) invalid column for filter org_id
+```
+
+It is **partial and transient, not a steady failure**. One browser reload produced 18 accepted subscriptions and 14 rejections interleaved within the same nine seconds, then isolated single rejections 8 and 3 minutes later. The affected user still sees live messages, because enough of the duplicate channels survive.
+
+`invalid column` is raised by Realtime's own `subscription_check_filters()` trigger when its `col_names` array comes back empty - it builds that from `information_schema.columns`, which is privilege-filtered per role (`authenticated` sees all 8 columns of `public.messages`; `anon` sees 0).
+
+**Hypotheses tested and falsified**, all from a Node client using the same client library, filter and table as the app:
+
+- *Caller role* - subscribing with an explicit `role: anon` token succeeds, so Realtime is not applying the subscriber's role when it inserts the subscription; the trigger always sees all 8 columns. Rules out the privilege-filtering explanation despite it fitting the error text.
+- *Concurrency* - 12 simultaneous joins across three tables from one client: 12/12 accepted.
+- *Per-user / per-table* - tokens for a user with no existing subscriptions, and each of the affected tables individually, all succeed.
+
+Every controlled attempt succeeds, so the trigger condition is still unknown and is likely specific to what the browser sends or to the join/leave churn around it.
+
+**A likely contributing factor, worth fixing regardless.** A signed-in user on `/app/chat` opens **seven** subscriptions: `chat-shell.tsx` takes `channels`, `channel_members` and `messages`, `use-chat-unread.ts` takes *the same three again* for the nav badge, and `app-store.tsx` adds `escalations`. `useOrgRealtime` deliberately gives each call site its own channel via `useId()` (see its own docstring - sharing one throws on the second `.on()`), so the duplication is by design. Under `next dev`'s StrictMode double-mount that becomes ~14 join attempts per page load, which is the burst the rejections cluster in. Collapsing the three duplicated tables to one subscription each, fanned out to both consumers, would roughly halve the churn - and is worth doing on its own merits.
+
+**Impact.** Currently cosmetic: enough channels survive that live updates work, and a rejected channel is retried. It matters because it is unexplained, it makes the Realtime logs noisy enough to hide a real fault, and a future page that subscribes to only one table has no spare channel to fall back on.
+
+**Not attempted.** Reading what the failing browser actually sends over the websocket, which is the obvious next step and needs its devtools rather than server-side logs.
+
+## Iteration 42 - 2026-08-17 · dev stuck on a loader: nothing between the browser and the pool had a timeout, and no deploy had landed in 20 hours
+
+### #122 - a stalled request rendered as a permanent loader, because nothing on the path from `fetch()` to `pool.acquire()` had a timeout
+
+**S2 · FIXED · web + backend · `apps/web/lib/api.ts`, `apps/api/app/database/session.py`, `apps/api/app/main.py`**
+
+Reported live on **deployed dev**: opening a conversation sits on the loader indefinitely. Whatever the underlying stall is, the reason it presents as an unkillable spinner rather than an error is that there were **two** places with no time bound, in series:
+
+1. `lib/api.ts`'s `req()` - the single choke point every call in the app goes through - called `fetch()` with no `signal`. `fetch()` has no default timeout, so a server that accepts a connection and then never replies leaves the promise pending forever. Every loader in the product is driven by one of these promises.
+2. `Database.as_user()`/`anonymous()` called `pool.acquire()` with no `timeout`. **asyncpg does not time out an acquire unless asked**, so once all `db_pool_max` (10) connections are checked out, every further request waits forever. `command_timeout=30` bounds a *query* but cannot bound the wait for a connection to run it on.
+
+So a saturated pool produced requests that never answered, never errored, never logged, and never showed a status code - invisible from every angle, and indistinguishable from "the page is a bit slow".
+
+**Impact.** Any transient backend stall became a permanent, silent, un-retryable UI state. Also the reason "it's the connection pool" was a plausible-but-unverifiable theory rather than something anyone could read off a dashboard - there was no measurement to confirm or refute it.
+
+**Fix.** Three parts, all about making the failure *visible* rather than guessing at its cause:
+
+- `req()` now passes `AbortSignal.timeout(45s)`, and distinguishes a timeout from a connection failure - "accepted the request but never answered" is different advice from "check your connection". 45s sits well above the API's own 30s query ceiling, so a genuinely slow query still returns its real error instead of being cut off by the client.
+- `Database._acquire()` wraps every borrow with `config.db_acquire_timeout` (10s, `DB_ACQUIRE_TIMEOUT_SECONDS`) and raises `DatabasePoolBusy`, which `main.py` answers as a 503 with `Retry-After`. Fails closed and says which limit was hit, per non-negotiable #2.
+- Observability, which is the part that actually settles the argument: `Database.stats()` reports size/free/max, `/api/health` exposes it, an acquire slower than 1s logs a warning, and exhaustion logs an error with occupancy attached. `pool_free: 0` under load is now a thing you can read rather than infer.
+
+**Deliberately not done: halving the two pool acquisitions per request.** Every authenticated request takes two sequentially - `dependencies.py`'s auth lookup, then the handler's own - so a pool of 10 serves ~5 concurrent requests. Folding them into one request-scoped connection is a real optimisation, but it restructures the RLS-critical path for a bottleneck **nobody has yet measured**, and `DB_POOL_MAX` is already an environment variable. The observability above is precisely what tells us whether it is needed; the order should be measure, then raise the cheap lever, then restructure only if that is not enough.
+
+**Verified.** Six tests in `tests/test_pool_timeout.py` cover the bounded wait, the timeout actually being handed to the pool (the regression that matters), release on both the success and the exception path, and empty stats before startup. The stub honours asyncpg's `timeout=` contract by raising rather than sleeping past it - an earlier version slept instead and tested nothing, which the tests caught. Backend suite 363 passed against a 357 baseline (+6, same 1 pre-existing failure and 141 pre-existing errors); `ruff` clean; `tsc` clean outside generated `.next` output; `eslint` clean on the changed file.
+
+**This does not explain the dev stall itself** - only why it was invisible. Diagnosing the stall needs dev's own logs and `/api/health` occupancy once #123 lets a deploy land.
+
+### #123 - every deploy to dev has failed for 20 hours: its database is stamped at an Alembic revision that exists nowhere in this repository
+
+**S1 · OPEN · infra · CI/CD `Migrate dev`**
+
+`Migrate dev` fails, which fails the whole pipeline, so **no deploy has reached dev since 2026-08-16 12:39**:
+
+```
+FAILED: Can't locate revision identified by 'e5b9c4d26f31'
+```
+
+Dev's `alembic_version` points at `e5b9c4d26f31`. That revision **has never existed in this repository** - `git log --all -S 'e5b9c4d26f31'` finds it in no branch, no commit, and no deleted file, after a full `git fetch --all`. The repo's own chain is healthy: linear, single head `c8e1f4a29b76`.
+
+**Cause.** A developer pointed their local checkout at the shared dev database and ran `alembic upgrade head` from a branch that was never pushed. The database advanced; the repository did not.
+
+**Impact.** S1 not because of what it breaks in the product but because of what it hides: dev silently serves 20-hour-old code while everyone assumes their merges are live. Every fix appears not to work, which is how an afternoon disappears - and it is the reason the chat stall could not be investigated on the environment reporting it.
+
+**Fix.** Merging the branch that owns that revision restores it, provided its `down_revision` chains onto `c8e1f4a29b76`. If it was cut before that revision, the merge produces two heads and `upgrade head` fails differently but just as fatally - `alembic heads` must print exactly one before merging.
+
+**The process gap is the real issue and is not fixed here.** Nothing stops a local machine migrating the shared dev database, so this recurs the moment someone else tests that way. Worth either a guard in `scripts/db.js` that refuses a non-local `DATABASE_URL` without an explicit override, or a dev database per developer.
 
 ## Template for the next iteration
 
