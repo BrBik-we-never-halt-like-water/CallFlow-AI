@@ -316,7 +316,23 @@ async def delete_voice_agent(
 ) -> None:
     async with database.as_user(user.auth_user_id) as conn:
         deleted = await voice_agents_repo.delete_agent(conn, user.org_id, agent_id)
+        if deleted is None:
+            # `voice_agents_delete` allows an owner or admin any agent, and
+            # everyone else only their own - so a DELETE that removes nothing
+            # has two very different causes. The agent being *readable*
+            # (`voice_agents_select` is plain org membership) separates them.
+            # Reporting "unknown" for an agent the caller is looking at on
+            # screen would be a lie about what happened.
+            visible = await voice_agents_repo.get_org_agent(conn, user.org_id, agent_id)
     if deleted is None:
+        if visible is not None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=(
+                    "This agent was created by someone else. You can delete agents "
+                    "you created; an owner or admin can delete any of them."
+                ),
+            )
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail=f"Unknown voice agent: {agent_id}"
         )

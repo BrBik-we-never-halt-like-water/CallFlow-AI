@@ -114,12 +114,21 @@ def test_operator_admin_and_owner_can_write_agents(role: OrgRole) -> None:
     assert role_has(role, Permission.AGENTS_WRITE) is True
 
 
-@pytest.mark.parametrize("role", [OrgRole.VIEWER, OrgRole.OPERATOR])
-def test_viewer_and_operator_cannot_delete_agents(role: OrgRole) -> None:
-    assert role_has(role, Permission.AGENTS_DELETE) is False
+def test_viewer_cannot_delete_agents() -> None:
+    """A viewer reads and does nothing else, agents included."""
+    assert role_has(OrgRole.VIEWER, Permission.AGENTS_DELETE) is False
 
 
-@pytest.mark.parametrize("role", [OrgRole.ADMIN, OrgRole.OWNER])
-def test_admin_and_owner_can_delete_agents(role: OrgRole) -> None:
-    """An operator can create and edit an agent but not remove one."""
+@pytest.mark.parametrize("role", [OrgRole.OPERATOR, OrgRole.ADMIN, OrgRole.OWNER])
+def test_operator_admin_and_owner_can_delete_agents(role: OrgRole) -> None:
+    """This permission answers "may this role delete agents at all", not
+    "which ones" - the second question belongs to `voice_agents_delete`, which
+    allows an owner or admin any agent in the organisation and everyone else
+    only the ones they created.
+
+    Operator was withheld here until `ISSUES.md` #129, which made an operator
+    able to build an agent and then unable to remove it - their own included -
+    with only an admin able to clean it up. Splitting the two questions is the
+    same division `MESSAGES_SEND` already uses for per-channel authorisation.
+    """
     assert role_has(role, Permission.AGENTS_DELETE) is True

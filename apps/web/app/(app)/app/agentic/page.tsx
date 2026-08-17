@@ -117,11 +117,40 @@ function DraftCard({
   );
 }
 
+/** A quiet group label with its count - the same hairline-and-words treatment
+ *  the tab row above uses, rather than a second filled control competing with
+ *  it for attention. */
+function SectionHeading({
+  children,
+  count,
+}: {
+  children: React.ReactNode;
+  count: number;
+}) {
+  return (
+    <div className="flex items-center gap-3">
+      <h2 className="text-small font-medium text-text">{children}</h2>
+      <span className="text-small tabular-nums text-text-mute">{count}</span>
+      <span aria-hidden className="h-px flex-1 bg-rule" />
+    </div>
+  );
+}
+
 function AgenticContent({ profile }: { profile: SessionProfile }) {
   const toast = useToast();
   const canRead = profile.permissions.includes('agents:read');
   const canWrite = profile.permissions.includes('agents:write');
-  const canDelete = profile.permissions.includes('agents:delete');
+  // Two different questions, and conflating them is what put a Delete button
+  // on agents the caller could not delete. `agents:delete` says whether this
+  // role may delete agents at all; the role says whether that extends past
+  // their own. `voice_agents_delete` enforces exactly this split in the
+  // database - the UI only has to agree with it, never to be trusted for it.
+  const canDeleteAgents = profile.permissions.includes('agents:delete');
+  const canDeleteAnyAgent =
+    profile.active.role === 'owner' || profile.active.role === 'admin';
+  const mayDelete = (agent: VoiceAgent) =>
+    canDeleteAgents &&
+    (canDeleteAnyAgent || agent.created_by === profile.user_id);
 
   const [agents, setAgents] = useState<VoiceAgent[] | null>(null);
   // Lazy initialiser, not an effect: `react-hooks/set-state-in-effect` is an
@@ -230,18 +259,50 @@ function AgenticContent({ profile }: { profile: SessionProfile }) {
         ) : agents.length === 0 ? (
           <EmptyLine>No agents created.</EmptyLine>
         ) : (
-          <ul className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-            {agents.map((agent) => (
-              <li key={agent.id} className="flex">
-                <AgentCard
-                  agent={agent}
-                  canDelete={canDelete}
-                  onChanged={load}
-                  currentUserId={profile.user_id}
-                />
-              </li>
-            ))}
-          </ul>
+          /* Split by who built it, and only when there is something on both
+             sides - a single heading over the only group you have is a label,
+             not information. What the split earns: your own agents are the
+             ones you can edit and remove, so finding them shouldn't mean
+             reading every card's "by" line. */
+          (() => {
+            const mine = agents.filter((a) => a.created_by === profile.user_id);
+            const theirs = agents.filter(
+              (a) => a.created_by !== profile.user_id,
+            );
+            const grid = (list: VoiceAgent[]) => (
+              <ul className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                {list.map((agent) => (
+                  <li key={agent.id} className="flex">
+                    <AgentCard
+                      agent={agent}
+                      canDelete={mayDelete(agent)}
+                      onChanged={load}
+                      currentUserId={profile.user_id}
+                    />
+                  </li>
+                ))}
+              </ul>
+            );
+
+            if (mine.length === 0 || theirs.length === 0) return grid(agents);
+
+            return (
+              <div className="flex flex-col gap-8">
+                <section className="flex flex-col gap-4">
+                  <SectionHeading count={mine.length}>
+                    Built by you
+                  </SectionHeading>
+                  {grid(mine)}
+                </section>
+                <section className="flex flex-col gap-4">
+                  <SectionHeading count={theirs.length}>
+                    Built by your team
+                  </SectionHeading>
+                  {grid(theirs)}
+                </section>
+              </div>
+            );
+          })()
         )
       ) : drafts.length === 0 ? (
         <EmptyLine>No drafts.</EmptyLine>
