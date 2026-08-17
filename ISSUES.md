@@ -144,6 +144,7 @@ exist in this repo**; `SYSTEM.md` §12 is the closest real gap map until it's wr
 | [#122](#122--a-stalled-request-rendered-as-a-permanent-loader-because-nothing-on-the-path-from-fetch-to-poolacquire-had-a-timeout) | S2  | A stalled request rendered as a permanent loader - no timeout anywhere from `fetch()` to `pool.acquire()`             | web + backend  | it-42 | **FIXED**        |
 | [#123](#123--every-deploy-to-dev-has-failed-for-20-hours-its-database-is-stamped-at-an-alembic-revision-that-exists-nowhere-in-this-repository) | S1  | Every deploy to dev fails - dev's database is stamped at a revision that exists nowhere in the repo                   | infra          | it-42 | **FIXED**        |
 | [#124](#124--a-conversation-stuck-on-its-loader-forever-after-both-of-its-requests-returned-200) | S2  | Conversation stuck on its loader forever, after both its requests returned 200                                        | web            | it-42 | **FIXED**        |
+| [#125](#125--a-500ms-anti-flicker-floor-could-stay-raised-forever-and-it-gated-the-entire-conversation-panel) | S2  | A 500ms anti-flicker floor could stay raised forever, and it gated the whole conversation panel                       | web            | it-42 | **FIXED**        |
 
 ---
 
@@ -4863,6 +4864,35 @@ Silent by construction: no error, no toast, no console output, and a green netwo
 **Not fixed here, and a likely reason the window was hit so often:** `/api/v1/me` is requested **15+ times per page load** on dev, alongside repeats of `organisations`, `members` and `campaigns` - 128-140 requests taking 32.9s to settle. `useSession()` is called independently by several components, each with its own effect and its own `supabase.auth.onAuthStateChange` subscription, so a single auth event multiplies into one `me` request per consumer. It belongs in one shared context rather than per-consumer state. Worth its own change: it is wasteful on its own terms, and it is the churn that made this race fire reliably.
 
 **Verified.** `tsc` clean on the changed file, `eslint` clean. Not reproduced end-to-end from here: the failure needs a production build under that re-render load, and the fix removes the state in which it can occur rather than depending on the timing.
+
+### #125 - a 500ms anti-flicker floor could stay raised forever, and it gated the entire conversation panel
+
+**S2 · FIXED · web · `apps/web/app/(app)/app/chat/chat-shell.tsx`**
+
+Follow-up to #124, which fixed a real bug but not the one on screen. The loader visible on dev is the **fallback branch** - a bare `<Panel><WavesLoader/></Panel>` with no header and no composer - reached when this fails:
+
+```tsx
+) : selectedChannel && !showChannelLoader ? (
+```
+
+`#124` had targeted `view.loading`, which drives a *different* loader nested **inside** a panel that was never rendering. Fixing it changed nothing visible, which is the cost of fixing a mechanism instead of the one on the screen.
+
+Two defects here, and either alone is enough:
+
+1. **`useMinVisible` could never lift its floor.** It set `holding` during render whenever `active && !holding`, and cleared it from a timer keyed on `holding`. While `active` stayed true those fought each other indefinitely: the timer cleared the flag, the next render set it straight back, the effect re-ran and armed another timer. So the component re-rendered every `minMs` for as long as anything was loading, and `showChannelLoader` never went false. That perpetual re-render is also a strong candidate for the request storm seen alongside it - `/api/v1/me` fetched 15+ times per page load, 128-140 requests, 32.9s to settle.
+2. **A cosmetic timer decided whether content existed.** `!showChannelLoader` gated the whole conversation - header, message list, composer. An anti-flicker floor is presentation; letting it decide whether the panel renders turns any way of holding it up into "the conversation never opens".
+
+**Impact.** A conversation that never opens, with every request returning 200. The failure looks like a backend fault from every angle a developer would check - which is exactly how it consumed a day and had the API, the connection pool and Supabase each blamed and cleared in turn.
+
+**Fix.** Three parts, in order of how much they matter:
+
+- The panel is gated on `selectedChannel` alone. A loading floor may delay content *inside* a panel; it must never decide whether the panel renders.
+- `useMinVisible` winds down only once `active` is false, so nothing changes while it is still true and the oscillation is gone. `Date.now()` moved out of the render body, where it was impure.
+- A conversation still loading after 20s now renders "This conversation didn't open" with a **Try again**, via a new `useStalled`. A loader says "wait"; it cannot say "this is not going to finish", and after twenty seconds that is the more honest thing to say. This is the backstop that makes an indefinite spinner impossible regardless of cause.
+
+**Honesty about what is proven.** The oscillation and the gating are both real and demonstrable by reading the code. Whether one of them is *the* trigger for the reported symptom is **not** proven - reproducing it needs a production build under load, and it was not reproduced from here. Four hypotheses were falsified before this one (an `anon`-role token, a join burst, an unstable `toast` identity, and #124's `cancelled` guard), so this is deliberately written as "remove the class of failure" rather than "found the culprit". The 20s backstop is what guarantees the user is never stranded even if the trigger is something else again.
+
+**Verified.** `eslint` clean (including `react-hooks/set-state-in-effect` and `react-hooks/purity`, both of which caught real problems in the first drafts of this fix), `tsc` clean.
 
 ## Template for the next iteration
 
