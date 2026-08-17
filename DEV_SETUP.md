@@ -15,6 +15,7 @@ First run pulls images and builds; give it a few minutes. After that:
 | API | http://localhost:8000/api/health |
 | Studio (browse the database) | http://localhost:54323 |
 | Supabase gateway | http://localhost:54321 |
+| Mail (every auth email lands here) | http://localhost:54324 |
 
 Then **sign up at http://localhost:3000/signup**. Auth runs locally, so the
 signup trigger creates your organisation and you land straight in it.
@@ -191,6 +192,27 @@ listens outside localhost.
 `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` and `LIVEKIT_SIP_HOST`, then
 `npm run local`. Without them everything else works: the API refuses to build a
 gateway and the voice worker refuses to start, each naming what is missing.
+
+**Password reset and every other auth email** go to the mailpit container, not
+to a real inbox: request a reset at `/forgot-password`, then open
+http://localhost:54324 and click the link in the message waiting there. Nothing
+is sent off the machine. To deliver for real instead, point the `SMTP_*` block
+in `docker/.env` at Resend (`smtp.resend.com`, port 587, user `resend`, pass =
+your `RESEND_API_KEY`) and `npm run local`.
+
+These are GoTrue's emails and are unrelated to the Resend key below, which only
+sends invitations. Leaving `SMTP_HOST` blank is the one thing to avoid: GoTrue
+then discards the mail silently and the reset looks like it worked
+(`ISSUES.md` #119).
+
+**To send an invitation** you need a Resend key. Fill in `RESEND_API_KEY` (and
+optionally `RESEND_FROM_EMAIL`, which otherwise falls back to the app default),
+then `npm run local`. Without it every other feature works and the invite fails
+with a message naming the missing key rather than pretending it sent.
+
+Note that `docker/.env` is the only env file compose reads. The **repo-root**
+`.env` is a different file, used by Alembic and the `npm run db:*` scripts - a
+value set there does not reach any container (`ISSUES.md` #118).
 
 Carrier, speech and model credentials are **not** environment variables - they
 are per-organisation rows you add on **Integrations** in the app.

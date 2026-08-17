@@ -115,10 +115,11 @@ class Config:
     # Transactional email (invitations). Empty key ⇒ EmailGateway refuses to send
     # rather than silently dropping the message.
     resend_api_key: str = field(default_factory=lambda: os.getenv("RESEND_API_KEY", ""))
+    # `or`, not a getenv default: compose and PM2 pass the var through as an
+    # empty string when it is unset, which would otherwise beat the default.
     resend_from_email: str = field(
-        default_factory=lambda: os.getenv(
-            "RESEND_FROM_EMAIL", "CallFlow AI <noreply@callflow-ai.brbik.com>"
-        )
+        default_factory=lambda: os.getenv("RESEND_FROM_EMAIL")
+        or "CallFlow AI <noreply@callflow-ai.brbik.com>"
     )
 
     # Where the web app is served, for building links that go out in email.

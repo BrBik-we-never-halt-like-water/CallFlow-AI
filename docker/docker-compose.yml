@@ -54,6 +54,17 @@ services:
       timeout: 5s
       retries: 20
 
+  # Catches every auth email locally. GoTrue with an empty SMTP host uses a noop
+  # mailer: it mints the recovery token, updates `recovery_sent_at`, returns 200,
+  # and drops the message with nothing in the log - so a password reset looks
+  # like it worked and no mail ever exists (`ISSUES.md` #119).
+  mailpit:
+    image: axllent/mailpit:v1.21
+    container_name: callflow-mailpit
+    restart: unless-stopped
+    ports:
+      - "${MAILPIT_PORT:-54324}:8025"
+
   auth:
     image: supabase/gotrue:v2.170.0
     container_name: callflow-auth
@@ -61,6 +72,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      mailpit:
+        condition: service_started
     environment:
       GOTRUE_API_HOST: 0.0.0.0
       GOTRUE_API_PORT: 9999
@@ -86,9 +99,30 @@ services:
       # "nothing to check". GoTrue omits the claim entirely without this, so
       # every locally-issued token was signed correctly and rejected anyway.
       GOTRUE_JWT_ISSUER: ${SUPABASE_PUBLIC_URL}/auth/v1
-      # No inbox locally. Signup returns a session immediately, which is what
-      # makes "one command to a working login" true rather than nearly true.
+      # Signup returns a session immediately, which is what makes "one command
+      # to a working login" true rather than nearly true. This does not affect
+      # password reset - recovery mail is sent regardless, and needs the SMTP
+      # settings below to go anywhere.
       GOTRUE_MAILER_AUTOCONFIRM: "true"
+      # Defaults point at the mailpit container, so reset mail is caught at
+      # localhost:54324 and never leaves the machine. Override in `docker/.env`
+      # to send for real - see the SMTP block in `.env.example`.
+      GOTRUE_SMTP_HOST: ${SMTP_HOST:-mailpit}
+      GOTRUE_SMTP_PORT: ${SMTP_PORT:-1025}
+      GOTRUE_SMTP_USER: ${SMTP_USER:-}
+      GOTRUE_SMTP_PASS: ${SMTP_PASS:-}
+      # A bare address: GoTrue rejects the `Name <addr>` form here, which is why
+      # this is not simply RESEND_FROM_EMAIL.
+      GOTRUE_SMTP_ADMIN_EMAIL: ${SMTP_SENDER:-noreply@callflow-ai.local}
+      GOTRUE_SMTP_SENDER_NAME: ${SMTP_SENDER_NAME:-CallFlow AI}
+      # GoTrue defaults these to `/verify`, but it sits behind Kong at
+      # `/auth/v1/*` - so the default link 404s at the gateway and every auth
+      # email is dead on arrival. All four, not just recovery: they share the
+      # endpoint and would each break the same way.
+      GOTRUE_MAILER_URLPATHS_RECOVERY: /auth/v1/verify
+      GOTRUE_MAILER_URLPATHS_CONFIRMATION: /auth/v1/verify
+      GOTRUE_MAILER_URLPATHS_INVITE: /auth/v1/verify
+      GOTRUE_MAILER_URLPATHS_EMAIL_CHANGE: /auth/v1/verify
       GOTRUE_EXTERNAL_EMAIL_ENABLED: "true"
       GOTRUE_DISABLE_SIGNUP: "false"
       GOTRUE_LOG_LEVEL: warn
@@ -312,6 +346,8 @@ services:
       LIVEKIT_SIP_HOST: ${LIVEKIT_SIP_HOST:-}
       LIVEKIT_AGENT_NAME: ${LIVEKIT_AGENT_NAME:-callflow-voice}
       CALLFLOW_ALLOWLIST: ${CALLFLOW_ALLOWLIST:-}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      RESEND_FROM_EMAIL: ${RESEND_FROM_EMAIL:-}
       CALLFLOW_LOG_FORMAT: text
     volumes:
       - ../apps/api:/app/apps/api
