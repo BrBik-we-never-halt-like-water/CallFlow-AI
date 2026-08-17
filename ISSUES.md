@@ -142,7 +142,8 @@ exist in this repo**; `SYSTEM.md` §12 is the closest real gap map until it's wr
 | [#120](#120--chat-never-updated-live---supabase-realtime-was-broken-at-three-separate-layers-each-hidden-behind-the-one-in-front-of-it) | S2  | Chat never updated live - Realtime broken at three layers (Kong keys, tenant host, missing `realtime` schema)         | infra          | it-41 | **FIXED**        |
 | [#121](#121--some-realtime-joins-are-rejected-with-invalid-column-for-filter-org_id-during-a-page-load-burst---not-reproduced-not-fixed) | S3  | Some Realtime joins rejected during page-load burst - unreproduced                                                    | infra + web    | it-41 | OPEN             |
 | [#122](#122--a-stalled-request-rendered-as-a-permanent-loader-because-nothing-on-the-path-from-fetch-to-poolacquire-had-a-timeout) | S2  | A stalled request rendered as a permanent loader - no timeout anywhere from `fetch()` to `pool.acquire()`             | web + backend  | it-42 | **FIXED**        |
-| [#123](#123--every-deploy-to-dev-has-failed-for-20-hours-its-database-is-stamped-at-an-alembic-revision-that-exists-nowhere-in-this-repository) | S1  | Every deploy to dev fails - dev's database is stamped at a revision that exists nowhere in the repo                   | infra          | it-42 | OPEN             |
+| [#123](#123--every-deploy-to-dev-has-failed-for-20-hours-its-database-is-stamped-at-an-alembic-revision-that-exists-nowhere-in-this-repository) | S1  | Every deploy to dev fails - dev's database is stamped at a revision that exists nowhere in the repo                   | infra          | it-42 | **FIXED**        |
+| [#124](#124--a-conversation-stuck-on-its-loader-forever-after-both-of-its-requests-returned-200) | S2  | Conversation stuck on its loader forever, after both its requests returned 200                                        | web            | it-42 | **FIXED**        |
 
 ---
 
@@ -4836,6 +4837,32 @@ Dev's `alembic_version` points at `e5b9c4d26f31`. That revision **has never exis
 **Fix.** Merging the branch that owns that revision restores it, provided its `down_revision` chains onto `c8e1f4a29b76`. If it was cut before that revision, the merge produces two heads and `upgrade head` fails differently but just as fatally - `alembic heads` must print exactly one before merging.
 
 **The process gap is the real issue and is not fixed here.** Nothing stops a local machine migrating the shared dev database, so this recurs the moment someone else tests that way. Worth either a guard in `scripts/db.js` that refuses a non-local `DATABASE_URL` without an explicit override, or a dev database per developer.
+
+### #124 - a conversation stuck on its loader forever, after both of its requests returned 200
+
+**S2 · FIXED · web · `apps/web/app/(app)/app/chat/chat-shell.tsx`**
+
+Reported on deployed dev: opening a conversation shows the loader and never resolves. The network tab settled it - **nothing failed**. `GET /channels/{id}` returned `200` in 722ms, `GET /channels/{id}/messages?limit=50` returned `200` in 661ms, `channels`, `members`, `unread-count` and `organisations` all `200`, the Realtime websocket reached `101`, and `read` returned `204`. No 5xx, no timeout, no pending request. The data arrived; the component never rendered it.
+
+Both effects that load the open conversation guarded their responses with an effect-scoped `cancelled` flag:
+
+```ts
+const rows = await api.listMessages(id, { limit: MESSAGE_PAGE_SIZE });
+if (cancelled) return;              // <- discards a good 200
+setView({ channelId: id, messages: rows, loading: false, ... });
+```
+
+`loading` is set to `true` during render whenever the open channel changes, and **only the resolve and reject paths ever set it back**. So a cleanup running between request and response - which is what a re-render does - threw away a successful result and left `loading: true` with no path back to false. Same shape in the channel-detail effect and its `status: 'loading'`, which is why the header and composer were missing too, not just the message list.
+
+Silent by construction: no error, no toast, no console output, and a green network tab. The `cancelled` guard is an *effect-lifecycle* signal being used to protect *data correctness*, and the two are not the same thing.
+
+**Impact.** Chat unusable on dev whenever a re-render landed inside that ~700ms window. It presented as "the API is slow" or "the connection pool is exhausted" - both false, and both expensive to chase, because every measurement of the backend came back healthy.
+
+**Fix.** Guard by value, not by lifecycle: `setView(current => current.channelId === id ? … : current)`, which is what the error path already did. That keeps the protection that actually mattered - a slow response for a channel the reader has navigated away from is still ignored - while making it impossible for effect lifecycle to strand the flag. `markChannelRead` and the error toast stay behind an effect-scoped flag, since those are side effects rather than state and genuinely should not fire for an abandoned conversation.
+
+**Not fixed here, and a likely reason the window was hit so often:** `/api/v1/me` is requested **15+ times per page load** on dev, alongside repeats of `organisations`, `members` and `campaigns` - 128-140 requests taking 32.9s to settle. `useSession()` is called independently by several components, each with its own effect and its own `supabase.auth.onAuthStateChange` subscription, so a single auth event multiplies into one `me` request per consumer. It belongs in one shared context rather than per-consumer state. Worth its own change: it is wasteful on its own terms, and it is the churn that made this race fire reliably.
+
+**Verified.** `tsc` clean on the changed file, `eslint` clean. Not reproduced end-to-end from here: the failure needs a production build under that re-render load, and the fix removes the state in which it can occur rather than depending on the timing.
 
 ## Template for the next iteration
 

@@ -326,21 +326,30 @@ export function ChatShell() {
 
   // --- the open conversation's own record -----------------------------------
 
+  // Guarded by "is this still the channel on screen?", NOT by an effect-scoped
+  // `cancelled` flag. The two are not equivalent, and the difference was a bug
+  // we shipped: a cleanup running between request and response discarded a
+  // perfectly good 200 and left `status: 'loading'` set forever, because only
+  // the resolve and reject paths ever move it off 'loading'. The result was a
+  // conversation stuck on its loader with no error and nothing in the console
+  // (`ISSUES.md` #124). Comparing the id keeps the protection that mattered -
+  // a slow response for a channel the reader has already navigated away from
+  // is still ignored - without letting effect lifecycle strand the state.
   useEffect(() => {
     if (!channelId) return;
     const id = channelId;
-    let cancelled = false;
     api
       .getChannel(id)
-      .then((channel) => {
-        if (!cancelled) setChannelDetail({ channelId: id, status: 'ready', channel });
-      })
-      .catch(() => {
-        if (!cancelled) setChannelDetail({ channelId: id, status: 'missing' });
-      });
-    return () => {
-      cancelled = true;
-    };
+      .then((channel) =>
+        setChannelDetail((current) =>
+          current.channelId === id ? { channelId: id, status: 'ready', channel } : current,
+        ),
+      )
+      .catch(() =>
+        setChannelDetail((current) =>
+          current.channelId === id ? { channelId: id, status: 'missing' } : current,
+        ),
+      );
   }, [channelId]);
 
   function refetchChannelDetail() {
@@ -384,25 +393,38 @@ export function ChatShell() {
   useEffect(() => {
     if (!channelId) return;
     const id = channelId;
-    let cancelled = false;
+    // Same id guard as the channel-detail effect above, and for the same
+    // reason: the `cancelled` flag this used to carry threw away a successful
+    // 200 and left `loading: true` with no way back, so the message list span
+    // on its loader forever (`ISSUES.md` #124). The error path already guarded
+    // by id - the success path now matches it.
+    let stale = false;
     async function load() {
       try {
         const rows = await api.listMessages(id, { limit: MESSAGE_PAGE_SIZE });
-        if (cancelled) return;
-        setView({
-          channelId: id,
-          messages: rows,
-          loading: false,
-          hasMore: rows.length >= MESSAGE_PAGE_SIZE,
-        });
-        void api.markChannelRead(id).then(refetchChannels).catch(() => undefined);
+        setView((current) =>
+          current.channelId === id
+            ? {
+                channelId: id,
+                messages: rows,
+                loading: false,
+                hasMore: rows.length >= MESSAGE_PAGE_SIZE,
+              }
+            : current,
+        );
+        // A side effect, not state: only worth doing while this conversation
+        // is still the one open, so it stays behind the effect-scoped flag.
+        if (!stale) {
+          void api.markChannelRead(id).then(refetchChannels).catch(() => undefined);
+        }
       } catch (e) {
-        if (cancelled) return;
-        toast({
-          title: "Couldn't load messages",
-          body: e instanceof Error ? e.message : undefined,
-          tone: 'error',
-        });
+        if (!stale) {
+          toast({
+            title: "Couldn't load messages",
+            body: e instanceof Error ? e.message : undefined,
+            tone: 'error',
+          });
+        }
         setView((current) =>
           current.channelId === id ? { ...current, loading: false } : current,
         );
@@ -410,7 +432,7 @@ export function ChatShell() {
     }
     void load();
     return () => {
-      cancelled = true;
+      stale = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [channelId, toast]);
