@@ -1193,3 +1193,67 @@ following the finger. Replaced with real keyframes in `globals.css` under
 `.toast-item`, following §15's own `menu-in`/`sheet-in` convention, including
 the `data-swipe` states and a `prefers-reduced-motion` opt-out.
 
+
+---
+
+## 24. Polish pass: hit areas and a tactile press, with the two things the audit
+found nothing wrong with
+
+Requested as "fix the UI and design", scoped after an audit to **preserve-mode
+polish**: work inside the existing tokens, no palette change, no IA change, §2
+untouched. Two findings were real. Two candidates were not, and not changing
+those is the more useful half of this note.
+
+### What was wrong
+
+**Nine icon-only controls had hit areas below 44x44.** A dialog's close, a
+toast's dismiss, the input clear, the avatar trigger, the campaign-card and
+contact-row overflow actions - 32px or 36px, several pulled tighter still by a
+negative margin so they sit flush in a padded corner. The compactness is right;
+the *tappable* region was not. WCAG 2.5.5 asks 44x44, and Apple and Google land
+on 44pt and 48dp for the same reason.
+
+`.hit-target` (globals.css, in the Focus section, since it is the same class of
+requirement) grows the hit area with a centred pseudo-element and leaves the
+visual alone. `max(100%, 44px)` means a control already larger is untouched
+rather than padded into a worse shape.
+
+Applied to seven of the nine. Deliberately **not** applied to `Button`'s `sm`
+size: those sit in dense toolbars, and expanding them would risk *overlapping*
+hit areas between neighbours, which mis-taps worse than a small target does.
+WCAG's own spacing exception covers that case. The contact-grid row action was
+checked for the same risk: `py-1.5` around a 32px control makes the row ~44px,
+so expanded areas touch rather than overlap.
+
+**No control moved when pressed.** Colour said "registered"; nothing said
+"pushed". `primary`/`secondary` already darken through `--primary-active` from
+`.btn-glass-*`, and that had to stay there - this file is unlayered, so a
+Tailwind `active:` utility touching `background` could never beat it (§ the note
+above `.btn-glass-primary`).
+
+`.press` sidesteps that argument by being a different property. `translate` does
+not fight `background`, composites on the GPU instead of forcing layout, and
+applies once to `Button`'s base rather than being written per variant. 1px:
+enough to feel, too little to read as movement. Off under
+`prefers-reduced-motion`.
+
+One trap: Tailwind v4 compiles `-translate-y-1/2` to the `translate` property,
+the same one `.press` sets. The input's clear button centres itself that way, so
+it gets `hit-target` without `press` - the two would have fought and the button
+would have jumped out of centre on click.
+
+### What the audit found nothing wrong with
+
+**Typography.** §20 already re-scaled it. No evidence of a problem, so no
+change - a type pass with no defect behind it is churn that costs review time
+and risks regressions.
+
+**Spacing rhythm.** A first pass looked like an inconsistency: `gap-6` on
+fourteen pages, `gap-1` on two. It was a bad measurement. The `gap-1` matches
+were the page-title stacks (eyebrow, `h1`, description), where 4px is correct;
+the grep took the first match in the file rather than the outer container. The
+three settings sub-pages at `gap-4` sit inside their own shell. The rhythm is
+consistent and was left alone.
+
+Recording the non-findings because the next person asked to "fix the UI" will
+re-run the same two greps and reach the same two false positives.
