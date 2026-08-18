@@ -90,7 +90,7 @@ export function CampaignCard({
               <button
                 type="button"
                 aria-label={`Actions for ${campaign.name}`}
-                className="flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-sm text-text-mute transition-colors hover:bg-surface-hover hover:text-text"
+                className="hit-target press flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-sm text-text-mute transition-colors hover:bg-surface-hover hover:text-text"
               >
                 <DotsThreeIcon aria-hidden weight="bold" className="size-4" />
               </button>

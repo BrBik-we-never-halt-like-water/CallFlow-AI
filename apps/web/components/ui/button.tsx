@@ -87,6 +87,12 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
         aria-busy={loading || undefined}
         aria-disabled={asChild && isDisabled ? true : undefined}
         className={cn(
+          // `press` is a transform, deliberately: `primary`/`secondary` take
+          // their pressed *colour* from `.btn-glass-*`, and this file could not
+          // outrank that on `background` (see the note above VARIANTS). Moving
+          // the control 1px is a different property, so the two compose instead
+          // of competing, and every variant gets the feedback rather than one.
+          'press',
           'relative inline-flex cursor-pointer items-center justify-center rounded-sm font-medium',
           'transition-[background-color,opacity,border-color] duration-(--dur-micro) ease-(--ease-out)',
           'disabled:cursor-not-allowed disabled:opacity-45 aria-disabled:cursor-not-allowed aria-disabled:opacity-45',

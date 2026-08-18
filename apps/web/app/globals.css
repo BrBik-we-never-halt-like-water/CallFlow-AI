@@ -866,6 +866,73 @@ button[data-menu][data-state='open']:focus-visible {
 }
 
 /* --------------------------------------------------------------------------
+   Hit targets. A control can look small; it cannot be small to hit.
+   --------------------------------------------------------------------------
+
+   Nine icon-only controls in this codebase sit at 32px or 36px - a dialog's
+   close button, a toast's dismiss, the input clear, the avatar trigger, the
+   card overflow menus. Every one of them is deliberately compact, and several
+   pull themselves tighter still with a negative margin so they sit flush in a
+   padded corner. That part is right; the size of the *tappable* region is not.
+   WCAG 2.5.5 asks for 44x44, and Apple and Google land on 44pt and 48dp for
+   the same reason: a thumb is not a mouse pointer.
+
+   So the visual stays exactly as designed and only the hit area grows, through
+   a centred pseudo-element. `max()` means a control already larger than 44px
+   is untouched rather than being padded out to a worse shape. The element
+   needs a positioning context, which `relative` supplies, and the overlay is
+   transparent so nothing about the composition changes. */
+.hit-target {
+  position: relative;
+}
+
+.hit-target::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  translate: -50% -50%;
+  width: max(100%, 44px);
+  height: max(100%, 44px);
+  /* Purely a hit area. It must never paint, and it must never intercept a
+     pointer the control itself should have had - it is inside the control, so
+     the event still lands on the right element. */
+  background: none;
+}
+
+/* --------------------------------------------------------------------------
+   Tactile press.
+   --------------------------------------------------------------------------
+
+   A control that changes colour on press tells you it registered; one that
+   also moves tells you it was *pushed*. `primary` and `secondary` already
+   darken through `--primary-active` from `.btn-glass-*`, and that has to stay
+   where it is - this file is unlayered, so a Tailwind `active:` utility
+   touching `background` could never beat it (see the note above
+   `.btn-glass-primary`).
+
+   `transform` sidesteps that argument entirely: it is a different property, it
+   composites on the GPU rather than forcing layout, and it applies uniformly
+   to every variant instead of being written four times. 1px is the whole
+   effect - enough to feel, too little to read as movement. */
+.press {
+  transition: translate var(--dur-micro) var(--ease-out);
+}
+
+.press:active:not(:disabled) {
+  translate: 0 1px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .press {
+    transition: none;
+  }
+  .press:active:not(:disabled) {
+    translate: none;
+  }
+}
+
+/* --------------------------------------------------------------------------
    Water - the flow language.
 
    Where a section used to be two hard-bordered boxes, it becomes one soft
