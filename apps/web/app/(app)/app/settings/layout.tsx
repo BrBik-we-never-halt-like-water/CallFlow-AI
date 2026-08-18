@@ -5,10 +5,13 @@ import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/cn';
 import { useSession } from '@/lib/hooks/use-session';
 
+// Integrations is deliberately absent. It lives in the primary nav, and its old
+// Settings path is only a redirect now (`settings/integrations/page.tsx`) - so
+// listing it here gave Settings a tab that threw you out of Settings the moment
+// you clicked it, which reads as a broken tab rather than a moved feature.
 const TABS = [
   { slug: 'safety', label: 'Safety', permission: 'safety:read' },
   { slug: 'api-keys', label: 'API keys', permission: 'api_keys:read' },
-  { slug: 'integrations', label: 'Integrations', permission: 'integrations:read' },
   { slug: 'billing', label: 'Billing', permission: 'billing:read' },
 ] as const;
 
