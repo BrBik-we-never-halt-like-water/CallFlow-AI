@@ -27,13 +27,14 @@ from uuid import UUID
 
 import asyncpg
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.auth.dependencies import CurrentUser, RequirePermission
 from app.auth.permissions import Permission
 from app.core.crypto import CredentialsNotConfigured, unpack_fields
 from app.database import database
 from app.database.repositories import provider_credentials as credentials_repo
+from app.database.repositories import telephony_numbers as numbers_repo
 from app.database.repositories import telephony_provisioning as provisioning_repo
 from app.domain.providers import spec
 from app.domain.provisioning import ProvisioningStatus
@@ -49,13 +50,28 @@ router = APIRouter(prefix="/api/v1/voice-agents", tags=["telephony"])
 
 
 class ConnectNumberIn(BaseModel):
+    """Either name a number this organisation already synced, or spell one out.
+
+    `number_id` is what the product sends. Numbers are masked everywhere they
+    are displayed (CLAUDE.md non-negotiable #4), so a screen genuinely cannot
+    supply `phone_number` - it resolves the id against `telephony_numbers`
+    here, where the unmasked value is already permitted.
+    """
+
     provider: str = Field(description="twilio or plivo - whichever the org has connected")
-    phone_number: str = Field(min_length=4, max_length=20)
+    number_id: UUID | None = Field(default=None)
+    phone_number: str | None = Field(default=None, min_length=4, max_length=20)
     # Twilio addresses a number by SID (`PN…`), Plivo by the number itself. The
     # adapters absorb that difference behind `number_ref`; the caller sends
     # whichever its carrier uses, and defaults to the number when omitted.
     number_ref: str | None = Field(default=None, max_length=64)
-    label: str = Field(min_length=1, max_length=60)
+    label: str | None = Field(default=None, min_length=1, max_length=60)
+
+    @model_validator(mode="after")
+    def _one_of(self) -> ConnectNumberIn:
+        if not self.number_id and not self.phone_number:
+            raise ValueError("Name the number to connect: send number_id, or phone_number.")
+        return self
     # The client's own retry token. Reusing it *resumes* the attempt rather than
     # starting a second one, which is what keeps a double-click from creating a
     # second LiveKit trunk pair nobody will ever clean up.
@@ -173,6 +189,34 @@ async def start_connect_number(
             )
         credentials = await _carrier_credentials(conn, user.org_id, body.provider)
 
+        phone_number = body.phone_number
+        number_ref = body.number_ref
+        label = body.label
+        if body.number_id is not None:
+            # Resolved here rather than sent by the client: every screen shows a
+            # masked number, so the id is the only handle a caller has.
+            number = await numbers_repo.get(conn, user.org_id, body.number_id)
+            if number is None:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND, detail="Unknown number"
+                )
+            if number["provider"] != body.provider:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=(
+                        f"That number is on {number['provider']}, not {body.provider}."
+                    ),
+                )
+            phone_number = number["phone_e164"]
+            number_ref = number_ref or number["provider_number_ref"]
+            label = label or number["label"] or number["phone_e164"]
+
+        if not phone_number or not label:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Name the number to connect: send number_id, or phone_number and label.",
+            )
+
         try:
             row = await connect_number(
                 conn,
@@ -181,9 +225,9 @@ async def start_connect_number(
                 idempotency_key=body.idempotency_key,
                 provider=body.provider,
                 credentials=credentials,
-                phone_number=body.phone_number,
-                number_ref=body.number_ref,
-                label=body.label,
+                phone_number=phone_number,
+                number_ref=number_ref,
+                label=label,
             )
         except ProvisioningRefused as exc:
             # Raised only before an attempt row exists, so there is nothing

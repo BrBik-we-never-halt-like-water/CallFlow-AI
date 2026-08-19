@@ -69,6 +69,15 @@ class ProviderCatalogEntry:
     voice_options: tuple[
         str, ...
     ] = ()  # TTS only: known voice/speaker ids, empty tuple otherwise
+    #: TTS only, and only where the vendor ties its voices to a model
+    #: version. Naming it here is what lets `test_dispatch_contract.py`
+    #: check `voice_options` against the runtime plugin's own table for
+    #: *that* model - this list cannot import `livekit.plugins` itself
+    #: (a voice-runtime dependency, and importing it here would invert the
+    #: layering), so the test is the seam that keeps the two in step.
+    #: Sarvam changed its entire speaker set between bulbul v2 and v3 and
+    #: this list silently kept offering v2 names (`ISSUES.md` #166).
+    voice_model: str | None = None
 
 
 # Spoken English runs around 150 words per minute, and a word averages close to
@@ -346,15 +355,30 @@ TTS_PROVIDERS: tuple[ProviderCatalogEntry, ...] = (
         preview_available=True,
         latency_ms=1500,
         cost_per_min_usd=0.18 / 10_000 * _CHARS_PER_MINUTE_OF_SPEECH,
+        # bulbul **v3** speakers, which is the model the LiveKit plugin
+        # constructs with. The v2 names this listed before - anushka,
+        # abhilash, manisha, vidya, arya, karun, hitesh - are rejected by v3,
+        # so every Sarvam voice an operator picked was silently replaced by
+        # the model default (`shubh`, male) whatever they chose
+        # (`ISSUES.md` #166). Female first: the default is male, so the
+        # alternative should be the easiest one to reach.
         voice_options=(
-            "anushka",
-            "abhilash",
-            "manisha",
-            "vidya",
-            "arya",
-            "karun",
-            "hitesh",
+            "ritu",
+            "pooja",
+            "simran",
+            "kavya",
+            "ishita",
+            "shreya",
+            "priya",
+            "neha",
+            "shubh",
+            "rahul",
+            "amit",
+            "rohan",
+            "dev",
+            "aditya",
         ),
+        voice_model="bulbul:v3",
     ),
 )
 

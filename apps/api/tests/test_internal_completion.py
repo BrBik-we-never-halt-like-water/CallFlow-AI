@@ -30,7 +30,11 @@ import pytest_asyncio
 from fastapi import HTTPException
 
 from app.api.v1.routes import internal as internal_module
-from app.api.v1.routes.internal import CallCompletion, complete_call
+from app.api.v1.routes.internal import (
+    CallCompletion,
+    _require_internal_key,
+    complete_call,
+)
 from app.core.config import config
 from app.database import database
 from app.database.repositories import runs as runs_repo
@@ -188,7 +192,15 @@ def _payload(**overrides: Any) -> CallCompletion:
 
 
 async def _complete(run_id: str, key: str | None = SECRET, **overrides: Any) -> dict[str, bool]:
-    return await complete_call(run_id, _payload(**overrides), x_callflow_internal_key=key)
+    """Auth then handler, in the order FastAPI runs them.
+
+    `_require_internal_key` is a route dependency rather than a call inside
+    the handler, so that an unauthenticated caller cannot get a 422 naming
+    the body's fields. Calling the handler alone would skip it entirely and
+    these tests would assert nothing about the trust boundary.
+    """
+    _require_internal_key(x_callflow_internal_key=key)
+    return await complete_call(run_id, _payload(**overrides))
 
 
 # --- the trust boundary -------------------------------------------------------
@@ -513,3 +525,187 @@ async def test_a_call_still_within_its_ceiling_is_left_alone(
         OTHER_CONTACT,
     )
     assert still_live == "in_flight"
+
+
+# --- what the agent collected has to survive the write ------------------------
+#
+# `collected` is the product: the fields an org sent the agent to establish.
+# The worker computed it, POSTed it, and triage read it - and `append_outcome`
+# then dropped it on the floor along with three neighbours, so every run showed
+# an empty "What we asked for" (`ISSUES.md` #155). Asserting on the stored row,
+# not on the triage decision, is what these add.
+
+
+async def test_the_collected_fields_are_stored_on_the_row(
+    started_run: Run, db: asyncpg.Connection
+) -> None:
+    await _complete(
+        started_run.id,
+        transcript="Contact: Dubai, in December.",
+        collected={"destination": "Dubai", "month": "December"},
+    )
+
+    stored = await db.fetchval(
+        "select collected from public.call_outcomes where run_id = $1 and contact_name = $2",
+        started_run.id,
+        CONTACT,
+    )
+    value = json.loads(stored) if isinstance(stored, str) else stored
+    assert value == {"destination": "Dubai", "month": "December"}
+
+
+async def test_a_missing_required_field_is_recorded_not_just_acted_on(
+    started_run: Run, db: asyncpg.Connection
+) -> None:
+    """The fixture agent requires `destination`. A call that never establishes
+    it escalates - and the row has to say which field was missing, because that
+    is what the escalation queue shows the person picking it up."""
+    await _complete(
+        started_run.id,
+        transcript="Contact: I'd rather not say right now.",
+        collected={},
+    )
+
+    missing = await db.fetchval(
+        "select missing_required_fields from public.call_outcomes"
+        " where run_id = $1 and contact_name = $2",
+        started_run.id,
+        CONTACT,
+    )
+    assert missing == ["destination"]
+
+
+async def test_the_terminal_write_does_not_blank_the_line_it_was_called_from(
+    started_run: Run, db: asyncpg.Connection
+) -> None:
+    """Origination knows which of the org's numbers carried the call; the worker
+    does not, and reports nothing for it. Without the coalesce, the completion
+    callback would erase it."""
+    await db.execute(
+        """
+        update public.call_outcomes set from_number_masked = '+1 555 ••• 0142'
+        where run_id = $1
+        """,
+        started_run.id,
+    )
+
+    await _complete(started_run.id, transcript="Contact: Dubai.", collected={"destination": "Dubai"})
+
+    after = await db.fetchval(
+        "select from_number_masked from public.call_outcomes where run_id = $1",
+        started_run.id,
+    )
+    assert after == "+1 555 ••• 0142"
+
+
+async def test_a_run_whose_dispatcher_died_does_not_stay_open_forever(
+    started_run: Run, db: asyncpg.Connection
+) -> None:
+    """The fixture run has `total = 2` and two in-flight rows. Delete one to
+    stand for a contact the background task never reached - an API restart
+    mid-run - and age the run past the sweep window. Without
+    `abandon_undialled` the settled count can never reach `total` and the run
+    reads "running" for good."""
+    await db.execute(
+        "delete from public.call_outcomes where run_id = $1 and contact_name = $2",
+        started_run.id,
+        OTHER_CONTACT,
+    )
+    await db.execute(
+        "update public.runs set started_at = now() - interval '2 hours' where id = $1",
+        started_run.id,
+    )
+    # Nothing has been written for the whole window either - which is what a dead
+    # dispatcher looks like, as opposed to a slow one.
+    await db.execute(
+        "update public.call_outcomes set created_at = now() - interval '2 hours'"
+        " where run_id = $1",
+        started_run.id,
+    )
+
+    await _complete(started_run.id, collected={"destination": "Dubai"})
+
+    status = await db.fetchval(
+        "select status from public.runs where id = $1", started_run.id
+    )
+    assert status == "completed"
+
+    unreached = await db.fetchval(
+        """
+        select count(*) from public.call_outcomes
+        where run_id = $1 and error = 'never_dialled'
+        """,
+        started_run.id,
+    )
+    assert unreached == 1
+
+
+async def test_a_run_still_dialling_is_not_closed_with_fabricated_failures(
+    started_run: Run, db: asyncpg.Connection
+) -> None:
+    """The sweep must measure silence from the dialler's last write, not from
+    the run's start.
+
+    Origination holds a concurrency slot until the carrier answers or times out,
+    so a large run legitimately has contacts with no row half an hour in. Keyed
+    off `started_at`, the sweep fired on those: it invented `never_dialled` rows
+    for contacts that were still being called, closed the run, and their real
+    outcomes then landed as extra rows past `total`.
+    """
+    await db.execute(
+        "delete from public.call_outcomes where run_id = $1 and contact_name = $2",
+        started_run.id,
+        OTHER_CONTACT,
+    )
+    # Started long ago - but the dialler wrote a row moments ago, so it is alive.
+    await db.execute(
+        "update public.runs set started_at = now() - interval '2 hours' where id = $1",
+        started_run.id,
+    )
+
+    await _complete(started_run.id, collected={"destination": "Dubai"})
+
+    status = await db.fetchval(
+        "select status from public.runs where id = $1", started_run.id
+    )
+    assert status == "running", "a run whose dialler is still writing was closed"
+
+    fabricated = await db.fetchval(
+        "select count(*) from public.call_outcomes"
+        " where run_id = $1 and error = 'never_dialled'",
+        started_run.id,
+    )
+    assert fabricated == 0, "invented failures for contacts still being dialled"
+
+
+# --- what the Needs-a-person queue is handed ---------------------------------
+#
+# The escalation exists so a person can pick the call up, and the only reason
+# they can is that they can see what the agent already got and what it still
+# needs. `EscalationOut` omitted all four of those fields while the repository
+# selected them, so the worklist showed a transcript and nothing else
+# (`ISSUES.md` #172).
+
+
+async def test_an_escalation_carries_what_the_call_did_and_did_not_get(
+    started_run: Run, db: asyncpg.Connection
+) -> None:
+    from app.api.v1.routes.escalations import _row_to_out
+    from app.database.repositories import escalations as esc_repo
+
+    await _complete(
+        started_run.id,
+        transcript="Contact: Put me through to a person.",
+        extracted={"wants_human_callback": True},
+        collected={},
+    )
+
+    rows = await esc_repo.list_for_org(db, started_run.org_id)
+    mine = [_row_to_out(r) for r in rows if r["run_id"] == started_run.id]
+    assert mine, "the call escalated but no row reached the queue"
+
+    escalation = mine[0]
+    assert escalation.escalation_status == "open"
+    assert escalation.missing_required_fields == ["destination"]
+    assert escalation.handoff_questions, "nothing to ask on the callback"
+    assert isinstance(escalation.collected, dict)

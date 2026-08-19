@@ -1,8 +1,15 @@
-"""SQL for org-owned voice agent configurations. Unlike campaigns, read access
-is org-wide, not per-creator (migration `a1c48e7f2b93`) - but the UI still
-wants to show who built an agent, so `list_org_agents`/`get_org_agent` join to
-`public.users` for `created_by_name`/`created_by_avatar_url` the same way
-`campaigns.py` does."""
+"""SQL for org-owned voice agent configurations.
+
+Read access is a **per-creator silo**: an operator sees only the agents they
+built, while owner, admin and viewer see every agent in the organisation
+(`voice_agents_select`, migration
+`202608171900_agents_per_creator_visibility_silo`). It was org-wide when the
+table was created (`a1c48e7f2b93`) and was deliberately narrowed - an agent is
+someone's work, and the roles that oversee an organisation are the ones that
+need to see all of it (`ISSUES.md` #132).
+
+The UI still shows who built an agent, so `list_org_agents`/`get_org_agent` join
+`public.users` for `created_by_name`/`created_by_avatar_url`."""
 
 from __future__ import annotations
 

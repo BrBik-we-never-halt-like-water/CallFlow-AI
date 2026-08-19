@@ -36,6 +36,7 @@ import { useAppStore } from '@/lib/app-store';
 import { useChatUnreadCount } from '@/lib/hooks/use-chat-unread';
 import { AppTabBar, isActive, OrgMark, PRIMARY_NAV_ITEMS } from './app-nav';
 import { type SessionProfile, useSession } from '@/lib/hooks/use-session';
+import { useSessionExpiry } from '@/lib/hooks/use-session-expiry';
 
 /** Routes that get a focused destination, not the persistent app chrome - see
  *  `MinimalTopBar`. A single task to finish and leave, so the header would
@@ -113,6 +114,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   const { escalations } = useAppStore();
   const session = useSession();
+  // Once, in the one component every authenticated page renders inside, rather
+  // than in each screen's own load handler.
+  useSessionExpiry();
   const profile = session.status === 'signed-in' ? session.profile : null;
   const chatUnreadCount = useChatUnreadCount();
 

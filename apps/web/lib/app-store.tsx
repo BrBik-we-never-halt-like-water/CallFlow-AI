@@ -13,7 +13,6 @@ import {
   type Outcome,
   type Run,
   type RunSummary,
-  type SafetySettings,
 } from '@/lib/api';
 import { useActiveOrg } from '@/lib/hooks/use-active-org';
 import { useConnection, type Connection } from '@/lib/hooks/use-connection';
@@ -58,9 +57,6 @@ export interface AppState extends Connection {
   refreshEscalations: () => void;
   loadingRuns: boolean;
   refresh: () => void;
-  /** This organisation's own safety overrides + live usage. Null until loaded. */
-  safetySettings: SafetySettings | null;
-  refreshSafety: () => void;
 }
 
 const AppStoreContext = createContext<AppState | null>(null);
@@ -78,10 +74,6 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
   const [hydratedRuns, setHydratedRuns] = useState<Run[]>([]);
   const [loadingRuns, setLoadingRuns] = useState(true);
   const [nonce, setNonce] = useState(0);
-  const [safetySettings, setSafetySettings] = useState<SafetySettings | null>(
-    null,
-  );
-  const [safetyNonce, setSafetyNonce] = useState(0);
   const [escalations, setEscalations] = useState<Escalation[]>([]);
   const [loadingEscalations, setLoadingEscalations] = useState(true);
   const [escalationsNonce, setEscalationsNonce] = useState(0);
@@ -96,7 +88,7 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
    * Re-fetching on switch is not the same as isolating. The effects below all
    * re-fetch, but they only replace state when the new response *arrives* -
    * so for the length of a request the dashboard showed the previous
-   * organisation's runs, escalations and safety numbers while the switcher
+   * organisation's runs and escalations while the switcher
    * already said you were somewhere else. Their `catch` branches make it
    * worse: keeping stale data on a failed refresh is right for a refresh of
    * the same org, and wrong across a switch, where it leaves the old
@@ -118,11 +110,9 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
     setLoadingRuns(true);
     setEscalations([]);
     setLoadingEscalations(true);
-    setSafetySettings(null);
   }
 
   const refresh = useCallback(() => setNonce((n) => n + 1), []);
-  const refreshSafety = useCallback(() => setSafetyNonce((n) => n + 1), []);
   const refreshEscalations = useCallback(
     () => setEscalationsNonce((n) => n + 1),
     [],
@@ -180,26 +170,7 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
     };
   }, [connection.phase, nonce]);
 
-  // Same reasoning as the runs effect above: safety settings (allowlist, ceilings,
-  // daily budget) belong to the organisation, not the browser tab.
-  useOrgScopedEffect(() => {
-    if (connection.phase !== 'up') return;
-    let cancelled = false;
-    api
-      .getSafetySettings()
-      .then((settings) => {
-        if (!cancelled) setSafetySettings(settings);
-      })
-      .catch(() => {
-        // Leaves the previous value in place - the safety bar renders each
-        // guard as unconfirmed rather than a wrong reassuring default either way.
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [connection.phase, safetyNonce]);
-
-  // Same reasoning again: escalations are organisation-scoped, real rows now
+  // Same reasoning as the runs effect above: escalations are organisation-scoped, real rows now
   // (not derived from `outcomes`) - re-fetch on org switch, on `refresh()`,
   // and whenever the realtime subscription above says something changed.
   useOrgScopedEffect(() => {
@@ -215,7 +186,7 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
         );
       })
       .catch(() => {
-        // Leaves the previous list in place - same reasoning as safety settings.
+        // Leaves the previous list in place - same reasoning as the runs effect.
       })
       .finally(() => {
         if (!cancelled) setLoadingEscalations(false);
@@ -244,8 +215,6 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
       refreshEscalations,
       loadingRuns,
       refresh,
-      safetySettings,
-      refreshSafety,
     }),
     [
       connection,
@@ -257,8 +226,6 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
       refreshEscalations,
       loadingRuns,
       refresh,
-      safetySettings,
-      refreshSafety,
     ],
   );
 

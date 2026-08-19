@@ -1,36 +1,123 @@
-# The voice-agent platform - design, not yet built
+# The voice-agent platform
 
-**Status: design only.** Nothing in this document is implemented. It exists so the
-multi-week systems work below doesn't start as code before it's been thought through
-once, end to end. Read [`CALLE.md`](CALLE.md) first - this doc assumes its findings.
+**Status: built and placing real calls.** This document was written as a design
+before any of it existed; the sections from §1 onward are that original design and
+are kept for the reasoning behind decisions (the ADRs especially). What actually
+shipped diverges from it in one large way, recorded here so nobody reads the design
+as a description of the code.
+
+**The divergence: CALL-E is gone, LiveKit is the substrate.** The design assumed a
+`VoiceProvider` abstraction over CALL-E plus a hand-built media runtime.
+`app/integrations/voice/engine.py` no longer exists. Instead:
+
+- **LiveKit** carries the media and the SIP legs. `apps/api` originates through
+  `integrations/livekit/client.py`; the org's own Twilio/Plivo/Telnyx/Vonage number
+  is attached to a LiveKit SIP trunk (`services/number_provisioning.py`).
+- **`apps/voice-runtime`** is a LiveKit Agents worker - a separate process that
+  joins the room, runs the STT → LLM → TTS pipeline, and reports the result back
+  over `POST /internal/v1/runs/{run_id}/complete`.
+- **The vendors are per organisation, not per deployment.** An agent names three
+  providers; their API keys come from that org's own `ai_provider_credentials`
+  rows, falling back to CallFlow's platform keys.
 
 ---
 
-## 0. What's already shipped (don't re-build this)
+## 0. How a call actually runs, end to end
 
-A lot of what a "voice agent platform" needs at the product layer already exists,
-built during the org-scoped persistence and Settings work:
+```
+Agents screen          an agent = system prompt + STT/TTS/LLM + collect fields
+      ↓
+POST /api/v1/runs      resolve_run_plan(): agent, verified numbers, decrypted keys
+      ↓                refuses here if a leg has no key - the call would be silent
+RunDialer              per contact: allocate a line, render the prompt,
+      ↓                CreateSIPParticipant + an agent dispatch on the room
+LiveKit                rings the contact through the org's carrier trunk
+      ↓
+voice-runtime worker   joins the room, builds the pipeline, holds the conversation
+      ↓                record_field() as answers arrive; end_call() on request
+POST /internal/v1/…    transcript + collected fields, retried with backoff
+      ↓
+call_outcomes          triage() assigns a disposition; escalations raised
+      ↓
+Run detail page        polls every 2.5s, stops when the run leaves `running`
+```
 
-| Piece                                                              | Where                                                         | State                                                               |
-| ------------------------------------------------------------------ | ------------------------------------------------------------- | ------------------------------------------------------------------- |
-| Org-scoped API keys                                                | `api/v1/routes/api_keys.py`                                   | Real                                                                |
-| Twilio/Plivo credential storage (Fernet-encrypted)                 | `api/v1/routes/integrations.py`, `provider_credentials` table | Real, but **stores credentials only** - nothing dials over them yet |
-| Billing (usage display)                                            | `api/v1/routes/organisations.py` + `/api/health`              | Real for usage; no payment processor                                |
-| Mandatory org setup, server-verified                               | `organisations.onboarded_at`, `OnboardingGate`                | Real                                                                |
-| Dashboard rename, empty by default                                 | `app/(app)/app/page.tsx`                                      | Real                                                                |
-| "5 more integrations" (Zapier, Slack, HubSpot, Salesforce, Sheets) | `settings/integrations/page.tsx`, `COMING_SOON`               | Listed as coming soon, not built                                    |
-| dry_run removed everywhere                                         | -                                                             | Done, non-negotiable #8 in `CLAUDE.md`                              |
+**Nothing dials without the worker.** The API places the call and the carrier rings
+the contact, but the worker is what speaks and listens - and it is also what reports
+the result. Without it a call connects to silence and the run row sits at
+"In conversation…" forever (`DEV_SETUP.md`, `ISSUES.md` #163).
 
-**What's actually left, and what this document is about:** a `VoiceProvider`
-abstraction with more than one implementation, a way for an org to configure its own
-conversational agent (STT + TTS + LLM, or a prebuilt one), and the routing logic that
-decides which of those actually places a given call. None of this exists today -
-`app/integrations/voice/engine.py` is a concrete, un-abstracted CALL-E client, and
-that is the entire voice layer.
+## 0a. The three legs, and where the vendor list lives
+
+| Leg | Wired vendors | Registry |
+| --- | --- | --- |
+| STT | 19 | `apps/voice-runtime/app/pipeline.py` → `STT_PROVIDERS` |
+| TTS | 23 | `pipeline.py` → `TTS_PROVIDERS` |
+| LLM | 15 | `pipeline.py` → `LLM_PROVIDERS` |
+
+Adding a vendor is one registry entry plus a `runtime_extra` in
+`apps/api/app/domain/providers.py`. `test_dispatch_contract.py` asserts both
+directions hold: a vendor the catalogue calls connectable but the pipeline cannot
+build is a card that lies.
+
+`_construct()` inspects each plugin class and passes only the arguments it accepts,
+because the vendors disagree - some take `language`, some `language_code`,
+ElevenLabs wants `voice_id` where Cartesia wants `voice`. Guessing wrong costs a log
+line rather than a `TypeError` mid-call.
+
+## 0b. Voices are tied to a model version, and that has bitten us
+
+`ProviderCatalogEntry.voice_options` drives the Voice wheel, so every entry is a
+promise: pick this and you will hear it. Sarvam ties its speaker list to the TTS
+model and **replaced the entire set between bulbul v2 and v3**. The catalogue kept
+offering v2 names, the plugin builds with v3, and `_sarvam_speaker()` dropped every
+unrecognised name to `None` - which resolves to the model default, `shubh`, who is
+male. Someone chose "Anushka" and heard a man (`ISSUES.md` #166).
+
+Two guards now hold this shut, and both matter:
+
+- `ProviderCatalogEntry.voice_model` names the model the voices belong to.
+- `test_dispatch_contract.py` checks every offered voice against the *plugin's own*
+  `MODEL_SPEAKER_COMPATIBILITY` table for that model, and that both genders are
+  offered. `apps/api` cannot import `livekit.plugins` - that would invert the
+  layering - so this test is the seam.
+
+If a vendor ships a new model version, that test fails before a call does.
+
+## 0c. What the agent is told
+
+`domain/prompt_assembly.py` builds one prompt per contact:
+
+1. **The agent's own prompt**, with `{name}` and every CSV column substituted. The
+   Agents screen shows `{name}` and `{note}` as clickable tokens, because a
+   placeholder nobody knows about gets replaced by a real name typed in - correct
+   for the contact it was tested on, wrong for every other row (`ISSUES.md` #165).
+2. **Who you are calling**, and what the call is about.
+3. **What else we know** - the remaining sheet columns.
+4. **For this run** - the one-off instruction, if the run carried one.
+5. **What you must find out** - the collect fields, framed as *"This is what the
+   call is for. Ask for each of these, in this order"*. Listing them without that
+   framing told the agent what to do with an answer that arrived by luck, not that
+   obtaining them was the job (`ISSUES.md` #164).
+6. **How to behave** - the fixed rules: end on request, never promise a price.
+
+The prompt never receives a phone number. `PromptContact` carries only `name` and
+`context`, so a number cannot leak into an instruction (CLAUDE.md §3).
+
+---
 
 ---
 
 ## 1. The `VoiceProvider` protocol
+
+> **Superseded.** Everything from here to the end is the original design, kept for
+> its reasoning and its ADRs. It is **not** a description of the code: the
+> `VoiceProvider` abstraction over CALL-E was never built, and the hand-written
+> Twilio/Plivo media runtime it plans was replaced by LiveKit Agents. Read §0 above
+> for what exists. The ADRs remain worth reading - ADR-1's analysis of why a shared
+> media abstraction should be extracted from two real implementations rather than
+> designed up front is the reason `pipeline.py` is a registry of thin factories
+> instead of a class hierarchy.
 
 `CLAUDE.md`'s Substitutability section already states the rule: normalise errors into
 an internal taxonomy, declare capabilities rather than assume them. This is that

@@ -125,8 +125,16 @@ class TelnyxCarrier:
         auth_username: str,
         auth_password: str,
         transport: str = DEFAULT_TRANSPORT,
+        attach_number: bool = True,
     ) -> CarrierTrunk:
         """Point a Telnyx number at LiveKit, both directions.
+
+        `attach_number=False` stops before the final step that repoints the
+        number's inbound routing, which makes the whole call non-destructive:
+        everything created is new, and the number keeps whatever was already
+        answering it. That is the default, because a carrier sync is not
+        consent to redirect a line that may already be a support queue
+        (`ISSUES.md` #168).
 
         `number_ref` is the Telnyx **Phone Number ID**, or the E.164 number - the
         adapter looks the id up when given a number, because Telnyx addresses
@@ -166,13 +174,14 @@ class TelnyxCarrier:
                 "Telnyx", "create the SIP connection", "no connection id came back."
             )
 
-        number_id = await self._resolve_number_id(number_ref)
-        await self._request(
-            "PATCH",
-            f"phone_numbers/{number_id}",
-            {"connection_id": connection_id},
-            action="attach the phone number to the connection",
-        )
+        if attach_number:
+            number_id = await self._resolve_number_id(number_ref)
+            await self._request(
+                "PATCH",
+                f"phone_numbers/{number_id}",
+                {"connection_id": connection_id},
+                action="attach the phone number to the connection",
+            )
 
         log.info("configured Telnyx connection %s", connection_id)
         return CarrierTrunk(

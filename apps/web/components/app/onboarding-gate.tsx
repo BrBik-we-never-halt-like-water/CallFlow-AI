@@ -244,7 +244,7 @@ function InviteStep({ onDone }: { onDone: () => void }) {
         </Field>
         <Field
           label="Role"
-          help="Operators can run campaigns but not change billing."
+          help="Operators can start runs but not change billing."
         >
           <Select value={role} onValueChange={setRole} options={ROLES} />
         </Field>

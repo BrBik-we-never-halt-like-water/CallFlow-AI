@@ -1,7 +1,7 @@
 export const metadata = {
   title: 'Writing a good goal',
   description:
-    'The goal field is the product. What separates a goal that works from one that produces a confusing robocall.',
+    "An agent's system prompt is the product. What separates a prompt that works from one that produces a confusing robocall.",
 };
 
 # Writing a good goal
@@ -11,27 +11,34 @@ The goal is the entire product.
 That is not a figure of speech. The same calling engine, given a one-line task,
 produces a confusing robocall that people hang up on. Given a well-written goal, it
 produces something closer to a competent junior colleague. Nothing else you
-configure - not the schema, not the retry policy, not the calling window - moves the
-outcome anything like as much.
+configure - not the fields, not the voice, not the model - moves the outcome anything
+like as much.
 
 So this page is the one worth reading properly.
 
-## A thin goal fails before it dials
+## Where the goal lives
 
-The engine validates whether a task has enough substance to hold a conversation. A
-goal like this is rejected outright:
+The goal is an agent's **system prompt**, written in the agent editor. It is the first
+thing the agent is told before a call, and it is sent verbatim, so its voice is the
+agent's voice rather than something of ours wrapped around it.
+
+One agent calls many people, so the prompt is written once and reused. Anything that
+differs per contact belongs in a variable rather than a second agent - see
+[Use variables](#use-variables-for-anything-that-differs-per-contact) below.
+
+## A thin goal dials, and goes badly
+
+Nothing stops a one-line prompt from being saved and dialled. There is no length
+check, so this will run:
 
 ```text
 Call and ask about their trip.
 ```
 
-It comes back as `call_not_ready`, and CallFlow enforces a 40-character minimum in
-the campaign editor so you find out while you are writing rather than halfway
-through a run.
-
-The minimum is a floor, not a target. A goal that scrapes past 40 characters will
-technically dial and will still go badly, because the agent has to improvise
-everything you did not say - including things you would never have said.
+It will also go badly, because the agent has to improvise everything you did not
+say - including things you would never have said. The absence of a floor is not
+permission; it means the only thing standing between a thin prompt and a real phone
+call is you reading it before you save.
 
 ## The four things a goal must state
 
@@ -70,8 +77,10 @@ you more than that.
 ## Give the escalation instruction in the goal itself
 
 The triage rules run over the result regardless, so frustration and opt-outs are
-caught whether or not you mention them. But saying it in the goal changes the
-agent's behaviour _during_ the call rather than only classifying it afterwards:
+caught whether or not you mention them, and CallFlow's own fixed rules already tell
+the agent to stop when someone asks to end the call, asks for a person, or asks never
+to be called again. Saying it in your own words as well is still worth doing, because
+it puts the instruction in your call's own context rather than in a general rule:
 
 ```text
 If at any point they sound frustrated, ask to speak to a person, or ask you to
@@ -93,29 +102,63 @@ the difference only shows up in your data if the agent asked.
 ## Use variables for anything that differs per contact
 
 `{name}` and any `{context[key]}` you supply are substituted before the call. Put the
-specifics in context rather than writing one campaign per situation:
+specifics in the contact's context rather than building one agent per situation:
 
 ```text
 You are calling {name} about the {context[role]} role at {context[company]}.
 Confirm they can work from {context[location]}, or would need remote.
 ```
 
-A missing context key renders as an empty string rather than failing the run, which
-is forgiving at call time and easy to miss while authoring - so check the live
-preview in the campaign editor with a real contact selected before you save.
+The context keys come from your spreadsheet's own columns. Any column that is not
+`name`, `phone`, or `note` becomes a context key under its own header - so adding a
+`destination` column to your sheet is all it takes for that one contact's destination
+to reach that one contact's prompt. A travel agent dialling three enquiries can open
+with Dubai for the first, Malaysia for the second and Spain for the third, from one
+agent.
+
+A missing context key renders as an empty string rather than failing the run. That is
+deliberate - renaming a spreadsheet column should cost you one sentence reading short,
+not every call in the run - but it is easy to miss while authoring, so read your prompt
+against a real row's column names before you save.
+
+A handful of key names are CallFlow's own and are dropped rather than rendered:
+`goal`, `prompt`, `detail`, `name`, `phone`, `language`, and a few more in the same
+family. That is what stops a spreadsheet column called `goal` from quietly rewriting
+the instructions you wrote.
+
+## What the agent is actually told
+
+Your prompt is not the whole message. It is the first of up to six blocks, assembled
+per contact, in this order:
+
+1. **Your system prompt,** first and verbatim, with the variables above filled in.
+2. **Who you are calling** - the contact's name, and what this call is about. That
+   second line is the row's `note` column; without one it says so plainly rather than
+   inventing a reason.
+3. **What else we know** - the remaining context columns, as labelled facts. Omitted
+   entirely when there are none, rather than left as an empty heading.
+4. **This run's instruction,** if the person starting the run added one.
+5. **What to find out** - the agent's collect fields, with the required ones marked, so
+   its conversational priority matches what triage will escalate on.
+6. **How to behave** - CallFlow's own fixed rules, last.
+
+Two things follow from that order. Your prompt is never diluted by our framing, because
+it comes first and untouched. And the fixed rules come last, where the most recent
+instruction carries the most weight.
 
 ## What a finished goal looks like
 
 Long enough to be specific, ordered, with the refusals and the escalation stated. If
-yours is three lines, it is not finished; the starter templates run to twenty or
-more, and that is why they work. Every solution page on this site shows its goal
-template in full - those are the real ones, not excerpts, and they are the best
+yours is three lines, it is not finished. Every solution page on this site shows its
+prompt in full - those are the real ones, not excerpts, and they are the best
 reference available.
 
-## Preview it on a real name before you run
+## Read it aloud before you run
 
-The run composer renders the goal with your actual contact substituted in and shows
-you the exact words that contact would hear, before you start the run.
+Read your prompt aloud once, with a real contact's details in mind for the variables.
+Prompts that look fine on the page and sound wrong in the mouth are common, and thirty
+seconds of reading catches almost all of them.
 
-Read that output aloud once. Goals that look fine on the page and sound wrong in the
-mouth are common, and thirty seconds of reading catches almost all of them.
+Then start small. The per-run ceiling and the allowlist exist so that the first run of
+a new prompt reaches three people you know rather than three hundred you do not - see
+[Safety configuration](/docs/safety-configuration).

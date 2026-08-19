@@ -2,30 +2,40 @@
 
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useMemo, useState } from 'react';
+import {
+  ArrowsClockwiseIcon,
+  CheckCircleIcon,
+  WarningCircleIcon,
+} from '@phosphor-icons/react/dist/ssr';
 import { cn } from '@/lib/cn';
 import { ConnectionBanner } from '@/components/app/connection-banner';
 import { ContactGrid } from '@/components/app/contact-grid';
-import { guardsFromSafety, SafetyBar } from '@/components/app/safety-bar';
 import { NotWiredNotice } from '@/components/app/settings-section';
 import { Button } from '@/components/ui/button';
 import { Field } from '@/components/ui/field';
+import { Input, Textarea } from '@/components/ui/input';
 import { Panel } from '@/components/ui/panel';
-import { Select } from '@/components/ui/select';
 import { Tooltip } from '@/components/ui/tooltip';
 import { useToast } from '@/components/ui/toast';
-import { api } from '@/lib/api';
+import { api, type TelephonyNumber, type VoiceAgent } from '@/lib/api';
 import { useAppStore } from '@/lib/app-store';
-import { renderGoalPreview } from '@/lib/campaign-fields';
-import { toContactInputs, type ParsedRow } from '@/lib/contacts';
+import {
+  contextColumns,
+  toContactInputs,
+  type ParsedRow,
+} from '@/lib/contacts';
+import { useOrgScopedEffect } from '@/lib/hooks/use-org-scoped-effect';
 import { useSession } from '@/lib/hooks/use-session';
 
 /**
- * The run composer.
+ * The run composer: an agent, the number(s) it calls from, and a sheet.
  *
- * Three stacked steps on one page, not a wizard. Someone starting their fifth run of
- * the day should be able to see everything at once and change any of it - a wizard
- * makes the second run as slow as the first, and hides the safety state behind a step
- * you have already clicked past.
+ * Four stacked steps on one page, not a wizard. Someone starting their fifth run
+ * of the day should be able to see everything at once and change any of it - a
+ * wizard makes the second run as slow as the first.
+ *
+ * The number is chosen here rather than on the agent, which is what lets any
+ * agent run through any connected carrier (ADR-8).
  */
 export default function NewRunPage() {
   return (
@@ -36,79 +46,180 @@ export default function NewRunPage() {
 }
 
 /**
- * The composer reads the `?campaign=` parameter to pre-select what a "Run" button sent
- * it, which means it has to sit inside a Suspense boundary - `useSearchParams` opts a
- * route out of prerendering otherwise.
+ * Reads `?agent=` to pre-select what a "Run" button sent it, which means it has
+ * to sit inside a Suspense boundary - `useSearchParams` opts a route out of
+ * prerendering otherwise.
  */
 function RunComposer() {
   const router = useRouter();
   const toast = useToast();
   const searchParams = useSearchParams();
   const session = useSession();
-  const { campaigns, health, safetySettings, phase, refresh } = useAppStore();
+  const { health, phase, refresh } = useAppStore();
+
+  const [agents, setAgents] = useState<VoiceAgent[]>([]);
+  const [numbers, setNumbers] = useState<TelephonyNumber[]>([]);
+  const [loadingNumbers, setLoadingNumbers] = useState(true);
+  const [syncing, setSyncing] = useState(false);
 
   const [rows, setRows] = useState<ParsedRow[]>([]);
-  const [chosenId, setChosenId] = useState<string | null>(null);
+  const [chosenAgentId, setChosenAgentId] = useState<string | null>(null);
+  const [selectedNumberIds, setSelectedNumberIds] = useState<string[]>([]);
+  const [runName, setRunName] = useState('');
+  const [runInstruction, setRunInstruction] = useState('');
   const [starting, setStarting] = useState(false);
 
+  useOrgScopedEffect(() => {
+    api
+      .listVoiceAgents()
+      .then(setAgents)
+      .catch(() => setAgents([]));
+  }, []);
+
+  useOrgScopedEffect(() => {
+    setLoadingNumbers(true);
+    api
+      .listNumbers()
+      .then(setNumbers)
+      .catch(() => setNumbers([]))
+      .finally(() => setLoadingNumbers(false));
+  }, []);
+
   /**
-   * The selected campaign is derived, not synced.
+   * The selected agent is derived, not synced.
    *
-   * Precedence: an explicit choice in this session, then the `?campaign=` a "Run" button
-   * arrived with, then the first available. Deriving it means the correct campaign is
-   * selected on the very first render rather than after a corrective one.
+   * Precedence: an explicit choice in this session, then the `?agent=` a "Run"
+   * button arrived with, then the first available. Deriving it means the right
+   * agent is selected on the first render rather than after a corrective one.
    */
-  const requested = searchParams.get('campaign');
-  const campaignId =
-    chosenId ??
-    (requested && campaigns.some((c) => c.id === requested)
+  const requested = searchParams.get('agent');
+  const agentId =
+    chosenAgentId ??
+    (requested && agents.some((a) => a.id === requested)
       ? requested
-      : (campaigns[0]?.id ?? ''));
-  const setCampaignId = setChosenId;
+      : (agents[0]?.id ?? ''));
 
-  const campaign = campaigns.find((c) => c.id === campaignId);
-  const validRows = useMemo(() => rows.filter((r) => r.valid), [rows]);
-  const contacts = useMemo(() => toContactInputs(rows), [rows]);
+  const agent = agents.find((a) => a.id === agentId);
 
-  const guards = useMemo(
-    () => guardsFromSafety(safetySettings),
-    [safetySettings],
+  // Only a verified number with a trunk behind it can carry a call, and that
+  // judgement is the server's - `diallable` arrives resolved so the client is
+  // never comparing status strings.
+  const diallable = useMemo(
+    () => numbers.filter((n) => n.diallable),
+    [numbers],
+  );
+  const unusable = useMemo(
+    () => numbers.filter((n) => !n.diallable),
+    [numbers],
   );
 
-  const ceiling = safetySettings?.max_calls_per_run ?? null;
-  const overCeiling = ceiling !== null && validRows.length > ceiling;
+  const chosenNumbers = useMemo(
+    () => diallable.filter((n) => selectedNumberIds.includes(n.id)),
+    [diallable, selectedNumberIds],
+  );
 
-  /** Exactly why Start is blocked. Never a generic complaint. */
+  const providers = useMemo(
+    () => [...new Set(diallable.map((n) => n.provider))].sort(),
+    [diallable],
+  );
+
+  const validRows = useMemo(() => rows.filter((r) => r.valid), [rows]);
+  const contacts = useMemo(() => toContactInputs(rows), [rows]);
+  const columns = useMemo(() => contextColumns(validRows), [validRows]);
+
+  function toggleNumber(id: string) {
+    setSelectedNumberIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
+  }
+
+  async function sync(provider: string) {
+    setSyncing(true);
+    try {
+      const fresh = await api.syncNumbers(provider);
+      // Replaces only this provider's rows: syncing Twilio must not drop the
+      // Plivo numbers already on screen.
+      setNumbers((prev) => [
+        ...prev.filter((n) => n.provider !== provider),
+        ...fresh,
+      ]);
+      toast({
+        tone: 'success',
+        title: `${fresh.length} ${fresh.length === 1 ? 'number' : 'numbers'} found`,
+      });
+    } catch (error) {
+      toast({
+        tone: 'error',
+        title: "Couldn't read that account's numbers",
+        body:
+          error instanceof Error
+            ? error.message
+            : 'The carrier did not respond. Nothing changed.',
+      });
+    } finally {
+      setSyncing(false);
+    }
+  }
+
+  /**
+   * Exactly why Start is blocked. Never a generic complaint.
+   *
+   * `calling_available` is checked *before* the number checks, and the order is
+   * the point. It is a property of the deployment - LiveKit keys in the
+   * server's environment - not of this organisation, and pointing a number at
+   * LiveKit is what makes it diallable at all. With it false, connecting a
+   * carrier cannot produce a diallable number however many times someone tries,
+   * so leading with "connect a carrier" sends them to a page that cannot fix it
+   * and they arrive back here reading the same sentence.
+   */
   const blocker = useMemo<string | null>(() => {
     if (phase !== 'up') return 'Waiting for the service to respond.';
-    if (!campaignId) return 'Pick a campaign first.';
+    if (!health?.calling_available) {
+      return 'This deployment cannot place calls: it has no LiveKit credentials. Connecting a carrier will not change that - the server needs LIVEKIT_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET and LIVEKIT_SIP_HOST.';
+    }
+    if (!agentId) {
+      return agents.length === 0
+        ? 'Build an agent first - it holds the prompt and the fields to collect.'
+        : 'Pick an agent first.';
+    }
+    if (chosenNumbers.length === 0) {
+      if (numbers.length === 0) {
+        return 'No number to dial from yet. Connect a carrier in Integrations, then sync its numbers.';
+      }
+      if (diallable.length === 0) {
+        return `Synced ${numbers.length === 1 ? 'a number' : `${numbers.length} numbers`}, but ${numbers.length === 1 ? 'it is' : 'none are'} ready to dial from yet - each has to be connected to a voice agent in Integrations before it can carry a call.`;
+      }
+      return 'Pick at least one number to call from.';
+    }
     if (validRows.length === 0) {
       return rows.length === 0
         ? 'Add at least one contact.'
         : 'Every row has a problem. Fix one, or remove the invalid rows.';
     }
-    if (!health?.calling_available) {
-      return 'Calling is not available yet - the voice platform migration is in progress.';
-    }
-    if (overCeiling) {
-      return `This run has ${validRows.length} contacts but the per-run ceiling is ${ceiling}. Raise the ceiling in Settings → Safety, or remove some rows.`;
-    }
     return null;
   }, [
     phase,
-    campaignId,
+    agentId,
+    agents.length,
+    chosenNumbers.length,
+    diallable.length,
+    numbers.length,
     validRows.length,
     rows.length,
     health,
-    overCeiling,
-    ceiling,
   ]);
 
   async function start() {
     if (blocker) return;
     setStarting(true);
     try {
-      const { run_id } = await api.startRun(campaignId, contacts);
+      const { run_id } = await api.startRun({
+        voice_agent_id: agentId,
+        number_ids: chosenNumbers.map((n) => n.id),
+        contacts,
+        name: runName.trim() || null,
+        run_instruction: runInstruction.trim() || null,
+      });
       toast({ tone: 'success', title: 'Run started' });
       refresh();
       router.push(`/app/runs/${run_id}`);
@@ -126,10 +237,9 @@ function RunComposer() {
     }
   }
 
-  // This whole composer had no permission check at all - a viewer could
-  // import contacts, edit rows, and reach a fully live "Start" button
-  // (ISSUES.md #71). Blocked entirely rather than just disabling Start,
-  // since a viewer can view data and scroll, not build a run that never
+  // A viewer could once import contacts, edit rows, and reach a fully live
+  // "Start" button (ISSUES.md #71). Blocked entirely rather than just disabling
+  // Start, since a viewer can view data and scroll, not build a run that never
   // gets submitted.
   if (
     session.status === 'signed-in' &&
@@ -137,10 +247,7 @@ function RunComposer() {
   ) {
     return (
       <div className="flex flex-col gap-6">
-        <div className="flex flex-col gap-1">
-          <p className="text-small font-bold text-text-mute">New run</p>
-          <h1 className="font-display text-h2 text-text">Start a run</h1>
-        </div>
+        <ComposerHeading />
         <NotWiredNotice>
           Your role can view runs but not start one. Ask an owner, admin, or
           operator in your organisation.
@@ -151,84 +258,284 @@ function RunComposer() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-1">
-        <p className="text-small font-bold text-text-mute">New run</p>
-        <h1 className="font-display text-h2 text-text">Start a run</h1>
-      </div>
+      <ComposerHeading />
 
       <ConnectionBanner phase={phase} />
 
-      {/* ---- 1 · Contacts ------------------------------------------------ */}
+      {/* ---- 1 · Agent --------------------------------------------------- */}
       <Step
         n="01"
-        title="Contacts"
-        detail="Every row is validated before anything is dialled."
+        title="Agent"
+        detail="Who calls, what they say, and what they have to come back with."
       >
-        <ContactGrid rows={rows} onChange={setRows} />
+        {agents.length === 0 ? (
+          <div className="flex flex-wrap items-center gap-3">
+            <p className="text-small text-text-dim">
+              No agents yet. An agent holds the voice, the prompt, and the
+              fields a call has to collect.
+            </p>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => router.push('/app/agentic')}
+            >
+              Build an agent
+            </Button>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-3">
+            <ul className="flex flex-col gap-2">
+              {agents.map((option) => (
+                <li key={option.id}>
+                  <button
+                    type="button"
+                    aria-pressed={option.id === agentId}
+                    onClick={() => setChosenAgentId(option.id)}
+                    className={cn(
+                      'flex w-full flex-wrap items-center justify-between gap-3 rounded-xl px-4 py-3 text-left ring-1 transition-colors duration-(--dur-fast)',
+                      'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--primary)',
+                      option.id === agentId
+                        ? 'bg-surface-raised ring-(--primary)'
+                        : 'bg-surface ring-rule hover:ring-rule-strong',
+                    )}
+                  >
+                    <span className="flex min-w-0 flex-col gap-0.5">
+                      <span className="truncate text-body font-medium text-text">
+                        {option.name}
+                      </span>
+                      <span className="truncate text-small text-text-mute">
+                        {[
+                          option.llm_model,
+                          option.tts_provider,
+                          option.stt_provider,
+                        ]
+                          .filter(Boolean)
+                          .join(' · ') || 'No pipeline configured'}
+                      </span>
+                    </span>
+                    <span className="shrink-0 font-mono text-data text-text-dim">
+                      {option.collect_fields.length}{' '}
+                      {option.collect_fields.length === 1 ? 'field' : 'fields'}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+
+            {agent && agent.collect_fields.length === 0 ? (
+              <p className="text-small text-text-dim">
+                This agent collects no fields, so calls come back as transcripts
+                rather than as data. Add fields in the agent to change that.
+              </p>
+            ) : null}
+          </div>
+        )}
       </Step>
 
-      {/* ---- 2 · Campaign ----------------------------------------------- */}
-      <Step n="02" title="Campaign" detail="What each contact will hear.">
+      {/* ---- 2 · Numbers ------------------------------------------------- */}
+      <Step
+        n="02"
+        title="Call from"
+        detail="Pick one number, some, or all. Calls are spread across whatever you choose."
+      >
         <div className="flex flex-col gap-4">
-          <div className="max-w-md">
-            <Field label="Campaign" required>
-              <Select
-                value={campaignId}
-                onValueChange={setCampaignId}
-                options={campaigns.map((c) => ({
-                  value: c.id,
-                  label: c.name,
-                  hint: c.built_in ? 'Template' : undefined,
-                }))}
-                placeholder={
-                  campaigns.length === 0
-                    ? 'No campaigns available'
-                    : 'Pick a campaign'
-                }
-                disabled={campaigns.length === 0}
-              />
-            </Field>
-          </div>
-
-          {campaign ? (
-            <Panel sunken className="flex flex-col gap-2 p-4">
-              <p className="text-small font-bold text-text-mute">
-                {validRows[0]
-                  ? `What ${validRows[0].name.split(' ')[0] || 'the first contact'} will hear`
-                  : 'What each contact will hear'}
+          {loadingNumbers ? (
+            <p className="font-mono text-data text-text-mute">
+              Reading your numbers…
+            </p>
+          ) : diallable.length === 0 ? (
+            // Three different situations, and sending all of them to
+            // Integrations with the same sentence is what made this a loop:
+            // someone connects a carrier, comes back, and is told to connect a
+            // carrier. What is missing is different in each case, so the
+            // sentence has to be too.
+            <div className="flex flex-wrap items-center gap-3">
+              <p className="text-small text-text-dim">
+                {numbers.length === 0
+                  ? 'No carrier connected yet. Connect one and CallFlow will read the numbers that account holds.'
+                  : unusable[0]?.last_error
+                    ? unusable[0].last_error
+                    : `${unusable.length === 1 ? 'The number' : `All ${unusable.length} numbers`} on your carrier ${unusable.length === 1 ? 'is' : 'are'} still being set up. Open Integrations to see why.`}
               </p>
-              <div className="max-h-56 overflow-y-auto whitespace-pre-wrap font-mono text-data text-text">
-                {renderGoalPreview(campaign.goal_template, {
-                  name: validRows[0]?.name || 'there',
-                  context: {
-                    enquiry_note: validRows[0]?.note || 'no note on file',
-                    appointment_time: 'tomorrow at 4pm',
-                  },
-                })}
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => router.push('/app/integrations')}
+              >
+                Integrations
+              </Button>
+            </div>
+          ) : (
+            <>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={diallable.length === 0}
+                  onClick={() =>
+                    setSelectedNumberIds(diallable.map((n) => n.id))
+                  }
+                >
+                  Select all
+                </Button>
+                {selectedNumberIds.length > 0 ? (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setSelectedNumberIds([])}
+                  >
+                    Clear
+                  </Button>
+                ) : null}
+                {providers.map((provider) => (
+                  <Button
+                    key={provider}
+                    variant="ghost"
+                    size="sm"
+                    loading={syncing}
+                    onClick={() => sync(provider)}
+                  >
+                    <ArrowsClockwiseIcon aria-hidden className="size-4" />
+                    Sync {provider}
+                  </Button>
+                ))}
               </div>
-            </Panel>
+
+              <ul className="grid gap-2 sm:grid-cols-2">
+                {diallable.map((number) => {
+                  const picked = selectedNumberIds.includes(number.id);
+                  return (
+                    <li key={number.id}>
+                      <button
+                        type="button"
+                        aria-pressed={picked}
+                        onClick={() => toggleNumber(number.id)}
+                        className={cn(
+                          'flex w-full items-center justify-between gap-3 rounded-xl px-4 py-3 text-left ring-1 transition-colors duration-(--dur-fast)',
+                          'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--primary)',
+                          picked
+                            ? 'bg-surface-raised ring-(--primary)'
+                            : 'bg-surface ring-rule hover:ring-rule-strong',
+                        )}
+                      >
+                        <span className="flex min-w-0 flex-col gap-0.5">
+                          <span className="font-mono text-data tabular-nums text-text">
+                            {number.phone_masked}
+                          </span>
+                          <span className="truncate text-small text-text-mute">
+                            {number.label ?? number.provider}
+                          </span>
+                        </span>
+                        {picked ? (
+                          <CheckCircleIcon
+                            aria-hidden
+                            weight="fill"
+                            className="size-5 shrink-0 text-(--primary)"
+                          />
+                        ) : null}
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </>
+          )}
+
+          {/* Shown rather than hidden: a number that failed provisioning is the
+              most likely reason someone cannot find the one they expected. */}
+          {unusable.length > 0 ? (
+            <details className="rounded-xl bg-surface-raised p-3 ring-1 ring-rule">
+              <summary className="cursor-pointer text-small text-text-dim">
+                {unusable.length}{' '}
+                {unusable.length === 1 ? 'number is' : 'numbers are'} not ready
+                to dial from
+              </summary>
+              <ul className="mt-3 flex flex-col gap-2">
+                {unusable.map((number) => (
+                  <li
+                    key={number.id}
+                    className="flex flex-wrap items-baseline gap-x-3 gap-y-1"
+                  >
+                    <WarningCircleIcon
+                      aria-hidden
+                      className="size-4 shrink-0 translate-y-0.5 text-lamp-brass-text"
+                    />
+                    <span className="font-mono text-data tabular-nums text-text">
+                      {number.phone_masked}
+                    </span>
+                    <span className="text-small text-text-mute">
+                      {number.last_error ?? number.status}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </details>
           ) : null}
         </div>
       </Step>
 
-      {/* ---- 3 · Run ---------------------------------------------------- */}
+      {/* ---- 3 · Contacts ------------------------------------------------ */}
       <Step
         n="03"
+        title="Contacts"
+        detail="Name, phone, and a note. Any other column becomes that person's own context."
+      >
+        <div className="flex flex-col gap-3">
+          <ContactGrid rows={rows} onChange={setRows} />
+          {columns.length > 0 ? (
+            <p className="text-small text-text-dim">
+              Each contact brings its own{' '}
+              <span className="font-mono text-data text-text">
+                {columns.join(', ')}
+              </span>{' '}
+              into the conversation.
+            </p>
+          ) : null}
+        </div>
+      </Step>
+
+      {/* ---- 4 · Run ----------------------------------------------------- */}
+      <Step
+        n="04"
         title="Run"
-        detail="The guards below apply to every call in this run."
+        detail="Name it, add anything specific to this run, then start dialling."
       >
         <div className="flex flex-col gap-4 pl-4 border-l-2 border-l-rule-strong">
-          <SafetyBar guards={guards} />
+          <div className="grid gap-4 md:grid-cols-2">
+            <Field
+              label="Name this run"
+              hint="Optional. Shows in the runs list instead of the agent's name."
+            >
+              <Input
+                value={runName}
+                onChange={(e) => setRunName(e.target.value)}
+                placeholder="December enquiries"
+              />
+            </Field>
+            <Field
+              label="Just for this run"
+              hint="Optional. Added to every prompt in this run, so a one-off instruction does not mean editing a shared agent."
+            >
+              <Textarea
+                rows={3}
+                value={runInstruction}
+                onChange={(e) => setRunInstruction(e.target.value)}
+                placeholder="Mention that the office is closed on the 25th."
+              />
+            </Field>
+          </div>
 
           <dl className="flex flex-wrap gap-x-8 gap-y-2 border-t border-rule pt-4">
             <Estimate label="Contacts" value={String(validRows.length)} />
-            {ceiling !== null ? (
-              <Estimate
-                label="Per-run ceiling"
-                value={String(ceiling)}
-                warn={overCeiling}
-              />
-            ) : null}
+            <Estimate
+              label="Calling from"
+              value={String(chosenNumbers.length)}
+              detail={chosenNumbers.length === 1 ? 'number' : 'numbers'}
+            />
+            <Estimate
+              label="Fields per call"
+              value={String(agent?.collect_fields.length ?? 0)}
+            />
           </dl>
 
           <div className="flex flex-wrap items-center gap-3">
@@ -257,13 +564,19 @@ function RunComposer() {
   );
 }
 
+function ComposerHeading() {
+  return (
+    <div className="flex flex-col gap-1">
+      <p className="text-small font-bold text-text-mute">New run</p>
+      <h1 className="font-display text-h2 text-text">Start a run</h1>
+    </div>
+  );
+}
+
 function ComposerFallback() {
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-1">
-        <p className="text-small font-bold text-text-mute">New run</p>
-        <h1 className="font-display text-h2 text-text">Start a run</h1>
-      </div>
+      <ComposerHeading />
       <Panel className="p-5">
         <p className="font-mono text-data text-text-mute">
           Loading the composer…
@@ -304,22 +617,15 @@ function Estimate({
   label,
   value,
   detail,
-  warn = false,
 }: {
   label: string;
   value: string;
   detail?: string;
-  warn?: boolean;
 }) {
   return (
     <div className="flex flex-col gap-0.5">
       <dt className="text-small font-bold text-text-mute">{label}</dt>
-      <dd
-        className={cn(
-          'font-mono text-data tabular-nums',
-          warn ? 'text-lamp-flare-text' : 'text-text',
-        )}
-      >
+      <dd className="font-mono text-data tabular-nums text-text">
         {value}
         {detail ? (
           <span className="ml-1.5 text-text-mute">{detail}</span>

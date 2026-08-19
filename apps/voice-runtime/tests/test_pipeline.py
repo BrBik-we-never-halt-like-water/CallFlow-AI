@@ -186,3 +186,34 @@ def test_the_registries_are_the_only_place_a_vendor_is_named() -> None:
     end = body.index("__all__")
     for vendor in ("sarvam", "deepgram", "elevenlabs", "openrouter", "openai"):
         assert vendor not in body[start:end].lower(), f"{vendor} is hard-coded in build_pipeline"
+
+
+# --- a voice that belongs to another vendor -----------------------------------
+#
+# `voice_id` is one column shared by every TTS provider, so an agent moved from
+# ElevenLabs to Sarvam still carries "Rachel". Sarvam validates the speaker in
+# its constructor, so passing it on raised and took the *whole* pipeline with
+# it - with the contact already ringing, hearing nothing (`ISSUES.md` #162).
+
+
+def test_a_voice_from_another_vendor_does_not_break_the_pipeline() -> None:
+    from app.pipeline import _sarvam_speaker
+
+    assert _sarvam_speaker("Rachel") is None
+    assert _sarvam_speaker(None) is None
+
+
+def test_a_speaker_the_current_model_rejects_is_dropped_too() -> None:
+    """`anushka` is a real Sarvam speaker - for bulbul:v2. The plugin defaults to
+    v3, which refuses it, so checking membership of *any* model's list is not
+    enough."""
+    from app.pipeline import _sarvam_speaker
+
+    assert _sarvam_speaker("anushka") is None
+
+
+def test_a_speaker_the_current_model_has_is_kept() -> None:
+    from app.pipeline import _sarvam_speaker
+
+    assert _sarvam_speaker("shubh") == "shubh"
+    assert _sarvam_speaker("SHUBH") == "SHUBH"

@@ -32,7 +32,7 @@ export interface Vertical {
   metric: string;
   /** The specific pain, in three lines. */
   pain: string[];
-  /** The campaign goal, exactly as it is stored. */
+  /** The agent's goal prompt, exactly as it is stored. */
   goalTemplate: string;
   schema: SchemaField[];
   objections: [Objection, Objection];
@@ -350,7 +350,7 @@ export function getVertical(slug: string): Vertical | undefined {
   return VERTICALS.find((v) => v.slug === slug);
 }
 
-/** Render the schema as the JSON Schema the campaign actually returns. */
+/** Render the schema as the JSON Schema the agent actually returns. */
 export function schemaToJson(fields: SchemaField[]): string {
   const properties: Record<string, unknown> = {
     outcome: {

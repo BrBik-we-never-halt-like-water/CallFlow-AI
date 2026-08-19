@@ -8,7 +8,6 @@ import {
   ChatCircleIcon,
   GaugeIcon,
   GearSixIcon,
-  MegaphoneIcon,
   PlugsConnectedIcon,
   RobotIcon,
   UserFocusIcon,
@@ -42,7 +41,6 @@ export interface NavItem {
  */
 export const NAV_ITEMS: Omit<NavItem, 'badge'>[] = [
   { label: 'Dashboard', href: '/app', icon: GaugeIcon },
-  { label: 'Campaigns', href: '/app/campaigns', icon: MegaphoneIcon },
   { label: 'Agents', href: '/app/agentic', icon: RobotIcon },
   { label: 'Runs', href: '/app/runs', icon: BroadcastIcon },
   { label: 'Needs a person', href: '/app/escalations', icon: UserFocusIcon },
@@ -66,7 +64,7 @@ const MOBILE_ITEMS = [
   '/app',
   '/app/runs',
   '/app/escalations',
-  '/app/campaigns',
+  '/app/agentic',
 ];
 
 export function isActive(pathname: string, href: string): boolean {

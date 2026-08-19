@@ -14,7 +14,7 @@ import { WaveCanvas } from "@/components/brand/wave-canvas";
  *
  * This is a genuine sequence, so it is shown as a single transformation rather
  * than four parallel cards: we follow one contact (Aditi) and the demo card
- * morphs in place through the pipeline — her validated row, the campaign goal,
+ * morphs in place through the pipeline — her validated row, the agent that calls her,
  * her live call, her triaged result. A vertical tracker on the left marks where
  * in the pipeline we are. Everything is real product UI, not a screenshot.
  */
@@ -27,8 +27,8 @@ const STEPS = [
   },
   {
     n: "02",
-    title: "Choose a campaign",
-    body: "Start from a template or write your own goal, and pick the fields to extract.",
+    title: "Choose an agent",
+    body: "Pick the agent that makes the call — it carries the prompt and the fields to extract.",
   },
   {
     n: "03",
@@ -60,7 +60,7 @@ export function Steps() {
       <Reveal>
         <SectionHeading
           title="Watch one contact become a triaged result."
-          sub="One row, four forms — her validated row, the campaign goal, her live call, and the typed result your team actually reads. Every frame is the real product UI."
+          sub="One row, four forms — her validated row, the agent that calls her, her live call, and the typed result your team actually reads. Every frame is the real product UI."
         />
       </Reveal>
 
@@ -241,7 +241,7 @@ function LoadForm() {
 
 function ChooseForm() {
   return (
-    <FormShell label="Campaign chosen">
+    <FormShell label="Agent chosen">
       <p className="text-body text-text">Holiday enquiry follow-up</p>
       <div className="flex flex-col gap-2">
         <span className="text-small text-text-dim">Fields to extract from the call</span>

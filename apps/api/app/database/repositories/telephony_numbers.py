@@ -95,6 +95,26 @@ async def get(
     )
 
 
+async def by_e164(
+    conn: asyncpg.Connection, *, org_id: UUID, provider: str, phone_e164: str
+) -> asyncpg.Record | None:
+    """The row provisioning is about to configure, found the way it names it.
+
+    Provisioning is handed a number as an E.164 string rather than an id - that
+    is what the carrier and LiveKit both speak - and `(org_id, provider,
+    phone_e164)` is unique, so this resolves to at most one row.
+    """
+    return await conn.fetchrow(
+        f"""
+        select {_COLUMNS} from public.telephony_numbers
+        where org_id = $1 and provider = $2 and phone_e164 = $3
+        """,
+        org_id,
+        provider,
+        phone_e164,
+    )
+
+
 async def upsert_discovered(
     conn: asyncpg.Connection,
     *,
@@ -222,6 +242,7 @@ async def set_status(
 
 
 __all__ = [
+    "by_e164",
     "get",
     "list_by_ids",
     "list_for_org",

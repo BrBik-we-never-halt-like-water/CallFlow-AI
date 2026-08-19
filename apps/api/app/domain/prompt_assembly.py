@@ -36,7 +36,7 @@ from typing import Any, Protocol
 log = logging.getLogger("app.domain.prompt_assembly")
 
 #: Context keys CallFlow owns. A spreadsheet column by any of these names is
-#: dropped rather than rendered: `campaign_runner`'s metadata dict spreads
+#: dropped rather than rendered: `run_dialer`'s metadata dict spreads
 #: `contact.context` first precisely so a column called `goal` cannot rewrite the
 #: agent's instructions, and the same discipline has to hold here or the prompt
 #: becomes the way in that the metadata dict is not.
@@ -69,6 +69,16 @@ _DEFAULT_IDENTITY = (
 
 _NO_DETAIL = "No specific detail was recorded for this contact."
 
+#: What a placeholder renders as when the contact has no value for it. Only for
+#: the ones the agent is likely to build a sentence around: "you are calling
+#: {name} about {note}" with an empty note reads as "about ." and invites the
+#: model to fill the gap with something it invented. Anything not named here
+#: still renders empty, which is right for a placeholder used as a bare value.
+_PLACEHOLDER_FALLBACKS: dict[str, str] = {
+    "note": "no specific detail was recorded",
+    "detail": "no specific detail was recorded",
+}
+
 _BEHAVIOUR = """--- HOW TO BEHAVE ---
 - If they ask to end the call, say a brief goodbye and end the call immediately.
   Do not ask another question first.
@@ -95,10 +105,20 @@ class _Safe(dict):
     `{booking_ref}` into an agent's prompt and later renames the spreadsheet
     column; without this, every call in the run dies on a `KeyError` instead of
     one sentence reading slightly short.
+
+    An empty value is treated the same as a missing key: a column present in the
+    sheet but blank for this row is, to the agent, exactly as absent as one that
+    was never there.
     """
 
     def __missing__(self, key: str) -> str:
-        return ""
+        return _PLACEHOLDER_FALLBACKS.get(key, "")
+
+    def __getitem__(self, key: str) -> Any:
+        value = super().get(key)
+        if value is None or not str(value).strip():
+            return self.__missing__(key)
+        return value
 
 
 class CollectField(Protocol):
@@ -213,9 +233,14 @@ def render_call_prompt(
     if collect_fields:
         blocks.append(
             "--- WHAT YOU MUST FIND OUT ---\n"
+            "This is what the call is for. Ask for each of these, in this order, "
+            "until you have them all:\n"
             + _fields_block(collect_fields)
-            + "\n\nRecord each one as soon as you learn it. Do not guess a value, "
-            "and do not ask for something you already have."
+            + "\n\nAsk about one at a time and wait for the answer before moving on - "
+            "this is a phone call, and all of them in one breath is not a "
+            "conversation. Record each answer as soon as you hear it. Do not guess "
+            "a value, and do not ask for something you already have. Once you have "
+            "them all, thank them and end the call."
         )
 
     blocks.append(_BEHAVIOUR)

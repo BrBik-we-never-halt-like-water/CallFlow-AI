@@ -1,5 +1,7 @@
 'use client';
 
+import { useEffect } from 'react';
+
 import {
   WheelPicker,
   WheelRow,
@@ -62,7 +64,30 @@ export function ProviderWheel({
   }));
 
   const voiceOptions = selected?.voice_options ?? [];
-  const activeVoiceId = selectedVoiceId ?? voiceOptions[0] ?? null;
+  const storedIsValid =
+    selectedVoiceId != null && voiceOptions.includes(selectedVoiceId);
+  const activeVoiceId = storedIsValid
+    ? selectedVoiceId
+    : (voiceOptions[0] ?? null);
+
+  /**
+   * Write the substitution back, do not just draw it.
+   *
+   * `voice_id` is one column shared by every vendor and the names do not carry
+   * across, so an agent whose TTS was switched still holds the old vendor's
+   * voice - "Rachel" on a Sarvam agent. Falling back to the first option made
+   * the wheel *show* a valid voice while state kept the stale one, so opening
+   * an old agent and saving anything re-persisted a voice the runtime cannot
+   * use, and the operator's displayed voice never matched what the contact
+   * heard (`ISSUES.md` #171). Derived during render rather than synced in an
+   * effect would be the house style, but the value has to reach the parent's
+   * state to be saved - so this reports it, once, when it changes.
+   */
+  useEffect(() => {
+    if (!selected || !onVoiceIdChange) return;
+    if (storedIsValid || activeVoiceId == null) return;
+    onVoiceIdChange(selected, activeVoiceId);
+  }, [selected, onVoiceIdChange, storedIsValid, activeVoiceId]);
 
   return (
     <section className="flex h-full min-w-0 flex-col gap-4">

@@ -44,10 +44,17 @@ services:
       JWT_EXP: ${JWT_EXPIRY:-3600}
     volumes:
       - db-data:/var/lib/postgresql/data
-      # Ordered by filename. `01` creates the roles GoTrue and PostgREST log in
-      # as; `02` creates the schemas they own before either starts.
+      # `01` creates only the roles the image omits, `02` the schemas its
+      # services own. Both run before the image's own `migrate.sh`, which sits
+      # in this same directory and creates `anon`, `authenticated`,
+      # `service_role` and `authenticator` - unguarded, so `01` must not create
+      # those four or `migrate.sh` aborts and `auth.users` is never built.
       - ./volumes/db/01-roles.sql:/docker-entrypoint-initdb.d/01-roles.sql:ro
       - ./volumes/db/02-schemas.sql:/docker-entrypoint-initdb.d/02-schemas.sql:ro
+      # Not in initdb.d: it needs the roles the image's `migrate.sh` creates, and
+      # nothing in that directory can sort after `migrate.sh`. This path is the
+      # hook `migrate.sh` runs last, once its own scripts are done.
+      - ./volumes/db/03-post-init.sql:/etc/postgresql.schema.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -h localhost"]
       interval: 5s

@@ -28,7 +28,7 @@ _FONT_BODY = "-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif"
 _ROLE_HINT = {
     "owner": "full control of the organisation, including billing",
     "admin": "everything except deleting the organisation",
-    "operator": "campaigns, runs, and escalations",
+    "operator": "agents, runs, and escalations",
     "viewer": "read-only access to results",
 }
 

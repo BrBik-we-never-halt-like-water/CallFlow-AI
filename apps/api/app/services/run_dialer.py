@@ -51,8 +51,7 @@ from app.integrations.livekit.client import EngineError, LiveKitGateway, classif
 # carrier said this is a transient condition rather than something wrong with
 # the number or the request itself. A fresh call attempt against a
 # number/request that's genuinely invalid or blocked should not be retried, per
-# CLAUDE.md's fail-closed rule for anything that spends a credit or places a
-# call.
+# CLAUDE.md's fail-closed rule for anything that places a call.
 #
 # BUSY and NO_ANSWER belong here for the obvious reason: the number is fine and
 # the person simply wasn't available, which is the textbook case for calling
@@ -80,21 +79,17 @@ class RunDialer:
         *,
         result_schema: JsonObject | None = None,
         suppressed_hashes: frozenset[str] = frozenset(),
-        max_calls_per_run: int | None = None,
-        allowlist: frozenset[str] | None = None,
         run_id: str | None = None,
         max_concurrent_calls: int | None = None,
         voice_agent: JsonObject | None = None,
         gateway_factory: GatewayFactory | None = None,
-        credit_ceiling: int | None = None,
-        credits_used_before_run: int = 0,
         lines: Sequence[DialLine] | None = None,
         allocation_strategy: str = "round_robin",
         run_instruction: str | None = None,
     ) -> None:
         self.result_schema = result_schema
         # The verified lines this run may dial from, resolved once by the caller
-        # the same way the allowlist and suppression set are, rather than looked
+        # the same way the suppression set is, rather than looked
         # up per contact. Empty means nothing is connected and every contact is
         # refused with that reason rather than dialled.
         #
@@ -126,24 +121,6 @@ class RunDialer:
         self._calls_made_lock = asyncio.Lock()
         # Resolved once per run (a single query) rather than once per contact.
         self._suppressed_hashes = suppressed_hashes
-        # An organisation's own Settings -> Safety override, or None to fall back
-        # to the deployment's env-var defaults inside check_dial_allowed itself.
-        self._max_calls_per_run = max_calls_per_run
-        self._allowlist = allowlist
-        # `None` when the caller (the run's own starter) has no per-teammate
-        # allocation set at all - the per-teammate gate then never applies,
-        # only the org-wide daily budget does. `credits_used_before_run` is a
-        # live count of *today's already-connected* calls, resolved once at
-        # run start the same way suppression/allowlist already are.
-        # `_credits_reserved` is this run's own in-flight bookkeeping: a
-        # contact reserves one credit before dialling (so two contacts
-        # dialled concurrently can't both slip under the same last slot) and
-        # gives it back if that particular call never connects - see
-        # `run_one()`'s own comment for why a credit is only ever actually
-        # spent by a connected call, never a mere attempt.
-        self._credit_ceiling = credit_ceiling
-        self._credits_used_before_run = credits_used_before_run
-        self._credits_reserved = 0
         # The persisted run this instance belongs to, if any - gives each
         # contact's idempotency key a stable scope (see `run_one()`). `None`
         # for a caller with no real run (ad hoc use, tests).
@@ -265,40 +242,21 @@ class RunDialer:
             voice_agent_id=agent.id,
         )
 
-        # --- Safety gate: fails closed, runs before anything can dial. ------
-        # Checking `self._calls_made` and reserving a slot by incrementing it
-        # must happen as one atomic step under concurrency - otherwise two
-        # contacts dialled at the same time could both read the same
-        # under-the-ceiling count before either increments, letting more
-        # calls through than `max_calls_per_run` allows. The reservation
-        # happens *before* the dial is attempted, not after it succeeds
-        # (unlike the previous, sequential-only version) - a failed or
-        # lost-response attempt still spent a real slot at CALL-E and must
-        # still count, per CLAUDE.md's fail-closed rule (`ISSUES.md` #54).
-        async with self._calls_made_lock:
-            credits_remaining = (
-                None
-                if self._credit_ceiling is None
-                else self._credit_ceiling - self._credits_used_before_run - self._credits_reserved
-            )
-            gate = check_dial_allowed(
-                contact.phone,
-                self._calls_made,
-                is_suppressed=phone_hash(contact.phone) in self._suppressed_hashes,
-                max_calls_per_run=self._max_calls_per_run,
-                allowlist=self._allowlist,
-                credits_remaining=credits_remaining,
-            )
-            reserved_credit = gate.allowed and self._credit_ceiling is not None
-            line: DialLine | None = None
-            if gate.allowed:
+        # --- Suppression gate: fails closed, runs before anything can dial. --
+        # The lock still matters, but only for allocation now: round-robin
+        # advances a shared cursor, so two contacts dialled concurrently would
+        # otherwise race for the same line and the even distribution this exists
+        # to guarantee would not hold. The per-run ceiling and credit
+        # reservation this block used to hold were removed with the rest of the
+        # cost guards (`domain/safety.py`'s module docstring).
+        gate = check_dial_allowed(
+            contact.phone,
+            is_suppressed=phone_hash(contact.phone) in self._suppressed_hashes,
+        )
+        line: DialLine | None = None
+        if gate.allowed:
+            async with self._calls_made_lock:
                 self._calls_made += 1
-                if reserved_credit:
-                    self._credits_reserved += 1
-                # Allocated inside the *existing* lock rather than under a second
-                # one. Round-robin advances a shared cursor, so two contacts
-                # dialled concurrently would otherwise race for the same line and
-                # the distribution this exists to guarantee would not hold.
                 if self._allocator is not None:
                     line = self._allocator.next_for(contact.phone)
 
@@ -311,20 +269,8 @@ class RunDialer:
                 }
             )
 
-        # A credit is only ever actually spent by a *connected* call. Every
-        # early return below hands the reserved slot back, because none of them
-        # reached a person - without that, a run with a credit ceiling burns a
-        # credit per refused contact and eventually blocks later contacts for a
-        # reason that never happened. The one path that keeps its credit is the
-        # answered call at the bottom.
-        async def release_credit() -> None:
-            if reserved_credit:
-                async with self._calls_made_lock:
-                    self._credits_reserved -= 1
-
         if not self._lines or self._allocator is None:
             log.info("dial refused for %s - no verified number", mask(contact.phone))
-            await release_credit()
             return base.model_copy(
                 update={
                     "status": "FAILED",
@@ -343,7 +289,6 @@ class RunDialer:
         # saying "hello?" into silence. The gate belongs before the dial.
         if not self._voice_agent:
             log.info("dial refused for %s - no voice agent", mask(contact.phone))
-            await release_credit()
             return base.model_copy(
                 update={
                     "status": "FAILED",
@@ -377,7 +322,6 @@ class RunDialer:
             # exception text: a vendor message can carry the dialled number or
             # internal hostnames, and this string reaches a user-facing field.
             log.warning("call failed for %s: %s", mask(contact.phone), failure.value)
-            await release_credit()
             retryable = failure in _RETRYABLE_FAILURES
             return base.model_copy(
                 update={
@@ -396,7 +340,6 @@ class RunDialer:
             # interpolated into a user-facing field - unlike a DialFailure
             # value, a raw exception string is untrusted content.
             log.exception("call failed for %s", mask(contact.phone))
-            await release_credit()
             return base.model_copy(
                 update={
                     "status": "FAILED",
@@ -406,7 +349,7 @@ class RunDialer:
                 }
             )
 
-        # Answered, not finished - and the only path that keeps its credit. The
+        # Answered, not finished. The
         # worker is in the room having the conversation and will POST the
         # transcript and terminal status back when it ends (P1-T4); this row
         # stays IN_FLIGHT until it does.
@@ -486,6 +429,12 @@ class RunDialer:
             "contact_name": contact.name,
             "phone_masked": mask(contact.phone),
             "result_schema": self.result_schema,
+            # The same field list the prompt renders, as data the worker can
+            # build a `record_field` tool from. Sent rather than re-derived so
+            # what the agent is asked for and what it can record cannot drift.
+            # The reserved key is `collect_schema`, so a spreadsheet column by
+            # that name is already stripped upstream.
+            "collect_schema": [f.model_dump() for f in agent.collect_fields],
             "language": contact.language or agent.language,
             # The key `AgentSpec.from_metadata()` reads. Both sides of this
             # contract live in this repo and are tested against each other

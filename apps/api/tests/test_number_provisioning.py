@@ -22,7 +22,9 @@ import pytest
 import pytest_asyncio
 
 from app.core.config import config
+from app.database.repositories import telephony_numbers as numbers_repo
 from app.database.repositories import telephony_provisioning as provisioning_repo
+from app.domain.numbers import NumberStatus
 from app.domain.provisioning import ProvisioningStatus
 from app.integrations.telephony import CarrierError, CarrierTrunk
 from app.services.number_provisioning import ProvisioningRefused, connect_number
@@ -451,3 +453,148 @@ async def test_an_unset_credentials_key_refuses_rather_than_deriving_a_guessable
 
     assert "PROVIDER_CREDENTIALS_KEY" in str(caught.value)
 
+
+
+# --- the number row the dial gate actually reads ------------------------------
+#
+# Two tables record this workflow. `telephony_provisioning` is the attempt
+# ledger; `telephony_numbers` is the number, and only the latter decides whether
+# a run may dial. They were never reconciled, so every provisioned number stayed
+# `discovered` with no trunk - permanently undiallable, while the attempt row
+# said verified. These are the tests that would have caught it.
+
+
+async def _discover(db: asyncpg.Connection, agent: Agent) -> asyncpg.Record:
+    """A number as `sync_numbers` leaves it: discovered, no trunk, undiallable."""
+    return await numbers_repo.upsert_discovered(
+        db,
+        org_id=agent.org_id,
+        created_by=None,
+        provider="twilio",
+        phone_e164=NUMBER,
+        provider_number_ref="PN1",
+        label="org-a",
+        capabilities=json.dumps({"voice": True}),
+    )
+
+
+async def test_provisioning_makes_the_discovered_number_diallable(
+    db: asyncpg.Connection, agent: Agent
+) -> None:
+    await _discover(db, agent)
+
+    await _connect(db, agent, "n1")
+
+    number = await numbers_repo.by_e164(
+        db, org_id=agent.org_id, provider="twilio", phone_e164=NUMBER
+    )
+    assert number is not None
+    assert number["status"] == NumberStatus.VERIFIED.value
+    assert number["livekit_outbound_trunk_id"] == "ST_out_1"
+
+
+async def test_the_number_carries_every_id_the_attempt_recorded(
+    db: asyncpg.Connection, agent: Agent
+) -> None:
+    await _discover(db, agent)
+
+    attempt = await _connect(db, agent, "n2")
+
+    number = await numbers_repo.by_e164(
+        db, org_id=agent.org_id, provider="twilio", phone_e164=NUMBER
+    )
+    assert number is not None
+    for column in (
+        "livekit_inbound_trunk_id",
+        "livekit_outbound_trunk_id",
+        "livekit_dispatch_rule_id",
+        "carrier_termination_domain",
+    ):
+        assert number[column] == attempt[column], column
+
+
+async def test_a_failed_attempt_leaves_the_number_undiallable(
+    db: asyncpg.Connection, agent: Agent
+) -> None:
+    await _discover(db, agent)
+
+    await _connect(db, agent, "n3", carrier_fails=True)
+
+    number = await numbers_repo.by_e164(
+        db, org_id=agent.org_id, provider="twilio", phone_e164=NUMBER
+    )
+    assert number is not None
+    assert number["status"] != NumberStatus.VERIFIED.value
+    assert number["livekit_outbound_trunk_id"] is None
+
+
+async def test_provisioning_a_number_that_was_never_synced_is_not_an_error(
+    db: asyncpg.Connection, agent: Agent
+) -> None:
+    """No discovered row: LiveKit and the carrier are still really configured,
+    so the attempt must verify rather than fail on a bookkeeping step."""
+    row = await _connect(db, agent, "n4")
+
+    assert row["status"] == ProvisioningStatus.VERIFIED.value
+    assert (
+        await numbers_repo.by_e164(
+            db, org_id=agent.org_id, provider="twilio", phone_e164=NUMBER
+        )
+        is None
+    )
+
+
+async def test_a_disabled_number_is_not_forced_back_into_service(
+    db: asyncpg.Connection, agent: Agent
+) -> None:
+    """`disabled` is an operator's deliberate act. Provisioning records the
+    trunks it made, but must not quietly make the number dialable again."""
+    number = await _discover(db, agent)
+    await numbers_repo.set_status(
+        db, org_id=agent.org_id, number_id=number["id"], target=NumberStatus.DISABLED
+    )
+
+    await _connect(db, agent, "n5")
+
+    after = await numbers_repo.by_e164(
+        db, org_id=agent.org_id, provider="twilio", phone_e164=NUMBER
+    )
+    assert after is not None
+    assert after["status"] == NumberStatus.DISABLED.value
+    assert after["livekit_outbound_trunk_id"] == "ST_out_1"
+
+
+async def test_the_number_keeps_its_inbound_routing_by_default(
+    db: asyncpg.Connection, agent: Agent
+) -> None:
+    """Making a number diallable must not redirect whatever already answers it.
+
+    A sync is not consent to take over a line that may be a support queue, so
+    `connect_number` defaults to the outbound-only half of the carrier config.
+    """
+    await _connect(db, agent, "attach-default")
+
+    assert StubCarrier.calls, "the carrier was never configured"
+    assert StubCarrier.calls[-1]["attach_number"] is False
+
+
+async def test_claiming_inbound_is_possible_but_has_to_be_asked_for(
+    db: asyncpg.Connection, agent: Agent
+) -> None:
+    stub = StubGateway()
+    await connect_number(
+        db,
+        voice_agent_id=agent.id,
+        org_id=agent.org_id,
+        idempotency_key="attach-explicit",
+        provider="twilio",
+        credentials={"account_sid": "AC1", "auth_token": "tok"},
+        phone_number=NUMBER,
+        label="org-a",
+        livekit_sip_host=SIP_HOST,
+        gateway_factory=lambda: stub,
+        carrier_factory=_carrier_factory(),
+        attach_number=True,
+    )
+
+    assert StubCarrier.calls[-1]["attach_number"] is True

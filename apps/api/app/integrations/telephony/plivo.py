@@ -178,8 +178,16 @@ class PlivoCarrier:
         auth_username: str,
         auth_password: str,
         transport: str = DEFAULT_TRANSPORT,
+        attach_number: bool = True,
     ) -> CarrierTrunk:
         """Point a Plivo number at LiveKit, both directions.
+
+        `attach_number=False` stops before the final step that repoints the
+        number's inbound routing, which makes the whole call non-destructive:
+        everything created is new, and the number keeps whatever was already
+        answering it. That is the default, because a carrier sync is not
+        consent to redirect a line that may already be a support queue
+        (`ISSUES.md` #168).
 
         `number_ref` is the E.164 number itself - Plivo addresses numbers
         directly, unlike Twilio's SID. Named uniformly across the adapters so
@@ -225,11 +233,12 @@ class PlivoCarrier:
             outbound.get("termination_sip_domain") or f"{outbound_id}.zt.plivo.com"
         )
 
-        await self._post(
-            f"Number/{number_ref.lstrip('+')}/",
-            {"app_type": "trunk", "trunk_id": inbound_id},
-            action="attach the phone number to the trunk",
-        )
+        if attach_number:
+            await self._post(
+                f"Number/{number_ref.lstrip('+')}/",
+                {"app_type": "trunk", "trunk_id": inbound_id},
+                action="attach the phone number to the trunk",
+            )
 
         log.info("configured Plivo trunks in=%s out=%s", inbound_id, outbound_id)
         return CarrierTrunk(

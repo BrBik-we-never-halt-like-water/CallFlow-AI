@@ -37,8 +37,8 @@ const SECTIONS = [
     heading: 'Consent, and how it lands as a typed field',
     paragraphs: [
       'You are responsible for having a lawful basis to call the people on your list - usually because they enquired, are an existing customer, or gave consent. CallFlow does not source phone numbers and never supplies contacts.',
-      'Where a campaign needs consent captured on the call itself, turn on the consent requirement in Settings → Compliance. The agent then asks for it explicitly and the answer comes back as a typed boolean alongside the words used, so it is auditable rather than inferred from prose.',
-      'A campaign with the consent requirement on will not record a result as complete if consent was refused. The call ends politely and the contact is suppressed.',
+      'Where an agent needs consent captured on the call itself, turn on the consent requirement in Settings → Compliance. The agent then asks for it explicitly and the answer comes back as a typed boolean alongside the words used, so it is auditable rather than inferred from prose.',
+      'An agent with the consent requirement on will not record a result as complete if consent was refused. The call ends politely and the contact is suppressed.',
     ],
   },
   {
@@ -46,7 +46,7 @@ const SECTIONS = [
     heading: 'Opt-outs and the suppression list',
     paragraphs: [
       'If someone asks not to be called again - in any phrasing the agent recognises as an opt-out - the call ends and the number is added to your suppression list immediately.',
-      'The suppression list is global and permanent. It applies across every campaign in your organisation, forever, and it cannot be overridden from a run. A suppressed number is skipped before a call is placed, and the row says why.',
+      'The suppression list is global and permanent. It applies to every agent and every run in your organisation, forever, and it cannot be overridden from a run. A suppressed number is skipped before a call is placed, and the row says why.',
       'You can also add numbers manually or import a do-not-call list in bulk. Suppression survives contact re-imports: re-uploading a CSV that contains a suppressed number does not resurrect it.',
     ],
   },
@@ -75,9 +75,9 @@ const SECTIONS = [
       'CallFlow relies on a small number of infrastructure providers. They are listed here by category and function, which is the level of detail a data-protection assessment needs; the current named list, with jurisdictions, is provided with the DPA and on request.',
     ],
     list: [
-      'Voice and telephony - places the call, handles speech and turn-taking. Receives the phone number, the campaign goal, and the result schema.',
+      "Voice and telephony - places the call, handles speech and turn-taking. Receives the phone number, the agent's prompt, and the result schema.",
       'Cloud hosting and compute - runs the service. Receives all data processed by the platform.',
-      'Managed database and object storage - stores campaigns, results, transcripts, and recordings at rest.',
+      'Managed database and object storage - stores agents, runs, results, transcripts, and recordings at rest.',
       "Transactional email - sends account, verification, and notification email. Receives your users' email addresses, never contact data.",
       'Payment processing - handles card details and invoicing. Card numbers never reach our systems.',
       'Error monitoring and logging - receives operational telemetry with phone numbers masked.',
@@ -87,9 +87,9 @@ const SECTIONS = [
     id: 'regional',
     heading: 'Regional compliance notes',
     paragraphs: [
-      'India - where a campaign targets numbers registered on a national do-not-call preference list, you are responsible for scrubbing against it; import the list into your suppression list and it will be enforced on every run, checked before every dial, permanently. Calling-hour restrictions are not enforced by the product yet - that is your responsibility until they are.',
+      'India - where a run targets numbers registered on a national do-not-call preference list, you are responsible for scrubbing against it; import the list into your suppression list and it will be enforced on every run, checked before every dial, permanently. Calling-hour restrictions are not enforced by the product yet - that is your responsibility until they are.',
       'European Union and United Kingdom - a DPA including the standard contractual clauses is available. Data residency in the EU can be arranged on Enterprise. Automated calling to individuals generally requires prior consent, and the consent-capture setting exists for exactly that.',
-      'United States - consent requirements for automated calls vary by state and are stricter than for manual dialling; take your own advice before running a live campaign. Calling-hour restrictions are not enforced by the product yet - that is your responsibility until they are.',
+      'United States - consent requirements for automated calls vary by state and are stricter than for manual dialling; take your own advice before starting a live run. Calling-hour restrictions are not enforced by the product yet - that is your responsibility until they are.',
       'None of the above is legal advice. The guards exist so that your policy can be enforced by the product rather than remembered by a person.',
     ],
   },

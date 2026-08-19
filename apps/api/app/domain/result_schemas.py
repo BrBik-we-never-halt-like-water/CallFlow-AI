@@ -1,7 +1,7 @@
 """Result schemas passed to the engine's native `result_schema` parameter.
 
 The engine performs structured extraction server-side during/after the call, so
-CallFlow AI never regex-scrapes a transcript. Each campaign declares the typed
+CallFlow AI never regex-scrapes a transcript. Each agent declares the typed
 contract it expects back.
 """
 
@@ -11,7 +11,7 @@ from typing import Any
 
 JsonObject = dict[str, Any]
 
-# Every campaign inherits these fields so triage logic is uniform.
+# Every call inherits these fields so triage logic is uniform.
 BASE_PROPERTIES: JsonObject = {
     "outcome": {
         "type": "string",
@@ -48,10 +48,10 @@ def build_result_schema(
     extra_properties: JsonObject | None = None,
     extra_required: list[str] | None = None,
 ) -> JsonObject:
-    """Compose a campaign-specific schema on top of the shared triage fields.
+    """Compose an agent-specific schema on top of the shared triage fields.
 
-    `extra_required` is a campaign's own fields marked required in the editor -
-    appended rather than replacing `BASE_REQUIRED`, so a campaign can never make
+    `extra_required` is an agent's own fields marked required in the editor -
+    appended rather than replacing `BASE_REQUIRED`, so an agent can never make
     triage's own fields optional.
     """
     properties = {**BASE_PROPERTIES, **(extra_properties or {})}

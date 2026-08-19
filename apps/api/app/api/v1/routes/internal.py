@@ -24,7 +24,7 @@ import logging
 import secrets
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 from pydantic import BaseModel, Field
 
 from app.core.config import config
@@ -97,21 +97,35 @@ def _collect_fields(raw: object) -> list[CollectField]:
     ]
 
 
-def _require_internal_key(presented: str | None) -> None:
+def _require_internal_key(
+    x_callflow_internal_key: Annotated[str | None, Header()] = None,
+) -> None:
     """Fails closed on an unset secret, so a misconfigured deployment refuses
-    writes rather than accepting anonymous ones."""
+    writes rather than accepting anonymous ones.
+
+    A **dependency**, not a call inside the handler, and the difference is the
+    point: FastAPI resolves dependencies before it validates the request body,
+    so an unauthenticated caller gets the same bare 404 whatever it sends.
+    Called from inside the handler, every malformed request answered 422 naming
+    the field that was wrong - handing anyone who could reach the port the exact
+    schema of an internal endpoint, one field at a time (`ISSUES.md` #154).
+    """
     if not config.internal_api_secret:
         log.error("internal callback rejected: CALLFLOW_INTERNAL_API_SECRET is not set")
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+    presented = x_callflow_internal_key
     if not presented or not secrets.compare_digest(presented, config.internal_api_secret):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
 
 
-@router.post("/runs/{run_id}/complete", status_code=status.HTTP_200_OK)
+@router.post(
+    "/runs/{run_id}/complete",
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(_require_internal_key)],
+)
 async def complete_call(
     run_id: str,
     payload: CallCompletion,
-    x_callflow_internal_key: Annotated[str | None, Header()] = None,
 ) -> dict[str, bool]:
     """Record one finished call and, if it was the last, close the run.
 
@@ -124,8 +138,6 @@ async def complete_call(
     A 404 for both a bad key and an unknown run: a caller without the secret
     learns nothing about which run ids exist.
     """
-    _require_internal_key(x_callflow_internal_key)
-
     # Checked here rather than inferred from the triaged disposition: `triage()`
     # assigns a bucket to any status it is given, so a worker reporting
     # "RINGING" would be recorded as a settled outcome and the row would never

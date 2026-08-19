@@ -25,6 +25,7 @@ import pytest
 
 from app.domain.entities import CollectField, Contact, RunAgent
 from app.domain.number_allocation import DialLine
+from app.integrations.ai_providers.catalog import TTS_PROVIDERS
 from app.services.run_dialer import RunDialer
 
 # The agent under test, standing in for the deleted `TRAVEL_DISCOVERY` built-in
@@ -40,22 +41,36 @@ TEST_AGENT = RunAgent(
 )
 
 # tests/ -> api/ -> apps/
-_PIPELINE_PATH = (
-    Path(__file__).resolve().parents[2] / "voice-runtime" / "app" / "pipeline.py"
-)
+_RUNTIME_APP = Path(__file__).resolve().parents[2] / "voice-runtime" / "app"
 
 
-def _load_worker_pipeline() -> Any:
-    spec = importlib.util.spec_from_file_location("voice_runtime_pipeline", _PIPELINE_PATH)
+def _load_worker_module(filename: str, name: str) -> Any:
+    """One worker module, by path.
+
+    Both modules loaded here import nothing but the standard library, which is
+    what makes this safe - anything reaching for `livekit` would pull a vendor
+    plugin tree into this suite.
+    """
+    path = _RUNTIME_APP / filename
+    # Checked before the spec, not after: `spec_from_file_location` happily
+    # returns a spec for a path that does not exist, and the failure only
+    # surfaces as a FileNotFoundError at `exec_module` - which is a collection
+    # error for the whole file rather than the skip this is written to be.
+    # The api container mounts only `apps/api`, so this is the normal case
+    # there (`ISSUES.md` #157).
+    if not path.is_file():
+        pytest.skip(f"voice-runtime not found at {path}", allow_module_level=True)
+    spec = importlib.util.spec_from_file_location(name, path)
     if spec is None or spec.loader is None:  # pragma: no cover - path is checked below
-        pytest.skip(f"voice-runtime not found at {_PIPELINE_PATH}")
+        pytest.skip(f"voice-runtime not found at {path}")
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module
 
 
-pipeline_module = _load_worker_pipeline()
+pipeline_module = _load_worker_module("pipeline.py", "voice_runtime_pipeline")
+collection_module = _load_worker_module("collection.py", "voice_runtime_collection")
 
 VOICE_AGENT = {
     "stt_provider": "sarvam",
@@ -91,7 +106,9 @@ class CapturingGateway:
         }
 
 
-async def _dispatch_metadata(contact: Contact | None = None) -> dict[str, Any]:
+async def _dispatch_metadata(
+    contact: Contact | None = None, agent: RunAgent | None = None
+) -> dict[str, Any]:
     gateway = CapturingGateway()
     runner = RunDialer(
         lines=(
@@ -104,7 +121,7 @@ async def _dispatch_metadata(contact: Contact | None = None) -> dict[str, Any]:
         run_id="run_contract",
     )
     await runner.run_one(
-        TEST_AGENT,
+        agent or TEST_AGENT,
         contact or Contact(name="Aditi", phone="+15555550100", context={"enquiry_note": "Bali"}),
     )
     return gateway.metadata
@@ -302,3 +319,134 @@ def test_the_single_key_shorthand_still_reaches_the_factory() -> None:
     )
 
     assert spec.credentials_for("stt") == {"api_key": "dg-key"}
+
+
+async def test_the_fields_the_agent_must_collect_reach_the_worker_as_tools() -> None:
+    """The other half of the same class of bug this file exists for.
+
+    The API renders the field list into the prompt *and* sends it as data; the
+    worker builds its `record_field` tool from the data. If only the prompt
+    carried it, the agent would be asked for answers it had no way to record.
+    """
+    metadata = await _dispatch_metadata()
+
+    fields = collection_module.fields_from_metadata(metadata)
+
+    assert [f.key for f in fields] == ["destination"]
+    assert fields[0].required is True
+    assert fields[0].description == "Where they want to go"
+
+
+async def test_the_worker_records_exactly_the_fields_the_api_declared() -> None:
+    """An answer to a declared field is stored; anything else is refused. The
+    agent inventing a field is how a hallucinated value would reach a
+    customer's record."""
+    metadata = await _dispatch_metadata()
+    collector = collection_module.Collector(
+        fields=collection_module.fields_from_metadata(metadata)
+    )
+
+    collector.record("destination", "Dubai")
+    collector.record("credit_card", "4111111111111111")
+
+    assert collector.values == {"destination": "Dubai"}
+    assert collector.missing() == []
+
+
+async def test_an_agent_with_no_fields_gives_the_worker_nothing_to_collect() -> None:
+    """The empty case has to be the empty list, not a missing key: the worker
+    reads `collect_schema` off metadata and would otherwise be unable to tell
+    "no fields" from "an older API build"."""
+    metadata = await _dispatch_metadata(
+        agent=RunAgent(
+            id=TEST_AGENT.id,
+            name=TEST_AGENT.name,
+            system_prompt=TEST_AGENT.system_prompt,
+            collect_fields=[],
+        )
+    )
+
+    assert metadata["collect_schema"] == []
+    assert collection_module.fields_from_metadata(metadata) == []
+
+
+async def test_a_csv_column_cannot_declare_a_field_to_collect() -> None:
+    """A spreadsheet cannot add a field the organisation never asked for.
+
+    Two defences, and it is worth being precise about which one carries this
+    key. `collect_schema` *is* on the reserved list, but the one that actually
+    holds is spread order: CallFlow sets this key itself, so a surviving column
+    of the same name is overwritten rather than merely absent. Removing the
+    reserved entry alone does not open this - removing the assignment would.
+
+    So this asserts the outcome the customer cares about (the agent is asked for
+    what the organisation declared, and nothing else) rather than the mechanism.
+    """
+    metadata = await _dispatch_metadata(
+        contact=Contact(
+            name="Aditi",
+            phone="+15555550100",
+            context={
+                "enquiry_note": "Bali",
+                "collect_schema": [{"key": "credit_card", "required": True}],
+            },
+        )
+    )
+
+    fields = collection_module.fields_from_metadata(metadata)
+
+    assert [f.key for f in fields] == ["destination"]
+    assert "credit_card" not in str(metadata)
+
+
+# --- the voices offered have to be voices that can be spoken -----------------
+
+
+def test_every_sarvam_voice_offered_is_one_the_runtime_can_use() -> None:
+    """The catalogue drives the Voice wheel, so an entry here is a promise: pick
+    this and you will hear it. Sarvam ties its speaker list to the TTS model and
+    the plugin builds with bulbul:v3 - the v2 names this listed before were all
+    rejected, and `_sarvam_speaker` then fell back to the model default, which is
+    male. Someone chose "Anushka" and heard a man (`ISSUES.md` #166).
+
+    Asserted against the plugin's own table rather than a copy, so a vendor
+    changing its speakers fails here instead of on a live call.
+    """
+    entry = next(e for e in TTS_PROVIDERS if e.id == "sarvam")
+    assert entry.voice_options, "sarvam offers no voices"
+
+    for voice in entry.voice_options:
+        assert pipeline_module._sarvam_speaker(voice) == voice, (
+            f"{voice!r} is offered in the catalogue but the runtime cannot use it - "
+            "it would be silently replaced by the model's default"
+        )
+
+
+def test_the_sarvam_voices_offered_are_not_all_one_gender() -> None:
+    """The model default is male, so a list that happened to contain only male
+    speakers would hide the same bug: every agent would sound the same and no
+    choice would appear to do anything."""
+    from livekit.plugins.sarvam.tts import MODEL_SPEAKER_COMPATIBILITY
+
+    entry = next(e for e in TTS_PROVIDERS if e.id == "sarvam")
+    offered = {v.lower() for v in entry.voice_options}
+    speakers = MODEL_SPEAKER_COMPATIBILITY[entry.voice_model]
+
+    assert offered & {s.lower() for s in speakers["female"]}, "no female voice is offered"
+    assert offered & {s.lower() for s in speakers["male"]}, "no male voice is offered"
+
+
+def test_a_catalogue_entry_that_names_a_voice_model_names_a_real_one() -> None:
+    """`voice_model` is the seam between a list this app maintains and a table
+    the runtime owns. A typo there would make the checks above silently vacuous,
+    so the name itself has to resolve."""
+    from livekit.plugins.sarvam.tts import MODEL_SPEAKER_COMPATIBILITY
+
+    for entry in TTS_PROVIDERS:
+        if entry.voice_model is None:
+            continue
+        if entry.id != "sarvam":
+            continue
+        assert entry.voice_model in MODEL_SPEAKER_COMPATIBILITY, (
+            f"{entry.id} pins {entry.voice_model!r}, which the plugin does not know"
+        )

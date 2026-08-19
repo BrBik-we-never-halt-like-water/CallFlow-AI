@@ -141,9 +141,10 @@ export const SearchInput = forwardRef<
 /**
  * Character counter for a control with a minimum length.
  *
- * Used on the campaign goal, where the minimum is not arbitrary: a thin goal
- * genuinely fails at call time, so the counter says why rather than just
- * counting.
+ * Takes the minimum and the reason for it as props and shows both, so a short
+ * value says why the minimum exists rather than only counting towards it.
+ * Currently unused - it has no call site since the goal field it was written
+ * for went away, and it is kept as a primitive rather than as a live control.
  */
 export function MinLengthCounter({
   value,

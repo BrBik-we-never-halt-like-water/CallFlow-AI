@@ -97,7 +97,7 @@ const STRIP_WINDOW = 100;
 
 export default function OverviewPage() {
   const session = useSession();
-  const { phase, outcomes, runs, campaigns, escalations, loadingRuns } =
+  const { phase, outcomes, runs, agents, escalations, loadingRuns } =
     useAppStore();
   const canInvite =
     session.status === 'signed-in' &&
@@ -466,8 +466,7 @@ export default function OverviewPage() {
             <ul className="flex flex-col">
               {runs.slice(0, 5).map((run) => {
                 const name =
-                  campaigns.find((c) => c.id === run.campaign_id)?.name ??
-                  run.campaign_id;
+                  run.agent_name ?? run.name ?? 'Deleted agent';
                 return (
                   <li
                     key={run.id}
@@ -509,9 +508,11 @@ export default function OverviewPage() {
             <ul className="flex flex-col">
               {settled.slice(0, 6).map((outcome, i) => {
                 const lamp = lampForOutcome(outcome);
-                const campaign = campaigns.find(
-                  (c) => c.id === outcome.campaign_id,
-                );
+                // An outcome carries no agent name of its own, and
+                // fetching one per row to label it would be worse than the
+                // thing that is actually useful here: which of the
+                // organisation's lines placed the call.
+                const fromNumber = outcome.from_number_masked;
                 return (
                   <li
                     key={`${outcome.contact_name}-${i}`}
@@ -534,13 +535,13 @@ export default function OverviewPage() {
                         className="text-label"
                       />
                     </div>
-                    {campaign ? (
+                    {fromNumber ? (
                       <Tag mono={false} className="shrink-0">
                         {/* `truncate` on `Tag`'s own inline-flex root doesn't
                             reliably render the ellipsis in Chrome - it needs
                             a block-level box of its own to clip against. */}
                         <span className="block max-w-32 truncate">
-                          {campaign.name}
+                          {fromNumber}
                         </span>
                       </Tag>
                     ) : null}
@@ -735,10 +736,7 @@ function TeamPerformancePanel() {
                 <th className="py-2 pr-4 text-right font-bold">
                   Runs failed
                 </th>
-                <th className="py-2 pr-4 text-right font-bold">
-                  Needs a person
-                </th>
-                <th className="py-2 text-right font-bold">Credits today</th>
+                <th className="py-2 text-right font-bold">Needs a person</th>
               </tr>
             </thead>
             <tbody>
@@ -772,7 +770,7 @@ function TeamPerformancePanel() {
                   <td className="py-2.5 pr-4 text-right font-mono text-data tabular-nums text-text-mute">
                     {row.runs_failed}
                   </td>
-                  <td className="py-2.5 pr-4 text-right">
+                  <td className="py-2.5 text-right">
                     {row.open_escalations > 0 ? (
                       <span className="inline-flex items-center gap-1.5 font-mono text-data tabular-nums text-lamp-flare-text">
                         <Lamp state="flare" size="sm" />
@@ -783,11 +781,6 @@ function TeamPerformancePanel() {
                         0
                       </span>
                     )}
-                  </td>
-                  <td className="py-2.5 text-right font-mono text-data tabular-nums text-text-mute">
-                    {row.daily_allocation > 0
-                      ? `${row.credits_used_today} / ${row.daily_allocation}`
-                      : 'unallocated'}
                   </td>
                 </tr>
               ))}
@@ -926,7 +919,7 @@ function PageTitle({
             from the Dashboard now, not every /app/* page. */}
         <ThemeToggle />
         <Button asChild variant="secondary">
-          <Link href="/app/campaigns">Campaigns</Link>
+          <Link href="/app/agentic">Agents</Link>
         </Button>
         {canStart ? (
           <Button asChild>

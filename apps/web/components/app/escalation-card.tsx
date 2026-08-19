@@ -14,7 +14,7 @@ import {
 import { Panel } from '@/components/ui/panel';
 import { useToast } from '@/components/ui/toast';
 import { MaskedPhone } from './masked-phone';
-import { api, type Campaign, type Escalation, type Member } from '@/lib/api';
+import { api, type Escalation, type Member } from '@/lib/api';
 import { useAppStore } from '@/lib/app-store';
 import { formatAge, formatDuration, formatTimestamp } from '@/lib/format';
 import { useSession } from '@/lib/hooks/use-session';
@@ -30,7 +30,6 @@ import { useSession } from '@/lib/hooks/use-session';
 export function EscalationCard({
   escalation,
   members,
-  campaigns,
   compact = false,
   onOpen,
 }: {
@@ -39,9 +38,8 @@ export function EscalationCard({
    *  not per card, since every card on `/app/escalations` would otherwise
    *  duplicate the same `GET /api/v1/organisations/me/members` call. */
   members?: Member[];
-  /** For the campaign-name tag - same "fetched once by the page" reasoning
+  /** Kept for the props shape; the agent name now arrives on the escalation
    *  as `members`. */
-  campaigns?: Campaign[];
   compact?: boolean;
   onOpen?: () => void;
 }) {
@@ -59,7 +57,9 @@ export function EscalationCard({
 
   const chain = buildChain(escalation);
   const isOpen = escalation.escalation_status === 'open';
-  const campaign = campaigns?.find((c) => c.id === escalation.campaign_id);
+  // Resolved server-side and carried on the row: the client holds no agent
+  // list to look a name up in any more.
+  const agentName = escalation.agent_name;
 
   async function resolve() {
     setResolving(true);
@@ -129,8 +129,8 @@ export function EscalationCard({
               <p className="truncate text-small font-medium text-text">
                 {escalation.contact_name}
               </p>
-              {campaign ? (
-                <Tag className="shrink-0">{campaign.name}</Tag>
+              {agentName ? (
+                <Tag className="shrink-0">{agentName}</Tag>
               ) : null}
             </div>
             <MaskedPhone phone={escalation.phone_masked} />

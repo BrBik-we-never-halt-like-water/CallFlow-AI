@@ -206,3 +206,44 @@ def test_no_phone_number_can_reach_the_prompt() -> None:
     """`PromptContact` carries a name and context, never a number. What it never
     receives it cannot leak into an instruction that reaches a vendor's logs."""
     assert not hasattr(PromptContact(name="Aditi", context={}), "phone")
+
+
+# --- the fields are the call, not a note in the prompt ------------------------
+
+
+def test_the_collect_fields_are_what_the_agent_is_told_to_ask() -> None:
+    """An operator adds fields on the Agents screen and expects the agent to ask
+    for them. Listing them under "record each one as soon as you learn it" said
+    what to do with an answer that arrived by luck, not that obtaining them is
+    the point of the call."""
+    prompt = render_call_prompt(
+        system_prompt="You are Riya from Skyline Travel.",
+        contact=PromptContact(name="Arbaaz", context={}),
+        collect_fields=[
+            CollectField(key="flying_from", type="string", required=True, description="Departure city"),
+        ],
+    )
+    assert "Ask for each of these" in prompt
+    assert "one at a time" in prompt
+    assert "flying_from" in prompt
+
+
+def test_a_blank_note_does_not_leave_a_dangling_sentence() -> None:
+    """`{note}` is what an agent builds its opening around. Rendering an empty
+    string turns "got in touch about: {note}" into a sentence that stops mid-air,
+    which invites the model to fill the gap with something it invented."""
+    prompt = render_call_prompt(
+        system_prompt="Calling {name}, who got in touch about: {note}",
+        contact=PromptContact(name="Sam", context={"note": "   "}),
+    )
+    assert "got in touch about: no specific detail was recorded" in prompt
+
+
+def test_a_placeholder_with_no_special_meaning_still_renders_empty() -> None:
+    """Only the ones an agent narrates around get a fallback. A bare value that
+    is missing should read as absent, not as a sentence about its absence."""
+    prompt = render_call_prompt(
+        system_prompt="Ref {booking_ref}.",
+        contact=PromptContact(name="Sam", context={}),
+    )
+    assert "Ref ." in prompt

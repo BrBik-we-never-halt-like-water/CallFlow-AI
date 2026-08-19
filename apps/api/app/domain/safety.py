@@ -1,15 +1,23 @@
-"""Phone-number guardrails.
+"""Phone-number handling, and the one gate that still stands before a dial.
 
-Outbound calling requires E.164 formatting, masked numbers in any summary
-output, and an explicit consent step before dialing. Everything here enforces
-that, and fails closed.
+Masking (`mask`) and the suppression key (`phone_hash`) are the load-bearing
+parts. `is_e164`/`assert_e164` remain because uploads and the safety endpoint
+still validate what a person typed - but they are input validation, not a dial
+gate, and nothing here refuses a dial on formatting any more.
+
+**The cost and testing guards are gone on purpose.** The allowlist, the per-run
+ceiling, the rate limiter, the daily budget and per-teammate credits were all
+removed at the product owner's direction: a replacement security layer is being
+designed, and half-removed guards spread across five files are worse than none.
+The suppression list was deliberately kept and is the only reason this function
+still exists - "never call me again" is a promise to a person, not a spending
+cap, so it survives a rewrite of everything around it.
 """
 
 from __future__ import annotations
 
 import hashlib
 import re
-from collections.abc import Iterable
 from dataclasses import dataclass
 
 from app.core.config import config
@@ -60,106 +68,28 @@ class GateResult:
     reason: str = ""
 
 
-@dataclass(frozen=True)
-class EffectiveSafety:
-    """An organisation's safety numbers, with the deployment defaults already
-    merged in - the one place that merge happens, so display (Settings ->
-    Safety, the run composer's guard bar) and enforcement (`check_dial_allowed`,
-    the rate limiter) can never resolve two different answers for the same org."""
 
-    allowlist: frozenset[str]
-    max_calls_per_run: int
-    calls_per_window: int
-    window_minutes: int
-    daily_budget: int
-
-
-def resolve_safety_settings(
-    *,
-    allowlist: Iterable[str] | None,
-    max_calls_per_run: int | None,
-    calls_per_window: int | None,
-    window_minutes: int | None,
-    daily_budget: int | None,
-) -> EffectiveSafety:
-    """Merge an organisation's override onto the deployment's env-var defaults.
-
-    Every field is `is not None`-checked, never truthiness - an org's explicit
-    choice must win even when that choice is `[]` or `0`. An empty allowlist is
-    a real, meaningful, intentional value ("no restriction, any number may be
-    dialled"; Settings -> Safety says exactly this), not "unset" - a bare `or`
-    here previously reinstated the deployment's own `CALLFLOW_ALLOWLIST` the
-    moment an org cleared theirs, silently enforcing a restriction the org had
-    just turned off.
-    """
-    return EffectiveSafety(
-        allowlist=frozenset(allowlist) if allowlist is not None else frozenset(config.allowlist),
-        max_calls_per_run=(
-            max_calls_per_run if max_calls_per_run is not None else config.max_calls_per_run
-        ),
-        calls_per_window=(
-            calls_per_window if calls_per_window is not None else config.rate_limit_calls
-        ),
-        window_minutes=(
-            window_minutes
-            if window_minutes is not None
-            else config.rate_limit_window_seconds // 60
-        ),
-        daily_budget=daily_budget if daily_budget is not None else config.daily_call_budget,
-    )
 
 
 def check_dial_allowed(
     phone: str,
-    calls_made_so_far: int,
     *,
     is_suppressed: bool = False,
-    max_calls_per_run: int | None = None,
-    allowlist: Iterable[str] | None = None,
-    credits_remaining: int | None = None,
 ) -> GateResult:
-    """Final gate before a number is dialed.
+    """The last check before a number is dialled: has this person opted out?
 
-    Takes the suppression verdict, the per-run ceiling, and the allowlist as plain
-    values rather than looking any of them up itself - this module does no I/O, by
-    design (CLAUDE.md §3, S). `max_calls_per_run`/`allowlist` default to the
-    deployment's env-var config when omitted; the caller passes an organisation's
-    own override (`org_safety_settings`) when one exists, resolved once per run,
-    the same way the suppression verdict already is.
+    Takes the suppression verdict as a plain value rather than looking it up -
+    this module does no I/O, by design (CLAUDE.md §3, S), which is what keeps it
+    unit-testable without a database.
 
-    `credits_remaining` is the caller's own per-teammate credit headroom -
-    `None` when no per-teammate ceiling has been set for them (the org-wide
-    daily budget, checked separately, is the only gate in that case), and an
-    already-net int otherwise (allocation minus today's already-connected
-    calls minus this run's own reservations so far - see
-    `CampaignRunner.run_one`, which reserves before dialling and releases the
-    reservation if the call doesn't connect, since a credit is only ever
-    actually spent by a connected call).
+    Every other guard this function used to apply - the allowlist, the per-run
+    ceiling, the rate limiter's budget, per-teammate credits, and E.164
+    validation - was removed deliberately (see the module docstring). What
+    remains is the one check that protects a person rather than a bill, and it
+    still fails closed: a caller that cannot resolve the suppression verdict
+    must pass `is_suppressed=True`, not omit it.
     """
     if is_suppressed:
         return GateResult(False, f"{mask(phone)} opted out and is on the suppression list")
-
-    if not is_e164(phone):
-        return GateResult(False, f"not a valid E.164 number ({mask(phone)})")
-
-    ceiling = max_calls_per_run if max_calls_per_run is not None else config.max_calls_per_run
-    if calls_made_so_far >= ceiling:
-        return GateResult(
-            False,
-            f"per-run call ceiling reached ({ceiling}). "
-            "Raise it in Settings → Safety to continue.",
-        )
-
-    if credits_remaining is not None and credits_remaining <= 0:
-        return GateResult(
-            False,
-            "daily credit limit reached. Ask an owner or admin to raise your "
-            "allocation in Organisation → Team.",
-        )
-
-    # A non-empty allowlist means development mode: only these numbers are dialable.
-    effective_allowlist = allowlist if allowlist is not None else config.allowlist
-    if effective_allowlist and phone not in effective_allowlist:
-        return GateResult(False, f"{mask(phone)} is not on the allowlist")
 
     return GateResult(True)

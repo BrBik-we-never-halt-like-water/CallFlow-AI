@@ -18,9 +18,6 @@ class Permission(str, enum.Enum):
     TEAM_REMOVE = "team:remove"
     TEAM_SET_ROLE = "team:set_role"
 
-    CAMPAIGNS_READ = "campaigns:read"
-    CAMPAIGNS_WRITE = "campaigns:write"
-    CAMPAIGNS_DELETE = "campaigns:delete"
 
     AGENTS_READ = "agents:read"
     AGENTS_WRITE = "agents:write"
@@ -73,7 +70,7 @@ class Permission(str, enum.Enum):
     MESSAGES_READ = "messages:read"
     MESSAGES_SEND = "messages:send"
 
-    # Requesting a teammate's campaign/escalation. Not viewer - a read-only
+    # Requesting to help with a teammate's escalation. Not viewer - a read-only
     # role has nothing to do with a decision this consequential. Approving/
     # rejecting a request needs no separate permission: it's gated by
     # actually owning the resource (RLS + an explicit check in the route),
@@ -85,7 +82,6 @@ _READ_ONLY = frozenset(
     {
         Permission.ORG_READ,
         Permission.TEAM_READ,
-        Permission.CAMPAIGNS_READ,
         Permission.AGENTS_READ,
         Permission.RUNS_READ,
         Permission.CONTACTS_READ,
@@ -100,12 +96,10 @@ _READ_ONLY = frozenset(
     }
 )
 
-# An operator runs the product day to day: campaigns, runs, escalations. No
+# An operator runs the product day to day: agents, runs, escalations. No
 # billing, no team management, and no going live - that last one is an owner or
 # admin decision because it spends the organisation's money.
 _OPERATOR = _READ_ONLY | {
-    Permission.CAMPAIGNS_WRITE,
-    Permission.CAMPAIGNS_DELETE,
     Permission.AGENTS_WRITE,
     # May delete agents - *which* agents is the database's decision, not this
     # matrix's. `voice_agents_delete` allows an owner or admin any agent in the

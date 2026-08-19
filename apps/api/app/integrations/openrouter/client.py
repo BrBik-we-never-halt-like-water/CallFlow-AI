@@ -135,7 +135,7 @@ class OpenRouterProvisioning:
         `limit_usd` is the org's plan ceiling. Passing `None` means unlimited,
         which is a real choice and not a default - an unmetered key on a
         marketplace that bills per token is how one organisation's runaway
-        campaign becomes CallFlow's bill.
+        run becomes CallFlow's bill.
         """
         body: dict[str, Any] = {"name": f"callflow-org-{org_id}"}
         if limit_usd is not None:

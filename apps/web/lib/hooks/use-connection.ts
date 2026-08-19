@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { api, type Campaign, type Health } from '@/lib/api';
+import { api, type VoiceAgent, type Health } from '@/lib/api';
 import { useOrgScopedEffect } from '@/lib/hooks/use-org-scoped-effect';
 
 export type ConnectionPhase = 'connecting' | 'up' | 'down';
@@ -9,7 +9,7 @@ export type ConnectionPhase = 'connecting' | 'up' | 'down';
 export interface Connection {
   phase: ConnectionPhase;
   health: Health | null;
-  campaigns: Campaign[];
+  agents: VoiceAgent[];
   refreshHealth: () => void;
 }
 
@@ -26,12 +26,12 @@ const RETRY_DELAY_MS = 1500;
 export function useConnection(): Connection {
   const [phase, setPhase] = useState<ConnectionPhase>('connecting');
   const [health, setHealth] = useState<Health | null>(null);
-  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [agents, setAgents] = useState<VoiceAgent[]>([]);
   const [healthNonce, setHealthNonce] = useState(0);
 
-  // Campaigns are organisation-scoped, so this whole connect sequence re-runs on
+  // Agents are organisation-scoped, so this whole connect sequence re-runs on
   // every org switch, not just on mount - otherwise switching orgs would keep
-  // showing the previous org's campaigns until a hard reload.
+  // showing the previous org's agents until a hard reload.
   useOrgScopedEffect(() => {
     let cancelled = false;
 
@@ -40,9 +40,9 @@ export function useConnection(): Connection {
       if (cancelled) return;
       setHealth(nextHealth);
 
-      const nextCampaigns = await api.campaigns();
+      const nextAgents = await api.listVoiceAgents();
       if (cancelled) return;
-      setCampaigns(nextCampaigns);
+      setAgents(nextAgents);
       setPhase('up');
     }
 
@@ -93,7 +93,7 @@ export function useConnection(): Connection {
   return {
     phase,
     health,
-    campaigns,
+    agents,
     refreshHealth: () => setHealthNonce((n) => n + 1),
   };
 }

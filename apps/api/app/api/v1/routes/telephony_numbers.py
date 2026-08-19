@@ -26,10 +26,12 @@ from app.core.crypto import CredentialsNotConfigured, unpack_fields
 from app.database import database
 from app.database.repositories import provider_credentials as credentials_repo
 from app.database.repositories import telephony_numbers as numbers_repo
+from app.database.repositories import voice_agents as voice_agents_repo
 from app.domain.numbers import InvalidTransition, NumberStatus, is_diallable
 from app.domain.safety import mask
 from app.integrations.telephony import CarrierError
 from app.services.number_directory import UnsupportedCarrier, sync_numbers
+from app.services.number_provisioning import ProvisioningRefused, connect_number
 
 log = logging.getLogger("app.api.v1.telephony_numbers")
 
@@ -135,7 +137,97 @@ async def sync_provider_numbers(
                 status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)
             ) from exc
 
+        rows = await _make_diallable(
+            conn,
+            org_id=user.org_id,
+            auth_user_id=user.auth_user_id,
+            provider=provider,
+            credentials=credentials,
+            rows=rows,
+        )
+
     return [_out(row) for row in rows]
+
+
+async def _make_diallable(
+    conn: asyncpg.Connection,
+    *,
+    org_id: UUID,
+    auth_user_id: str,
+    provider: str,
+    credentials: dict[str, str],
+    rows: list[asyncpg.Record],
+) -> list[asyncpg.Record]:
+    """Point every freshly-discovered number at LiveKit, so a sync leaves them
+    ready to dial from.
+
+    Discovery on its own produces a `discovered` row with no trunk, which
+    `is_diallable` refuses - so before this ran, connecting a carrier and
+    syncing it left the run composer still reporting no line to dial from, and
+    the missing step was invisible from the product.
+
+    **Outbound only.** `connect_number` defaults `attach_number=False`: it
+    builds everything needed to dial *out* and does not touch what answers the
+    number, because a sync is not consent to redirect a line that may already
+    be a support queue.
+
+    Failures are per number and never raise. The carrier and LiveKit are two
+    separate systems and either can refuse one number for a reason that says
+    nothing about the next; a sync that 502s because the third number is
+    mis-configured would hide the two that worked. Each failure is left on its
+    own row's `last_error`, which is what the Integrations list already shows.
+    """
+    pending = [r for r in rows if NumberStatus(r["status"]) is NumberStatus.DISCOVERED]
+    if not pending:
+        return rows
+
+    agents = await voice_agents_repo.list_org_agents(conn, org_id)
+    if not agents:
+        # The dispatch rule routes inbound calls to an agent, so there has to be
+        # one to name. Left `discovered` with a reason rather than failing the
+        # sync: the numbers are real and the agent is one screen away.
+        log.info("no voice agent yet; %d number(s) left undiallable", len(pending))
+        for row in pending:
+            await numbers_repo.record_error(
+                conn,
+                org_id=org_id,
+                number_id=row["id"],
+                message=(
+                    "Build an agent first - a number is routed to one, so there "
+                    "has to be an agent to point it at."
+                ),
+            )
+        return await numbers_repo.list_for_org(conn, org_id, provider=provider)
+
+    agent_id = agents[0]["id"]
+    for row in pending:
+        try:
+            await connect_number(
+                conn,
+                voice_agent_id=agent_id,
+                org_id=org_id,
+                idempotency_key=f"sync-{row['id']}",
+                provider=provider,
+                credentials=credentials,
+                phone_number=row["phone_e164"],
+                number_ref=row["provider_number_ref"],
+                label=row["label"] or row["phone_e164"],
+            )
+        except (ProvisioningRefused, CarrierError) as exc:
+            log.info("could not make a %s number diallable: %s", provider, exc)
+            await numbers_repo.record_error(
+                conn, org_id=org_id, number_id=row["id"], message=str(exc)
+            )
+        except Exception:
+            log.exception("unexpected error making a %s number diallable", provider)
+            await numbers_repo.record_error(
+                conn,
+                org_id=org_id,
+                number_id=row["id"],
+                message="Something went wrong pointing this number at LiveKit. Try again.",
+            )
+
+    return await numbers_repo.list_for_org(conn, org_id, provider=provider)
 
 
 class NumberStatusIn(BaseModel):

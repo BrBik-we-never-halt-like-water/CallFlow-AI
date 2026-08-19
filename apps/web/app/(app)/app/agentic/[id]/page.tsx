@@ -11,9 +11,9 @@ import { api, type VoiceAgent } from '@/lib/api';
 import { useOrgScopedEffect } from '@/lib/hooks/use-org-scoped-effect';
 
 /**
- * No voice-agent equivalent of `useAppStore` exists yet, unlike the
- * campaigns edit page - this fetches the list itself and finds the match
- * client-side rather than building one just for this page.
+ * No voice-agent equivalent of `useAppStore` exists yet - this fetches the
+ * list itself and finds the match client-side rather than building a store
+ * just for this page.
  */
 export default function EditAgentPage() {
   const params = useParams<{ id: string }>();

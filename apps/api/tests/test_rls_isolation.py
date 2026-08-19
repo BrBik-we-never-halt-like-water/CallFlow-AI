@@ -2305,6 +2305,191 @@ async def test_a_different_attempt_on_the_same_agent_is_allowed(
     assert count == 2
 
 
+async def _make_number(
+    conn: asyncpg.Connection, tenant: Tenant, e164: str, *, status: str = "verified"
+) -> uuid.UUID:
+    return await conn.fetchval(
+        """
+        insert into public.telephony_numbers
+            (org_id, provider, phone_e164, status, livekit_outbound_trunk_id)
+        values ($1, 'twilio', $2, $3, 'ST_x')
+        returning id
+        """,
+        tenant.org_id,
+        e164,
+        status,
+    )
+
+
+async def test_telephony_numbers_are_invisible_across_tenants(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    """A number is the organisation's own line. Seeing another tenant's is
+    seeing which numbers they call their customers from - and, with the trunk
+    id beside it, where those calls are routed."""
+    a, b = tenants
+
+    await _as_postgres(db)
+    await _make_number(db, a, "+15555550150")
+    await _make_number(db, b, "+15555550151")
+
+    async with db.transaction():
+        await _as_user(db, a.auth_user_id)
+        rows = await db.fetch(
+            "select org_id, phone_e164 from public.telephony_numbers"
+        )
+
+    assert {row["org_id"] for row in rows} == {a.org_id}
+    assert "+15555550151" not in {row["phone_e164"] for row in rows}
+
+
+async def test_cannot_create_a_telephony_number_in_another_tenant(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    """The forged-org_id insert. A number planted in another tenant would be
+    offered to them as one of their own lines to dial from."""
+    a, b = tenants
+
+    with pytest.raises(asyncpg.exceptions.InsufficientPrivilegeError):
+        async with db.transaction():
+            await _as_user(db, a.auth_user_id)
+            await db.execute(
+                """
+                insert into public.telephony_numbers
+                    (org_id, provider, phone_e164, status)
+                values ($1, 'twilio', '+15555550152', 'verified')
+                """,
+                b.org_id,
+            )
+
+
+async def test_cannot_update_another_tenants_telephony_number(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    """Disabling someone else's number would stop their runs dialling; enabling
+    one would put a line they had retired back into rotation."""
+    a, b = tenants
+
+    await _as_postgres(db)
+    number_b = await _make_number(db, b, "+15555550153")
+
+    async with db.transaction():
+        await _as_user(db, a.auth_user_id)
+        result = await db.execute(
+            "update public.telephony_numbers set status = 'disabled' where id = $1",
+            number_b,
+        )
+
+    # No error - RLS makes the row simply not exist for this caller, so the
+    # update matches nothing. Asserting on the row count is the only way to tell
+    # "denied" from "silently applied".
+    assert result == "UPDATE 0"
+
+    await _as_postgres(db)
+    status = await db.fetchval(
+        "select status from public.telephony_numbers where id = $1", number_b
+    )
+    assert status == "verified"
+
+
+async def test_a_number_cannot_be_deleted_by_authenticated_at_all(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    """No delete policy *and* no delete grant, matching
+    `202608161700_revoke_delete_on_append_only_tables`.
+
+    The grant is the load-bearing half: a future edit that adds a delete policy
+    cannot quietly make these deletable, because the privilege is not there to
+    exercise. A number that carried real calls is a record - `disabled` is the
+    retirement path."""
+    a, _ = tenants
+
+    await _as_postgres(db)
+    number_a = await _make_number(db, a, "+15555550154")
+
+    with pytest.raises(asyncpg.exceptions.InsufficientPrivilegeError):
+        async with db.transaction():
+            await _as_user(db, a.auth_user_id)
+            await db.execute(
+                "delete from public.telephony_numbers where id = $1", number_a
+            )
+
+
+async def test_run_numbers_are_invisible_across_tenants(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    """Which line called which run is as much a record as the call itself."""
+    a, b = tenants
+
+    await _as_postgres(db)
+    number_a = await _make_number(db, a, "+15555550155")
+    number_b = await _make_number(db, b, "+15555550156")
+    run_a = await _insert_run(db, org_id=a.org_id, started_by=a.user_id)
+    run_b = await _insert_run(db, org_id=b.org_id, started_by=b.user_id)
+    for run_id, number_id, tenant in ((run_a, number_a, a), (run_b, number_b, b)):
+        await db.execute(
+            "insert into public.run_numbers (run_id, number_id, org_id) "
+            "values ($1, $2, $3)",
+            run_id,
+            number_id,
+            tenant.org_id,
+        )
+
+    async with db.transaction():
+        await _as_user(db, a.auth_user_id)
+        rows = await db.fetch("select org_id, run_id from public.run_numbers")
+
+    assert {row["org_id"] for row in rows} == {a.org_id}
+    assert run_b not in {row["run_id"] for row in rows}
+
+
+async def test_cannot_bind_another_tenants_run_to_a_number(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    a, b = tenants
+
+    await _as_postgres(db)
+    number_a = await _make_number(db, a, "+15555550157")
+    run_b = await _insert_run(db, org_id=b.org_id, started_by=b.user_id)
+
+    with pytest.raises(asyncpg.exceptions.InsufficientPrivilegeError):
+        async with db.transaction():
+            await _as_user(db, a.auth_user_id)
+            await db.execute(
+                "insert into public.run_numbers (run_id, number_id, org_id) "
+                "values ($1, $2, $3)",
+                run_b,
+                number_a,
+                b.org_id,
+            )
+
+
+async def test_a_run_number_binding_cannot_be_deleted_by_authenticated(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    """Append-only, same reasoning as the number itself: the binding is what
+    says which of an organisation's lines placed a given run's calls."""
+    a, _ = tenants
+
+    await _as_postgres(db)
+    number_a = await _make_number(db, a, "+15555550158")
+    run_a = await _insert_run(db, org_id=a.org_id, started_by=a.user_id)
+    await db.execute(
+        "insert into public.run_numbers (run_id, number_id, org_id) "
+        "values ($1, $2, $3)",
+        run_a,
+        number_a,
+        a.org_id,
+    )
+
+    with pytest.raises(asyncpg.exceptions.InsufficientPrivilegeError):
+        async with db.transaction():
+            await _as_user(db, a.auth_user_id)
+            await db.execute(
+                "delete from public.run_numbers where run_id = $1", run_a
+            )
+
+
 async def test_a_number_a_run_dialled_from_cannot_be_deleted(
     db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
 ) -> None:

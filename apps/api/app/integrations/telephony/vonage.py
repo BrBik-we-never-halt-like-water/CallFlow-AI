@@ -177,8 +177,16 @@ class VonageCarrier:
         auth_username: str,
         auth_password: str,
         transport: str = DEFAULT_TRANSPORT,
+        attach_number: bool = True,
     ) -> CarrierTrunk:
         """Point a Vonage number at LiveKit, both directions.
+
+        `attach_number=False` stops before the final step that repoints the
+        number's inbound routing, which makes the whole call non-destructive:
+        everything created is new, and the number keeps whatever was already
+        answering it. That is the default, because a carrier sync is not
+        consent to redirect a line that may already be a support queue
+        (`ISSUES.md` #168).
 
         `number_ref` is the E.164 number - Vonage addresses numbers directly, the
         same as Plivo. Named uniformly across the adapters so the provisioning
@@ -202,17 +210,18 @@ class VonageCarrier:
         if not domain_id:
             raise CarrierError("Vonage", "create the SIP domain", "no domain id came back.")
 
-        await self._request(
-            "POST",
-            f"{_ACCOUNT}/number/update",
-            {
-                "country": _country_of(number_ref),
-                "msisdn": number_ref.lstrip("+"),
-                "voiceCallbackType": "sip",
-                "voiceCallbackValue": f"{name}.sip.vonage.com",
-            },
-            action="attach the phone number to the SIP domain",
-        )
+        if attach_number:
+            await self._request(
+                "POST",
+                f"{_ACCOUNT}/number/update",
+                {
+                    "country": _country_of(number_ref),
+                    "msisdn": number_ref.lstrip("+"),
+                    "voiceCallbackType": "sip",
+                    "voiceCallbackValue": f"{name}.sip.vonage.com",
+                },
+                action="attach the phone number to the SIP domain",
+            )
 
         log.info("configured Vonage SIP domain %s", domain_id)
         return CarrierTrunk(

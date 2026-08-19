@@ -1,18 +1,21 @@
 /**
- * Campaign settings the editor collects but the service does not yet accept.
+ * Settings a run collects that the service does not yet accept.
  *
- * The calling window, timezone, and retry policy are real product requirements and
- * the guards on the run composer read them - but the campaign API has no field for
- * them yet. Rather than drop them from the editor (which would make the safety story
- * incomplete) or send them and have them silently discarded, they are persisted
- * locally against the campaign id.
+ * The successor to `campaign-draft.ts`. The calling window, timezone and retry
+ * policy are real product requirements and the run composer's guard bar reads
+ * them - but no API field exists for them yet, so they are persisted locally
+ * against the organisation rather than dropped from the interface (which would
+ * make the safety story look narrower than it is) or sent and silently
+ * discarded.
  *
- * When the API grows these fields, `loadLocalSettings` becomes a fallback and this
- * module is the only place that needs changing.
+ * These moved off the campaign because campaigns are gone (ADR-8). They belong
+ * to the run now, which is where an operator sets them.
+ *
+ * When the API grows these fields, `loadRunSettings` becomes a fallback and this
+ * module is the only place that changes.
  */
 
-export const CAMPAIGN_DRAFT_KEY = 'callflow.campaign.draft';
-const SETTINGS_KEY = 'callflow.campaign.settings';
+const SETTINGS_KEY = 'callflow.run.settings';
 
 export interface CallingWindow {
   start: string;
@@ -27,13 +30,13 @@ export interface RetryPolicy {
   spacingHours: number;
 }
 
-export interface LocalCampaignSettings {
+export interface LocalRunSettings {
   window: CallingWindow;
   retry: RetryPolicy;
   escalateOnNegative: boolean;
 }
 
-export const DEFAULT_SETTINGS: LocalCampaignSettings = {
+export const DEFAULT_SETTINGS: LocalRunSettings = {
   window: { start: '09:00', end: '20:00', timezone: 'Asia/Kolkata' },
   retry: { attempts: 2, spacingHours: 24 },
   escalateOnNegative: true,
@@ -67,30 +70,27 @@ export const LANGUAGES = [
   { value: 'es', label: 'Spanish' },
 ];
 
-/** One key per campaign, so a settings read is a single subscription. */
-export function settingsKey(campaignId: string): string {
-  return `${SETTINGS_KEY}.${campaignId || 'default'}`;
+/** One key per organisation, so a settings read is a single subscription. */
+export function settingsKey(orgId: string): string {
+  return `${SETTINGS_KEY}.${orgId || 'default'}`;
 }
 
 /**
- * Non-reactive read, for the places that need the values once inside an event handler
- * rather than as subscribed state (the run composer's guard chips).
+ * Non-reactive read, for the places that need the values once inside an event
+ * handler rather than as subscribed state (the run composer's guard chips).
  */
-export function loadLocalSettings(campaignId: string): LocalCampaignSettings {
+export function loadRunSettings(orgId: string): LocalRunSettings {
   try {
-    const raw = localStorage.getItem(settingsKey(campaignId));
-    return raw ? (JSON.parse(raw) as LocalCampaignSettings) : DEFAULT_SETTINGS;
+    const raw = localStorage.getItem(settingsKey(orgId));
+    return raw ? (JSON.parse(raw) as LocalRunSettings) : DEFAULT_SETTINGS;
   } catch {
     return DEFAULT_SETTINGS;
   }
 }
 
-export function saveLocalSettings(
-  campaignId: string,
-  settings: LocalCampaignSettings,
-): void {
+export function saveRunSettings(orgId: string, settings: LocalRunSettings): void {
   try {
-    localStorage.setItem(settingsKey(campaignId), JSON.stringify(settings));
+    localStorage.setItem(settingsKey(orgId), JSON.stringify(settings));
   } catch {
     /* storage unavailable - the settings apply for this session only */
   }

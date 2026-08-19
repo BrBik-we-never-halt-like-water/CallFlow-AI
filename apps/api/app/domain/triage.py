@@ -59,7 +59,7 @@ def triage(outcome: CallOutcome, *, escalate_on_negative: bool = True) -> CallOu
         )
 
     # CALL-E's own holistic judgment that the conversation never reached a
-    # clear resolution - independent of whatever the campaign's own
+    # clear resolution - independent of whatever the agent's own
     # result_schema managed to extract. Ranked above the plain-status
     # buckets below, since an explicit `False` here is a real, considered
     # signal, not a fallback the way "no extracted fields" is; ranked below

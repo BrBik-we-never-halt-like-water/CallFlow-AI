@@ -74,8 +74,8 @@ export default function DemoPage() {
             <Eyebrow>What you leave with</Eyebrow>
             <LampStrip lamps={STRIP} counts />
             <p className="measure text-small text-text-dim">
-              A run you can log back into, and a campaign already configured for your
-              use case. If it is not a fit, we will say so on the call rather than
+              A run you can log back into, and a voice agent already configured for
+              your use case. If it is not a fit, we will say so on the call rather than
               email you for three weeks.
             </p>
           </div>

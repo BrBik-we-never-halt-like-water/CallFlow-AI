@@ -1,47 +1,35 @@
--- The login roles each Supabase service connects as.
+-- `postgres`, the one role the image never creates with the attributes we need.
 --
--- The `supabase/postgres` image ships `anon`, `authenticated`, `service_role`
--- and `supabase_admin`, but not the per-service owners GoTrue, PostgREST and
--- Storage expect - those are created by Supabase's own provisioning, which a
--- plain image start never runs. Without them each service dies on connect with
--- "role does not exist".
+-- **Create nothing else here.** The image's own `init-scripts/` create
+-- `anon`, `authenticated`, `service_role`, `authenticator`,
+-- `supabase_auth_admin`, `supabase_storage_admin`, `supabase_functions_admin`,
+-- `dashboard_user` and `pgbouncer` - every one of them *unguarded*, spread
+-- across four files. Those scripts are run by the image's `migrate.sh`, which
+-- the entrypoint executes after this file (`m` sorts after any digit; the
+-- `init-scripts` directory itself is skipped). So a role created here is a role
+-- that already exists when the image tries to create it, and the image's script
+-- aborts on "role already exists".
 --
--- **`postgres` is one of the missing ones.** The image runs initdb as
--- `supabase_admin`, so a bare container has no `postgres` role at all - while
--- hosted Supabase does, and this repo's `DATABASE_URL` and `privileged.py` both
--- depend on it. Creating it here is what makes a local database behave like the
--- hosted one rather than subtly differently.
+-- That abort is expensive and its cause is nowhere near its symptom.
+-- ON_ERROR_STOP means the failure stops `migrate.sh` mid-way, so every later
+-- script is skipped - `auth.users` is never built, GoTrue crash-loops on a
+-- schema that is half there, and `/etc/postgresql.schema.sql`
+-- (`03-post-init.sql`) never runs at all.
 --
--- Every statement is guarded. The entrypoint runs these with ON_ERROR_STOP, so
--- one failure silently skips every later file - which is exactly how a missing
--- `postgres` role turned into GoTrue crash-looping on an absent `auth` schema,
--- two files and one service away from the actual cause.
+-- **`postgres` is the exception, and only just.** The image runs initdb as
+-- `supabase_admin`, so a bare container has no `postgres` role - while hosted
+-- Supabase does, and this repo's `DATABASE_URL` and `privileged.py` both depend
+-- on it. `migrate.sh` does create it, but guarded and *without* BYPASSRLS;
+-- creating it first, with the attribute, is what makes a local database behave
+-- like the hosted one rather than subtly differently - and because its own
+-- creation is guarded, it defers to ours instead of colliding.
 --
--- `authenticator` is the one PostgREST logs in as before switching to `anon` or
--- `authenticated`; it is deliberately NOINHERIT so it holds no privileges of its
--- own and only ever acts as the role it has switched to.
+-- The guard also lets a re-run against an existing volume fall through to the
+-- password reset below rather than failing.
 
 \set pgpass `echo "$POSTGRES_PASSWORD"`
 
 do $$ begin
-  if not exists (select 1 from pg_roles where rolname = 'anon') then
-    create role anon nologin noinherit;
-  end if;
-  if not exists (select 1 from pg_roles where rolname = 'authenticated') then
-    create role authenticated nologin noinherit;
-  end if;
-  if not exists (select 1 from pg_roles where rolname = 'service_role') then
-    create role service_role nologin noinherit bypassrls;
-  end if;
-  if not exists (select 1 from pg_roles where rolname = 'authenticator') then
-    create role authenticator noinherit login;
-  end if;
-  if not exists (select 1 from pg_roles where rolname = 'supabase_auth_admin') then
-    create role supabase_auth_admin noinherit createrole login;
-  end if;
-  if not exists (select 1 from pg_roles where rolname = 'supabase_storage_admin') then
-    create role supabase_storage_admin noinherit createrole login;
-  end if;
   -- BYPASSRLS deliberately, matching hosted Supabase: CLAUDE.md §4b's whole
   -- account of why RLS is only real through `database.as_user()` rests on this
   -- role having it. A local database without it would pass tests the hosted one
@@ -51,12 +39,12 @@ do $$ begin
   end if;
 end $$;
 
--- Passwords outside the guard so a re-run resets them to whatever the current
--- .env says, rather than leaving a stale one nobody can explain.
-alter role authenticator password :'pgpass';
-alter role supabase_auth_admin password :'pgpass';
-alter role supabase_storage_admin password :'pgpass';
+-- Password outside the guard so a re-run resets it to whatever the current
+-- .env says, rather than leaving a stale one nobody can explain. The service
+-- owners' passwords are set in `03-post-init.sql`, after the image makes them.
 alter role postgres password :'pgpass';
 
-grant anon, authenticated, service_role to authenticator;
-grant anon, authenticated, service_role to postgres;
+-- `authenticator`'s password and the role grants live in `03-post-init.sql`,
+-- mounted at the `/etc/postgresql.schema.sql` hook: both need `anon`,
+-- `authenticated`, `service_role` and `authenticator`, which the image's own
+-- scripts do not create until `migrate.sh` runs after this file.

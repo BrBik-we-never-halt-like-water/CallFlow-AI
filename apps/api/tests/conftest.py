@@ -1,7 +1,8 @@
 """Test isolation.
 
-The suite must not depend on whatever is in a developer's local .env - an
-allowlist set for real-call testing would otherwise fail unrelated tests.
+The suite must not depend on whatever is in a developer's local .env - a real
+Fernet key or a stray provider key would otherwise change results depending on
+whose machine ran them.
 """
 
 import dataclasses
@@ -23,8 +24,6 @@ def isolated_config(monkeypatch: pytest.MonkeyPatch) -> None:
     """Pin config to known defaults for every test."""
     pinned = dataclasses.replace(
         config_module.config,
-        max_calls_per_run=5,
-        allowlist=[],
         provider_credentials_key=TEST_FERNET_KEY,
     )
     # Each module imported `config` by value, so patch every binding.

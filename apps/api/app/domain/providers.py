@@ -107,6 +107,45 @@ def _key(label: str = "API key", *, help: str | None = None, ph: str = "") -> Cr
 
 
 @dataclass(frozen=True)
+class CredentialProbe:
+    """One read-only request that proves a credential works.
+
+    Data, not code, for the same reason the credential fields are: there are 57
+    providers and a function per vendor would be 57 places to keep in step with
+    a catalogue that is already declarative. `services/credential_check.py`
+    performs it; nothing in `domain/` does any I/O.
+
+    Always a **read**. Verifying must never create, modify, or spend anything on
+    the customer's account - listing what is already there proves the key is
+    valid and the account is reachable without side effects.
+
+    `auth` says how the secret is presented:
+      `bearer`  - `Authorization: Bearer <value>`
+      `basic`   - HTTP basic, `basic_user_field`:`field`
+      `header`  - a vendor's own header, named by `header`
+      `query`   - a query parameter, named by `header`
+    """
+
+    url: str
+    #: The credential field whose value authenticates. Interpolated into `url`
+    #: too, as `{field}` - Twilio's account SID is part of its path.
+    field: str
+    auth: str = "bearer"
+    header: str | None = None
+    basic_user_field: str | None = None
+    #: `GET` for a listing endpoint. `POST` for a vendor with no read endpoint
+    #: that authenticates - sent with an empty body, so a valid key is refused
+    #: for the *body* (4xx naming the missing field) while an invalid one is
+    #: refused for the *key*. Nothing is created either way, which is what keeps
+    #: a POST probe as read-only in effect as a GET.
+    method: str = "GET"
+    #: Statuses that mean "the key was accepted, the request was not". Only
+    #: meaningful with `method="POST"`, where a probe deliberately sends a body
+    #: the vendor must reject.
+    accept_statuses: tuple[int, ...] = ()
+
+
+@dataclass(frozen=True)
 class ProviderSpec:
     id: str
     name: str
@@ -123,6 +162,13 @@ class ProviderSpec:
     needs_model: bool = False
     #: A short, true note the card shows. Not marketing - a constraint.
     note: str | None = None
+    #: How to prove the credential works. `None` = no probe is declared yet, and
+    #: the credential is stored unverified rather than claimed to be checked.
+    probe: CredentialProbe | None = None
+
+    @property
+    def is_verifiable(self) -> bool:
+        return self.probe is not None
 
     @property
     def is_wired(self) -> bool:
@@ -141,6 +187,7 @@ def _p(
     runtime_extra: str | None = None,
     needs_model: bool = False,
     note: str | None = None,
+    probe: CredentialProbe | None = None,
 ) -> ProviderSpec:
     return ProviderSpec(
         id=id,
@@ -153,6 +200,7 @@ def _p(
         runtime_extra=runtime_extra,
         needs_model=needs_model,
         note=note,
+        probe=probe,
     )
 
 
@@ -170,18 +218,21 @@ _INTELLIGENCE: tuple[ProviderSpec, ...] = (
         "One key, hundreds of models.",
         "https://openrouter.ai/keys",
         connect=ConnectMethod.OAUTH, runtime_extra="openai", needs_model=True,
+        probe=CredentialProbe("https://openrouter.ai/api/v1/key", "api_key"),
     ),
     _p(
         "openai", "OpenAI", {R.INTELLIGENCE, R.TRANSCRIBER, R.VOICE},
         "GPT, Whisper and OpenAI voices.",
         "https://platform.openai.com/api-keys",
         fields=(_key(ph="sk-…"),), runtime_extra="openai", needs_model=True,
+        probe=CredentialProbe("https://api.openai.com/v1/models", "api_key"),
     ),
     _p(
         "anthropic", "Anthropic", {R.INTELLIGENCE},
         "Claude. Follows a brief closely.",
         "https://console.anthropic.com/settings/keys",
         fields=(_key(ph="sk-ant-…"),), runtime_extra="anthropic", needs_model=True,
+        probe=CredentialProbe("https://api.anthropic.com/v1/models", "api_key", auth="header", header="x-api-key"),
     ),
     _p(
         "google", "Google Gemini", {R.INTELLIGENCE, R.TRANSCRIBER, R.VOICE},
@@ -196,48 +247,63 @@ _INTELLIGENCE: tuple[ProviderSpec, ...] = (
             ),
         ),
         runtime_extra="google", needs_model=True,
+        # `x-goog-api-key`, not `?key=`: httpx logs every request URL at INFO,
+        # so a secret in the query string reaches the log before any filter
+        # can help - and a header never appears there at all. Google accepts
+        # both (`ISSUES.md` #167).
+        probe=CredentialProbe(
+            "https://generativelanguage.googleapis.com/v1beta/models", "api_key",
+            auth="header", header="x-goog-api-key",
+        ),
     ),
     _p(
         "groq", "Groq", {R.INTELLIGENCE, R.TRANSCRIBER},
         "Fastest inference here.",
         "https://console.groq.com/keys",
         fields=(_key(ph="gsk_…"),), runtime_extra="groq", needs_model=True,
+        probe=CredentialProbe("https://api.groq.com/openai/v1/models", "api_key"),
     ),
     _p(
         "xai", "xAI", {R.INTELLIGENCE},
         "Grok models.",
         "https://console.x.ai",
         runtime_extra="xai", needs_model=True,
+        probe=CredentialProbe("https://api.x.ai/v1/models", "api_key"),
     ),
     _p(
         "mistral", "Mistral AI", {R.INTELLIGENCE},
         "Strong in French and Spanish.",
         "https://console.mistral.ai/api-keys",
         runtime_extra="mistralai", needs_model=True,
+        probe=CredentialProbe("https://api.mistral.ai/v1/models", "api_key"),
     ),
     _p(
         "cerebras", "Cerebras", {R.INTELLIGENCE},
         "Very low latency on Llama.",
         "https://cloud.cerebras.ai",
         runtime_extra="cerebras", needs_model=True,
+        probe=CredentialProbe("https://api.cerebras.ai/v1/models", "api_key"),
     ),
     _p(
         "fireworks", "Fireworks AI", {R.INTELLIGENCE},
         "Hosted open models, per token.",
         "https://fireworks.ai/account/api-keys",
         runtime_extra="fireworksai", needs_model=True,
+        probe=CredentialProbe("https://api.fireworks.ai/inference/v1/models", "api_key"),
     ),
     _p(
         "together", "Together AI", {R.INTELLIGENCE},
         "Open models at scale.",
         "https://api.together.xyz/settings/api-keys",
         runtime_extra="openai", needs_model=True,
+        probe=CredentialProbe("https://api.together.xyz/v1/models", "api_key"),
     ),
     _p(
         "deepseek", "DeepSeek", {R.INTELLIGENCE},
         "Frontier reasoning, far cheaper.",
         "https://platform.deepseek.com/api_keys",
         runtime_extra="openai", needs_model=True,
+        probe=CredentialProbe("https://api.deepseek.com/models", "api_key"),
     ),
     _p(
         "perplexity", "Perplexity", {R.INTELLIGENCE},
@@ -295,36 +361,51 @@ _TRANSCRIBER: tuple[ProviderSpec, ...] = (
         "Fast English speech, plus Aura voices.",
         "https://console.deepgram.com",
         runtime_extra="deepgram",
+        probe=CredentialProbe("https://api.deepgram.com/v1/projects", "api_key", auth="header", header="Authorization-Token"),
     ),
     _p(
         "assemblyai", "AssemblyAI", {R.TRANSCRIBER},
         "Accurate English, well formatted.",
         "https://www.assemblyai.com/app/api-keys",
         runtime_extra="assemblyai",
+        probe=CredentialProbe("https://api.assemblyai.com/v2/transcript?limit=1", "api_key", auth="header", header="authorization"),
     ),
     _p(
         "gladia", "Gladia", {R.TRANSCRIBER},
         "Built for noisy phone lines.",
         "https://app.gladia.io",
         runtime_extra="gladia",
+        probe=CredentialProbe("https://api.gladia.io/v2/pre-recorded", "api_key", auth="header", header="x-gladia-key"),
     ),
     _p(
         "speechmatics", "Speechmatics", {R.TRANSCRIBER},
         "Tells apart who said what.",
         "https://portal.speechmatics.com",
         runtime_extra="speechmatics",
+        probe=CredentialProbe("https://asr.api.speechmatics.com/v2/jobs?limit=1", "api_key"),
     ),
     _p(
         "soniox", "Soniox", {R.TRANSCRIBER},
         "60+ languages, one model.",
         "https://console.soniox.com",
         runtime_extra="soniox",
+        probe=CredentialProbe("https://api.soniox.com/v1/models", "api_key"),
     ),
     _p(
         "sarvam", "Sarvam", {R.TRANSCRIBER, R.VOICE},
         "Built for Indian languages.",
         "https://dashboard.sarvam.ai",
         fields=(_key("API subscription key"),), runtime_extra="sarvam",
+        # NOT `/v1/models`: that endpoint is public - it answers 200 with no
+        # key at all, so probing it accepted any string as a valid credential.
+        # `/text-to-speech` checks the key before the body, so an empty body
+        # separates the two cases without synthesising anything: a good key
+        # gets 400 "text must be provided", a bad one 403.
+        probe=CredentialProbe(
+            "https://api.sarvam.ai/text-to-speech", "api_key",
+            auth="header", header="api-subscription-key",
+            method="POST", accept_statuses=(400, 422),
+        ),
     ),
     _p(
         "azure_speech", "Azure Speech", {R.TRANSCRIBER, R.VOICE},
@@ -392,12 +473,23 @@ _VOICE: tuple[ProviderSpec, ...] = (
         "For when the voice is the product.",
         "https://elevenlabs.io/app/settings/api-keys",
         runtime_extra="elevenlabs",
+        # NOT `/v1/voices`: it answers 200 with no key at all, so probing it
+        # accepted any string. `/v1/history` requires a key and, because
+        # ElevenLabs keys are scoped per operation, distinguishes all three
+        # cases in its message - "Invalid API key" for a wrong one against
+        # "missing the permission" for a real one too narrow to read here,
+        # which `_is_scope_refusal` keeps rather than rejects.
+        probe=CredentialProbe(
+            "https://api.elevenlabs.io/v1/history", "api_key",
+            auth="header", header="xi-api-key",
+        ),
     ),
     _p(
         "cartesia", "Cartesia", {R.VOICE, R.TRANSCRIBER},
         "Lowest time to first audio.",
         "https://play.cartesia.ai/keys",
         runtime_extra="cartesia",
+        probe=CredentialProbe("https://api.cartesia.ai/voices", "api_key", auth="header", header="X-API-Key"),
     ),
     _p(
         "playai", "PlayAI", {R.VOICE},
@@ -414,6 +506,7 @@ _VOICE: tuple[ProviderSpec, ...] = (
         "Priced for high call volume.",
         "https://app.lmnt.com/account",
         runtime_extra="lmnt",
+        probe=CredentialProbe("https://api.lmnt.com/v1/ai/voice/list", "api_key", auth="header", header="X-API-Key"),
     ),
     _p(
         "rime", "Rime", {R.VOICE},
@@ -426,36 +519,45 @@ _VOICE: tuple[ProviderSpec, ...] = (
         "Reads emotional context.",
         "https://platform.hume.ai/settings/keys",
         runtime_extra="hume",
+        probe=CredentialProbe("https://api.hume.ai/v0/evi/configs", "api_key", auth="header", header="X-Hume-Api-Key"),
     ),
     _p(
         "inworld", "Inworld", {R.VOICE},
         "Consistent persona across a call.",
         "https://studio.inworld.ai",
         runtime_extra="inworld",
+        probe=CredentialProbe("https://api.inworld.ai/tts/v1/voices", "api_key"),
     ),
     _p(
         "neuphonic", "Neuphonic", {R.VOICE},
         "Strong on European languages.",
         "https://neuphonic.com",
         runtime_extra="neuphonic",
+        probe=CredentialProbe("https://api.neuphonic.com/voices", "api_key", auth="header", header="X-API-KEY"),
     ),
     _p(
         "resemble", "Resemble AI", {R.VOICE},
         "Cloning, with consent records.",
         "https://app.resemble.ai",
         runtime_extra="resemble",
+        probe=CredentialProbe("https://app.resemble.ai/api/v2/projects", "api_key"),
     ),
     _p(
         "speechify", "Speechify", {R.VOICE},
         "Stays clear on a poor line.",
         "https://console.sws.speechify.com",
         runtime_extra="speechify",
+        probe=CredentialProbe("https://api.sws.speechify.com/v1/voices", "api_key"),
     ),
     _p(
         "murf", "Murf AI", {R.VOICE},
         "Large library, 20+ languages.",
         "https://murf.ai/api/dashboard",
         runtime_extra="murf",
+        probe=CredentialProbe(
+            "https://api.murf.ai/v1/speech/voices", "api_key",
+            auth="header", header="api-key",
+        ),
     ),
     _p(
         "smallestai", "Smallest AI", {R.VOICE},
@@ -489,6 +591,12 @@ _TELEPHONY: tuple[ProviderSpec, ...] = (
             CredentialField(key="auth_token", label="Auth token"),
         ),
         runtime_extra="carrier",
+        # Reads the account itself: proves both halves of the pair, and the
+        # SID is part of the path as well as the basic-auth user.
+        probe=CredentialProbe(
+            "https://api.twilio.com/2010-04-01/Accounts/{field}.json",
+            "auth_token", auth="basic", basic_user_field="account_sid",
+        ),
         # Twilio Connect exists but needs a Connect App registered and approved.
         # Until that is real, an OAuth button would claim something that is not.
         note="Twilio cannot authenticate inbound SIP, so the trunk is locked to Twilio's own IP ranges instead.",
@@ -502,6 +610,7 @@ _TELEPHONY: tuple[ProviderSpec, ...] = (
             CredentialField(key="auth_token", label="Auth token"),
         ),
         runtime_extra="carrier",
+        probe=CredentialProbe("https://api.plivo.com/v1/Account/{field}/", "auth_token", auth="basic", basic_user_field="auth_id"),
     ),
     _p(
         "telnyx", "Telnyx", {R.TELEPHONY},
@@ -515,6 +624,7 @@ _TELEPHONY: tuple[ProviderSpec, ...] = (
             ),
         ),
         runtime_extra="carrier",
+        probe=CredentialProbe("https://api.telnyx.com/v2/phone_numbers?page[size]=1", "api_key"),
     ),
     _p(
         "vonage", "Vonage", {R.TELEPHONY},
@@ -525,6 +635,7 @@ _TELEPHONY: tuple[ProviderSpec, ...] = (
             CredentialField(key="api_secret", label="API secret"),
         ),
         runtime_extra="carrier",
+        probe=CredentialProbe("https://rest.nexmo.com/account/get-balance", "api_secret", auth="basic", basic_user_field="api_key"),
     ),
 )
 

@@ -1,4 +1,4 @@
-"""Domain models for campaigns, contacts, and call outcomes."""
+"""Domain models for voice agents, contacts, and call outcomes."""
 
 from __future__ import annotations
 
@@ -208,7 +208,7 @@ class CallOutcome(BaseModel):
     #: The organisation's own business fields, from the agent's `collect_fields`.
     #: Deliberately separate from `extracted`: merging them would let a field an
     #: org happened to name `sentiment` rewrite triage's own input, the same
-    #: collision `campaign_runner`'s spread-first metadata dict already guards
+    #: collision `run_dialer`'s spread-first metadata dict already guards
     #: against.
     collected: dict[str, Any] = Field(default_factory=dict)
     #: Required fields the call ended without (ADR-5). Empty means complete.

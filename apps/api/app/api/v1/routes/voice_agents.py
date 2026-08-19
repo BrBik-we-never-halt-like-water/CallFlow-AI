@@ -4,7 +4,7 @@ UI needs to populate itself.
 
 Read access to an agent is org-wide, not per-creator (`voice_agents.py`'s own
 docstring) - an agent is shared infrastructure, not personal work product
-like a campaign.
+like a run.
 """
 
 from __future__ import annotations
@@ -38,8 +38,8 @@ router = APIRouter(prefix="/api/v1/voice-agents", tags=["voice-agents"])
 class CollectFieldIn(BaseModel):
     """One thing the agent has to come back with.
 
-    Deliberately the same shape as a campaign's `extra_fields` entry
-    (`campaigns.py`'s `FieldIn`): both end up as structured call results, and a
+    Deliberately the same shape campaigns used for their `extra_fields`
+    entries: both end up as structured call results, and a
     second field format would mean a second validator to keep in step.
     """
 

@@ -222,6 +222,28 @@ Better than dropping two useful types from the editor.
 
 ---
 
+## 6b. Prompt placeholders are shown, not documented
+
+`{name}` and `{note}` are substituted per contact when a call is assembled
+(`domain/prompt_assembly.py`), which is what lets one prompt serve a whole
+sheet. Nothing on the Agents screen said so, and the failure that produces is
+quiet: someone writes "You are calling Arbaaz about his Dubai trip", it reads
+perfectly against the contact they tested with, and every other row in the run
+gets called by the wrong name.
+
+So the tokens sit above the textarea as buttons rather than in a help page:
+hovering says what each fills in, clicking inserts it at the caret. A
+placeholder nobody knows about is a feature that does not exist, and the fix
+for that is showing it where the prompt is written, not describing it
+elsewhere (`ISSUES.md` #165).
+
+Only `{name}` and `{note}` are offered. Every CSV column is available, but
+listing a sheet's own headers here would mean the panel changes per run - and
+these two exist on every contact by definition, so they are the two worth
+putting a button on. The trailing line says the rest work too.
+
+---
+
 ## 7. React 19 patterns
 
 `eslint-config-next` enables `react-hooks/set-state-in-effect`, which flags the common

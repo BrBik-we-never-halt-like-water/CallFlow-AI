@@ -1,5 +1,5 @@
 /**
- * The extraction-field model used by the campaign editor.
+ * The extraction-field model used by the agent editor.
  *
  * The editor offers five types; the service accepts four (`string`, `number`,
  * `integer`, `boolean`). `date` and `enum` are mapped onto `string` on the way out,
@@ -12,7 +12,7 @@
  * to drop two useful types from the editor.
  */
 
-import type { CampaignField, FieldType as WireFieldType } from './api';
+import type { CollectField, FieldType as WireFieldType } from './api';
 
 export type EditorFieldType = 'string' | 'number' | 'boolean' | 'date' | 'enum';
 
@@ -74,7 +74,7 @@ export function fieldKeyError(key: string): string | null {
 }
 
 /** What the editor sends to the service. */
-export function toWireFields(fields: EditorField[]): CampaignField[] {
+export function toWireFields(fields: EditorField[]): CollectField[] {
   return fields
     .filter((field) => field.key.trim() && !fieldKeyError(field.key))
     .map((field) => ({

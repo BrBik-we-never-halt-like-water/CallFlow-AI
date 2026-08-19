@@ -102,7 +102,18 @@ class Carrier(Protocol):
         label: str,
         auth_username: str,
         auth_password: str,
-    ) -> CarrierTrunk: ...
+        attach_number: bool = True,
+    ) -> CarrierTrunk:
+        """Point a number at LiveKit.
+
+        `attach_number=False` configures everything needed to dial *out*
+        from the number and stops before taking over its inbound routing,
+        which makes the whole call non-destructive: everything created is
+        new and the number keeps whatever was already answering it. An
+        adapter whose carrier cannot separate the two may ignore it, but
+        must then document that inbound is always claimed.
+        """
+        ...
 
     @staticmethod
     def allowed_addresses() -> list[str]: ...

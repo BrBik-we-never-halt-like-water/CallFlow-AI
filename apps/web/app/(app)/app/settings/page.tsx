@@ -8,5 +8,5 @@ import { redirect } from 'next/navigation';
  * on the first real tab instead of 404ing.
  */
 export default function SettingsIndexPage() {
-  redirect('/app/settings/safety');
+  redirect('/app/settings/api-keys');
 }

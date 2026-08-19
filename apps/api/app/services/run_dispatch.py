@@ -25,6 +25,7 @@ from uuid import UUID
 import asyncpg
 
 from app.core.crypto import CredentialsNotConfigured, decrypt
+from app.core.platform_keys import platform_key
 from app.database.repositories import ai_provider_credentials as ai_credentials_repo
 from app.database.repositories import telephony_numbers as numbers_repo
 from app.database.repositories import voice_agents as voice_agents_repo
@@ -85,6 +86,13 @@ def _collect_fields(raw: object) -> list[CollectField]:
     return fields
 
 
+def _join_human(items: list[str]) -> str:
+    """`a`, `a and b`, `a, b and c` - the same shape `triage.py` uses."""
+    if len(items) == 1:
+        return items[0]
+    return f"{', '.join(items[:-1])} and {items[-1]}"
+
+
 def _decrypted_key(row: asyncpg.Record | None) -> str | None:
     """One provider's API key, or None when it is not connected.
 
@@ -119,12 +127,33 @@ async def _voice_agent_metadata(
         "voice_id": agent["voice_id"],
     }
 
+    # Whose key paid for each leg, so a run on CallFlow's own keys is
+    # attributable afterwards rather than indistinguishable from one on the
+    # customer's. Names and providers only - never a key, not even partially.
+    on_platform_keys: list[str] = []
+
     for leg in _LEGS:
         provider = agent[f"{leg}_provider"]
         if not provider:
             continue
         row = await ai_credentials_repo.get_credential(conn, org_id, provider)
-        metadata[f"{leg}_api_key"] = _decrypted_key(row)
+        key = _decrypted_key(row)
+        if key is None:
+            # The organisation has connected nothing usable for this provider,
+            # so CallFlow's own key carries the call. An org key always wins:
+            # connecting one in Integrations moves the spend back to the
+            # customer with no other change (`core/platform_keys.py`).
+            key = platform_key(provider)
+            if key is not None:
+                on_platform_keys.append(f"{leg}:{provider}")
+        metadata[f"{leg}_api_key"] = key
+
+    if on_platform_keys:
+        log.info(
+            "org %s is dialling on CallFlow's own provider keys for %s",
+            org_id,
+            ", ".join(on_platform_keys),
+        )
 
     return metadata
 
@@ -221,10 +250,28 @@ async def resolve_run_plan(
         collect_fields=_collect_fields(agent_row["collect_fields"]),
     )
 
+    voice_agent = await _voice_agent_metadata(conn, org_id=org_id, agent=agent_row)
+
+    # Refused here rather than discovered by the worker mid-call. Without a key
+    # the runtime cannot build that leg of the pipeline, so the call would
+    # connect and the contact would hear silence - the worst possible place to
+    # find out. Names the provider, because "connect Sarvam" is actionable and
+    # "the run failed" is not.
+    keyless = [
+        agent_row[f"{leg}_provider"]
+        for leg in _LEGS
+        if agent_row[f"{leg}_provider"] and not voice_agent.get(f"{leg}_api_key")
+    ]
+    if keyless:
+        raise RunNotDispatchable(
+            f"No API key for {_join_human(sorted(set(keyless)))}. Connect it in "
+            "Integrations, then start the run again."
+        )
+
     return RunPlan(
         agent=agent,
         lines=tuple(lines),
-        voice_agent=await _voice_agent_metadata(conn, org_id=org_id, agent=agent_row),
+        voice_agent=voice_agent,
         allocation_strategy=allocation_strategy,
         run_instruction=run_instruction,
     )

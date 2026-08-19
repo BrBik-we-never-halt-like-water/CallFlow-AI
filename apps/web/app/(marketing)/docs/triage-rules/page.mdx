@@ -7,7 +7,7 @@ export const metadata = {
 # Triage rules
 
 Triage is what turns a pile of finished calls into a short list of things a person
-needs to do. It runs on every call, live or dry, and its decision is derived from typed
+needs to do. It runs on every call, and its decision is derived from typed
 fields — never from reading the summary text.
 
 That distinction is the guarantee. A decision derived from prose cannot be audited; a
@@ -22,10 +22,46 @@ The first matching signal wins, so the order matters.
 | Asked never to be called again | **Needs a person** — and the number is suppressed |
 | Explicitly asked for a person | **Needs a person** |
 | Frustration detected | **Needs a person** |
+| The agent judged the conversation reached no clear resolution | **Needs a person** |
 | Negative tone, no frustration | **Queued for retry** |
 | Busy, no answer, or voicemail | **Queued for retry** |
+| Failed or cancelled | **Unreachable** |
+| Completed, but a required field was never answered | **Needs a person**, with the missing fields named |
 | Completed with no escalation signal | **Auto-closed** |
-| Blocked by a safety guard | **Skipped**, with the guard named |
+| Anything else | **Skipped**, with the status named |
+
+Two of those deserve their own explanation.
+
+## The agent's own verdict on the conversation
+
+Separately from whatever the fields say, the agent reports whether the conversation
+actually reached a clear resolution. An explicit "no" there is an escalation.
+
+It sits below the three signals above it because those are more specific and more
+actionable — somebody who asked for a human has told you exactly what to do next. It
+sits above the plain-status buckets below it because a considered "this did not
+resolve" is a real signal, not the absence of one.
+
+## A required field that never got answered
+
+A call that connected, ran to completion, and still ended without a field you marked
+**required** is escalated rather than auto-closed. The reason names the fields, in
+words, so the queue reads as an instruction:
+
+```text
+The call ended without party size and travel date - a person needs to ask.
+```
+
+That is the point of marking a field required: not to make the agent invent a value,
+but to stop a call missing something that matters from being counted as closed. See
+[Result schemas](/docs/result-schemas).
+
+Note where the rule sits — **last**, below every retry and unreachable bucket, and it
+only applies to a call whose status is `completed`. That placement is deliberate. A
+busy signal, a voicemail, and a failed call all ended without your required fields too,
+and of course they did: nobody was ever asked. Escalating those for "missing fields"
+would replace a useful "worth retrying" signal with a useless one. Only a call that
+genuinely had the chance to answer and did not is a call a person needs to chase.
 
 ## A bad time is not a bad mood
 
@@ -38,7 +74,7 @@ and loses nothing to a polite retry instead.
 
 Frustration is the separate signal, and it is the one that reaches a human.
 
-## What the five lamps mean
+## What the lamps mean
 
 | Lamp | Disposition |
 |---|---|
@@ -47,6 +83,11 @@ Frustration is the separate signal, and it is the one that reaches a human.
 | brass, pulsing | Queued for retry |
 | jade | Auto-closed — a clean outcome |
 | flare | Needs a person |
+| ice | Reserved, currently unassigned |
+
+`ice` used to mean a simulated call. Dry run was removed, so the colour is held back
+rather than reassigned — a lamp colour that has meant two different things is worse
+than one that means nothing yet.
 
 Every lamp in the interface is paired with a text label. Colour is never the only
 carrier of the meaning.
@@ -56,10 +97,10 @@ carrier of the meaning.
 An opt-out does two things at once: the call ends, and the number goes onto your
 suppression list.
 
-The suppression list applies to **every campaign in your organisation, forever**. It
-is not per-campaign, it cannot be overridden from a run, and re-importing a CSV that
-contains a suppressed number does not bring it back. A suppressed number is skipped
-before a call is placed.
+The suppression list applies to **every agent and every run in your organisation,
+forever**. It is not per-agent, it cannot be overridden from a run, and re-importing a
+CSV that contains a suppressed number does not bring it back. A suppressed number is
+skipped before a call is placed.
 
 ## Reading the decision on a call
 

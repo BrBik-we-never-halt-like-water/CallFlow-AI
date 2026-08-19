@@ -34,7 +34,7 @@ import { useAppStore } from '@/lib/app-store';
 export default function RunDetailPage() {
   const params = useParams<{ id: string }>();
   const runId = typeof params?.id === 'string' ? params.id : null;
-  const { phase, campaigns } = useAppStore();
+  const { phase } = useAppStore();
 
   const [paused, setPaused] = useState(false);
   const [selected, setSelected] = useState<Outcome | null>(null);
@@ -53,7 +53,9 @@ export default function RunDetailPage() {
   const counts = useMemo(() => countLamps(lamps), [lamps]);
 
   const announcement = useProgressAnnouncement(counts.settled, run?.total ?? 0);
-  const campaign = campaigns.find((c) => c.id === run?.campaign_id);
+  // Carried on the run and resolved server-side; a run whose agent was
+  // removed still has to render.
+  const agentName = run?.agent_name ?? null;
 
   // Newest first, with in-flight calls pinned to the top - an active call is the thing
   // the operator is most likely watching.
@@ -116,7 +118,7 @@ export default function RunDetailPage() {
         <div className="flex flex-col gap-1.5">
           <p className="text-small font-bold text-text-mute">Run</p>
           <h1 className="font-display text-h2 text-text">
-            {campaign?.name ?? run.campaign_id}
+            {agentName ?? 'Run'}
           </h1>
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-mono text-data text-text-mute">{run.id}</span>
