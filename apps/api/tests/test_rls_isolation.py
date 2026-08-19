@@ -85,6 +85,17 @@ async def _create_tenant(conn: asyncpg.Connection, label: str) -> Tenant:
         auth_user_id,
     )
     assert row is not None, "signup trigger did not create a user and organisation"
+
+    # Every new organisation starts on Free, which allows exactly one seat
+    # (`enforce_seat_limit`, migration `202608181000`). This file is about RLS and
+    # role boundaries, and most of its scenarios need two or three members in one
+    # org - so a seat refusal here would be a fixture failing while looking exactly
+    # like a policy failing. Lifted once at the factory rather than at each of the
+    # dozen call sites that add a member. The seat limit itself is covered in
+    # `test_entitlement_enforcement.py`, against orgs whose plan is set on purpose.
+    await conn.execute(
+        "update public.organisations set plan_id = 'growth' where id = $1", row["org_id"]
+    )
     return Tenant(auth_user_id, row["user_id"], row["org_id"])
 
 
