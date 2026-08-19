@@ -3,8 +3,17 @@
 Origination goes through `LiveKitGateway`, which these tests supply as a stub -
 the gateway's own translation of arguments and errors is covered in
 `test_livekit_client.py`, so what is under test here is the orchestration: the
-safety gate, the check-and-reserve ceiling, the suppression check, the
-concurrency semaphore, idempotency keys, and what a failure becomes.
+safety gate, the suppression check, the concurrency semaphore, idempotency keys,
+and what a failure becomes.
+
+**The ceiling and credit tests were removed, not lost.** The per-run ceiling,
+the allowlist, the rate limiter, the daily budget and per-teammate credits were
+deleted from `domain/safety.py` at the product owner's direction, pending a
+replacement security layer - its module docstring is the record. Six tests here
+outlived them and failed on arguments the dialler no longer accepts; a test for
+a deleted feature asserts nothing, and leaving them red hides the next real
+failure. They come back with the guards, against whatever shape those take
+(`ISSUES.md` #178).
 
 A runner with no `trunk_id` cannot dial at all and refuses every contact with
 that reason, which is also the default in most tests below - they are asserting
@@ -163,7 +172,7 @@ async def test_no_phone_number_ever_reaches_room_name_identity_or_metadata() -> 
 async def test_the_room_name_is_stable_for_the_same_run_and_contact() -> None:
     """A retry must land in the same room rather than opening a second
     conversation beside the first."""
-    runner, stub = _dialling_runner(run_id="run_abc", max_calls_per_run=5)
+    runner, stub = _dialling_runner(run_id="run_abc")
     contact = Contact(name="Aditi", phone="+15555550100")
 
     await runner.run_one(TEST_AGENT, contact)
@@ -173,7 +182,7 @@ async def test_the_room_name_is_stable_for_the_same_run_and_contact() -> None:
 
 
 async def test_two_contacts_get_different_rooms() -> None:
-    runner, stub = _dialling_runner(run_id="run_abc", max_calls_per_run=5)
+    runner, stub = _dialling_runner(run_id="run_abc")
 
     await runner.run_one(TEST_AGENT, Contact(name="A", phone="+15555550100"))
     await runner.run_one(TEST_AGENT, Contact(name="B", phone="+15555550101"))
@@ -253,26 +262,13 @@ async def test_a_blocked_contact_is_never_dialled() -> None:
 async def test_one_session_is_shared_across_a_whole_batch() -> None:
     """A gateway per contact would mean an aiohttp session per call, each held
     open for the length of a ring."""
-    runner, stub = _dialling_runner(max_calls_per_run=5)
+    runner, stub = _dialling_runner()
     contacts = [Contact(name=f"C{i}", phone=f"+155555501{i:02d}") for i in range(4)]
 
     await runner.run(TEST_AGENT, contacts)
 
     assert len(stub.calls) == 4
     assert stub.closed is True
-
-
-async def test_ceiling_blocks_further_calls(monkeypatch: pytest.MonkeyPatch) -> None:
-    import dataclasses
-
-    from app.domain import safety
-
-    # Config is frozen, so swap in a replaced copy rather than mutating it.
-    monkeypatch.setattr(safety, "config", dataclasses.replace(safety.config, max_calls_per_run=0))
-    runner = RunDialer()
-    result = await runner.run_one(TEST_AGENT, Contact(name="A", phone="+15555550100"))
-    assert result.status == BLOCKED_STATUS
-    assert result.disposition is Disposition.SKIPPED
 
 
 def test_idempotency_key_is_stable_across_retries_of_the_same_run_and_contact() -> None:
@@ -397,85 +393,6 @@ async def test_run_never_exceeds_the_configured_concurrency_limit() -> None:
     await runner.run(TEST_AGENT, contacts)
 
     assert probe.peak_in_flight <= 2
-
-
-async def test_ceiling_holds_under_concurrent_dialing(monkeypatch: pytest.MonkeyPatch) -> None:
-    # The check-and-reserve race this guards against only shows up under
-    # real concurrency - a sequential loop could never over-admit. Split on
-    # `status`, not disposition: a gate block and a stubbed dial are both
-    # SKIPPED, so only the status tells them apart.
-    import dataclasses
-
-    from app.domain import safety
-
-    monkeypatch.setattr(safety, "config", dataclasses.replace(safety.config, max_calls_per_run=2))
-    runner = RunDialer(max_concurrent_calls=5)
-    contacts = [Contact(name=f"C{i}", phone=f"+155555501{i:02d}") for i in range(5)]
-
-    outcomes = await runner.run(TEST_AGENT, contacts)
-
-    blocked = [o for o in outcomes if o.status == BLOCKED_STATUS]
-    admitted = [o for o in outcomes if o.status != BLOCKED_STATUS]
-    assert len(admitted) == 2
-    assert len(blocked) == 3
-
-
-async def test_credits_already_used_before_this_run_count_toward_the_ceiling() -> None:
-    # Purely a pre-dial gate check - never reaches origination, so this holds
-    # regardless of what places the call.
-    runner = RunDialer(credit_ceiling=1, credits_used_before_run=1)
-    result = await runner.run_one(TEST_AGENT, Contact(name="A", phone="+15555550100"))
-    assert result.status == "BLOCKED"
-    assert result.disposition is Disposition.SKIPPED
-    assert "credit" in (result.disposition_reason or "")
-
-
-async def test_an_undiallable_call_releases_its_reserved_credit_for_the_next_contact() -> None:
-    # A credit is only ever actually spent by a *connected* call. A run
-    # with no connected number never reaches one, so a ceiling of 1 must not
-    # block a second contact once the first's reservation is handed back.
-    runner = RunDialer(credit_ceiling=1, credits_used_before_run=0)
-
-    first = await runner.run_one(TEST_AGENT, Contact(name="A", phone="+15555550100"))
-    second = await runner.run_one(TEST_AGENT, Contact(name="B", phone="+15555550101"))
-
-    # Both are Disposition.SKIPPED - a gate block and an undiallable run
-    # share that disposition, so only `status` tells "never got past the gate"
-    # (BLOCKED_STATUS) apart from "got past it and failed honestly" (this).
-    assert first.status == UNDIALLABLE_STATUS, "the call itself was never blocked"
-    assert second.status == UNDIALLABLE_STATUS, "the released credit was not reusable"
-
-
-async def test_a_carrier_failure_releases_its_reserved_credit() -> None:
-    """The same rule, on the path that actually dials. A busy line spends no
-    credit, so a ceiling of 1 must still admit the next contact."""
-    runner, _ = _dialling_runner(
-        StubGateway(fail_with=_twirp("internal", sip_status=486)),
-        credit_ceiling=1,
-        credits_used_before_run=0,
-        max_calls_per_run=5,
-    )
-
-    first = await runner.run_one(TEST_AGENT, Contact(name="A", phone="+15555550100"))
-    second = await runner.run_one(TEST_AGENT, Contact(name="B", phone="+15555550101"))
-
-    assert first.error == DialFailure.BUSY.value
-    assert second.error == DialFailure.BUSY.value, "the released credit was not reusable"
-
-
-async def test_an_answered_call_keeps_its_credit() -> None:
-    """The one path that does spend one. With a ceiling of 1, the second
-    contact must be refused - otherwise the ceiling means nothing."""
-    runner, _ = _dialling_runner(
-        credit_ceiling=1, credits_used_before_run=0, max_calls_per_run=5
-    )
-
-    first = await runner.run_one(TEST_AGENT, Contact(name="A", phone="+15555550100"))
-    second = await runner.run_one(TEST_AGENT, Contact(name="B", phone="+15555550101"))
-
-    assert first.status == "IN_PROGRESS"
-    assert second.status == BLOCKED_STATUS
-    assert "credit" in (second.disposition_reason or "")
 
 
 async def test_an_unanswered_call_is_not_credited_as_connected() -> None:

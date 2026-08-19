@@ -327,18 +327,42 @@ def _sarvam_speaker(voice_id: str | None) -> str | None:
     """
     if not voice_id:
         return None
+
+    known = _sarvam_known_speakers()
+    if known is None:
+        # The plugin is not installed, or moved its table. Nothing here can
+        # judge the name, and dropping it would replace a voice an operator
+        # chose with the model default *and say nothing* - the failure this
+        # function exists to prevent, arriving by a different route. Passing it
+        # through lets the plugin decide, which is the only thing that can
+        # (`ISSUES.md` #177).
+        return voice_id
+    return voice_id if voice_id.lower() in known else None
+
+
+def _sarvam_known_speakers() -> set[str] | None:
+    """Sarvam's speaker list for the model the plugin will build with.
+
+    `None` when the plugin cannot be asked - it is an optional extra, absent in
+    CI and in any deployment whose organisations do not use Sarvam. That is
+    different from "this name is not a speaker", and the caller treats it so.
+
+    The model matters, not just the vendor: `anushka` is a valid bulbul:v2
+    speaker and rejected by v3, so the union of every model's list would still
+    let a call fail in the constructor.
+    """
     try:
         from livekit.plugins.sarvam import tts as _sarvam_plugin
 
-        # The model the plugin will actually construct with, not every model it
-        # knows: `anushka` is a valid bulbul:v2 speaker and rejected by v3, so
-        # the union of both lists still lets a call fail at the constructor.
         model = _sarvam_plugin.TTS.__init__.__kwdefaults__.get("model")
         table = _sarvam_plugin.MODEL_SPEAKER_COMPATIBILITY
-        known = {s.lower() for s in table.get(model, {}).get("all", ())}
-    except Exception:  # pragma: no cover - the plugin moved its table
+    except Exception:  # pragma: no cover - plugin absent or table moved
         return None
-    return voice_id if voice_id.lower() in known else None
+
+    speakers = table.get(model, {}).get("all", ())
+    if not speakers:
+        return None
+    return {s.lower() for s in speakers}
 
 
 def _sarvam_tts(agent: AgentSpec) -> Any:

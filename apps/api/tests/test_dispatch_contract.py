@@ -410,8 +410,15 @@ def test_every_sarvam_voice_offered_is_one_the_runtime_can_use() -> None:
     male. Someone chose "Anushka" and heard a man (`ISSUES.md` #166).
 
     Asserted against the plugin's own table rather than a copy, so a vendor
-    changing its speakers fails here instead of on a live call.
+    changing its speakers fails here instead of on a live call - which means it
+    can only run where that plugin is installed. It is an optional extra, absent
+    in CI, and `_sarvam_known_speakers()` returning None is exactly that case.
+    Skipping is honest; running anyway would pass vacuously, because with no
+    table to check against every voice is passed straight through (#177).
     """
+    if pipeline_module._sarvam_known_speakers() is None:
+        pytest.skip("livekit-plugins-sarvam is not installed")
+
     entry = next(e for e in TTS_PROVIDERS if e.id == "sarvam")
     assert entry.voice_options, "sarvam offers no voices"
 
@@ -426,11 +433,11 @@ def test_the_sarvam_voices_offered_are_not_all_one_gender() -> None:
     """The model default is male, so a list that happened to contain only male
     speakers would hide the same bug: every agent would sound the same and no
     choice would appear to do anything."""
-    from livekit.plugins.sarvam.tts import MODEL_SPEAKER_COMPATIBILITY
+    sarvam_tts = pytest.importorskip("livekit.plugins.sarvam.tts")
 
     entry = next(e for e in TTS_PROVIDERS if e.id == "sarvam")
     offered = {v.lower() for v in entry.voice_options}
-    speakers = MODEL_SPEAKER_COMPATIBILITY[entry.voice_model]
+    speakers = sarvam_tts.MODEL_SPEAKER_COMPATIBILITY[entry.voice_model]
 
     assert offered & {s.lower() for s in speakers["female"]}, "no female voice is offered"
     assert offered & {s.lower() for s in speakers["male"]}, "no male voice is offered"
@@ -440,13 +447,20 @@ def test_a_catalogue_entry_that_names_a_voice_model_names_a_real_one() -> None:
     """`voice_model` is the seam between a list this app maintains and a table
     the runtime owns. A typo there would make the checks above silently vacuous,
     so the name itself has to resolve."""
-    from livekit.plugins.sarvam.tts import MODEL_SPEAKER_COMPATIBILITY
+    sarvam_tts = pytest.importorskip("livekit.plugins.sarvam.tts")
 
     for entry in TTS_PROVIDERS:
-        if entry.voice_model is None:
+        if entry.voice_model is None or entry.id != "sarvam":
             continue
-        if entry.id != "sarvam":
-            continue
-        assert entry.voice_model in MODEL_SPEAKER_COMPATIBILITY, (
+        assert entry.voice_model in sarvam_tts.MODEL_SPEAKER_COMPATIBILITY, (
             f"{entry.id} pins {entry.voice_model!r}, which the plugin does not know"
         )
+
+
+def test_the_sarvam_voice_list_is_not_empty_even_without_the_plugin() -> None:
+    """The three checks above all skip without the plugin, so this is what still
+    holds in CI: the Voice wheel has something to offer, and it names the model
+    those voices belong to - the field the skipped checks key off."""
+    entry = next(e for e in TTS_PROVIDERS if e.id == "sarvam")
+    assert entry.voice_options, "sarvam offers no voices"
+    assert entry.voice_model, "sarvam offers voices without naming their model"

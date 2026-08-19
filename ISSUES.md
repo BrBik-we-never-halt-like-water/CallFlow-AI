@@ -6108,6 +6108,52 @@ Removed the entry; kept the redirect. A comment sits where the tab used to be so
 
 **Left alone:** `VOICE_AGENT_PLATFORM.md` still points at the old file for the `COMING_SOON` vendor list. It is a planning document rather than a reference one, so correcting it was not folded into this.
 
+### #177 - with no vendor plugin installed, every Sarvam voice was silently dropped
+
+**S2 · FIXED · voice-runtime · `apps/voice-runtime/app/pipeline.py`**
+
+`_sarvam_speaker()` asks the plugin which speakers its current model accepts, so
+a name the model rejects can be dropped before it raises in the constructor
+(#162, #166). Its `except` returned `None` - the same value as "not a valid
+speaker" - so where the plugin is *not installed* every voice was dropped,
+including valid ones.
+
+`None` means "use the model default", so this was the failure the function
+exists to prevent, reached by another road: an operator's chosen voice replaced
+silently, with nothing logged. CI caught it because the vendor plugins are
+optional extras that CI does not install; three green local runs did not,
+because this machine has them.
+
+**Fix.** `_sarvam_known_speakers()` returns `None` for "cannot be asked", which
+is distinct from "not in the list". With no table to consult the voice is passed
+through and the plugin decides - the only component that can. Tests now pin the
+table explicitly so both branches run everywhere, and the one test that needs
+the real plugin `importorskip`s it rather than failing for the absence it exists
+to tolerate.
+
+### #178 - six tests outlived the guards they covered
+
+**S3 · FIXED · api · `apps/api/tests/test_orchestrator.py`**
+
+The per-run ceiling, allowlist, rate limiter, daily budget and per-teammate
+credits were removed from `domain/safety.py` at the product owner's direction,
+pending a replacement security layer - the module docstring records it. Six
+tests still passed `credit_ceiling`, `credits_used_before_run` and
+`max_calls_per_run` to a dialler and a `Config` that no longer accept them, so
+they failed on `TypeError` and had been red since that commit.
+
+**Impact.** Not the guards - those went deliberately. The red suite: nine
+failures nobody was reading meant a real regression would have looked the same,
+and it blocked the PR's API check.
+
+**Fix.** The six are removed, and the module docstring says why and what brings
+them back. Three others in the same file failed only because a shared helper
+passed `max_calls_per_run` - those test room naming and session sharing, which
+are still real behaviour, so the argument was dropped and the tests kept.
+
+Worth stating plainly: this was mistaken for uncommitted local work several
+times while it was in fact committed, deliberate and documented.
+
 ## Template for the next iteration
 
 ```
