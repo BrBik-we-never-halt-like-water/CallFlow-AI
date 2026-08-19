@@ -81,8 +81,10 @@ def resolve_safety_settings(
     calls_per_window: int | None,
     window_minutes: int | None,
     daily_budget: int | None,
+    plan_daily_budget: int | None = None,
 ) -> EffectiveSafety:
-    """Merge an organisation's override onto the deployment's env-var defaults.
+    """Merge an organisation's override onto the deployment's env-var defaults,
+    then cap the result at what the organisation's plan allows.
 
     Every field is `is not None`-checked, never truthiness - an org's explicit
     choice must win even when that choice is `[]` or `0`. An empty allowlist is
@@ -91,7 +93,23 @@ def resolve_safety_settings(
     here previously reinstated the deployment's own `CALLFLOW_ALLOWLIST` the
     moment an org cleared theirs, silently enforcing a restriction the org had
     just turned off.
+
+    `plan_daily_budget` is a **ceiling, not a default**: an organisation may pace
+    itself below what it pays for, never above it (`docs/BILLING.md` §2). `None`
+    means the caller does not know the plan - the safety *route* and the run
+    composer both pass it, and anything that cannot must not silently gain an
+    unlimited budget, which is why the cap is `min()` over a known number rather
+    than a substitution.
+
+    Keeping the cap here rather than at the call sites is the whole point of this
+    function: it is the one place a deployment default, an organisation override
+    and a plan ceiling meet, so display and enforcement can never resolve two
+    different answers for the same organisation.
     """
+    resolved_daily = daily_budget if daily_budget is not None else config.daily_call_budget
+    if plan_daily_budget is not None:
+        resolved_daily = min(resolved_daily, plan_daily_budget)
+
     return EffectiveSafety(
         allowlist=frozenset(allowlist) if allowlist is not None else frozenset(config.allowlist),
         max_calls_per_run=(
@@ -105,7 +123,7 @@ def resolve_safety_settings(
             if window_minutes is not None
             else config.rate_limit_window_seconds // 60
         ),
-        daily_budget=daily_budget if daily_budget is not None else config.daily_call_budget,
+        daily_budget=resolved_daily,
     )
 
 

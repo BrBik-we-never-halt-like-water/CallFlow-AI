@@ -38,6 +38,20 @@ async def list_org_agents(conn: asyncpg.Connection, org_id: UUID) -> list[asyncp
     )
 
 
+async def count_for_org(conn: asyncpg.Connection, org_id: UUID) -> int:
+    """How many agents this organisation has, for the plan gate.
+
+    Accurate under RLS because `voice_agents_select` is org-wide
+    (`is_org_member`), not per-creator - an operator counting does not undercount
+    a teammate's agents. The `before insert` trigger counts again as `postgres`,
+    which is what makes the limit hold against raw SQL; this count only exists so
+    the API can refuse with a readable reason first.
+    """
+    return await conn.fetchval(
+        "select count(*) from public.voice_agents where org_id = $1", org_id
+    )
+
+
 async def get_org_agent(
     conn: asyncpg.Connection, org_id: UUID, agent_id: UUID
 ) -> asyncpg.Record | None:

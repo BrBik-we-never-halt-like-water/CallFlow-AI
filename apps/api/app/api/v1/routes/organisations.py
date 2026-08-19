@@ -22,11 +22,16 @@ from app.database.repositories import credits as credits_repo
 from app.database.repositories import escalations as escalations_repo
 from app.database.repositories import organisations as org_repo
 from app.database.repositories import runs as runs_repo
+from app.domain.entitlements import (
+    check_org_create_allowed,
+    check_seat_available,
+)
 from app.integrations.email.resend import (
     EmailAPIError,
     EmailGateway,
     EmailNotConfigured,
 )
+from app.services import billing
 
 router = APIRouter(prefix="/api/v1/organisations", tags=["organisations"])
 
@@ -178,6 +183,17 @@ async def create(
     body: OrganisationCreateIn, user: Annotated[CurrentUser, Depends(current_user)]
 ) -> OrganisationOut:
     async with database.as_user(user.auth_user_id) as conn:
+        # Counted per *user*, not per organisation - the only entitlement that is.
+        # `create_organisation()` checks again inside itself, because it is SECURITY
+        # DEFINER and Postgres grants EXECUTE to PUBLIC unless revoked.
+        effective = await billing.resolve_plan(conn, user.org_id, user.org_plan_id)
+        billing.refuse(
+            check_org_create_allowed(
+                entitlements=effective.entitlements,
+                plan_name=billing.plan_name(effective.plan_id),
+                owned_org_count=await org_repo.count_owned_orgs_for_current_user(conn),
+            )
+        )
         row = await org_repo.create(conn, body.name)
     return OrganisationOut(
         id=str(row["id"]), name=row["name"], slug=row["slug"], logo_url=row["logo_url"], role="owner"
@@ -285,6 +301,20 @@ async def invite(
     expires_at = datetime.now(UTC) + timedelta(days=INVITATION_TTL_DAYS)
 
     async with database.as_user(user.auth_user_id) as conn:
+        # A pending invitation holds a seat, so an admin cannot over-invite and
+        # disappoint people one accept at a time. This is the courtesy, not the
+        # guard: `enforce_seat_limit` re-checks on the membership insert itself,
+        # because a downgrade can land between the invitation and the click.
+        members, pending = await org_repo.seat_usage(conn, user.org_id)
+        effective = await billing.resolve_plan(conn, user.org_id, user.org_plan_id)
+        billing.refuse(
+            check_seat_available(
+                entitlements=effective.entitlements,
+                plan_name=billing.plan_name(effective.plan_id),
+                member_count=members,
+                pending_invite_count=pending,
+            )
+        )
         row = await org_repo.create_invitation(
             conn,
             org_id=user.org_id,

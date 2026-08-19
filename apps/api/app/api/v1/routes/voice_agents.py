@@ -28,9 +28,10 @@ from app.database.repositories import (
 from app.database.repositories import provider_credentials as provider_credentials_repo
 from app.database.repositories import voice_agents as voice_agents_repo
 from app.domain.campaigns import FIELD_TYPES
+from app.domain.entitlements import check_agent_create_allowed
 from app.domain.safety import mask
 from app.integrations.ai_providers import catalog
-from app.services import voice_preview
+from app.services import billing, voice_preview
 
 router = APIRouter(prefix="/api/v1/voice-agents", tags=["voice-agents"])
 
@@ -259,6 +260,17 @@ async def create_voice_agent(
 ) -> VoiceAgentOut:
     async with database.as_user(user.auth_user_id) as conn:
         await _validate_agent_fields(conn, user.org_id, body)
+        # The plan ceiling. A `before insert` trigger enforces the same limit
+        # against raw SQL; this check exists so the refusal is a 402 with a
+        # readable reason instead of a constraint violation surfacing as a 500.
+        effective = await billing.resolve_plan(conn, user.org_id, user.org_plan_id)
+        billing.refuse(
+            check_agent_create_allowed(
+                entitlements=effective.entitlements,
+                plan_name=billing.plan_name(effective.plan_id),
+                current_agent_count=await voice_agents_repo.count_for_org(conn, user.org_id),
+            )
+        )
         row = await voice_agents_repo.create_agent(
             conn,
             org_id=user.org_id,

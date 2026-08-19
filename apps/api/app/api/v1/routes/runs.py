@@ -34,6 +34,7 @@ from app.database.repositories import runs as runs_repo
 from app.database.repositories import safety_settings as safety_settings_repo
 from app.database.repositories import suppressions as suppressions_repo
 from app.domain.entities import NEEDS_A_PERSON_DISPOSITIONS, CallOutcome, Contact
+from app.domain.plans import entitlements_for
 from app.domain.safety import phone_hash, resolve_safety_settings
 from app.services.campaign_runner import CampaignRunner
 
@@ -171,12 +172,17 @@ async def start_run(
 
     async with database.as_user(user.auth_user_id) as conn:
         safety_row = await safety_settings_repo.get_for_org(conn, user.org_id)
+    # The plan caps the daily budget, so an organisation cannot raise its own
+    # ceiling past what it pays for via Settings -> Safety (`docs/BILLING.md` §2).
+    # Read from `plan_entitlements` through the domain catalogue rather than from
+    # the safety row, because it is the plan's number, not the org's.
     effective = resolve_safety_settings(
         allowlist=safety_row["allowlist"] if safety_row else None,
         max_calls_per_run=safety_row["max_calls_per_run"] if safety_row else None,
         calls_per_window=safety_row["calls_per_window"] if safety_row else None,
         window_minutes=safety_row["window_minutes"] if safety_row else None,
         daily_budget=safety_row["daily_budget"] if safety_row else None,
+        plan_daily_budget=entitlements_for(user.org_plan_id).daily_call_budget,
     )
 
     verdict = limiter.check(

@@ -192,5 +192,48 @@ class Config:
         default_factory=lambda: os.getenv("PROVIDER_CREDENTIALS_KEY", "")
     )
 
+    # --- Dodo Payments: the subscription gateway ------------------------------
+    # CallFlow's own merchant account, not an organisation's credential, so it is
+    # a platform setting and never a `provider_credentials` row - same reasoning
+    # as the LiveKit and OpenRouter keys above.
+    #
+    # Empty `dodo_api_key` ⇒ the billing endpoints fall back to the stub provider
+    # and say so, rather than half-working. Empty `dodo_webhook_key` ⇒ the webhook
+    # route answers 404 to everything, failing closed exactly like
+    # `internal_api_secret` does.
+    dodo_api_key: str = field(default_factory=lambda: os.getenv("DODO_API_KEY", ""))
+    dodo_webhook_key: str = field(default_factory=lambda: os.getenv("DODO_WEBHOOK_KEY", ""))
+    # "test_mode" or "live_mode". Defaults to test: a deployment that forgets this
+    # should take play money, not real money.
+    dodo_environment: str = field(
+        default_factory=lambda: os.getenv("DODO_ENVIRONMENT", "test_mode")
+    )
+    # Product ids, one per (plan × period). Only the two self-serve plans have
+    # them - enterprise is invoiced outside the product, and free has nothing to
+    # charge for. A plan with no product id simply has no checkout, which is what
+    # `list_prices()` reports rather than raising.
+    dodo_product_starter_monthly: str = field(
+        default_factory=lambda: os.getenv("DODO_PRODUCT_STARTER_MONTHLY", "")
+    )
+    dodo_product_starter_annual: str = field(
+        default_factory=lambda: os.getenv("DODO_PRODUCT_STARTER_ANNUAL", "")
+    )
+    dodo_product_growth_monthly: str = field(
+        default_factory=lambda: os.getenv("DODO_PRODUCT_GROWTH_MONTHLY", "")
+    )
+    dodo_product_growth_annual: str = field(
+        default_factory=lambda: os.getenv("DODO_PRODUCT_GROWTH_ANNUAL", "")
+    )
+
+    @property
+    def payments_configured(self) -> bool:
+        """Whether a real gateway is reachable.
+
+        Read by the billing endpoints so the interface can say "no payment
+        processor is connected on this deployment" honestly instead of offering an
+        upgrade button that cannot work (CLAUDE.md §4 #9).
+        """
+        return bool(self.dodo_api_key)
+
 
 config = Config()

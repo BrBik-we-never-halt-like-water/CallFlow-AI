@@ -18,6 +18,7 @@ from app.auth.permissions import Permission
 from app.core.rate_limit import limiter
 from app.database import database
 from app.database.repositories import safety_settings as safety_repo
+from app.domain.plans import entitlements_for
 from app.domain.safety import is_e164, resolve_safety_settings
 
 router = APIRouter(prefix="/api/v1/safety", tags=["safety"])
@@ -40,13 +41,17 @@ class SafetySettingsIn(BaseModel):
     daily_budget: int = Field(gt=0)
 
 
-def _to_out(row: asyncpg.Record | None, org_id: UUID) -> SafetySettingsOut:
+def _to_out(row: asyncpg.Record | None, org_id: UUID, plan_id: str) -> SafetySettingsOut:
+    """`plan_id` is not decoration: the plan caps the daily budget, and Settings ->
+    Safety must show the number runs actually stop at. Reading it here without the
+    cap is how the interface ends up promising 20 calls on a plan that allows 5."""
     effective = resolve_safety_settings(
         allowlist=row["allowlist"] if row else None,
         max_calls_per_run=row["max_calls_per_run"] if row else None,
         calls_per_window=row["calls_per_window"] if row else None,
         window_minutes=row["window_minutes"] if row else None,
         daily_budget=row["daily_budget"] if row else None,
+        plan_daily_budget=entitlements_for(plan_id).daily_call_budget,
     )
     usage = limiter.snapshot(
         str(org_id),
@@ -70,7 +75,7 @@ async def get_settings(
 ) -> SafetySettingsOut:
     async with database.as_user(user.auth_user_id) as conn:
         row = await safety_repo.get_for_org(conn, user.org_id)
-    return _to_out(row, user.org_id)
+    return _to_out(row, user.org_id, user.org_plan_id)
 
 
 @router.patch("", response_model=SafetySettingsOut)
@@ -95,4 +100,4 @@ async def update_settings(
             window_minutes=body.window_minutes,
             daily_budget=body.daily_budget,
         )
-    return _to_out(row, user.org_id)
+    return _to_out(row, user.org_id, user.org_plan_id)

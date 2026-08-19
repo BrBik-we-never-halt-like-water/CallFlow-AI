@@ -35,3 +35,8 @@ pyjwt[crypto]>=2.9.0
 
 # Encrypting org-owned provider credentials at rest (app/core/crypto.py).
 cryptography>=43.0.0
+
+# Payment gateway. The [webhooks] extra pulls in `standardwebhooks`; without it
+# every inbound webhook signature check fails with a dependency error that
+# looks exactly like a bad signature.
+dodopayments[webhooks]>=1.112.0

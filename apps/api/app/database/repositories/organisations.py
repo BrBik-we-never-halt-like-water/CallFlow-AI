@@ -80,6 +80,50 @@ async def count_orgs_for_current_user(conn: asyncpg.Connection) -> int:
     )
 
 
+async def count_owned_orgs_for_current_user(conn: asyncpg.Connection) -> int:
+    """Organisations this user *owns*, excluding soft-deleted ones.
+
+    Deliberately not `count_orgs_for_current_user` above, which counts every
+    membership at any role and includes retired organisations - correct for the
+    "are you about to delete your last one" guard it serves, wrong for a plan
+    limit. Two different questions, so two functions.
+
+    Owner-only, because `max_organisations` limits how many workspaces you may
+    *create*; being invited into someone else's does not spend your allowance.
+    Active-only, because `delete_active` is a soft delete and counting retired rows
+    would mean a slot never frees (`docs/BILLING.md` §2).
+    """
+    return await conn.fetchval(
+        """
+        select count(*)
+          from public.memberships m
+          join public.organisations o on o.id = m.org_id
+         where m.user_id = public.current_user_id()
+           and m.role = 'owner'
+           and o.deleted_at is null
+        """
+    )
+
+
+async def seat_usage(conn: asyncpg.Connection, org_id: UUID) -> tuple[int, int]:
+    """`(members, pending invitations)` in one round trip.
+
+    A pending invitation holds a seat. Counting members alone would let an admin
+    send ten invitations against three seats and discover the problem at accept
+    time, one disappointed teammate at a time.
+    """
+    row = await conn.fetchrow(
+        """
+        select
+          (select count(*) from public.memberships where org_id = $1) as members,
+          (select count(*) from public.invitations
+            where org_id = $1 and accepted_at is null and expires_at > now()) as pending
+        """,
+        org_id,
+    )
+    return int(row["members"]), int(row["pending"])
+
+
 async def delete_active(conn: asyncpg.Connection, org_id: UUID) -> None:
     await conn.execute(
         "update public.organisations set deleted_at = now() where id = $1", org_id
