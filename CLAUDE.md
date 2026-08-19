@@ -254,7 +254,7 @@ These override style preference, convenience, and personal taste.
 
 ## 4b. Auth and the database - how it actually works
 
-Four facts that are not obvious from reading the code, and that you will get wrong
+Five facts that are not obvious from reading the code, and that you will get wrong
 without them.
 
 **`postgres` holds BYPASSRLS.** A plain connection sees _every_ organisation's rows,
@@ -263,15 +263,28 @@ is therefore only real because `database.as_user()` drops to the `authenticated`
 and installs the JWT claims per request. If you add a code path that queries without
 going through `as_user`, tenancy silently stops applying.
 
-**Two ways into the database, and only two.**
+**Three ways into the database, and only three.**
 
 ```python
-async with database.as_user(claims.auth_user_id) as conn:   # RLS applies
-async with privileged.acquire("nightly purge") as conn:      # RLS bypassed, logged
+async with database.as_user(claims.auth_user_id) as conn:              # RLS applies
+async with database.as_platform_reader(admin_id, reason="…") as conn:  # RLS applies, cross-org, READ ONLY
+async with privileged.acquire("nightly purge") as conn:                # RLS bypassed, logged
 ```
 
 `privileged` requires a reason string and refuses an empty one. It must never appear in
 a request handler.
+
+`as_platform_reader` is the one deliberate cross-tenant surface (`docs/PLATFORM_ADMIN.md`)
+and is **not** a bypass - RLS still evaluates every row. It widens visibility through one
+predicate, `public.platform_can_read(org_id)`, added to `select` policies only, which
+returns false unless the session set `callflow.platform_session` *and* the caller holds a
+`platform_admins` row. An ordinary `as_user` session never sets that flag, so elevation is
+per-session and explicit rather than ambient. The connection opens with
+`transaction(readonly=True)`, so Postgres refuses any write regardless of policy - with
+cross-org visibility that is the only thing standing between a platform admin and a
+cross-tenant write, which is why it lives in the primitive and never at a call site. Cross-org
+*writes* go through narrow `SECURITY DEFINER` functions that re-check authorisation
+themselves, because function EXECUTE defaults to PUBLIC.
 
 **Migrations use psycopg; runtime uses asyncpg.** asyncpg prepares every statement and
 so rejects the multi-statement DDL that RLS policies and plpgsql functions are written

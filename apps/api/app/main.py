@@ -13,6 +13,9 @@ from fastapi.responses import JSONResponse
 
 from app.api.v1.routes.ai_providers import router as ai_providers_router
 from app.api.v1.routes.api_keys import router as api_keys_router
+from app.api.v1.routes.billing import public_router as billing_public_router
+from app.api.v1.routes.billing import router as billing_router
+from app.api.v1.routes.billing import webhook_router as billing_webhook_router
 from app.api.v1.routes.campaigns import router as campaigns_router
 from app.api.v1.routes.escalations import router as escalations_router
 from app.api.v1.routes.integrations import router as integrations_router
@@ -20,6 +23,7 @@ from app.api.v1.routes.internal import router as internal_router
 from app.api.v1.routes.invitations import router as invitations_router
 from app.api.v1.routes.messages import router as messages_router
 from app.api.v1.routes.organisations import router as organisations_router
+from app.api.v1.routes.platform import router as platform_router
 from app.api.v1.routes.profile import router as profile_router
 from app.api.v1.routes.runs import router as runs_router
 from app.api.v1.routes.safety import router as safety_router
@@ -74,7 +78,16 @@ app.add_middleware(
 )
 
 app.include_router(profile_router)
+app.include_router(billing_router)
+# The plan ladder and its gateway prices, for the marketing site, which has no
+# session to send. Reads no organisation data and opens no connection.
+app.include_router(billing_public_router)
+# The gateway callback has no user session; its own signature is the boundary.
+app.include_router(billing_webhook_router)
 app.include_router(organisations_router)
+# Cross-tenant support surface. Every route 404s for anyone without a
+# `platform_admins` row, and the definer functions behind them re-check.
+app.include_router(platform_router)
 app.include_router(invitations_router)
 app.include_router(campaigns_router)
 app.include_router(escalations_router)
