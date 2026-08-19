@@ -346,7 +346,7 @@ approve/reject means you're signed in as someone other than the resource's actua
 (admin/owner), and an optional per-teammate slice of the org's existing daily call
 budget that an admin/owner can set (everyone's own "My credits" view).
 
-**Frontend.** `/app/settings/billing` - admin/owner see the real plan + org-wide usage;
+**Frontend.** `/app/billing` (a sidebar destination) - admin/owner see the real plan + org-wide usage;
 everyone else sees "My credits" (their own allocation + today's usage, or a placeholder
 if nobody's set one yet). Organisation → Team pane has a per-member "Credits/day" field,
 editable by admin/owner only.
@@ -378,8 +378,19 @@ applies regardless of any individual allocation. Two things trip people up:
   (`credits_repo.get_enforced_ceiling()`); the "My credits" display's own `0`-means-
   unset convention is a UI simplification that doesn't apply to enforcement.
 
-There's also no payment processor wired up at all - Billing's plan/usage view is real,
-but there's no upgrade/downgrade flow behind it.
+**Plans are now enforced, and money moves.** A plan grants entitlements - voice agents,
+seats, organisations, model-provider keys, and a daily call ceiling - and hitting one
+returns **402 Payment Required** (not 403, so the interface can offer an upgrade rather
+than a dead end). Dodo Payments is wired up behind a swappable `PaymentProvider`
+protocol: hosted checkout, plan change, cancel-at-period-end, a signature-verified
+webhook, and a Sync fallback for a delivery that was missed. Calls themselves are still
+never billed per-call.
+
+Two limits worth knowing: an **enterprise deal cannot yet be given custom limits** through
+the product (`org_entitlement_overrides` and the platform-admin surface are designed in
+`docs/PLATFORM_ADMIN.md` but not built, so `has_custom_limits` is always `false`), and
+**a credential connected on a higher plan keeps working after a downgrade** - only new
+connects are refused, deliberately, so a failed renewal never breaks a live operation.
 
 **Debugging this section.** `used_today` in both the "My credits" view and the admin
 Team-performance panel are two independent live SQL queries against the same underlying

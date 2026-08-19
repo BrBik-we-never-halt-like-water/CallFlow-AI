@@ -145,6 +145,10 @@ exist in this repo**; `SYSTEM.md` §12 is the closest real gap map until it's wr
 | [#123](#123--every-deploy-to-dev-has-failed-for-20-hours-its-database-is-stamped-at-an-alembic-revision-that-exists-nowhere-in-this-repository) | S1  | Every deploy to dev fails - dev's database is stamped at a revision that exists nowhere in the repo                   | infra          | it-42 | **FIXED**        |
 | [#124](#124--a-conversation-stuck-on-its-loader-forever-after-both-of-its-requests-returned-200) | S2  | Conversation stuck on its loader forever, after both its requests returned 200                                        | web            | it-42 | **FIXED**        |
 | [#125](#125--a-500ms-anti-flicker-floor-could-stay-raised-forever-and-it-gated-the-entire-conversation-panel) | S2  | A 500ms anti-flicker floor could stay raised forever, and it gated the whole conversation panel                       | web            | it-42 | **FIXED**        |
+| [#126](#126--a-seat-limit-counted-when-an-invitation-was-sent-and-never-again-so-a-downgrade-let-an-organisation-past-it-one-accept-at-a-time) | S2  | Seat limit counted at invite, never at accept - a downgrade let an org past it one accept at a time | api | it-43 | **FIXED** |
+| [#127](#127--the-enterprise-tier-could-not-be-sold-has_custom_limits-was-hard-coded-false-and-no-override-table-existed) | S2  | Enterprise tier unsellable: `has_custom_limits` hard-coded `false`, no override table, no platform surface | api+web | it-43 | **FIXED** |
+| [#128](#128--the-cap-was-reachable-through-four-ui-surfaces-that-all-walked-someone-into-the-refusal) | S3  | Four UI surfaces offered an action the plan would refuse | web | it-43 | **FIXED** |
+| [#129](#129--not-a-bug-the-llm-spend-cap-enforces-nothing-because-the-feature-it-would-gate-does-not-exist) | -  | LLM spend cap enforces nothing - the key-minting feature it would gate does not exist | api | it-43 | **INVALID** |
 
 ---
 
@@ -4893,6 +4897,118 @@ Two defects here, and either alone is enough:
 **Honesty about what is proven.** The oscillation and the gating are both real and demonstrable by reading the code. Whether one of them is *the* trigger for the reported symptom is **not** proven - reproducing it needs a production build under load, and it was not reproduced from here. Four hypotheses were falsified before this one (an `anon`-role token, a join burst, an unstable `toast` identity, and #124's `cancelled` guard), so this is deliberately written as "remove the class of failure" rather than "found the culprit". The 20s backstop is what guarantees the user is never stranded even if the trigger is something else again.
 
 **Verified.** `eslint` clean (including `react-hooks/set-state-in-effect` and `react-hooks/purity`, both of which caught real problems in the first drafts of this fix), `tsc` clean.
+
+## Iteration 43 - 2026-08-18 · closing the plan model: a seat limit nobody re-checked, and the enterprise tier that could not be sold
+
+Four gaps found by auditing the billing work against `docs/BILLING.md`'s own plan rather than
+against the code written for it. Three were real; the fourth turned out not to exist.
+
+### #126 - a seat limit counted when an invitation was sent and never again, so a downgrade let an organisation past it one accept at a time
+
+**S2 · FIXED · api · `alembic/versions/202608181000_enforce_seat_limit_on_membership_insert.py`, `repositories/invitations.py`, `routes/invitations.py`**
+
+`POST /organisations/me/invitations` counted seats before sending. `POST /invitations/{token}/accept`
+did not - so an invitation issued on Growth (10 seats) could be accepted after a downgrade to
+Starter (3), putting the organisation over a limit it was being billed against. The send-side
+comment claimed "Accept re-checks anyway", which made it read as covered.
+
+**Why a trigger, not a check in the handler.** At accept time the caller is not yet a member of
+the target organisation, so an RLS-scoped connection cannot read that organisation's memberships
+to count them. Only a definer function sees the true count, and putting it in a
+`before insert on memberships` trigger covers every path rather than the one route.
+
+**The off-by-one that would have been worse than the bug.** The invitation being accepted is
+itself pending, so counting it against the seat it is claiming makes the *last* seat of every
+plan unreachable - the limit would silently be one lower than sold. `pending` therefore excludes
+invitations addressed to the joining user's own email, and `test_the_last_seat_is_actually_usable`
+exists for exactly that.
+
+Surfaced as **402**, not the existing 400 "this invitation isn't valid": the token is fine and the
+plan is not, and telling someone their link is broken sends them back for another one that fails
+identically.
+
+**Fallout.** 61 tests in `test_rls_isolation.py` began failing - correctly. Its fixtures build
+two- and three-member orgs on Free, which allows one seat. Fixed at the tenant factory rather
+than at a dozen call sites, with a comment saying why, because a seat refusal inside an RLS test
+looks exactly like a policy failure.
+
+### #127 - the enterprise tier could not be sold: `has_custom_limits` was hard-coded `false` and no override table existed
+
+**S2 · FIXED · api+web · four migrations, `auth/platform.py`, `routes/platform.py`, `repositories/platform.py`, `services/billing.py`, `app/(app)/app/platform/`, `scripts/platform_admin.py`**
+
+`docs/PLATFORM_ADMIN.md` was design only. The consequence was concrete: an Enterprise deal got
+Growth's numbers as a floor with no way to raise them, and `resolve_plan` returned
+`has_custom_limits=False` unconditionally while Billing already had UI to display it.
+
+Built per that document, with **two deliberate departures, both recorded in its banner**:
+
+- §4 describes appending an `or public.platform_can_read(...)` clause to each of the 17 existing
+  `select` policies. The migration adds a *separate* permissive `select` policy per table
+  instead. Postgres ORs permissive policies so the effect is identical - but no existing qual is
+  rewritten, and those quals are where tenant isolation lives. Transcribing 17 of them by hand
+  to append one clause is a way to break isolation with a typo that still reads right.
+- §4 says the audit row is written "before yielding". It is - but in its own writable
+  transaction *before* the read-only one opens, because `readonly=True` refuses the insert. That
+  also means the trace survives a session that later errors, which the original ordering would
+  not have.
+
+**Two bugs found by testing, not by reading.**
+
+`platform_list_organisations` declared `slug text` while `organisations.slug` is `citext`.
+Postgres does not check a `returns table` signature against its query at creation time, so the
+function created cleanly and raised "structure of query does not match function result type" the
+first time anyone called it. Every policy test passed - none of them called the function. Fixed
+in `202608181300`, with call-time tests added for every platform function.
+
+`routes/platform.py` caught `asyncpg.exceptions.RaiseException`, which does not exist. The real
+classes are `RaiseError` (a bare `raise`) and `InvalidParameterValueError` (`using errcode =
+'22023'`), and the definer functions use the latter - so the first refused platform write would
+have raised `AttributeError` and 500'd instead of returning 400. Both are caught now, through a
+named `REFUSALS` tuple, because which one a given check uses is a detail of the SQL and must not
+decide whether the API 400s or 500s.
+
+**The test that matters most** is `test_an_ordinary_user_calling_the_write_function_directly_is_refused`.
+Function EXECUTE defaults to PUBLIC, so any customer can call `platform_set_org_entitlements`
+over SQL with no route and no dependency involved. If that succeeded, every FastAPI dependency in
+`auth/platform.py` would be decoration. 31 tests in total, including: setting the session flag
+alone grants nothing; a platform admin browsing normally sees only their own orgs; no *write*
+policy anywhere references the predicate; team chat stays invisible even to an elevated session;
+and an expired grant stops working.
+
+### #128 - the cap was reachable through four UI surfaces that all walked someone into the refusal
+
+**S3 · FIXED · web · `lib/hooks/use-plan-limits.ts`, `components/app/plan-limit-notice.tsx`, `agentic/page.tsx`, `organisation/new/page.tsx`, `invite-dialog.tsx`, `app-shell.tsx`**
+
+Agents, the org switcher, org creation and the invite dialog all offered the action and let the
+402 explain afterwards. Each now names the plan's actual number and offers the upgrade instead -
+replaced, not disabled, because a greyed-out control reads as "this product is broken".
+
+Reads `GET /billing/plans` rather than `/billing/subscription`, and that is the whole reason the
+former is signed-in-only rather than `billing:read`: creating an agent is `agents:write`, which
+reaches further down than admin, and an operator who hits the cap has to be told what stopped
+them. Only owners hold `billing:write`, so anyone else gets the reason and no button.
+
+**Fails open throughout.** A slow or failed limits fetch leaves the normal action in place. The
+402 and the triggers are the gate; this only stops someone filling in a form that will be
+refused.
+
+### #129 - not a bug: the LLM spend cap enforces nothing because the feature it would gate does not exist
+
+**INVALID · api**
+
+`llm_spend_limit_usd` is in the ladder and served over the API, and
+`OpenRouterProvisioning.create_key`/`set_limit` both accept a limit - but grepping for their
+callers returns nothing. No code mints an OpenRouter key, so there is no gate to attach the
+entitlement to. Recorded rather than "fixed" so the next reader does not go looking for missing
+wiring: the entitlement is not the blocker, the key-minting feature is.
+
+Same shape as `ConnectAiKeyDialog`, which is fully built and mounted nowhere - which is also why
+"make the integrations page cap-aware" turned out to be a no-op. That page connects
+`provider_credentials` (deliberately ungated), and nothing in the UI calls
+`PUT /ai-providers/{provider}` at all.
+
+**Verified.** 721 tests pass (`test_platform_admin.py` 31, `test_entitlement_enforcement.py` 22).
+`ruff` clean. `eslint`, `tsc` and `next build` clean.
 
 ## Template for the next iteration
 

@@ -95,7 +95,7 @@ render at all, not just disabled.
 | `/app/escalations` | all, assign + resolve any | same | own + assigned to them + a "Team escalations" directory | all, read-only, **no** Assign/Resolve/Call-back buttons |
 | `/app/settings/safety` | read + write | read + write | **hidden** | **hidden** |
 | `/app/settings/api-keys`, `/integrations` | read + write | read + write | **hidden** | **hidden** |
-| `/app/settings/billing` | full org plan + usage | read-only org view | **"My credits" placeholder/real number**, no org totals | same as operator |
+| `/app/billing` | full org plan + usage | read-only org view | **"My credits" placeholder/real number**, no org totals | same as operator |
 | Team pane: change a member's role / remove | can act on anyone ranked below them | same, one rank narrower | **hidden** | **hidden** |
 | Team pane: "Credits/day" field per member | editable | editable | **read-only display, no input** | **read-only display, no input** |
 
@@ -201,14 +201,14 @@ Request Headers on the failing call if you belong to more than one organisation.
 
 1. As **owner or admin**, go to **Organisation → Team**. Each member row has a
    **"Credits/day"** field - set Operator A's to something small, e.g. `3`.
-2. As **Operator A**, go to **Settings → Billing**. You should see **"My credits"**
+2. As **Operator A**, go to **Billing** in the sidebar. You should see **"My credits"**
    showing `0 of 3 calls used` (or whatever you set), with a progress bar - not the org's
    overall plan/usage, which stays hidden for this role.
 3. **1 credit = 1 *connected* call, not 1 attempt** (`ISSUES.md` iteration 30) - `used`
    only goes up once the callee actually answers. Start a run as Operator A against 1–2
    numbers from the reserved range (`+1 555 0100`–`0199`, see the warning at the top) -
    these never connect to a real phone, by design. After the run finishes, refresh
-   Settings → Billing and confirm **`used` is still `0`** - the attempt itself doesn't
+   Billing and confirm **`used` is still `0`** - the attempt itself doesn't
    spend a credit, only a connected conversation does. This is the correct result, not a
    bug; it's also the safest way to test the "non-connect doesn't spend" half of the rule
    without risking a real dial.
@@ -228,7 +228,7 @@ Request Headers on the failing call if you belong to more than one organisation.
    stay within the reserved range). That path is already covered by the automated test
    suite instead - `test_orchestrator.py`'s `test_credit_ceiling_blocks_the_next_contact_
    once_a_call_connects` and `test_a_call_that_never_connects_does_not_spend_a_credit`.
-7. As a **viewer**, confirm Settings → Billing shows the same "My credits" personal view
+7. As a **viewer**, confirm Billing shows the same "My credits" personal view
    as an operator (not the org-wide plan), and that nobody except owner/admin can edit
    any "Credits/day" field.
 
