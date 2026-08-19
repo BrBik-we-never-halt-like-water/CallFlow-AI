@@ -152,6 +152,8 @@ exist in this repo**; `SYSTEM.md` §12 is the closest real gap map until it's wr
 | [#130](#130--the-canvas-loop-measured-and-reallocated-itself-every-frame) | S3  | Every animated canvas forced a layout and reallocated its backing store 60x a second                                  | web            | it-44 | **FIXED**        |
 | [#131](#131--the-wheel-picker-read-scrolltop-back-after-writing-it-forcing-a-layout-every-frame) | S3  | The wheel picker read `scrollTop` back after writing it - layout thrash on preset selection                            | web            | it-44 | **FIXED**        |
 | [#132](#132--voice-agents-were-visible-to-every-member-missing-the-per-creator-silo-the-rest-of-the-product-already-had) | S2  | Voice agents were visible to every member - missing the per-creator silo campaigns and runs already had                | backend        | it-44 | **FIXED**        |
+| [#133](#133--nine-icon-only-controls-had-hit-areas-below-44x44-and-no-control-moved-when-pressed) | S3  | Nine icon-only controls had hit areas below 44x44, and no control moved when pressed                                  | web            | it-45 | **FIXED**        |
+| [#134](#134--settings-listed-an-integrations-tab-that-threw-you-out-of-settings) | S4  | Settings listed an Integrations tab that threw you out of Settings                                                     | web            | it-45 | **FIXED**        |
 
 ---
 
@@ -6069,6 +6071,42 @@ Listening on `unhandledrejection` rather than wrapping each call site: a poll or
 a background refresh rejects with nothing awaiting it, which is exactly the case
 that matters here. The bounce is guarded so several requests failing together -
 a poll, a refresh, a page load - produce one sign-out rather than three.
+
+## Iteration 47 - 2026-08-18 · a UI polish pass, scoped by an audit rather than by taste
+
+> Renumbered from #133/#134 on merge into `arbaaz/agent-run-v1`: that branch
+> had independently used both numbers, and its entries are cited from code
+> comments. This iteration was renumbered instead because nothing outside
+> this file referred to it yet.
+
+
+### #175 - nine icon-only controls had hit areas below 44x44, and no control moved when pressed
+
+**S3 · FIXED · web · `apps/web/app/globals.css` + 6 components**
+
+Asked to "fix the UI and design". The audit found the design system in good shape - 2,410 lines of tokens, 23 documented rounds, skip links, `aria-label`s, reduced-motion, token-only colour - so this was scoped to preserve-mode polish rather than a restyle. Two real defects came out of it.
+
+**Hit areas.** A dialog's close, a toast's dismiss, the input clear, the avatar trigger, and two overflow menus sat at 32px or 36px. WCAG 2.5.5 asks 44x44; Apple and Google land on 44pt and 48dp. New `.hit-target` grows the tappable region with a centred pseudo-element and leaves the visual untouched, so the deliberate compactness survives. Applied to seven of nine - **not** to `Button`'s `sm`, whose toolbar neighbours would then have *overlapping* hit areas, which mis-taps worse than a small target and is what WCAG's spacing exception exists for.
+
+**Tactile press.** Colour said "registered"; nothing said "pushed". The reason it was missing is documented above `VARIANTS`: `primary`/`secondary` take their pressed colour from unlayered `.btn-glass-*`, so no Tailwind `active:` utility can win on `background`. `.press` uses `translate` instead - a different property, GPU-composited, applied once to the base rather than per variant. Off under `prefers-reduced-motion`.
+
+Tailwind v4 compiles `-translate-y-1/2` to that same `translate` property, so the input's clear button gets `hit-target` **without** `press` - together they would have knocked it out of vertical centre on click.
+
+**Two candidates were left alone**, which is the more reusable half: typography (§20 already re-scaled it, no defect found) and spacing rhythm (a grep suggested `gap-6` vs `gap-1` across pages; the `gap-1` hits were page-*title* stacks where 4px is correct, so the measurement was wrong, not the spacing). `DESIGN_NOTES.md` §24 records both non-findings, because the next person asked to fix the UI will run the same two greps.
+
+**Verified.** `eslint` 0 errors, `tsc` clean on source. Not measured in a browser - hit-area growth is geometric rather than perceptual, but a device check on the toast dismiss and the avatar trigger is worth doing.
+
+### #176 - Settings listed an Integrations tab that threw you out of Settings
+
+**S4 · FIXED · web · `apps/web/app/(app)/app/settings/layout.tsx`, `CAPABILITIES.md`**
+
+Integrations had already moved to the primary nav, and `settings/integrations/page.tsx` was reduced to a bare `redirect('/app/integrations')` - kept deliberately, since the old path is in browser history and in `SYSTEM.md`. What survived the move was the **nav entry**. Clicking "Integrations" inside Settings therefore navigated out of Settings entirely, which reads as a broken tab rather than a relocated feature.
+
+Removed the entry; kept the redirect. A comment sits where the tab used to be so it does not get helpfully restored.
+
+`CAPABILITIES.md` still told readers the frontend lived at `/app/settings/integrations` and now names the real path. `SYSTEM.md` was already correct. Nothing in code linked to the old route - the two remaining mentions describe `ConnectDialog` as a structural template, which is still accurate since that component moved with the page.
+
+**Left alone:** `VOICE_AGENT_PLATFORM.md` still points at the old file for the `COMING_SOON` vendor list. It is a planning document rather than a reference one, so correcting it was not folded into this.
 
 ## Template for the next iteration
 

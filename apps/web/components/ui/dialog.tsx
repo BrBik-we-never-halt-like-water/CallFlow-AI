@@ -85,7 +85,7 @@ export function Dialog({
           {dismissible ? (
             <RadixDialog.Close
               aria-label="Close"
-              className="-m-1.5 flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-sm text-text-mute transition-colors hover:bg-surface-hover hover:text-text"
+              className="hit-target press -m-1.5 flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-sm text-text-mute transition-colors hover:bg-surface-hover hover:text-text"
             >
               <XIcon aria-hidden className="size-4" />
             </RadixDialog.Close>
@@ -150,7 +150,7 @@ export function Sheet({
           </div>
           <RadixDialog.Close
             aria-label="Close"
-            className="-m-1.5 flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-sm text-text-mute transition-colors hover:bg-surface-hover hover:text-text"
+            className="hit-target press -m-1.5 flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-sm text-text-mute transition-colors hover:bg-surface-hover hover:text-text"
           >
             <XIcon aria-hidden className="size-4" />
           </RadixDialog.Close>

@@ -392,7 +392,7 @@ export function ContactGrid({
                         onClick={() =>
                           onChange(renumber(rows.filter((_, i) => i !== index)))
                         }
-                        className="flex size-8 cursor-pointer items-center justify-center rounded-sm text-text-mute transition-colors hover:bg-surface-hover hover:text-text"
+                        className="hit-target press flex size-8 cursor-pointer items-center justify-center rounded-sm text-text-mute transition-colors hover:bg-surface-hover hover:text-text"
                       >
                         <TrashIcon aria-hidden className="size-3.5" />
                       </button>

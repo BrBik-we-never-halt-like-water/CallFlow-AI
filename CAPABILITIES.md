@@ -475,7 +475,8 @@ eventually place calls from its own number instead of relying on the shared voic
 provider is separate, not-yet-built work** - the UI says so plainly rather than
 pretending it's wired up.
 
-**Frontend.** `/app/settings/integrations` (admin/owner only) - connect, update,
+**Frontend.** `/app/integrations` (admin/owner only, primary nav - the old
+`/app/settings/integrations` path redirects here) - connect, update,
 disconnect, with a `NotWiredNotice` explaining that dialling through these isn't live
 yet.
 
