@@ -39,6 +39,46 @@ export function formatCurrency(
   }).format(amount);
 }
 
+/**
+ * Integer minor units → a display string. `499900` + `INR` → `₹4,999`.
+ *
+ * `payments.amount_minor` is a BIGINT of the currency's smallest unit, because
+ * money is never a float anywhere in this codebase (CLAUDE.md §4 #3), and
+ * `formatCurrency` above takes major units so it cannot be used on a payment row.
+ *
+ * The exponent is read from `Intl` rather than assumed to be 2. The payment
+ * gateway settles in whatever the customer actually paid in, and a zero-decimal
+ * currency like JPY would otherwise render a hundred times too small - the kind
+ * of bug that only shows up on the one invoice that matters.
+ */
+export function formatMinorUnits(
+  amountMinor: number | null | undefined,
+  currency: string,
+): string {
+  if (amountMinor == null || Number.isNaN(amountMinor)) return '-';
+  const locale = currency === 'INR' ? 'en-IN' : 'en-US';
+
+  let digits: number;
+  try {
+    digits =
+      new Intl.NumberFormat(locale, { style: 'currency', currency }).resolvedOptions()
+        .maximumFractionDigits ?? 2;
+  } catch {
+    // An unrecognised code from the gateway must not throw inside a table cell.
+    return '-';
+  }
+
+  const divisor = 10 ** digits;
+  const whole = amountMinor % divisor === 0;
+  return new Intl.NumberFormat(locale, {
+    style: 'currency',
+    currency,
+    // Matches formatCurrency: a whole amount reads `₹4,999`, not `₹4,999.00`.
+    minimumFractionDigits: whole ? 0 : digits,
+    maximumFractionDigits: whole ? 0 : digits,
+  }).format(amountMinor / divisor);
+}
+
 /** Per-call overage rates are small; they need decimals the plan price doesn't. */
 export function formatRate(
   amount: number | null | undefined,

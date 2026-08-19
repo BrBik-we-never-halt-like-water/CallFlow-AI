@@ -9,7 +9,6 @@ const TABS = [
   { slug: 'safety', label: 'Safety', permission: 'safety:read' },
   { slug: 'api-keys', label: 'API keys', permission: 'api_keys:read' },
   { slug: 'integrations', label: 'Integrations', permission: 'integrations:read' },
-  { slug: 'billing', label: 'Billing', permission: 'billing:read' },
 ] as const;
 
 export default function SettingsLayout({
@@ -21,17 +20,10 @@ export default function SettingsLayout({
   // narrowing to none and then snapping wider a moment later - the
   // permission check below is a convenience for the nav, not the guard
   // (each page gates its own content), so a one-frame "too wide" beats a
-  // visible layout shift. Billing is reachable without `billing:read` too -
-  // the user menu's "My credits" link sends operator/viewer straight to
-  // /app/settings/billing, which renders its own honest placeholder there
-  // rather than the org's real plan/usage.
+  // visible layout shift.
   const tabs =
     session.status === 'signed-in'
-      ? TABS.filter(
-          (tab) =>
-            session.profile.permissions.includes(tab.permission) ||
-            tab.slug === 'billing',
-        )
+      ? TABS.filter((tab) => session.profile.permissions.includes(tab.permission))
       : TABS;
 
   return (
@@ -42,8 +34,8 @@ export default function SettingsLayout({
           The controls behind every run
         </h1>
         <p className="measure text-small text-text-dim">
-          Guards, credentials, connected numbers, and the plan this organisation
-          is on.
+          Guards, credentials, and the vendors this organisation is connected
+          to.
         </p>
       </div>
 

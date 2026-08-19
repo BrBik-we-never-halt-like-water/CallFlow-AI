@@ -1,68 +1,91 @@
 /**
- * Commercial configuration — the single source of truth for pricing.
+ * Commercial copy: who each plan is for, and what differs between them.
  *
  * ─────────────────────────────────────────────────────────────────────────────
- * THE PUBLIC PRICING PAGES ARE CURRENTLY REMOVED.
+ * PRICES ARE NOT IN THIS FILE, AND MUST NOT COME BACK TO IT.
  *
- * `/pricing`, `PricingPreview` (the home page's pricing section), `PricingTable`,
- * `CostComparison` and `PriceValue` were all deleted because the numbers below
- * are still unset and the pages were rendering visible `TODO` chips where the
- * prices belong. This file is deliberately **kept whole** rather than trimmed to
- * its two live consumers: it is where the numbers get decided, and
- * `FEATURE_MATRIX` / `PRICING_FAQ` / `ENTERPRISE` are real written content that
- * the pages will need again. Treat the unused exports as staged, not dead.
+ * The payment gateway is the Merchant of Record, so it holds the price of
+ * record. `GET /api/v1/billing/plans` reads the live amount back and the UI
+ * renders that. Keeping a second copy here is how a pricing page ends up
+ * disagreeing with the checkout a customer is looking at - which is worse than
+ * the missing numbers that got the public `/pricing` page deleted in the first
+ * place (`DESIGN_NOTES.md`, 2026-08-10).
  *
- * Still consumed today:
- *   - `PLANS`        → app/(app)/app/settings/billing/page.tsx
- *   - `ROI_DEFAULTS` → components/marketing/roi-calculator.tsx (solution pages;
- *                      it models the *buyer's* own human-call cost, never ours,
- *                      which is why it survives with pricing undecided)
+ * `ANNUAL_MONTHS_FREE`, `monthlyInr`/`monthlyUsd`, `includedCalls`,
+ * `overageInr`/`overageUsd`, `planPrice()`, `planOverage()` and
+ * `monthlyEquivalent()` were all removed for that reason. The annual discount is
+ * whatever the gateway's annual product costs.
  *
- * TODO BEFORE THE PAGES COME BACK — every `null` below is an unset commercial
- * number. Nothing here is a placeholder guess dressed up as a real price,
- * because a wrong number on a pricing page is worse than a missing one.
- *
- *   [ ] monthlyInr / monthlyUsd for Starter, Growth, Scale
- *   [ ] includedCalls for every tier
- *   [ ] overageInr / overageUsd for every tier
- *   [ ] confirm ANNUAL_MONTHS_FREE matches what Billing actually charges
- *   [ ] restore the routes + the "Pricing" nav/footer links (site-header.tsx,
- *       site-footer.tsx) and the `#pricing` deck section on the home page
- *   [ ] re-check lib/verticals.ts's goal script, which tells callers pricing is
- *       "published on the website"
- *
- * Layout reads these values and never hard-codes one, so filling them in is a
- * single-file change.
+ * LIMITS ARE NOT IN THIS FILE EITHER. `FEATURE_MATRIX` states them as copy for
+ * a buyer to read, but `apps/api/app/domain/plans.py` and the seeded
+ * `plan_entitlements` table are what the product enforces. If they disagree, the
+ * backend is right and this file is a bug - see `docs/BILLING.md` §1.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import type { Currency } from "./format";
-
 export type BillingPeriod = "monthly" | "annual";
 
-/** Annual billing bills 10 months for 12. */
-export const ANNUAL_MONTHS_FREE = 2;
-
-export type PlanId = "free" | "starter" | "growth" | "scale";
+/**
+ * `enterprise` replaced `scale`. Matches `PlanId` in
+ * `apps/api/app/domain/plans.py` and `organisations_plan_id_check` exactly -
+ * one value space in three places, and all three move together.
+ */
+export type PlanId = "free" | "starter" | "growth" | "enterprise";
 
 export interface Plan {
   id: PlanId;
   name: string;
   /** One line on who the plan is for. Never a feature list. */
   tagline: string;
-  /** `null` = not set yet; renders as a TODO chip. `0` = genuinely free. */
-  monthlyInr: number | null;
-  monthlyUsd: number | null;
-  /** Calls included in the monthly price. */
-  includedCalls: number | null;
-  /** Per-call rate once the included volume is used. */
-  overageInr: number | null;
-  overageUsd: number | null;
   features: string[];
+  /**
+   * The verb, and it has to survive the click. "Start free" belongs to Free
+   * alone: there is no trial of a paid plan, so putting it on Starter or Growth
+   * promises one (CLAUDE.md §4 #9). A paid plan's button chooses the plan; the
+   * account it lands on begins on Free and is upgraded from Billing.
+   */
   cta: string;
   ctaHref: string;
   /** Marked with a 1px ink border and a small mono tag — never a coloured banner. */
   mostChosen?: boolean;
+  /**
+   * `false` for plans with no checkout. Enterprise is invoiced outside the
+   * product, so its card offers a conversation rather than a price.
+   */
+  selfServe: boolean;
+}
+
+/**
+ * The three numbers a buyer decides on, as copy.
+ *
+ * One home in this file, because they appear twice on the site - the home page's
+ * plan cards and `FEATURE_MATRIX`'s rows below both read from here - and two
+ * hand-maintained copies of "3 agents" is how one of them ends up saying 5.
+ *
+ * Still only copy. `apps/api/app/domain/plans.py` and the seeded
+ * `plan_entitlements` table are what the product enforces; if these disagree with
+ * those, this file is the bug (see the header).
+ */
+export const PLAN_LIMITS: Record<
+  PlanId,
+  { agents: string; seats: string; callsPerDay: string }
+> = {
+  free: { agents: "1", seats: "1", callsPerDay: "20" },
+  starter: { agents: "3", seats: "3", callsPerDay: "200" },
+  growth: { agents: "10", seats: "10", callsPerDay: "1,000" },
+  enterprise: { agents: "Custom", seats: "Unlimited", callsPerDay: "Custom" },
+};
+
+/** "3 agents · 3 seats · 200 calls a day". The plan card's one-line summary. */
+export function limitsSummary(id: PlanId): string {
+  const { agents, seats, callsPerDay } = PLAN_LIMITS[id];
+  const plural = (value: string, noun: string) =>
+    value === "1" ? `1 ${noun}` : `${value} ${noun}s`;
+  return [
+    plural(agents, "agent"),
+    plural(seats, "seat"),
+    `${callsPerDay} calls a day`,
+  ].join(" · ");
 }
 
 export const PLANS: Plan[] = [
@@ -70,13 +93,9 @@ export const PLANS: Plan[] = [
     id: "free",
     name: "Free",
     tagline: "Prove the pipeline before you spend anything.",
-    monthlyInr: 0,
-    monthlyUsd: 0,
-    includedCalls: null,
-    overageInr: null,
-    overageUsd: null,
     features: [
       "Free daily call budget, no card required",
+      "Connect your own number and carrier",
       "All starter campaign templates",
       "Typed results and sentiment on every call",
       "Escalation queue",
@@ -84,112 +103,70 @@ export const PLANS: Plan[] = [
     ],
     cta: "Start free",
     ctaHref: "/signup",
+    selfServe: false,
   },
   {
     id: "starter",
     name: "Starter",
     tagline: "One person running outbound alongside their day job.",
-    monthlyInr: null,
-    monthlyUsd: null,
-    includedCalls: null,
-    overageInr: null,
-    overageUsd: null,
     features: [
       "Everything in Free",
-      "Live calling with your own caller ID",
       "Custom campaigns and extraction fields",
       "CSV export",
       "Suppression list across every campaign",
-      "3 seats",
+      "3 agents, 3 seats",
     ],
-    cta: "Start free",
+    cta: "Choose Starter",
     ctaHref: "/signup",
+    selfServe: true,
   },
   {
     id: "growth",
     name: "Growth",
     tagline: "A team that calls every day and triages the results.",
-    monthlyInr: null,
-    monthlyUsd: null,
-    includedCalls: null,
-    overageInr: null,
-    overageUsd: null,
     features: [
       "Everything in Starter",
       "Webhooks with a delivery log and replay",
       "CRM integrations",
       "Scheduled runs and calling windows per campaign",
       "Assignment and resolution on escalations",
-      "10 seats",
+      "Mix any model providers you like",
+      "10 agents, 10 seats, 3 organisations",
       "Email support with a one-business-day reply",
     ],
-    cta: "Start free",
+    cta: "Choose Growth",
     ctaHref: "/signup",
     mostChosen: true,
+    selfServe: true,
   },
   {
-    id: "scale",
-    name: "Scale",
-    tagline: "Outbound is a core operation, not a side project.",
-    monthlyInr: null,
-    monthlyUsd: null,
-    includedCalls: null,
-    overageInr: null,
-    overageUsd: null,
+    id: "enterprise",
+    name: "Enterprise",
+    tagline: "Outbound is a core operation, and procurement is involved.",
     features: [
       "Everything in Growth",
-      "Multiple organisations and number pools",
+      "Limits set to whatever you actually need",
+      "Unlimited seats and organisations",
       "Role-based access and audit log",
       "Custom data retention window",
-      "Priority support",
-      "Unlimited seats",
+      "Signed DPA and security review",
+      "Bring your own numbers and carrier at any scale",
+      "SSO and SCIM provisioning",
+      "Named contact and priority support",
     ],
     cta: "Book a 15-min demo",
     ctaHref: "/demo",
+    selfServe: false,
   },
 ];
-
-export const ENTERPRISE = {
-  name: "Enterprise",
-  tagline: "Procurement, a DPA, and a number of your own.",
-  features: [
-    "Signed DPA and security review",
-    "Regional data residency",
-    "Bring your own numbers and carrier",
-    "SSO and SCIM provisioning",
-    "Uptime commitment",
-    "Named contact",
-  ],
-  cta: "Talk to us",
-  ctaHref: "/demo",
-} as const;
-
-export function planPrice(plan: Plan, currency: Currency): number | null {
-  return currency === "INR" ? plan.monthlyInr : plan.monthlyUsd;
-}
-
-export function planOverage(plan: Plan, currency: Currency): number | null {
-  return currency === "INR" ? plan.overageInr : plan.overageUsd;
-}
-
-/**
- * Price for the chosen period, expressed per month so the columns stay
- * comparable. Annual shows the discounted monthly equivalent.
- */
-export function monthlyEquivalent(
-  plan: Plan,
-  currency: Currency,
-  period: BillingPeriod,
-): number | null {
-  const monthly = planPrice(plan, currency);
-  if (monthly == null) return null;
-  if (period === "monthly" || monthly === 0) return monthly;
-  return Math.round((monthly * (12 - ANNUAL_MONTHS_FREE)) / 12);
-}
 
 /* ---------------------------------------------------------------------------
    Feature comparison matrix. Collapsible by category, sticky plan headers.
    `true` renders a tick, `false` a dash, a string renders as mono text.
+
+   No cell is `null` any more. `null` used to mean "price not decided yet" and
+   rendered a visible TODO chip; prices left this file, so an unset cell would
+   now be an oversight rather than an honest gap.
    --------------------------------------------------------------------------- */
 
 export type MatrixValue = boolean | string | null;
@@ -206,30 +183,43 @@ export interface MatrixCategory {
   rows: MatrixRow[];
 }
 
+/** Builds a matrix row's `values` from a per-plan lookup, so a row that restates
+ *  a `PLAN_LIMITS` number reads it rather than repeating it. */
+function byPlan(pick: (id: PlanId) => MatrixValue): Record<PlanId, MatrixValue> {
+  return {
+    free: pick("free"),
+    starter: pick("starter"),
+    growth: pick("growth"),
+    enterprise: pick("enterprise"),
+  };
+}
+
 export const FEATURE_MATRIX: MatrixCategory[] = [
   {
     name: "Calling",
     rows: [
       {
-        label: "Live calls included",
-        values: { free: false, starter: null, growth: null, scale: null },
-      },
-      {
-        label: "Calls placed per hour",
-        hint: "A pacing limit, so a run never looks like a burst of robocalls.",
-        values: { free: "—", starter: null, growth: null, scale: null },
+        label: "Calls per day",
+        hint: "A ceiling, not an allowance you are billed against. You can set your own lower limit in Settings → Safety.",
+        values: byPlan((id) => PLAN_LIMITS[id].callsPerDay),
       },
       {
         label: "Your own caller ID",
-        values: { free: false, starter: true, growth: true, scale: true },
+        hint: "You connect your own carrier account, so the number your contacts see is one you own. Included on every plan.",
+        values: { free: true, starter: true, growth: true, enterprise: true },
+      },
+      {
+        label: "Voice agents",
+        hint: "A configured STT, LLM and TTS pipeline with a number attached.",
+        values: byPlan((id) => PLAN_LIMITS[id].agents),
       },
       {
         label: "Voicemail and IVR handling",
-        values: { free: true, starter: true, growth: true, scale: true },
+        values: { free: true, starter: true, growth: true, enterprise: true },
       },
       {
         label: "Calling windows per campaign",
-        values: { free: false, starter: false, growth: true, scale: true },
+        values: { free: false, starter: false, growth: true, enterprise: true },
       },
     ],
   },
@@ -239,23 +229,28 @@ export const FEATURE_MATRIX: MatrixCategory[] = [
       {
         label: "Typed results on every call",
         hint: "Schema-validated fields, not a transcript you have to read.",
-        values: { free: true, starter: true, growth: true, scale: true },
+        values: { free: true, starter: true, growth: true, enterprise: true },
       },
       {
         label: "Sentiment and escalation reason",
-        values: { free: true, starter: true, growth: true, scale: true },
+        values: { free: true, starter: true, growth: true, enterprise: true },
       },
       {
         label: "Custom extraction fields",
-        values: { free: "Templates only", starter: true, growth: true, scale: true },
+        values: { free: "Templates only", starter: true, growth: true, enterprise: true },
       },
       {
         label: "Assign and resolve escalations",
-        values: { free: false, starter: false, growth: true, scale: true },
+        values: { free: false, starter: false, growth: true, enterprise: true },
       },
       {
         label: "Transcript retention",
-        values: { free: "7 days", starter: "30 days", growth: "12 months", scale: "Configurable" },
+        values: {
+          free: "7 days",
+          starter: "30 days",
+          growth: "12 months",
+          enterprise: "Configurable",
+        },
       },
     ],
   },
@@ -264,24 +259,24 @@ export const FEATURE_MATRIX: MatrixCategory[] = [
     rows: [
       {
         label: "Allowlist, per-run ceiling, rate limit",
-        values: { free: true, starter: true, growth: true, scale: true },
+        values: { free: true, starter: true, growth: true, enterprise: true },
       },
       {
         label: "Suppression list across every campaign",
-        values: { free: true, starter: true, growth: true, scale: true },
+        values: { free: true, starter: true, growth: true, enterprise: true },
       },
       {
         label: "Editable AI-disclosure line",
         hint: "On by default and cannot be fully removed.",
-        values: { free: true, starter: true, growth: true, scale: true },
+        values: { free: true, starter: true, growth: true, enterprise: true },
       },
       {
         label: "Audit log",
-        values: { free: false, starter: false, growth: false, scale: true },
+        values: { free: false, starter: false, growth: false, enterprise: true },
       },
       {
         label: "Signed DPA",
-        values: { free: false, starter: false, growth: true, scale: true },
+        values: { free: false, starter: false, growth: true, enterprise: true },
       },
     ],
   },
@@ -290,16 +285,35 @@ export const FEATURE_MATRIX: MatrixCategory[] = [
     rows: [
       {
         label: "Seats",
-        values: { free: "1", starter: "3", growth: "10", scale: "Unlimited" },
+        values: byPlan((id) => PLAN_LIMITS[id].seats),
       },
-      { label: "CSV export", values: { free: false, starter: true, growth: true, scale: true } },
+      {
+        label: "Organisations",
+        hint: "Separate workspaces, each with its own contacts, campaigns and team.",
+        values: { free: "1", starter: "1", growth: "3", enterprise: "Unlimited" },
+      },
+      {
+        label: "Model providers you can connect",
+        hint: "Bring your own speech and language vendor keys. Billed to you by them, not by us.",
+        values: { free: "2", starter: "3", growth: "Unlimited", enterprise: "Unlimited" },
+      },
+      {
+        label: "CSV export",
+        values: { free: false, starter: true, growth: true, enterprise: true },
+      },
       {
         label: "Webhooks with replay",
-        values: { free: false, starter: false, growth: true, scale: true },
+        values: { free: false, starter: false, growth: true, enterprise: true },
       },
-      { label: "CRM integrations", values: { free: false, starter: false, growth: true, scale: true } },
-      { label: "API access", values: { free: false, starter: true, growth: true, scale: true } },
-      { label: "SSO", values: { free: false, starter: false, growth: false, scale: true } },
+      {
+        label: "CRM integrations",
+        values: { free: false, starter: false, growth: true, enterprise: true },
+      },
+      {
+        label: "API access",
+        values: { free: false, starter: true, growth: true, enterprise: true },
+      },
+      { label: "SSO", values: { free: false, starter: false, growth: false, enterprise: true } },
     ],
   },
   {
@@ -307,15 +321,20 @@ export const FEATURE_MATRIX: MatrixCategory[] = [
     rows: [
       {
         label: "Support channel",
-        values: { free: "Docs", starter: "Email", growth: "Email", scale: "Priority" },
+        values: { free: "Docs", starter: "Email", growth: "Email", enterprise: "Priority" },
       },
       {
         label: "First-reply target",
-        values: { free: "—", starter: "2 business days", growth: "1 business day", scale: "4 hours" },
+        values: {
+          free: "—",
+          starter: "2 business days",
+          growth: "1 business day",
+          enterprise: "4 hours",
+        },
       },
       {
         label: "Onboarding session",
-        values: { free: false, starter: false, growth: true, scale: true },
+        values: { free: false, starter: false, growth: true, enterprise: true },
       },
     ],
   },
@@ -327,6 +346,9 @@ export const FEATURE_MATRIX: MatrixCategory[] = [
 
    These are ESTIMATE INPUTS, not claims — the page exposes them as editable
    fields and recomputes, so a buyer can put their own salary figure in.
+
+   Currently unused: `CostComparison` was deleted with the pricing pages. Staged,
+   not dead.
    --------------------------------------------------------------------------- */
 
 export const COMPARISON_DEFAULTS = {
@@ -359,39 +381,49 @@ export const ROI_DEFAULTS = {
 
 /* ---------------------------------------------------------------------------
    Pricing FAQ.
+
+   Rewritten for entitlement-based plans. The previous answers described a
+   metered product this one is not: an overage rate, "you are not cut off
+   mid-run", a run that "pauses and resumes once you top up", and a pro-rata
+   refund window. There is no overage, no top-up, and no pause/resume endpoint,
+   so every one of those was a promise the code contradicted.
    --------------------------------------------------------------------------- */
 
 export const PRICING_FAQ: { q: string; a: string }[] = [
   {
-    q: "What counts as a billable call?",
-    a: "A call is billable once it connects and the conversation starts. Busy signals, unanswered rings, and numbers blocked by your safety guards are not billable. A call that reaches voicemail is billable only if the agent leaves the message you asked it to leave.",
+    q: "Am I charged per call?",
+    a: "No. Plans are a monthly subscription and calls are not metered or billed individually. What a plan sets is how much you can stand up — voice agents, seats, organisations — and a daily call ceiling. You will never get a bill that depends on how busy last month was.",
   },
   {
-    q: "What happens when I go over my included volume?",
-    a: "Calls keep going and the extra ones bill at your plan's overage rate. You are not cut off mid-run. If you would rather stop than overspend, set a daily budget in Settings → Safety and runs will halt at the ceiling instead.",
+    q: "What happens when I hit my daily call limit?",
+    a: "Runs stop at the ceiling and tell you that is why. Nothing is billed extra and nothing is silently dropped — contacts that were not reached stay in the run, and the limit resets the next day. If you want a lower ceiling than your plan allows, set one in Settings → Safety.",
   },
   {
-    q: "Can I bring my own number?",
-    a: "Yes, from Starter up. You verify a caller ID you already own and campaigns dial from it, so the number your contacts see is the one they recognise. Enterprise can bring an entire number pool and carrier.",
+    q: "Who pays for the phone calls and the AI?",
+    a: "You connect your own carrier account and your own speech or language provider keys, and those vendors bill you directly at their rates. We do not mark them up or resell them. That is also why connecting a number is included on every plan, including Free.",
   },
   {
-    q: "What happens if I run out of credits during a run?",
-    a: "The run pauses rather than failing. Contacts already called keep their results, contacts not yet reached stay queued, and the run resumes from where it stopped once you top up.",
+    q: "Can I use it on the free plan without a card?",
+    a: "Yes. Free includes a daily call budget, one voice agent and one seat, and it dials real numbers through your own carrier. No card is required and there is no trial clock.",
   },
   {
-    q: "Do you offer refunds?",
-    a: "Unused subscription time is refunded pro-rata if you cancel within the first 30 days of a paid plan. Call volume already spent is not refundable, because the calls were placed.",
+    q: "What happens if a payment fails?",
+    a: "Your plan keeps working until the end of the period you have already paid for, so a card that expires mid-campaign does not stop calls that day. We email you, and you can update the payment method from Billing. If the period ends without a successful payment, the organisation moves to Free.",
   },
   {
-    q: "How long is the contract?",
-    a: "Monthly plans are month to month and you can cancel any time. Annual plans run twelve months and bill ten, which is the discount. There is no minimum term on Free.",
+    q: "What happens to my data if I downgrade?",
+    a: "Nothing is deleted. Numbers and provider keys you have already connected keep working — a downgrade only stops you adding new ones. If a downgrade puts you over a limit, what exists stays; you just cannot create more until you are back under it.",
+  },
+  {
+    q: "How long is the contract, and how do I cancel?",
+    a: "Monthly plans are month to month. Cancel from Billing in one click, without talking to anyone — your plan then runs to the end of the period you paid for rather than stopping that instant. Annual plans run twelve months. There is no minimum term on Free.",
   },
   {
     q: "How long do you keep call data?",
     a: "Transcripts and recordings follow your plan's retention window, and you can shorten it on any plan. Typed results and outcomes are kept for the life of the account so your reporting stays intact. You can export or delete everything at any time from Settings → Compliance.",
   },
   {
-    q: "How do I cancel?",
-    a: "Settings → Billing, in one click, without talking to anyone. Your data stays available for export for 30 days after cancellation, then it is deleted.",
+    q: "What does Enterprise change?",
+    a: "Every limit becomes whatever you actually need rather than a fixed tier, and billing moves to an invoice instead of a card. It also adds the audit log, SSO, a signed DPA and a named contact. It is the one plan you cannot self-serve, because the limits are agreed rather than published.",
   },
 ];

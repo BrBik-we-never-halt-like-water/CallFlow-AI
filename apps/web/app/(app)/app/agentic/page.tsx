@@ -19,6 +19,11 @@ import {
 import { cn } from '@/lib/cn';
 import { api, type VoiceAgent } from '@/lib/api';
 import { useOrgScopedEffect } from '@/lib/hooks/use-org-scoped-effect';
+import {
+  isAtLimit,
+  type PlanLimits,
+  usePlanLimits,
+} from '@/lib/hooks/use-plan-limits';
 import { useSession, type SessionProfile } from '@/lib/hooks/use-session';
 
 export default function AgenticPage() {
@@ -116,6 +121,59 @@ function DraftCard({
   );
 }
 
+/**
+ * `Create agent`, or the way out when the plan has no room for another one.
+ *
+ * At the cap the button is *replaced*, not disabled. A greyed-out control tells
+ * someone the product is broken; naming the plan and offering the upgrade tells
+ * them what happened and what to do next (CLAUDE.md §5). The refusal itself still
+ * comes from the API's 402 and a before-insert trigger below it - this only stops
+ * someone filling in a whole agent before finding out.
+ *
+ * Only an owner holds `billing:write`, so an operator at the cap gets the reason
+ * and no button, rather than one that would 403 on them.
+ */
+function CreateAgentAction({
+  limits,
+  agentCount,
+  canUpgrade,
+}: {
+  limits: PlanLimits;
+  /** `null` while the list is still loading. */
+  agentCount: number | null;
+  canUpgrade: boolean;
+}) {
+  const create = (
+    <Button asChild>
+      <Link href="/app/agentic/new">Create agent</Link>
+    </Button>
+  );
+
+  // Until both numbers are in, offer the normal action. Guessing the other way
+  // would flash an upgrade prompt at an owner who has room to spare, and a
+  // failed limits fetch would lock out creation the plan actually permits.
+  if (limits.status !== 'ready' || agentCount === null) return create;
+
+  const allowed = limits.entitlements.max_voice_agents;
+  if (!isAtLimit(allowed, agentCount)) return create;
+
+  return (
+    <div className="flex flex-col items-end gap-1.5">
+      {canUpgrade ? (
+        <Button asChild>
+          <Link href="/app/billing">Upgrade plan</Link>
+        </Button>
+      ) : null}
+      <p className="text-small text-text-dim">
+        {limits.planName} includes {allowed}{' '}
+        {allowed === 1 ? 'agent' : 'agents'}, and{' '}
+        {allowed === 1 ? "it's" : "they're"} all in use.
+        {canUpgrade ? null : ' Ask an owner to upgrade.'}
+      </p>
+    </div>
+  );
+}
+
 function AgenticContent({ profile }: { profile: SessionProfile }) {
   const toast = useToast();
   const canRead = profile.permissions.includes('agents:read');
@@ -131,6 +189,7 @@ function AgenticContent({ profile }: { profile: SessionProfile }) {
     typeof window === 'undefined' ? [] : listUnsavedAgentDrafts(),
   );
   const [tab, setTab] = useState<'agents' | 'drafts'>('agents');
+  const planLimits = usePlanLimits();
 
   function load() {
     if (!canRead) return;
@@ -184,9 +243,11 @@ function AgenticContent({ profile }: { profile: SessionProfile }) {
           <h1 className="font-display text-h2 text-text">Agents</h1>
         </div>
         {canWrite ? (
-          <Button asChild>
-            <Link href="/app/agentic/new">Create agent</Link>
-          </Button>
+          <CreateAgentAction
+            limits={planLimits}
+            agentCount={agents?.length ?? null}
+            canUpgrade={profile.permissions.includes('billing:write')}
+          />
         ) : null}
       </div>
 

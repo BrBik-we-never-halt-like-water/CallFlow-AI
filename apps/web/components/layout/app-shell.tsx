@@ -2,6 +2,7 @@
 
 import type { Icon } from '@phosphor-icons/react';
 import {
+  ArrowUpIcon,
   BuildingsIcon,
   CaretUpDownIcon,
   CheckIcon,
@@ -29,12 +30,19 @@ import { Tooltip } from '@/components/ui/tooltip';
 import { VRule } from '@/components/ui/rule';
 import { useActiveOrg } from '@/lib/hooks/use-active-org';
 import { useOrganisations } from '@/lib/hooks/use-organisations';
+import { isAtLimit, usePlanLimits } from '@/lib/hooks/use-plan-limits';
 import { hasRole } from '@/lib/hooks/use-permission';
 import { useSidebarCollapsed } from '@/lib/hooks/use-sidebar-collapsed';
 import { usePrefersReducedMotion } from '@/lib/hooks/use-external-store';
 import { useAppStore } from '@/lib/app-store';
 import { useChatUnreadCount } from '@/lib/hooks/use-chat-unread';
-import { AppTabBar, isActive, OrgMark, PRIMARY_NAV_ITEMS } from './app-nav';
+import {
+  AppTabBar,
+  isActive,
+  OrgMark,
+  PLATFORM_NAV_ITEM,
+  PRIMARY_NAV_ITEMS,
+} from './app-nav';
 import { type SessionProfile, useSession } from '@/lib/hooks/use-session';
 
 /** Routes that get a focused destination, not the persistent app chrome - see
@@ -288,7 +296,12 @@ function AppSidebar({
           collapsed && 'items-center',
         )}
       >
-        {PRIMARY_NAV_ITEMS.map((item) => {
+        {[
+          ...PRIMARY_NAV_ITEMS,
+          // Appended rather than filtered in, so the list every other surface
+          // reads stays the list every customer has.
+          ...(profile?.is_platform_admin ? [PLATFORM_NAV_ITEM] : []),
+        ].map((item) => {
           const active = isActive(pathname, item.href);
           const badge = item.href === '/app/escalations' ? escalationCount : 0;
           // A plain unread count, not a lamp colour - this is a chat inbox
@@ -531,8 +544,20 @@ function SidebarOrgSwitcher({
 }) {
   const { orgs } = useOrganisations(profile);
   const [, setActiveOrgId] = useActiveOrg();
+  const planLimits = usePlanLimits();
 
   const label = profile?.active.org_name ?? 'Loading…';
+
+  // Workspaces are counted per person, not per organisation: the limit is how many
+  // you own, and it comes from whichever org you are acting from. At the ceiling the
+  // entry becomes the upgrade rather than a link to a form that would refuse on
+  // submit - the 402 is still the real gate, this just stops someone naming a
+  // workspace they cannot have.
+  const ownedOrgs = orgs?.filter((org) => org.role === 'owner').length ?? null;
+  const atOrgLimit =
+    planLimits.status === 'ready' &&
+    ownedOrgs !== null &&
+    isAtLimit(planLimits.entitlements.max_organisations, ownedOrgs);
 
   if (!profile) {
     return (
@@ -643,13 +668,20 @@ function SidebarOrgSwitcher({
         <DropdownMenuSeparator />
 
         <DropdownMenuItem>
-          <Link
-            href="/app/organisation/new"
-            className="flex flex-1 items-center gap-2"
-          >
-            <PlusIcon aria-hidden className="size-4" />
-            New organisation
-          </Link>
+          {atOrgLimit ? (
+            <Link href="/app/billing" className="flex flex-1 items-center gap-2">
+              <ArrowUpIcon aria-hidden className="size-4" />
+              Upgrade to create another
+            </Link>
+          ) : (
+            <Link
+              href="/app/organisation/new"
+              className="flex flex-1 items-center gap-2"
+            >
+              <PlusIcon aria-hidden className="size-4" />
+              New organisation
+            </Link>
+          )}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

@@ -2,6 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
+import { PlanLimitNotice } from '@/components/app/plan-limit-notice';
 import { Button } from '@/components/ui/button';
 import { Field } from '@/components/ui/field';
 import { ImageUpload } from '@/components/ui/image-upload';
@@ -10,6 +11,8 @@ import { Panel } from '@/components/ui/panel';
 import { useToast } from '@/components/ui/toast';
 import { api, type Organisation } from '@/lib/api';
 import { useActiveOrg } from '@/lib/hooks/use-active-org';
+import { useOrganisations } from '@/lib/hooks/use-organisations';
+import { isAtLimit, usePlanLimits } from '@/lib/hooks/use-plan-limits';
 import { useSession } from '@/lib/hooks/use-session';
 
 type Step = 'name' | 'logo';
@@ -35,6 +38,27 @@ export default function NewOrganisationPage() {
   const [created, setCreated] = useState<Organisation | null>(null);
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [finishing, setFinishing] = useState(false);
+
+  // Workspaces are the one entitlement counted per *person*, not per organisation:
+  // the limit is how many you own, and it comes from whichever org you are acting
+  // from. So the count is derived from the memberships list rather than read from
+  // Billing's org-scoped usage - and `role` is already on every row.
+  const planLimits = usePlanLimits();
+  const { orgs } = useOrganisations(
+    session.status === 'signed-in' ? session.profile : null,
+  );
+  const owned = orgs?.filter((org) => org.role === 'owner').length ?? null;
+  // `null` until both numbers are in, and `null` again when there is room. The
+  // form stays fully usable in both cases: a slow or failed limits fetch must not
+  // block a workspace the plan actually allows.
+  const limitReason =
+    planLimits.status === 'ready' &&
+    owned !== null &&
+    isAtLimit(planLimits.entitlements.max_organisations, owned)
+      ? `${planLimits.planName} includes ${planLimits.entitlements.max_organisations} ` +
+        `${planLimits.entitlements.max_organisations === 1 ? 'organisation' : 'organisations'}, ` +
+        `and you already own ${owned}.`
+      : null;
 
   async function createOrg(event: React.FormEvent) {
     event.preventDefault();
@@ -107,22 +131,33 @@ export default function NewOrganisationPage() {
                 maxLength={120}
               />
             </Field>
-            <div className="flex items-center gap-3 border-t border-rule pt-4">
-              <Button
-                type="submit"
-                loading={creating}
-                disabled={name.trim().length < 2}
-              >
-                Continue
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={() => router.back()}
-                disabled={creating}
-              >
-                Cancel
-              </Button>
+            <div className="flex flex-col gap-3 border-t border-rule pt-4">
+              {limitReason ? (
+                <PlanLimitNotice
+                  reason={limitReason}
+                  canUpgrade={
+                    session.status === 'signed-in' &&
+                    session.profile.permissions.includes('billing:write')
+                  }
+                />
+              ) : null}
+              <div className="flex items-center gap-3">
+                <Button
+                  type="submit"
+                  loading={creating}
+                  disabled={name.trim().length < 2 || limitReason !== null}
+                >
+                  Continue
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => router.back()}
+                  disabled={creating}
+                >
+                  Cancel
+                </Button>
+              </div>
             </div>
           </form>
         ) : (

@@ -298,6 +298,158 @@ export interface MyCredits {
   used_today: number;
 }
 
+/**
+ * A plan's ceilings. `null` means unlimited, never a sentinel — and `0` is a
+ * real, enforced value, so never collapse the two with a falsiness check.
+ */
+export interface Entitlements {
+  max_voice_agents: number | null;
+  max_seats: number | null;
+  max_organisations: number | null;
+  max_ai_integrations: number | null;
+  daily_call_budget: number | null;
+  llm_spend_limit_usd: number;
+}
+
+/** What the organisation has actually used, against `Entitlements`. */
+export interface EntitlementUsage {
+  voice_agents: number;
+  seats: number;
+  organisations: number;
+  ai_integrations: number;
+  calls_today: number;
+}
+
+/**
+ * Prices come from the gateway, not from `lib/pricing.ts` — it is the Merchant
+ * of Record and holds the price of record. `amount_minor` is an integer in the
+ * currency's smallest unit; render it with `formatMinorUnits`.
+ */
+export interface PlanPrice {
+  amount_minor: number;
+  currency: string;
+  period: 'monthly' | 'annual';
+}
+
+export interface PlanOption {
+  plan_id: string;
+  name: string;
+  entitlements: Entitlements;
+  /** Empty when the plan has no checkout — enterprise is invoiced. */
+  prices: PlanPrice[];
+  self_serve: boolean;
+  current: boolean;
+}
+
+export type SubscriptionStatus =
+  | 'pending'
+  | 'active'
+  | 'on_hold'
+  | 'cancelled'
+  | 'expired'
+  | 'failed';
+
+export interface Subscription {
+  status: SubscriptionStatus;
+  plan_id: string;
+  current_period_end: string | null;
+  cancel_at_period_end: boolean;
+  /** Why a renewal failed, shown verbatim to an owner. */
+  last_error: string | null;
+}
+
+export interface PaymentRecord {
+  /** False when the payment hasn't settled, or the gateway issues no invoice. */
+  has_receipt: boolean;
+  id: string;
+  amount_minor: number;
+  currency: string;
+  status: 'succeeded' | 'failed' | 'refunded';
+  description: string | null;
+  paid_at: string | null;
+}
+
+/* --- platform admin (docs/PLATFORM_ADMIN.md) --------------------------------
+   Every one of these 404s for anyone without a `platform_admins` row, so a
+   non-admin never distinguishes "no permission" from "no such route". */
+
+export interface PlatformOrg {
+  org_id: string;
+  name: string;
+  slug: string;
+  plan_id: string;
+  has_override: boolean;
+  member_count: number;
+  agent_count: number;
+  run_count: number;
+  created_at: string;
+}
+
+export interface EntitlementOverride {
+  org_id: string;
+  max_voice_agents: number | null;
+  max_seats: number | null;
+  max_organisations: number | null;
+  max_ai_integrations: number | null;
+  daily_call_budget: number | null;
+  llm_spend_limit_usd: number | null;
+  /** Limits with no ceiling at all. `null` above means "inherit the plan", which
+   *  is a different thing - hence two channels rather than one. */
+  unlimited: string[];
+  note: string | null;
+  updated_at: string;
+}
+
+export interface PlatformAuditEntry {
+  id: string;
+  actor_user_id: string | null;
+  action: string;
+  target_org_id: string | null;
+  reason: string;
+  created_at: string;
+}
+
+export interface OverrideInput {
+  max_voice_agents: number | null;
+  max_seats: number | null;
+  max_organisations: number | null;
+  max_ai_integrations: number | null;
+  daily_call_budget: number | null;
+  unlimited: string[];
+  note: string | null;
+  reason: string;
+}
+
+export interface BillingOverview {
+  plan_id: string;
+  plan_name: string;
+  /**
+   * `null` for an organisation that has never subscribed, and for an enterprise
+   * account on an invoiced deal — neither is an error state, so both must render
+   * as a plan without a subscription rather than as a failure.
+   */
+  subscription: Subscription | null;
+  entitlements: Entitlements;
+  usage: EntitlementUsage;
+  /**
+   * What runs actually stop at today. Distinct from
+   * `entitlements.daily_call_budget`, which is what the *plan* permits: a
+   * deployment default or the org's own Settings → Safety value can be lower, and
+   * the lower one wins. Show this on the meter, or the page promises a number
+   * runs will not honour.
+   */
+  effective_daily_call_budget: number;
+  /** True when a platform admin has set a negotiated limit on this org. */
+  has_custom_limits: boolean;
+  payments: PaymentRecord[];
+  /**
+   * False on a deployment with no gateway key. The Billing page uses this to keep
+   * saying "no payment processor is connected" rather than offering an upgrade
+   * button that would run against a stub and take no money (CLAUDE.md §4 #9).
+   */
+  payments_configured: boolean;
+}
+
 export interface InvitationPreview {
   valid: boolean;
   reason: string | null;
@@ -714,6 +866,86 @@ export const api = {
     authReq<void>(`/api/v1/organisations/me/members/${userId}/credits`, {
       method: 'PATCH',
       body: JSON.stringify({ daily_allocation: dailyAllocation }),
+    }),
+
+  // --- platform admin ------------------------------------------------------
+  platformOrgs: (search?: string) =>
+    authReq<PlatformOrg[]>(
+      `/api/v1/platform/organisations${search ? `?search=${encodeURIComponent(search)}` : ''}`,
+    ),
+  platformOverride: (orgId: string) =>
+    authReq<EntitlementOverride | null>(
+      `/api/v1/platform/organisations/${orgId}/entitlements`,
+    ),
+  // `reason` is mandatory server-side and lands in the audit log beside the
+  // before/after state. There is no unaudited variant of either of these.
+  platformSetPlan: (orgId: string, planId: string, reason: string) =>
+    authReq<void>(`/api/v1/platform/organisations/${orgId}/plan`, {
+      method: 'PUT',
+      body: JSON.stringify({ plan_id: planId, reason }),
+    }),
+  platformSetOverride: (orgId: string, body: OverrideInput) =>
+    authReq<void>(`/api/v1/platform/organisations/${orgId}/entitlements`, {
+      method: 'PUT',
+      body: JSON.stringify(body),
+    }),
+  platformAudit: (limit = 100) =>
+    authReq<PlatformAuditEntry[]>(`/api/v1/platform/audit?limit=${limit}`),
+
+  // --- billing -------------------------------------------------------------
+  /**
+   * The plan ladder with the gateway's live prices, for the marketing site.
+   *
+   * `req`, not `authReq`: the public pages have no session, and adding a bearer
+   * header they cannot produce is what would make a pricing section render empty
+   * for every visitor who is not already a customer. `current` is always false
+   * here - there is no organisation to be current for.
+   */
+  publicPlans: () => req<PlanOption[]>('/api/v1/public/billing/plans'),
+  billingPlans: () => authReq<PlanOption[]>('/api/v1/billing/plans'),
+  billingOverview: () => authReq<BillingOverview>('/api/v1/billing/subscription'),
+  /**
+   * The gateway's invoice PDF for one payment, as a blob.
+   *
+   * Fetched rather than linked because the endpoint needs the session's bearer
+   * token - a plain `<a href>` sends no Authorization header and would 401. The
+   * caller turns the blob into an object URL and revokes it.
+   */
+  paymentReceipt: async (paymentId: string): Promise<Blob> => {
+    const res = await fetch(
+      `${BASE}/api/v1/billing/payments/${paymentId}/receipt`,
+      { headers: await authHeaders(), cache: 'no-store' },
+    );
+    if (!res.ok) {
+      throw new Error(
+        res.status === 404
+          ? 'No receipt is available for this payment yet.'
+          : "The receipt couldn't be fetched. Try again in a moment.",
+      );
+    }
+    return res.blob();
+  },
+  // `idempotencyKey` is the caller's own retry token: reusing it resumes the
+  // same checkout instead of opening a second one, the same contract
+  // `connectNumber` already has. Generate it once per button press, not per
+  // render, or a re-render starts a new subscription attempt.
+  startCheckout: (planId: string, period: 'monthly' | 'annual', idempotencyKey: string) =>
+    authReq<{ checkout_url: string }>('/api/v1/billing/checkout', {
+      method: 'POST',
+      body: JSON.stringify({ plan_id: planId, period, idempotency_key: idempotencyKey }),
+    }),
+  changePlan: (planId: string, period: 'monthly' | 'annual') =>
+    authReq<Subscription>('/api/v1/billing/change-plan', {
+      method: 'POST',
+      body: JSON.stringify({ plan_id: planId, period }),
+    }),
+  cancelSubscription: () =>
+    authReq<Subscription>('/api/v1/billing/cancel', { method: 'POST' }),
+  // Pulls whatever the gateway actually holds and applies it. For when a webhook
+  // never arrived - the payment succeeded but nothing told us.
+  syncBilling: () =>
+    authReq<{ applied: boolean; detail: string }>('/api/v1/billing/sync', {
+      method: 'POST',
     }),
 
   // --- organisations, team, profile - authenticated -----------------------
