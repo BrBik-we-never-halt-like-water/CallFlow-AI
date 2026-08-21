@@ -57,7 +57,7 @@ function Header() {
   );
 }
 
-function ProfileDetails({
+export function ProfileDetails({
   profile,
   refresh,
 }: {
@@ -129,7 +129,7 @@ function ProfileDetails({
   );
 }
 
-function ChangePasswordPanel() {
+export function ChangePasswordPanel() {
   const toast = useToast();
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
@@ -203,7 +203,7 @@ function ChangePasswordPanel() {
   );
 }
 
-function SignOutPanel() {
+export function SignOutPanel() {
   const router = useRouter();
   const [signingOut, setSigningOut] = useState(false);
 
