@@ -1,41 +1,55 @@
 """Starting and reading runs - org-scoped, persisted.
 
-Every run dials for real. There is no dry-run mode (CLAUDE.md, ADR-3) - the
-guards that actually stand between "started a run" and "rang a real phone" are
-the per-run ceiling, the allowlist, per-organisation rate limiting, that
-organisation's own daily budget, and the suppression list, all enforced in
-`check_dial_allowed()` and below. Every one of these can be overridden per
-organisation (`org_safety_settings`) or falls back to the deployment's env-var
-defaults - `resolve_safety_settings()` is the one place that merge happens.
+Every run dials for real. There is no dry-run mode (CLAUDE.md, ADR-3).
+
+**The only guard between "started a run" and "rang a real phone" is the
+suppression list.** The per-run ceiling, the allowlist, per-organisation rate
+limiting, the daily budget and per-teammate credits were all removed at the
+product owner's direction while a replacement security layer is designed - see
+`domain/safety.py`'s module docstring. Nothing here throttles, caps, or bills a
+run: a request that resolves an agent and a verified number dials every contact
+in the list.
 """
 
 from __future__ import annotations
 
 import logging
-import secrets
 import uuid
 from collections.abc import Iterable
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    File,
+    HTTPException,
+    Request,
+    UploadFile,
+    status,
+)
 from pydantic import BaseModel, Field
 
-from app.api.v1.routes.campaigns import resolve_campaign
 from app.auth.dependencies import CurrentUser, RequirePermission, current_user
 from app.auth.permissions import Permission
 from app.core.config import config
 from app.core.logging import CallContext
-from app.core.rate_limit import limiter
 from app.database import database
-from app.database.repositories import credits as credits_repo
 from app.database.repositories import escalations as escalations_repo
+from app.database.repositories import run_numbers as run_numbers_repo
 from app.database.repositories import runs as runs_repo
-from app.database.repositories import safety_settings as safety_settings_repo
 from app.database.repositories import suppressions as suppressions_repo
 from app.domain.entities import NEEDS_A_PERSON_DISPOSITIONS, CallOutcome, Contact
-from app.domain.safety import phone_hash, resolve_safety_settings
-from app.services.campaign_runner import CampaignRunner
+from app.domain.safety import mask, phone_hash
+from app.domain.spreadsheet import (
+    MAX_ROWS,
+    SheetTooLarge,
+    parse_rows,
+    to_contact_payload,
+)
+from app.services.run_dialer import RunDialer
+from app.services.run_dispatch import RunNotDispatchable, RunPlan, resolve_run_plan
 
 log = logging.getLogger("app.api.v1.runs")
 
@@ -51,8 +65,23 @@ class ContactIn(BaseModel):
 
 
 class RunRequest(BaseModel):
-    campaign_id: str
+    """What starting a run needs.
+
+    The number lives here rather than on the agent (ADR-8), which is what lets
+    one agent dial through any carrier the organisation has connected.
+    """
+
+    voice_agent_id: UUID
+    #: One, several, or every verified number. A run with none is refused.
+    number_ids: list[UUID] = Field(default_factory=list)
     contacts: list[ContactIn]
+    #: A human label for the run list. Optional - runs are also identifiable by
+    #: their agent and start time.
+    name: str | None = Field(default=None, max_length=120)
+    #: Appended to every prompt in this run, so a one-off instruction does not
+    #: mean editing an agent the whole organisation shares.
+    run_instruction: str | None = Field(default=None, max_length=2000)
+    allocation_strategy: str = "round_robin"
 
 
 def _deduplicate(contacts: Iterable[Contact]) -> list[Contact]:
@@ -79,36 +108,24 @@ def _deduplicate(contacts: Iterable[Contact]) -> list[Contact]:
     return unique
 
 
-def _is_owner(request: Request) -> bool:
-    """True when the caller presents the owner key, lifting all rate limits."""
-    if not config.owner_key:
-        return False
-    presented = request.headers.get("x-callflow-owner-key", "")
-    return secrets.compare_digest(presented, config.owner_key)
-
-
 async def _run_and_persist(
     *,
     run_id: str,
     org_id: UUID,
     auth_user_id: str,
-    campaign: Any,
-    result_schema: dict[str, Any],
+    plan: RunPlan,
     contacts: list[Contact],
     suppressed_hashes: frozenset[str],
-    max_calls_per_run: int | None,
-    allowlist: frozenset[str] | None,
-    credit_ceiling: int | None,
-    credits_used_before_run: int,
 ) -> None:
-    runner = CampaignRunner(
-        result_schema=result_schema,
+    dialer = RunDialer(
         suppressed_hashes=suppressed_hashes,
-        max_calls_per_run=max_calls_per_run,
-        allowlist=allowlist,
-        credit_ceiling=credit_ceiling,
-        credits_used_before_run=credits_used_before_run,
         run_id=run_id,
+        # The two things nothing ever passed before, which is why every dial was
+        # refused before the phone rang.
+        lines=plan.lines,
+        voice_agent=plan.voice_agent,
+        allocation_strategy=plan.allocation_strategy,
+        run_instruction=plan.run_instruction,
     )
 
     async def on_progress(outcome: CallOutcome) -> None:
@@ -123,13 +140,13 @@ async def _run_and_persist(
                     conn, org_id=org_id, run_id=run_id, call_outcome_id=call_outcome_id
                 )
 
-    # Every log line this run produces - in this module and `CampaignRunner` -
+    # Every log line this run produces - in this module and `RunDialer` -
     # carries `run_id`/`org_id` for the run's whole lifetime, so one run's
     # lines can be grepped together regardless of which contact or module
     # emitted them.
     with CallContext(run_id=run_id, org_id=str(org_id)):
         try:
-            await runner.run(campaign, contacts, on_progress=on_progress)
+            await dialer.run(plan.agent, contacts, on_progress=on_progress)
             # Deliberately not `finish_run()`. Origination returns when a call
             # is answered, not when it ends, so at this point conversations are
             # still running - closing the run here would show it completed
@@ -155,11 +172,21 @@ async def start_run(
     background: BackgroundTasks,
     user: Annotated[CurrentUser, Depends(RequirePermission(Permission.RUNS_START))],
 ) -> dict[str, Any]:
+    # Resolved before anything is written: a run that cannot dial must not
+    # exist as a row that never starts, and every refusal here names the thing to
+    # go and fix.
     async with database.as_user(user.auth_user_id) as conn:
-        resolved = await resolve_campaign(conn, user.org_id, req.campaign_id)
-    if resolved is None:
-        raise HTTPException(status_code=404, detail=f"Unknown campaign: {req.campaign_id}")
-    campaign, result_schema = resolved
+        try:
+            plan = await resolve_run_plan(
+                conn,
+                org_id=user.org_id,
+                voice_agent_id=req.voice_agent_id,
+                number_ids=req.number_ids,
+                allocation_strategy=req.allocation_strategy,
+                run_instruction=req.run_instruction,
+            )
+        except RunNotDispatchable as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     if not req.contacts:
         raise HTTPException(status_code=400, detail="At least one contact is required.")
@@ -169,48 +196,10 @@ async def start_run(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    async with database.as_user(user.auth_user_id) as conn:
-        safety_row = await safety_settings_repo.get_for_org(conn, user.org_id)
-    effective = resolve_safety_settings(
-        allowlist=safety_row["allowlist"] if safety_row else None,
-        max_calls_per_run=safety_row["max_calls_per_run"] if safety_row else None,
-        calls_per_window=safety_row["calls_per_window"] if safety_row else None,
-        window_minutes=safety_row["window_minutes"] if safety_row else None,
-        daily_budget=safety_row["daily_budget"] if safety_row else None,
-    )
-
-    verdict = limiter.check(
-        str(user.org_id),
-        calls=len(contacts),
-        is_owner=_is_owner(request),
-        rate_limit_calls=effective.calls_per_window,
-        rate_limit_window_seconds=effective.window_minutes * 60,
-        daily_call_budget=effective.daily_budget,
-    )
-    if not verdict.allowed:
-        raise HTTPException(
-            status_code=429,
-            detail=verdict.reason,
-            headers=(
-                {"Retry-After": str(verdict.retry_after_seconds)}
-                if verdict.retry_after_seconds
-                else None
-            ),
-        )
-
     run_id = uuid.uuid4().hex[:12]
     async with database.as_user(user.auth_user_id) as conn:
-        # `None` when nobody has ever set this caller's own allocation - the
-        # per-teammate gate then never applies for them, only the org-wide
-        # daily budget above does. Resolved once here, not once per contact,
-        # the same way suppression/allowlist already are.
-        credit_ceiling = await credits_repo.get_enforced_ceiling(conn, user.org_id, user.id)
-        credits_used_before_run = (
-            await credits_repo.used_today(conn, user.org_id, user.id)
-            if credit_ceiling is not None
-            else 0
-        )
-
+        # Resolved once here, not once per contact - the one guard that still
+        # stands before a dial.
         suppressed: set[str] = set()
         for contact in contacts:
             digest = phone_hash(contact.phone)
@@ -221,9 +210,21 @@ async def start_run(
             conn,
             run_id=run_id,
             org_id=user.org_id,
-            campaign_id=campaign.id,
+            voice_agent_id=req.voice_agent_id,
             total=len(contacts),
             started_by=user.id,
+            name=req.name,
+            run_instruction=req.run_instruction,
+            allocation_strategy=req.allocation_strategy,
+        )
+        # Which lines this run may dial from, recorded before it starts: the run
+        # is the permanent record of where its calls came from, and resolving
+        # that later from a number that has since been retired would lose it.
+        await run_numbers_repo.attach(
+            conn,
+            run_id=run_id,
+            org_id=user.org_id,
+            number_ids=[line.number_id for line in plan.lines],
         )
 
     background.add_task(
@@ -231,14 +232,9 @@ async def start_run(
         run_id=run_id,
         org_id=user.org_id,
         auth_user_id=user.auth_user_id,
-        campaign=campaign,
-        result_schema=result_schema,
+        plan=plan,
         contacts=contacts,
         suppressed_hashes=frozenset(suppressed),
-        max_calls_per_run=effective.max_calls_per_run,
-        allowlist=effective.allowlist,
-        credit_ceiling=credit_ceiling,
-        credits_used_before_run=credits_used_before_run,
     )
     return {"run_id": run_id, "total": len(contacts)}
 
@@ -250,7 +246,9 @@ async def list_runs(user: Annotated[CurrentUser, Depends(current_user)]) -> list
     return [
         {
             "id": r["id"],
-            "campaign_id": r["campaign_id"],
+            "voice_agent_id": str(r["voice_agent_id"]) if r["voice_agent_id"] else None,
+            "agent_name": r["agent_name"],
+            "name": r["name"],
             "total": r["total"],
             "status": r["status"],
             "started_at": r["started_at"].isoformat(),
@@ -308,7 +306,8 @@ async def get_run(
         {
             "contact_name": o["contact_name"],
             "phone_masked": o["phone_masked"],
-            "campaign_id": run["campaign_id"],
+            "voice_agent_id": str(run["voice_agent_id"]) if run["voice_agent_id"] else None,
+            "agent_name": run["agent_name"],
             "status": o["status"],
             "run_id": run_id,
             "provider_call_id": o["provider_call_id"],
@@ -327,6 +326,15 @@ async def get_run(
             "completion_confidence_label": o["completion_confidence_label"],
             "evidence": o["evidence"],
             "attempts": o["attempts"],
+            # The fields the agent was actually sent to collect. Persisted
+            # since `ISSUES.md` #155 - the column, the domain model, the API
+            # type and `TranscriptView` all existed, and only the write and
+            # this serialisation were missing, so every run showed an empty
+            # "What we asked for".
+            "collected": o["collected"],
+            "missing_required_fields": o["missing_required_fields"],
+            "handoff_questions": o["handoff_questions"],
+            "from_number_masked": o["from_number_masked"],
         }
         for o in outcome_rows
     ]
@@ -336,7 +344,8 @@ async def get_run(
     started_by = run["started_by"]
     return {
         "id": run["id"],
-        "campaign_id": run["campaign_id"],
+        "voice_agent_id": str(run["voice_agent_id"]) if run["voice_agent_id"] else None,
+        "agent_name": run["agent_name"],
         "total": run["total"],
         "status": run["status"],
         "started_at": run["started_at"].isoformat(),
@@ -356,3 +365,162 @@ async def get_run(
     }
 
 
+#: Refused before a byte is parsed. A workbook this large is either not a
+#: contact list or is one that belongs in several uploads - and `openpyxl`
+#: materialises far more than the file size in memory.
+MAX_UPLOAD_BYTES = 5 * 1024 * 1024
+
+_XLSX_TYPES = frozenset(
+    {
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "application/vnd.ms-excel",
+        "application/octet-stream",
+    }
+)
+
+
+class SheetRowOut(BaseModel):
+    """One parsed row - valid, or carrying the reason it is not."""
+
+    row: int
+    name: str
+    #: Masked. The composer shows enough to recognise a row; the full number
+    #: travels only in the `contact` payload the browser posts straight back.
+    phone_masked: str
+    note: str
+    context: dict[str, str]
+    valid: bool
+    error: str | None
+    #: The body `POST /api/v1/runs` accepts for this row, or null when the row
+    #: cannot be dialled. Built here so the browser is not re-deriving the
+    #: context rules a second time and drifting from them.
+    contact: dict[str, Any] | None
+
+
+class SheetOut(BaseModel):
+    rows: list[SheetRowOut]
+    #: Context columns found across the sheet, so the composer can say what each
+    #: contact brings into its own conversation.
+    context_columns: list[str]
+
+
+@router.post("/parse-sheet", response_model=SheetOut)
+async def parse_sheet(
+    user: Annotated[CurrentUser, Depends(RequirePermission(Permission.RUNS_START))],
+    file: Annotated[UploadFile, File()],
+) -> SheetOut:
+    """Read an uploaded `.xlsx` into contact rows. Nothing is dialled or stored.
+
+    Parsing happens here rather than in the browser because a workbook is a zip
+    of XML with shared strings, styles and typed cells - a phone number typed as
+    digits arrives as a float, and getting that wrong turns a valid number into
+    `9.19876543210e+11`. CSV is still parsed in the browser, where it is a
+    string split and the whole round trip is unnecessary.
+
+    The response is reviewed in the composer before a run is started, exactly as
+    a pasted CSV is: an upload is never a dial.
+    """
+    raw = await file.read()
+    if not raw:
+        raise HTTPException(status_code=400, detail="That file is empty.")
+    if len(raw) > MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=(
+                f"That file is larger than {MAX_UPLOAD_BYTES // (1024 * 1024)}MB. "
+                "Split it into smaller uploads."
+            ),
+        )
+
+    filename = (file.filename or "").lower()
+    if not filename.endswith((".xlsx", ".xlsm")) and file.content_type not in _XLSX_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail="Upload an .xlsx file, or paste the rows in as CSV.",
+        )
+
+    try:
+        rows = _read_workbook(raw)
+    except SheetTooLarge as exc:
+        raise HTTPException(status_code=413, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    try:
+        parsed = parse_rows(rows)
+    except SheetTooLarge as exc:
+        raise HTTPException(status_code=413, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    columns = sorted({key for row in parsed for key in row.context})
+    # Row count and column names only - never a cell value, which is a
+    # customer's own data (CLAUDE.md non-negotiable #5).
+    log.info(
+        "org %s parsed a sheet: %d rows, %d valid, context columns: %s",
+        user.org_id,
+        len(parsed),
+        sum(1 for r in parsed if r.valid),
+        ", ".join(columns) or "none",
+    )
+
+    return SheetOut(
+        rows=[
+            SheetRowOut(
+                row=row.row,
+                name=row.name,
+                phone_masked=mask(row.phone) if row.phone else "",
+                note=row.note,
+                context=row.context,
+                valid=row.valid,
+                error=row.error,
+                contact=to_contact_payload(row) if row.valid else None,
+            )
+            for row in parsed
+        ],
+        context_columns=columns,
+    )
+
+
+def _read_workbook(raw: bytes) -> list[list[Any]]:
+    """The first worksheet as rows of cell values.
+
+    `read_only` streams rather than building the whole object graph, and
+    `data_only` takes a formula cell's cached result - a sheet where the phone
+    column is `=CONCAT(...)` would otherwise arrive as the formula text.
+    """
+    import io
+
+    from openpyxl import load_workbook
+    from openpyxl.utils.exceptions import InvalidFileException
+
+    try:
+        workbook = load_workbook(io.BytesIO(raw), read_only=True, data_only=True)
+    except InvalidFileException as exc:
+        raise ValueError(
+            "That file could not be read as a spreadsheet. Save it as .xlsx and try again."
+        ) from exc
+    except Exception as exc:
+        # openpyxl raises a wide range of types on a corrupt archive, and the
+        # vendor's own message is not something to show a user.
+        log.warning("could not read an uploaded workbook: %s", type(exc).__name__)
+        raise ValueError(
+            "That file could not be read as a spreadsheet. Save it as .xlsx and try again."
+        ) from exc
+
+    try:
+        sheet = workbook.worksheets[0] if workbook.worksheets else None
+        if sheet is None:
+            raise ValueError("That workbook has no sheets.")
+
+        rows: list[list[Any]] = []
+        for row in sheet.iter_rows(values_only=True):
+            rows.append(list(row))
+            if len(rows) > MAX_ROWS:
+                raise SheetTooLarge(
+                    f"This sheet has more than {MAX_ROWS:,} rows. "
+                    "Split it into smaller uploads."
+                )
+        return rows
+    finally:
+        workbook.close()

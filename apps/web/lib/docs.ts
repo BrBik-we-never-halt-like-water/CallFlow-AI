@@ -63,7 +63,7 @@ export const DOC_SECTIONS: DocSection[] = [
       {
         slug: "api-reference",
         title: "API reference",
-        summary: "Campaigns, previews, and runs over HTTP.",
+        summary: "Voice agents, numbers, and runs over HTTP.",
       },
       {
         slug: "webhooks",

@@ -31,7 +31,12 @@ from typing import Any, Self
 
 import httpx
 
-from app.integrations.telephony import CarrierError, CarrierTrunk, sip_uri
+from app.integrations.telephony import (
+    CarrierError,
+    CarrierNumber,
+    CarrierTrunk,
+    sip_uri,
+)
 
 log = logging.getLogger("app.integrations.telephony.telnyx")
 
@@ -40,6 +45,13 @@ _BASE = "https://api.telnyx.com/v2"
 # Telnyx supports TLS on SIP signalling and inbound signalling carries the
 # dialled number - the same reasoning `plivo.py` documents for defaulting to it.
 DEFAULT_TRANSPORT = "tls"
+
+# Pagination. `_MAX_NUMBER_PAGES` is a ceiling, not an expected count: a vendor
+# that kept returning a next page would otherwise hold the request open, and a
+# picker that silently stopped at page one would hide an org's own numbers.
+_MAX_NUMBER_PAGES = 100
+_PAGE_SIZE = 100
+
 
 
 class TelnyxCarrier:
@@ -113,8 +125,16 @@ class TelnyxCarrier:
         auth_username: str,
         auth_password: str,
         transport: str = DEFAULT_TRANSPORT,
+        attach_number: bool = True,
     ) -> CarrierTrunk:
         """Point a Telnyx number at LiveKit, both directions.
+
+        `attach_number=False` stops before the final step that repoints the
+        number's inbound routing, which makes the whole call non-destructive:
+        everything created is new, and the number keeps whatever was already
+        answering it. That is the default, because a carrier sync is not
+        consent to redirect a line that may already be a support queue
+        (`ISSUES.md` #168).
 
         `number_ref` is the Telnyx **Phone Number ID**, or the E.164 number - the
         adapter looks the id up when given a number, because Telnyx addresses
@@ -154,13 +174,14 @@ class TelnyxCarrier:
                 "Telnyx", "create the SIP connection", "no connection id came back."
             )
 
-        number_id = await self._resolve_number_id(number_ref)
-        await self._request(
-            "PATCH",
-            f"phone_numbers/{number_id}",
-            {"connection_id": connection_id},
-            action="attach the phone number to the connection",
-        )
+        if attach_number:
+            number_id = await self._resolve_number_id(number_ref)
+            await self._request(
+                "PATCH",
+                f"phone_numbers/{number_id}",
+                {"connection_id": connection_id},
+                action="attach the phone number to the connection",
+            )
 
         log.info("configured Telnyx connection %s", connection_id)
         return CarrierTrunk(
@@ -171,6 +192,68 @@ class TelnyxCarrier:
             auth_password=auth_password,
             details={"connection_id": connection_id, "transport": transport},
         )
+
+    async def _get(self, path: str, *, action: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+        if self._client is None:
+            raise RuntimeError("TelnyxCarrier is not open. Use `async with TelnyxCarrier(...)`.")
+        try:
+            response = await self._client.get(
+                f"{_BASE}{path}", params=params, headers=self._headers()
+            )
+        except httpx.HTTPError as exc:
+            raise CarrierError("Telnyx", action, f"could not be reached ({type(exc).__name__}).") from exc
+        if response.status_code >= 300:
+            raise CarrierError("Telnyx", action, _detail(response))
+        try:
+            return response.json()
+        except ValueError:
+            return {}
+
+    async def list_numbers(self) -> list[CarrierNumber]:
+        """The voice-capable numbers already on this Telnyx account.
+
+        Telnyx pages with `page[number]`/`page[size]` and reports
+        `meta.total_pages`, so the loop counts pages rather than offsets.
+        """
+        numbers: list[CarrierNumber] = []
+        page = 1
+
+        for _ in range(_MAX_NUMBER_PAGES):
+            body = await self._get(
+                "/phone_numbers",
+                action="list the numbers on this account",
+                params={"page[number]": page, "page[size]": _PAGE_SIZE},
+            )
+            items = body.get("data") or []
+            for item in items:
+                e164 = (item.get("phone_number") or "").strip()
+                number_id = str(item.get("id") or "").strip()
+                if not (e164 and number_id):
+                    continue
+                # Telnyx nests these under the number's connection settings; an
+                # absent list means the vendor did not say, not "no voice".
+                features = item.get("features") or []
+                capabilities = {
+                    f for f in features if isinstance(f, str)
+                } or {"voice"}
+                numbers.append(
+                    CarrierNumber(
+                        provider="telnyx",
+                        e164=e164 if e164.startswith("+") else f"+{e164}",
+                        # The id, not the E.164: `configure_number` PATCHes by id
+                        # and would otherwise pay for a lookup it can skip.
+                        number_ref=number_id,
+                        label=(item.get("customer_reference") or "").strip() or None,
+                        capabilities=frozenset(capabilities),
+                    )
+                )
+
+            total_pages = (body.get("meta") or {}).get("total_pages")
+            if not items or total_pages is None or page >= int(total_pages):
+                break
+            page += 1
+
+        return numbers
 
     async def _resolve_number_id(self, number_ref: str) -> str:
         """Telnyx updates numbers by id; operators hold E.164.

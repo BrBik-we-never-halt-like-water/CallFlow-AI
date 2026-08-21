@@ -85,7 +85,7 @@ export default function RunsPage() {
   const canStart =
     session.status === 'signed-in' &&
     session.profile.permissions.includes('runs:start');
-  const { runs, campaigns, phase, loadingRuns } = useAppStore();
+  const { runs, phase, loadingRuns } = useAppStore();
   const [sort, setSort] = useState<SortState>({
     id: 'started_at',
     dir: 'desc',
@@ -95,8 +95,11 @@ export default function RunsPage() {
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<Set<RunStatus>>(new Set());
 
-  const campaignName = (id: string) =>
-    campaigns.find((c) => c.id === id)?.name ?? id;
+  // The name is resolved server-side and carried on the row: the client no
+  // longer holds an agent list, and fetching one just to render a label would
+  // be a step backwards.
+  const agentName = (run: RunSummary) =>
+    run.agent_name ?? run.name ?? 'Deleted agent';
 
   const hasFilters = query.trim().length > 0 || statusFilter.size > 0;
 
@@ -106,9 +109,9 @@ export default function RunsPage() {
   }
 
   /**
-   * Search matches the campaign name or the status label - the filter menu
+   * Search matches the agent name or the status label - the filter menu
    * covers the same status facet more precisely, so the free-text box stays
-   * useful for "which campaign" without needing to also open a menu.
+   * useful for "which agent" without needing to also open a menu.
    */
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -117,12 +120,11 @@ export default function RunsPage() {
         return false;
       }
       if (!needle) return true;
-      const name = campaignName(run.campaign_id).toLowerCase();
+      const name = agentName(run).toLowerCase();
       const statusLabel = lampForRunStatus(run.status).label.toLowerCase();
       return name.includes(needle) || statusLabel.includes(needle);
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [runs, query, statusFilter, campaigns]);
+  }, [runs, query, statusFilter]);
 
   /**
    * Sorting and pagination are done here rather than server-side because the runs
@@ -134,12 +136,8 @@ export default function RunsPage() {
     list.sort((a, b) => {
       const dir = sort.dir === 'asc' ? 1 : -1;
       switch (sort.id) {
-        case 'campaign':
-          return (
-            campaignName(a.campaign_id).localeCompare(
-              campaignName(b.campaign_id),
-            ) * dir
-          );
+        case 'agent':
+          return agentName(a).localeCompare(agentName(b)) * dir;
         case 'total':
           return (a.total - b.total) * dir;
         case 'completed':
@@ -151,8 +149,7 @@ export default function RunsPage() {
       }
     });
     return list;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filtered, sort, campaigns]);
+  }, [filtered, sort]);
 
   // Clamped rather than reset in an effect: if a filter shrinks the result set
   // below the current page, the displayed page snaps back on its own, and it
@@ -166,15 +163,15 @@ export default function RunsPage() {
 
   const columns: Column<RunSummary>[] = [
     {
-      id: 'campaign',
-      header: 'Campaign',
+      id: 'agent',
+      header: 'Agent',
       sortable: true,
       cell: (run) => (
         <span className="block truncate text-text">
-          {campaignName(run.campaign_id)}
+          {agentName(run)}
         </span>
       ),
-      value: (run) => campaignName(run.campaign_id),
+      value: (run) => agentName(run),
     },
     {
       id: 'status',
@@ -294,7 +291,7 @@ export default function RunsPage() {
       <ConnectionBanner phase={phase} />
 
       <DataTable
-        caption="Runs, with the campaign, status, and start time."
+        caption="Runs, with the agent, status, and start time."
         columns={columns}
         rows={paged}
         rowKey={(run) => run.id}
@@ -317,7 +314,7 @@ export default function RunsPage() {
             <div className="flex flex-col gap-1.5">
               <div className="flex items-center gap-2">
                 <span className="min-w-0 flex-1 truncate text-small font-medium text-text">
-                  {campaignName(run.campaign_id)}
+                  {agentName(run)}
                 </span>
               </div>
               <div className="flex items-center gap-2 text-text">

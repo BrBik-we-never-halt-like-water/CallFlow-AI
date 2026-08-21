@@ -857,7 +857,7 @@ export function ChatShell() {
               <Panel>
                 <EmptyState
                   title="No conversations yet"
-                  body="Search a teammate above to start a DM, or start a group - contacts and campaigns stay separate from this."
+                  body="Search a teammate above to start a DM, or start a group - contacts and runs stay separate from this."
                   action={
                     canSend ? (
                       <Button variant="secondary" onClick={() => setCreateOpen(true)}>

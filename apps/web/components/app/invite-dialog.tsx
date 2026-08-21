@@ -18,7 +18,7 @@ export const ROLES = [
   {
     value: 'operator',
     label: 'Operator',
-    hint: 'Start runs, edit campaigns, resolve escalations',
+    hint: 'Start runs, edit agents, resolve escalations',
   },
   {
     value: 'viewer',
@@ -94,7 +94,7 @@ export function InviteDialog({
           </Field>
           <Field
             label="Role"
-            help="Operators can run campaigns but not change billing."
+            help="Operators can start runs but not change billing."
           >
             <Select value={role} onValueChange={setRole} options={ROLES} />
           </Field>

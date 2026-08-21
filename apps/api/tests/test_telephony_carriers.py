@@ -14,6 +14,7 @@ asserted explicitly rather than left implied.
 
 from __future__ import annotations
 
+import inspect
 from typing import Any
 
 import httpx
@@ -594,3 +595,40 @@ def test_every_carriers_declared_fields_are_its_constructor_arguments() -> None:
         accepted = set(inspect.signature(CARRIERS[spec_.id]).parameters)
         declared = {f.key for f in spec_.fields}
         assert declared <= accepted, f"{spec_.id}: {sorted(declared - accepted)} not accepted"
+
+
+# --- attach_number is a promise every carrier has to keep --------------------
+#
+# `connect_number` defaults to attach_number=False and the sync path relies on
+# it: a carrier sync provisions every number it discovers, so a carrier that
+# ignored the flag would repoint a live support line the moment someone pressed
+# "Sync" (`ISSUES.md` #168). Twilio honoured it; Plivo, Telnyx and Vonage each
+# documented that they did not, and attached unconditionally.
+
+
+@pytest.mark.parametrize(
+    ("carrier_cls", "attach_marker"),
+    [
+        (TwilioCarrier, "PhoneNumbers"),
+        (PlivoCarrier, "Number/"),
+        (TelnyxCarrier, "phone_numbers/"),
+        (VonageCarrier, "number/update"),
+    ],
+)
+def test_the_attach_step_is_guarded_in_every_adapter(carrier_cls, attach_marker) -> None:
+    """Checked in the source because the alternative is a live carrier account.
+
+    Each adapter's final step is the one that repoints inbound routing; it has to
+    sit behind `if attach_number:`. A stub that records calls cannot prove this -
+    it would only show what the adapter chose to do for one set of arguments.
+    """
+    source = inspect.getsource(carrier_cls.configure_number)
+    assert "if attach_number:" in source, (
+        f"{carrier_cls.__name__} never checks attach_number - it would claim "
+        "inbound routing on a number the operator only asked to dial out from"
+    )
+    guard = source.index("if attach_number:")
+    assert attach_marker in source[guard:], (
+        f"{carrier_cls.__name__} checks attach_number, but its attach call "
+        f"({attach_marker!r}) is not inside the guard"
+    )

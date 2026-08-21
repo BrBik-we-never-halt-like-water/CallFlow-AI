@@ -175,7 +175,7 @@ async def rename_channel(
     by `channels_update`'s RLS policy, not re-checked here. This permission
     dependency only gates that the caller can use chat at all (operator+);
     the specific per-channel authorization is the database's job, the same
-    division `campaigns`/`runs` already use."""
+    division `runs`/`call_outcomes` already use."""
     async with database.as_user(user.auth_user_id) as conn:
         existing = await _get_channel_or_404(conn, channel_id)
         if existing["kind"] == "dm":
@@ -268,7 +268,7 @@ async def list_messages(
 ) -> list[MessageOut]:
     # RLS (`messages_select`) narrows this to nothing if the caller isn't a
     # member of `channel_id` - it isn't re-checked here, the same way
-    # `campaigns_select` is trusted rather than re-verified in the route.
+    # `runs_select` is trusted rather than re-verified in the route.
     async with database.as_user(user.auth_user_id) as conn:
         rows = await messages_repo.list_messages(
             conn, channel_id, before=before, before_id=before_id, limit=limit

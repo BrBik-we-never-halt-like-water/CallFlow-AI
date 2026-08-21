@@ -13,7 +13,6 @@ from fastapi.responses import JSONResponse
 
 from app.api.v1.routes.ai_providers import router as ai_providers_router
 from app.api.v1.routes.api_keys import router as api_keys_router
-from app.api.v1.routes.campaigns import router as campaigns_router
 from app.api.v1.routes.escalations import router as escalations_router
 from app.api.v1.routes.integrations import router as integrations_router
 from app.api.v1.routes.internal import router as internal_router
@@ -22,10 +21,10 @@ from app.api.v1.routes.messages import router as messages_router
 from app.api.v1.routes.organisations import router as organisations_router
 from app.api.v1.routes.profile import router as profile_router
 from app.api.v1.routes.runs import router as runs_router
-from app.api.v1.routes.safety import router as safety_router
 from app.api.v1.routes.sharing import router as sharing_router
 from app.api.v1.routes.suppressions import router as suppressions_router
 from app.api.v1.routes.telephony import router as telephony_router
+from app.api.v1.routes.telephony_numbers import router as telephony_numbers_router
 from app.api.v1.routes.voice_agents import router as voice_agents_router
 from app.core.config import config
 from app.core.logging import configure_logging
@@ -76,10 +75,8 @@ app.add_middleware(
 app.include_router(profile_router)
 app.include_router(organisations_router)
 app.include_router(invitations_router)
-app.include_router(campaigns_router)
 app.include_router(escalations_router)
 app.include_router(runs_router)
-app.include_router(safety_router)
 app.include_router(sharing_router)
 app.include_router(suppressions_router)
 app.include_router(api_keys_router)
@@ -88,6 +85,7 @@ app.include_router(ai_providers_router)
 app.include_router(voice_agents_router)
 app.include_router(messages_router)
 app.include_router(telephony_router)
+app.include_router(telephony_numbers_router)
 # Not a public API - the voice runtime's callback, guarded by a shared secret.
 app.include_router(internal_router)
 
@@ -120,28 +118,27 @@ def root() -> dict[str, str]:
 
 @app.get("/api/health")
 def health() -> dict[str, Any]:
-    """Unauthenticated, so this can only report the deployment's own defaults -
-    not any organisation's live usage or override. `GET /api/v1/safety` (signed
-    in) is where a real `used_today` lives now that the limiter is org-scoped."""
-    # Hard-coded false, not a missing key: CALL-E is gone and the LiveKit
-    # origination path (RUNBOOK_HET_PART_1.md P1-T6) does not exist yet, so no
-    # deployment can place a call regardless of how it is configured. Every
-    # surface that used to read `api_key_configured` reads this instead, and
-    # must keep saying "unavailable" until origination actually works.
+    """Unauthenticated, so it reports only the deployment's own readiness -
+    never any one organisation's data."""
+    # Was hard-coded false while origination did not exist. It does now
+    # (`services/run_dispatch.py` -> `RunDialer` -> `CreateSIPParticipant`), so
+    # this reports whether *this deployment* can actually dial: without a
+    # LiveKit key, secret and SIP host, `LiveKitGateway` refuses to construct
+    # and no run can place a call whatever else is configured.
+    #
+    # It deliberately does not check whether any organisation has connected a
+    # carrier or a verified number - that is per-org, and the run composer
+    # already refuses with a specific reason naming the thing to go and fix.
+    calling_available = bool(
+        config.livekit_api_key and config.livekit_api_secret and config.livekit_sip_host
+    )
     return {
         "ok": True,
-        "calling_available": False,
+        "calling_available": calling_available,
         # Occupancy, not credentials: how many pooled connections exist and how
         # many are free right now. `pool_free: 0` under load is the signature of
         # the stall this endpoint exists to make diagnosable without SSH.
         "database": database.stats(),
-        "max_calls_per_run": config.max_calls_per_run,
-        "allowlist_active": bool(config.allowlist),
-        "limits": {
-            "daily_budget": config.daily_call_budget,
-            "per_window": config.rate_limit_calls,
-            "window_minutes": config.rate_limit_window_seconds // 60,
-        },
     }
 
 

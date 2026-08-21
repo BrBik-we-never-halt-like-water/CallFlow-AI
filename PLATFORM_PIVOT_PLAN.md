@@ -346,6 +346,13 @@ call volume actually justifies operating the SIP bridge as production infrastruc
 
 **Status:** Accepted, revising `VOICE_AGENT_PLATFORM.md` §2.1-2.2 · **Date:** 2026-08-11
 
+> **Partly superseded by ADR-8 (2026-08-17).** The STT/TTS/LLM half of this ADR
+> stands unchanged. Its telephony half - `voice_agents.telephony_provider` and
+> `telephony_credential_id`, "one number per agent for V1" - is superseded: a
+> number is now its own aggregate and a run binds agent to number, which is the
+> "revisit only if a real org asks for shared-number routing" exit this ADR
+> named for itself.
+
 ### What's confirmed and changes the old sketch
 
 1. **An official `livekit-plugins-sarvam` package exists**, published by LiveKit itself
@@ -1459,3 +1466,126 @@ section, `TEAM_COLLABORATION_ROADMAP.md`'s "explicitly out of scope" list):
 - **Migrating existing CALL-E-era historical call data into any new shape** - historical
   `call_outcomes` rows stay exactly as they are (CALL-E-shaped `attempts`/`task_completed`
   and all); nothing in this plan proposes backfilling or reinterpreting them.
+
+---
+
+## ADR-8: numbers are an aggregate; a run binds agent to number
+
+**Status:** Accepted · **Date:** 2026-08-17
+
+**Supersedes** ADR-4's `voice_agents.telephony_provider` /
+`telephony_credential_id` decision - explicitly, because that decision named its
+own exit condition: *"One number per agent for V1 (simplest correct model - an
+org with multiple agents connects a number per agent, not a shared pool yet;
+revisit only if a real org asks for shared-number routing)."* A real request
+arrived: connect a carrier, see the numbers actually purchased on it, and run a
+campaign across one, several, or all of them, with any agent.
+
+### Context
+
+Three facts verified against the dev database, not assumed:
+
+1. **The dial path is built but unwired.** `routes/runs.py` constructs the runner
+   with neither `trunk_id` nor `voice_agent`; those kwargs appear nowhere outside
+   tests. Every contact is refused by the guards in `campaign_runner.py` before
+   the phone rings, while the runner below those guards already dispatches real
+   LiveKit calls. **What is missing is a resolver, not a dialler.**
+2. **`provider_credentials` is uniquely keyed `(org_id, provider)`** with a
+   single `phone_number` column. It cannot represent five Twilio numbers.
+3. **`telephony_provisioning.voice_agent_id` is `NOT NULL`** - provisioning is
+   per-agent, which is the ADR-4 model this supersedes.
+
+Also: `campaigns` holds 0 rows, `runs` 1, `call_outcomes` 2, and
+`runs.campaign_id` is `NOT NULL` but deliberately *not* a foreign key (its own
+migration says so). So removing campaigns is a code and function problem, not a
+data-migration problem.
+
+### Decision
+
+A number becomes its own aggregate (`telephony_numbers`) carrying its verified
+LiveKit trunk ids and an explicit status machine. A run selects an agent **and**
+one or more numbers (`run_numbers`). Provisioning targets a number.
+`voice_agents` loses its telephony columns. `campaigns` is removed entirely.
+
+### Options considered
+
+**A - keep numbers on `provider_credentials`.** Rejected on the requirement: the
+unique `(org_id, provider)` key permits one number per carrier. Holding five
+means either a credential row per number - encrypting the same Twilio secret
+five times - or a jsonb list with nowhere to put each number's own trunk id and
+status.
+
+**B - numbers as `runs.from_numbers jsonb`.** This was the first draft of the
+implementation plan and it was wrong. A number's trunk id, status and
+`last_error` are per-number state with their own lifecycle; denormalising them
+into each run means a number verified *after* a run started stays recorded as
+unverified, and "which numbers can this org dial from?" requires scanning runs.
+
+**C - `telephony_numbers` + `run_numbers`.** Chosen. One row per number, one
+status machine, one home for the trunk ids. "All numbers" is a join rather than
+a special case, and agent × carrier is resolved at run time.
+
+### Trade-off
+
+Migration size now against a second migration later. A and B are each one column
+and ship sooner, but neither can represent several independently-verified
+numbers - the actual requirement. C pays the schema cost once.
+
+Where C is genuinely worse: `telephony_provisioning` gains a nullable
+`number_id` beside a now-nullable `voice_agent_id`, so its RLS policies must
+accept *either* target. A policy accepting only the new shape silently stops the
+resume path from resuming, and resumability is the entire reason that table
+exists (see its own ADR-4 §"one row per attempt" reasoning). Highest-risk step
+in the migration; called out in the plan as such.
+
+### The number status machine
+
+`domain/numbers.py`, mirroring `domain/provisioning.py`'s declared map and its
+`check_transition` that raises rather than writing:
+
+```
+discovered ──> provisioning ──> verified ⇄ disabled
+                    │
+                    └──> failed ──> provisioning   (retry)
+```
+
+Two deliberate differences from `provisioning`'s machine: `verified` is **not
+terminal** (a number is retired and can return), and `failed` is retryable (a
+carrier outage is not a permanent property of a number).
+
+**No delete policy and no delete grant**, matching
+`202608161700_revoke_delete_on_append_only_tables.py`: a number that carried
+real calls records who was dialled from where. `disabled` is retirement.
+
+### Consequences
+
+**Easier.** Any agent × any carrier is a lookup. "One, some, or all" is a row
+count. A provisioning failure is visible per number rather than per agent.
+Removing campaigns removes the `resolve_campaign()` dependency that `runs.py`
+and `internal.py` currently share for goal, schema and escalation policy.
+
+**Harder.** `voice_agents.telephony_provider` disappears, so the agent editor
+loses a field and the run composer gains one - anything reading it now fails at
+compile time, which is the right failure. Deleting an agent that has run calls
+starts failing (`runs.voice_agent_id` is `ON DELETE RESTRICT`), so
+`delete_voice_agent` needs a message naming what holds it. And five
+`SECURITY DEFINER` functions name `public.campaigns` while being
+`search_path`-pinned, so they break at **call** time, not migration time - one
+of them, `lookup_run_owner_for_webhook`, sits on the completion hot path.
+
+**To revisit.** `runs.allocation_strategy` ships with only `round_robin`
+implemented; area-code affinity needs an Indian numbering-plan heuristic no data
+supports yet, and the column keeps it additive. The two credential tables
+(`provider_credentials` fields-blob, `ai_provider_credentials` single-key) remain
+un-unified - out of scope, but the resolver must read the right one per leg.
+
+### Relationship to ADR-5
+
+ADR-5 (extraction and completeness) already specifies the post-call half of this
+work and is **followed, not revised**: `missing_required_fields` is `text[]`
+rather than `jsonb`, and the new triage rule is gated on `status == "completed"`
+rather than ranked above `task_completed`. That gating was the product of an
+adversarial review recorded in ADR-5 itself - rules 5-7 cover calls that never
+had a chance to provide data, and escalating those for "missing fields" would
+override a more actionable "worth retrying" signal. The implementation plan's
+first draft got this wrong in exactly the way ADR-5 warns about.

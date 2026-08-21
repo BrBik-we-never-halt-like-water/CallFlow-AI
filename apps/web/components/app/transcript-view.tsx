@@ -49,6 +49,12 @@ export function TranscriptView({ outcome }: { outcome: Outcome }) {
             label="Number"
             value={<MaskedPhone phone={outcome.phone_masked} />}
           />
+          {outcome.from_number_masked ? (
+            <Meta
+              label="Called from"
+              value={<MaskedPhone phone={outcome.from_number_masked} />}
+            />
+          ) : null}
           <Meta
             label="Duration"
             value={formatDuration(outcome.duration_seconds)}
@@ -198,6 +204,11 @@ function Conversation({ turns, outcome }: { turns: Turn[]; outcome: Outcome }) {
 
 function ResultColumn({ outcome }: { outcome: Outcome }) {
   const extracted = outcome.extracted ?? {};
+  // What the organisation asked the agent to find out, kept apart from
+  // `extracted` so a field named `sentiment` cannot rewrite triage's own input.
+  const collected = outcome.collected ?? {};
+  const missing = outcome.missing_required_fields ?? [];
+  const questions = outcome.handoff_questions ?? [];
   const hasFields = Object.keys(extracted).length > 0;
   const chain = triageChain(outcome);
   const [showRaw, setShowRaw] = useState(false);
@@ -265,6 +276,55 @@ function ResultColumn({ outcome }: { outcome: Outcome }) {
           </p>
         )}
       </div>
+
+      {/* ---- What the agent was asked to find out ----------------------- */}
+      {Object.keys(collected).length > 0 || missing.length > 0 ? (
+        <div className="flex flex-col gap-3 border-t border-rule pt-4">
+          <p className="text-small font-bold text-text-mute">
+            What we asked for
+          </p>
+          <dl className="flex flex-col gap-3">
+            {Object.entries(collected).map(([key, value]) => (
+              <Meta
+                key={key}
+                label={humaniseKey(key)}
+                value={formatValue(value)}
+                mono
+              />
+            ))}
+            {missing.map((key) => (
+              <Meta
+                key={key}
+                label={humaniseKey(key)}
+                value="Not answered"
+                tone="danger"
+              />
+            ))}
+          </dl>
+        </div>
+      ) : null}
+
+      {/* ---- What a person still has to ask ----------------------------- */}
+      {questions.length > 0 ? (
+        <div className="flex flex-col gap-2 border-t border-rule pt-4">
+          <p className="text-small font-bold text-text-mute">
+            Ask on the callback
+          </p>
+          <ul className="flex flex-col gap-1.5">
+            {questions.map((question, i) => (
+              <li key={i} className="flex items-start gap-2">
+                <span
+                  aria-hidden
+                  className="pt-0.5 font-mono text-data text-text-mute"
+                >
+                  ?
+                </span>
+                <span className="text-small text-text">{question}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
 
       {/* ---- Triage decision -------------------------------------------- */}
       <div className="flex flex-col gap-2 border-t border-rule pt-4">

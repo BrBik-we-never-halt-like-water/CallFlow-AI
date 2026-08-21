@@ -42,9 +42,6 @@ def _origins(name: str) -> list[str]:
 
 @dataclass(frozen=True)
 class Config:
-    max_calls_per_run: int = field(default_factory=lambda: _int("CALLFLOW_MAX_CALLS_PER_RUN", 3))
-    allowlist: list[str] = field(default_factory=lambda: _list("CALLFLOW_ALLOWLIST"))
-
     # Extra browser origins allowed to call this API (deployed frontends).
     cors_origins: list[str] = field(default_factory=lambda: _origins("CALLFLOW_CORS_ORIGINS"))
 
@@ -60,18 +57,6 @@ class Config:
     public_api_url: str = field(
         default_factory=lambda: os.getenv("CALLFLOW_PUBLIC_API_URL", "").rstrip("/")
     )
-
-    # --- public demo limits -------------------------------------------------
-    # The hosted dashboard lets visitors call their own number. These caps stop
-    # one visitor draining the owner's credits or dialing strangers repeatedly.
-    rate_limit_calls: int = field(default_factory=lambda: _int("CALLFLOW_RATE_LIMIT_CALLS", 5))
-    rate_limit_window_seconds: int = field(
-        default_factory=lambda: _int("CALLFLOW_RATE_LIMIT_WINDOW", 3600)
-    )
-    daily_call_budget: int = field(default_factory=lambda: _int("CALLFLOW_DAILY_BUDGET", 20))
-
-    # Shared secret that lifts the limits, so the owner can test freely.
-    owner_key: str = field(default_factory=lambda: os.getenv("CALLFLOW_OWNER_KEY", ""))
 
     poll_interval_seconds: float = 10.0
     poll_timeout_seconds: float = 900.0
@@ -169,7 +154,7 @@ class Config:
     )
     # Default spend ceiling, in USD, for a newly issued organisation key. `0`
     # means unlimited, which is a deliberate choice rather than a default: an
-    # unmetered key on a per-token marketplace is how one runaway campaign
+    # unmetered key on a per-token marketplace is how one runaway run
     # becomes CallFlow's bill.
     openrouter_default_limit_usd: float = field(
         default_factory=lambda: float(os.getenv("OPENROUTER_DEFAULT_LIMIT_USD", "25") or 0)

@@ -130,11 +130,42 @@ def test_the_payload_addresses_the_row_the_dial_already_created() -> None:
 
 
 def test_extraction_is_left_empty_rather_than_guessed() -> None:
-    """Structured extraction against the campaign's result_schema is Part 2's.
-    An invented field would make triage act on something nobody produced."""
+    """Nothing in this worker infers `do_not_call` or `wants_human_callback`
+    from a conversation yet. An invented value there would make triage act on
+    something nobody produced, so the key stays empty and triage falls through
+    to the status buckets."""
     payload = completion_payload(_metadata(), transcript="Agent: Hi.", duration_seconds=1)
 
     assert payload["extracted"] == {}
+
+
+def test_collected_fields_travel_apart_from_extracted() -> None:
+    """The API reads triage's own inputs out of `extracted`. An organisation
+    that names a field `do_not_call` must not thereby decide the disposition of
+    its own calls."""
+    payload = completion_payload(
+        _metadata(),
+        transcript="Agent: Hi.",
+        duration_seconds=1,
+        collected={"do_not_call": "the customer said Dubai"},
+    )
+
+    assert payload["collected"] == {"do_not_call": "the customer said Dubai"}
+    assert payload["extracted"] == {}
+
+
+def test_the_payload_carries_the_provider_call_id_when_there_is_one() -> None:
+    payload = completion_payload(
+        _metadata(), transcript="Agent: Hi.", duration_seconds=1, provider_call_id="job_42"
+    )
+    assert payload["provider_call_id"] == "job_42"
+
+
+def test_a_call_with_no_fields_reports_an_empty_collection_not_null() -> None:
+    # The API defaults this to {}, but sending null would make a missing-field
+    # check operate on None.
+    payload = completion_payload(_metadata(), transcript="Agent: Hi.", duration_seconds=1)
+    assert payload["collected"] == {}
 
 
 def test_the_payload_never_carries_a_real_phone_number() -> None:
@@ -287,3 +318,81 @@ async def test_nobody_is_greeted_when_the_call_goes_unanswered() -> None:
 
     assert answered is False
     assert greeted is False
+
+
+async def test_the_agent_asking_to_hang_up_ends_the_call_immediately() -> None:
+    """The "please stop calling me" requirement. Without this the contact stays
+    on a call they have already asked to end, until they disconnect it
+    themselves or the ceiling runs out."""
+    room = FakeRoom()
+    ctx = FakeContext(room)
+    ending = False
+
+    async def ask_to_end() -> None:
+        nonlocal ending
+        await asyncio.sleep(0.05)
+        ending = True
+
+    task = asyncio.create_task(ask_to_end())
+    answered = await asyncio.wait_for(
+        wait_for_call_end(
+            ctx,
+            answer_timeout=1.0,
+            # Far past the poll interval: if the flag were ignored this would
+            # hang until the test's own timeout rather than returning.
+            max_seconds=30.0,
+            should_end=lambda: ending,
+        ),
+        timeout=5.0,
+    )
+    await task
+
+    assert answered is True
+
+
+async def test_the_contact_hanging_up_still_ends_the_call_while_polling() -> None:
+    """The poll must not replace the disconnect handler - a contact who simply
+    hangs up gets no tool call, and waiting out the ceiling would report a
+    two-second call as a thirty-minute one."""
+    room = FakeRoom()
+    ctx = FakeContext(room)
+
+    async def hang_up() -> None:
+        await asyncio.sleep(0.05)
+        room.everyone_leaves()
+
+    task = asyncio.create_task(hang_up())
+    answered = await asyncio.wait_for(
+        wait_for_call_end(
+            ctx, answer_timeout=1.0, max_seconds=30.0, should_end=lambda: False
+        ),
+        timeout=5.0,
+    )
+    await task
+
+    assert answered is True
+
+
+async def test_the_ceiling_still_applies_when_polling_for_a_hangup() -> None:
+    """Somebody joined, nothing reports them leaving, and the agent never asks
+    to end. The ceiling is the only thing that closes this call."""
+    ctx = FakeContext(FakeRoom())
+
+    answered = await asyncio.wait_for(
+        wait_for_call_end(
+            ctx, answer_timeout=1.0, max_seconds=0.05, should_end=lambda: False
+        ),
+        timeout=5.0,
+    )
+
+    assert answered is True, "somebody was on the line - this is a long call, not a missed one"
+
+
+async def test_nobody_joining_is_still_unanswered_when_a_hangup_poll_is_armed() -> None:
+    ctx = FakeContext(FakeRoom(), never_joins=True)
+
+    answered = await wait_for_call_end(
+        ctx, answer_timeout=0.05, max_seconds=5.0, should_end=lambda: True
+    )
+
+    assert answered is False, "an agent cannot hang up on a call nobody answered"

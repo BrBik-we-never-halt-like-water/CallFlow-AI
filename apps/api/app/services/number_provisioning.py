@@ -36,7 +36,9 @@ from uuid import UUID
 import asyncpg
 
 from app.core.config import config
+from app.database.repositories import telephony_numbers as numbers_repo
 from app.database.repositories import telephony_provisioning as provisioning_repo
+from app.domain.numbers import InvalidTransition, NumberStatus
 from app.domain.provisioning import ProvisioningStatus
 from app.integrations.livekit.client import LiveKitGateway, SipTransport
 from app.integrations.telephony import CarrierError, CarrierTrunk
@@ -109,6 +111,79 @@ def _sip_auth(idempotency_key: str) -> tuple[str, str]:
     return f"cf{digest[:14]}", f"Cf1{digest[16:44]}"
 
 
+async def _mirror_to_number(
+    conn: asyncpg.Connection,
+    *,
+    org_id: UUID,
+    provider: str,
+    phone_e164: str,
+    target: NumberStatus,
+    attempt: asyncpg.Record | None = None,
+) -> None:
+    """Carry an attempt's outcome onto the number row the dial gate reads.
+
+    Two tables record this workflow and they answer different questions.
+    `telephony_provisioning` is the ledger of one attempt - what it created, in
+    what order, and what went wrong - and it is keyed by voice agent, so a
+    number connected to two agents has two rows. `telephony_numbers` is the
+    number itself, and `is_diallable(status) and livekit_outbound_trunk_id` on
+    *that* row is what `GET /telephony/numbers` reports and what a run dials
+    from. Without this step the ledger says verified while the number stays
+    `discovered` with no trunk, so every number the product provisions remains
+    undiallable and the run composer keeps telling people to connect a carrier
+    they already connected.
+
+    Never raises. Provisioning has really configured LiveKit and the carrier by
+    the time this runs; a number row that cannot be found or moved is worth a
+    log line, not an exception that would roll back the ledger of what exists.
+    """
+    number = await numbers_repo.by_e164(
+        conn, org_id=org_id, provider=provider, phone_e164=phone_e164
+    )
+    if number is None:
+        # Provisioning accepts any E.164 the caller names, so a number that was
+        # never discovered by a sync has no row to mirror onto.
+        log.info("no %s number row for the provisioned line; nothing to mirror", provider)
+        return
+
+    if attempt is not None:
+        await numbers_repo.record_livekit_ids(
+            conn,
+            org_id=org_id,
+            number_id=number["id"],
+            inbound_trunk_id=attempt["livekit_inbound_trunk_id"],
+            outbound_trunk_id=attempt["livekit_outbound_trunk_id"],
+            dispatch_rule_id=attempt["livekit_dispatch_rule_id"],
+            carrier_termination_domain=attempt["carrier_termination_domain"],
+        )
+
+    current = NumberStatus(number["status"])
+    if current is target:
+        return
+    if current is NumberStatus.DISABLED:
+        # `disabled` is an operator's deliberate act, and `disabled -> verified`
+        # is a legal move - it is how re-enabling works - so the transition
+        # table will not stop this. Provisioning must not take that decision on
+        # someone's behalf: the trunk ids above are recorded, and re-enabling
+        # stays a human action.
+        log.info("number is disabled; recorded its trunks but left it out of service")
+        return
+    try:
+        await numbers_repo.set_status(
+            conn, org_id=org_id, number_id=number["id"], target=target
+        )
+    except InvalidTransition:
+        # A number reached this state by another route - already disabled, or
+        # already verified through a different agent's attempt. The trunk ids
+        # above are still written, and forcing the status would be the one way
+        # to make a deliberate `disabled` dial again.
+        log.info(
+            "left number status at %s; %s is not a legal move from there",
+            current.value,
+            target.value,
+        )
+
+
 async def connect_number(
     conn: asyncpg.Connection,
     *,
@@ -123,6 +198,7 @@ async def connect_number(
     livekit_sip_host: str | None = None,
     gateway_factory: GatewayFactory | None = None,
     carrier_factory: CarrierFactory | None = None,
+    attach_number: bool = False,
 ) -> asyncpg.Record:
     """Run the workflow, resuming whatever this attempt already finished.
 
@@ -135,6 +211,14 @@ async def connect_number(
 
     Raises only for a refusal that happens *before* any attempt row exists, and
     so has nothing to record.
+
+    **`attach_number` defaults to False, and that is deliberate.** Placing calls
+    needs only the outbound half; claiming a number's inbound routing redirects
+    whatever already answers it - an IVR, a support line, a person - and is not
+    something to do as a side effect of "make this diallable". Everything the
+    default creates is new, so a number keeps answering where it always did and
+    can still be dialled out from. An organisation that wants CallFlow to answer
+    the number too asks for it explicitly.
     """
     carrier_cls = carrier_factory or CARRIERS.get(provider)
     if carrier_cls is None:
@@ -188,6 +272,13 @@ async def connect_number(
             await provisioning_repo.set_status(conn, row["id"], ProvisioningStatus.PROVISIONING),
             row["id"],
         )
+        await _mirror_to_number(
+            conn,
+            org_id=org_id,
+            provider=provider,
+            phone_e164=phone_number,
+            target=NumberStatus.PROVISIONING,
+        )
 
     username, password = _sip_auth(idempotency_key)
 
@@ -204,6 +295,7 @@ async def connect_number(
             username=username,
             password=password,
             gateway_factory=gateway_factory or LiveKitGateway,
+            attach_number=attach_number,
         )
     except Exception as exc:
         # Recorded, but the attempt stays `provisioning` rather than becoming
@@ -220,6 +312,17 @@ async def connect_number(
             "The steps already completed are recorded and a retry will resume from there."
         )
         log.exception("provisioning attempt %s stopped", row["id"])
+        # The number keeps `provisioning`, matching the attempt: a part-way
+        # failure is resumable, and the ids the successful steps recorded are
+        # mirrored so a resume does not rebuild what already exists.
+        await _mirror_to_number(
+            conn,
+            org_id=org_id,
+            provider=provider,
+            phone_e164=phone_number,
+            target=NumberStatus.PROVISIONING,
+            attempt=row,
+        )
         # Returned, not re-raised, and that is the whole point. `as_user()`
         # wraps a request in a single transaction, so propagating from here
         # would roll back this note *and* every trunk id the steps that did
@@ -229,10 +332,19 @@ async def connect_number(
         # caller learns this failed.
         return _require(await provisioning_repo.record_error(conn, row["id"], detail), row["id"])
 
-    return _require(
+    verified = _require(
         await provisioning_repo.set_status(conn, row["id"], ProvisioningStatus.VERIFIED),
         row["id"],
     )
+    await _mirror_to_number(
+        conn,
+        org_id=org_id,
+        provider=provider,
+        phone_e164=phone_number,
+        target=NumberStatus.VERIFIED,
+        attempt=verified,
+    )
+    return verified
 
 
 async def _run_steps(
@@ -248,6 +360,10 @@ async def _run_steps(
     username: str,
     password: str,
     gateway_factory: GatewayFactory,
+    # Outbound-only unless a caller asks otherwise, matching
+    # `connect_number`'s own default - claiming a number's inbound routing
+    # redirects whatever already answers it.
+    attach_number: bool = False,
 ) -> asyncpg.Record:
     """Each step is skipped when the row already records its result."""
     attempt_id = row["id"]
@@ -293,6 +409,7 @@ async def _run_steps(
                 sip_host=sip_host,
                 username=username,
                 password=password,
+                attach_number=attach_number,
             )
             row = _require(
                 await provisioning_repo.record_livekit_ids(
@@ -332,6 +449,7 @@ async def _configure_carrier(
     sip_host: str,
     username: str,
     password: str,
+    attach_number: bool,
 ) -> CarrierTrunk:
     """One call, whichever carrier this is.
 
@@ -346,6 +464,7 @@ async def _configure_carrier(
             label=label,
             auth_username=username,
             auth_password=password,
+            attach_number=attach_number,
         )
 
 

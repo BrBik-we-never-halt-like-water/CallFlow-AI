@@ -230,7 +230,7 @@ function DeleteOrgSection({ orgName }: { orgName: string }) {
     <>
       <SettingsSection
         title="Delete this organisation"
-        description="Removes everyone's access. Campaigns and runs made under it are gone for good."
+        description="Removes everyone's access. Agents and runs made under it are gone for good."
         footer={
           <Button
             variant="danger"
@@ -331,14 +331,10 @@ function TeamPane({ profile }: { profile: SessionProfile }) {
   const [loading, setLoading] = useState(true);
   const [inviting, setInviting] = useState(false);
   const [pendingRemove, setPendingRemove] = useState<Member | null>(null);
-  const [allocations, setAllocations] = useState<Map<string, number>>(
-    new Map(),
-  );
 
   const canInvite = profile.permissions.includes('team:invite');
   const canRemove = profile.permissions.includes('team:remove');
   const canSetRole = profile.permissions.includes('team:set_role');
-  const canSetCredits = profile.permissions.includes('credits:write');
 
   function load() {
     api
@@ -348,25 +344,8 @@ function TeamPane({ profile }: { profile: SessionProfile }) {
       .finally(() => setLoading(false));
   }
 
-  function loadAllocations() {
-    if (!canSetCredits) return;
-    api
-      .teamPerformance()
-      .then((rows) =>
-        setAllocations(
-          new Map(
-            rows
-              .filter((r): r is typeof r & { user_id: string } => !!r.user_id)
-              .map((r) => [r.user_id, r.daily_allocation]),
-          ),
-        ),
-      )
-      .catch(() => setAllocations(new Map()));
-  }
-
   useOrgScopedEffect(() => {
     void load();
-    loadAllocations();
   });
 
   return (
@@ -402,10 +381,7 @@ function TeamPane({ profile }: { profile: SessionProfile }) {
                 self={member.user_id === profile.user_id}
                 canRemove={canRemove}
                 canSetRole={canSetRole}
-                canSetCredits={canSetCredits}
-                dailyAllocation={allocations.get(member.user_id) ?? 0}
                 onChanged={load}
-                onCreditsChanged={loadAllocations}
                 onRequestRemove={setPendingRemove}
               />
             ))}
@@ -590,7 +566,7 @@ function SharingPane({ profile }: { profile: SessionProfile }) {
         ) : sentByYou.length === 0 ? (
           <EmptyState
             title="Nothing sent"
-            body="Ask for a teammate's campaign or escalation from its own page."
+            body="Ask to help with a teammate's escalation from the Needs a person page."
           />
         ) : (
           <ul className="flex flex-col divide-y divide-rule">
@@ -600,7 +576,7 @@ function SharingPane({ profile }: { profile: SessionProfile }) {
                 className="flex flex-wrap items-center justify-between gap-3 py-3"
               >
                 <span className="min-w-0 truncate text-small text-text">
-                  {request.resource_type === 'campaign' ? 'Campaign' : 'Escalation'}{' '}
+                  Escalation{' '}
                   {request.resource_name
                     ? `"${request.resource_name}"`
                     : request.resource_id}{' '}
@@ -659,7 +635,7 @@ function RemoveTeammateDialog({
     >
       <Dialog
         title={member ? `Remove ${label}?` : 'Remove teammate?'}
-        description="This deletes their CallFlow account entirely, not just their access here - campaigns and runs they created in this organisation move to you, but anything they own in another organisation is unaffected. This can't be undone."
+        description="This deletes their CallFlow account entirely, not just their access here - agents and runs they created in this organisation move to you, but anything they own in another organisation is unaffected. This can't be undone."
         size="sm"
         footer={
           <>
@@ -690,20 +666,14 @@ function MemberRow({
   self,
   canRemove,
   canSetRole,
-  canSetCredits,
-  dailyAllocation,
   onChanged,
-  onCreditsChanged,
   onRequestRemove,
 }: {
   member: Member;
   self: boolean;
   canRemove: boolean;
   canSetRole: boolean;
-  canSetCredits: boolean;
-  dailyAllocation: number;
   onChanged: () => void;
-  onCreditsChanged: () => void;
   onRequestRemove: (member: Member) => void;
 }) {
   const toast = useToast();
@@ -757,13 +727,6 @@ function MemberRow({
         </span>
       </div>
       <div className="flex items-center gap-2">
-        {canSetCredits && !isOwner ? (
-          <CreditsField
-            userId={member.user_id}
-            initialAllocation={dailyAllocation}
-            onSaved={onCreditsChanged}
-          />
-        ) : null}
         <Tag>{member.role}</Tag>
         {(canRemove || (canSetRole && !isOwner) || self) && !isOwner ? (
           <DropdownMenu>
@@ -800,71 +763,6 @@ function MemberRow({
         ) : null}
       </div>
     </li>
-  );
-}
-
-/**
- * A teammate's slice of the org's existing daily call budget - a
- * subdivision, not a second limit (CLAUDE.md's own framing for this table:
- * `member_credit_allocations` never bypasses `org_safety_settings.daily_budget`,
- * which still applies on top). Saves on blur/Enter rather than needing a
- * separate confirm button, matching how small a single-number field like
- * this should be to commit.
- */
-function CreditsField({
-  userId,
-  initialAllocation,
-  onSaved,
-}: {
-  userId: string;
-  initialAllocation: number;
-  onSaved: () => void;
-}) {
-  const toast = useToast();
-  const [value, setValue] = useState(String(initialAllocation));
-  const [saving, setSaving] = useState(false);
-
-  async function save() {
-    const parsed = Number.parseInt(value, 10);
-    if (!Number.isFinite(parsed) || parsed < 0) {
-      setValue(String(initialAllocation));
-      return;
-    }
-    if (parsed === initialAllocation) return;
-    setSaving(true);
-    try {
-      await api.setMemberCredits(userId, parsed);
-      toast({ tone: 'success', title: 'Daily credits updated' });
-      onSaved();
-    } catch (error) {
-      setValue(String(initialAllocation));
-      toast({
-        tone: 'error',
-        title: "Couldn't update their daily credits",
-        body: error instanceof Error ? error.message : undefined,
-      });
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <label className="flex items-center gap-1.5 text-small text-text-dim">
-      Credits/day
-      <Input
-        type="number"
-        min={0}
-        value={value}
-        disabled={saving}
-        onChange={(e) => setValue(e.target.value)}
-        onBlur={save}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') e.currentTarget.blur();
-        }}
-        className="h-8 w-20 px-2 text-right"
-        aria-label="Daily credit allocation"
-      />
-    </label>
   );
 }
 

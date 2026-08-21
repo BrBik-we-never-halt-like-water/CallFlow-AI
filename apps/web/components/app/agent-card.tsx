@@ -86,8 +86,8 @@ function ProviderChip({
  * Edit is always offered - the editor re-checks `agents:write` itself, so
  * hiding it here would only be UX, not a real gate (same "client-side hiding
  * is not the gate" reasoning as the page's own `agents:read` check). Delete
- * owns its own confirm step, since - unlike `CampaignCard` - nothing above it
- * in the tree keeps a "pending delete" dialog of its own.
+ * owns its own confirm step, since nothing above it in the tree keeps a
+ * "pending delete" dialog of its own.
  */
 export function AgentCard({
   agent,

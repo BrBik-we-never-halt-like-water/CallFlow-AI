@@ -1,13 +1,18 @@
-"""Campaign orchestration: contacts in, typed outcomes out.
+"""Run orchestration: contacts in, typed outcomes out.
 
 Flow per contact:
-    safety gate -> render goal -> originate call -> report in flight
+    safety gate -> allocate a line -> render the prompt -> originate -> report in flight
 
 Only the orchestration itself lives here - I/O, concurrency, the safety gate.
-Goal-template rendering is `app/domain/goal_rendering.py`; the pure
-extraction/triage logic is `app/domain/outcome_extraction.py`. Split out of one
-file per CLAUDE.md's Single-Responsibility guidance - none of that logic does
-any I/O, so it belongs in `domain/`, not here.
+Prompt assembly is `app/domain/prompt_assembly.py`, which line places the call is
+`app/domain/number_allocation.py`, and post-call triage is
+`app/domain/triage.py`. Split per CLAUDE.md's Single-Responsibility guidance -
+none of that logic does any I/O, so it belongs in `domain/`, not here.
+
+Formerly `campaign_runner.CampaignRunner`. A run is an *agent* dialling a list
+from the organisation's own numbers now (ADR-8): the agent owns the instruction
+and the fields to collect, where a campaign used to own a goal template and a
+result schema.
 
 **A run no longer ends here.** CALL-E was a request/response engine that could
 be polled to completion, so `run_one()` used to return a finished, triaged
@@ -27,13 +32,18 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
-from collections.abc import AsyncIterator, Awaitable, Callable, Iterable
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterable, Sequence
 from contextlib import asynccontextmanager
 from typing import Any
 
 from app.core.config import config
-from app.domain.entities import CallOutcome, Campaign, Contact, DialFailure, Disposition
-from app.domain.goal_rendering import render_goal
+from app.domain.entities import CallOutcome, Contact, DialFailure, Disposition, RunAgent
+from app.domain.number_allocation import DialLine, build_allocator
+from app.domain.prompt_assembly import (
+    PromptContact,
+    render_call_prompt,
+    visible_context,
+)
 from app.domain.safety import check_dial_allowed, mask, phone_hash
 from app.integrations.livekit.client import EngineError, LiveKitGateway, classify_error
 
@@ -41,8 +51,7 @@ from app.integrations.livekit.client import EngineError, LiveKitGateway, classif
 # carrier said this is a transient condition rather than something wrong with
 # the number or the request itself. A fresh call attempt against a
 # number/request that's genuinely invalid or blocked should not be retried, per
-# CLAUDE.md's fail-closed rule for anything that spends a credit or places a
-# call.
+# CLAUDE.md's fail-closed rule for anything that places a call.
 #
 # BUSY and NO_ANSWER belong here for the obvious reason: the number is fine and
 # the person simply wasn't available, which is the textbook case for calling
@@ -57,36 +66,43 @@ _RETRYABLE_FAILURES = frozenset(
     }
 )
 
-log = logging.getLogger("app.services.campaign_runner")
+log = logging.getLogger("app.services.run_dialer")
 
 JsonObject = dict[str, Any]
 ProgressHook = Callable[[CallOutcome], Awaitable[None]]
 GatewayFactory = Callable[[], LiveKitGateway]
 
 
-class CampaignRunner:
+class RunDialer:
     def __init__(
         self,
         *,
         result_schema: JsonObject | None = None,
         suppressed_hashes: frozenset[str] = frozenset(),
-        max_calls_per_run: int | None = None,
-        allowlist: frozenset[str] | None = None,
         run_id: str | None = None,
         max_concurrent_calls: int | None = None,
-        trunk_id: str | None = None,
         voice_agent: JsonObject | None = None,
         gateway_factory: GatewayFactory | None = None,
-        credit_ceiling: int | None = None,
-        credits_used_before_run: int = 0,
+        lines: Sequence[DialLine] | None = None,
+        allocation_strategy: str = "round_robin",
+        run_instruction: str | None = None,
     ) -> None:
         self.result_schema = result_schema
-        # The verified LiveKit outbound trunk this run dials through - resolved
-        # by the caller from the campaign's voice agent, the same way the
-        # allowlist and suppression set are resolved once and passed in rather
-        # than looked up per contact. `None` means no number is connected, and
-        # every contact is refused with that reason rather than dialled.
-        self._trunk_id = trunk_id
+        # The verified lines this run may dial from, resolved once by the caller
+        # the same way the suppression set is, rather than looked
+        # up per contact. Empty means nothing is connected and every contact is
+        # refused with that reason rather than dialled.
+        #
+        # A pool rather than one trunk because an organisation holds several
+        # numbers precisely so no single line carries a whole run - see
+        # `domain/number_allocation.py`.
+        self._lines = tuple(lines or ())
+        self._allocator = (
+            build_allocator(allocation_strategy, self._lines) if self._lines else None
+        )
+        # Appended to every prompt in this run, so a one-off instruction does not
+        # mean editing an agent the whole organisation shares.
+        self._run_instruction = run_instruction
         # Which STT, TTS and LLM the worker runs this call on, and the keys for
         # each - resolved by the caller from the same voice agent `trunk_id`
         # came from. This travels to the worker verbatim under the
@@ -105,24 +121,6 @@ class CampaignRunner:
         self._calls_made_lock = asyncio.Lock()
         # Resolved once per run (a single query) rather than once per contact.
         self._suppressed_hashes = suppressed_hashes
-        # An organisation's own Settings -> Safety override, or None to fall back
-        # to the deployment's env-var defaults inside check_dial_allowed itself.
-        self._max_calls_per_run = max_calls_per_run
-        self._allowlist = allowlist
-        # `None` when the caller (the run's own starter) has no per-teammate
-        # allocation set at all - the per-teammate gate then never applies,
-        # only the org-wide daily budget does. `credits_used_before_run` is a
-        # live count of *today's already-connected* calls, resolved once at
-        # run start the same way suppression/allowlist already are.
-        # `_credits_reserved` is this run's own in-flight bookkeeping: a
-        # contact reserves one credit before dialling (so two contacts
-        # dialled concurrently can't both slip under the same last slot) and
-        # gives it back if that particular call never connects - see
-        # `run_one()`'s own comment for why a credit is only ever actually
-        # spent by a connected call, never a mere attempt.
-        self._credit_ceiling = credit_ceiling
-        self._credits_used_before_run = credits_used_before_run
-        self._credits_reserved = 0
         # The persisted run this instance belongs to, if any - gives each
         # contact's idempotency key a stable scope (see `run_one()`). `None`
         # for a caller with no real run (ad hoc use, tests).
@@ -135,12 +133,12 @@ class CampaignRunner:
     async def _open_gateway(self) -> AsyncIterator[None]:
         """Hold one LiveKit session open for the block, if there is anything to dial.
 
-        A no-op when no trunk is connected: constructing a gateway would raise
+        A no-op when no line is connected: constructing a gateway would raise
         on missing credentials, and refusing the whole run for that would hide
         the more useful per-contact "no number is connected" reason behind a
         configuration error.
         """
-        if self._trunk_id is None:
+        if not self._lines:
             yield
             return
 
@@ -153,7 +151,7 @@ class CampaignRunner:
 
     async def run(
         self,
-        campaign: Campaign,
+        agent: RunAgent,
         contacts: Iterable[Contact],
         *,
         on_progress: ProgressHook | None = None,
@@ -182,7 +180,7 @@ class CampaignRunner:
             # write below - that's our own database, and doesn't need to
             # compete for the same concurrency budget as the carrier.
             async with semaphore:
-                outcome = await self.run_one(campaign, contact)
+                outcome = await self.run_one(agent, contact)
             if on_progress:
                 await on_progress(outcome)
             return outcome
@@ -203,7 +201,7 @@ class CampaignRunner:
                     CallOutcome(
                         contact_name=contact.name,
                         phone_masked=mask(contact.phone),
-                        campaign_id=campaign.id,
+                        voice_agent_id=agent.id,
                         status="FAILED",
                         error=DialFailure.INTERNAL.value,
                         disposition=Disposition.UNREACHABLE,
@@ -214,7 +212,7 @@ class CampaignRunner:
                 outcomes.append(result)
         return outcomes
 
-    def _idempotency_key(self, campaign: Campaign, contact: Contact) -> str:
+    def _idempotency_key(self, agent: RunAgent, contact: Contact) -> str:
         """A retry of the *same* logical attempt must reuse the same key -
         that's the entire point of `Idempotency-Key`: if the create-call
         request reaches CALL-E and a call gets placed, but the response is
@@ -234,45 +232,33 @@ class CampaignRunner:
         no worse than the prior default either.
         """
         if self._run_id is None:
-            return f"{campaign.id}-{contact.phone}-{uuid.uuid4().hex[:8]}"
+            return f"{agent.id}-{contact.phone}-{uuid.uuid4().hex[:8]}"
         return f"{self._run_id}:{phone_hash(contact.phone)}"
 
-    async def run_one(self, campaign: Campaign, contact: Contact) -> CallOutcome:
+    async def run_one(self, agent: RunAgent, contact: Contact) -> CallOutcome:
         base = CallOutcome(
             contact_name=contact.name,
             phone_masked=mask(contact.phone),
-            campaign_id=campaign.id,
+            voice_agent_id=agent.id,
         )
 
-        # --- Safety gate: fails closed, runs before anything can dial. ------
-        # Checking `self._calls_made` and reserving a slot by incrementing it
-        # must happen as one atomic step under concurrency - otherwise two
-        # contacts dialled at the same time could both read the same
-        # under-the-ceiling count before either increments, letting more
-        # calls through than `max_calls_per_run` allows. The reservation
-        # happens *before* the dial is attempted, not after it succeeds
-        # (unlike the previous, sequential-only version) - a failed or
-        # lost-response attempt still spent a real slot at CALL-E and must
-        # still count, per CLAUDE.md's fail-closed rule (`ISSUES.md` #54).
-        async with self._calls_made_lock:
-            credits_remaining = (
-                None
-                if self._credit_ceiling is None
-                else self._credit_ceiling - self._credits_used_before_run - self._credits_reserved
-            )
-            gate = check_dial_allowed(
-                contact.phone,
-                self._calls_made,
-                is_suppressed=phone_hash(contact.phone) in self._suppressed_hashes,
-                max_calls_per_run=self._max_calls_per_run,
-                allowlist=self._allowlist,
-                credits_remaining=credits_remaining,
-            )
-            reserved_credit = gate.allowed and self._credit_ceiling is not None
-            if gate.allowed:
+        # --- Suppression gate: fails closed, runs before anything can dial. --
+        # The lock still matters, but only for allocation now: round-robin
+        # advances a shared cursor, so two contacts dialled concurrently would
+        # otherwise race for the same line and the even distribution this exists
+        # to guarantee would not hold. The per-run ceiling and credit
+        # reservation this block used to hold were removed with the rest of the
+        # cost guards (`domain/safety.py`'s module docstring).
+        gate = check_dial_allowed(
+            contact.phone,
+            is_suppressed=phone_hash(contact.phone) in self._suppressed_hashes,
+        )
+        line: DialLine | None = None
+        if gate.allowed:
+            async with self._calls_made_lock:
                 self._calls_made += 1
-                if reserved_credit:
-                    self._credits_reserved += 1
+                if self._allocator is not None:
+                    line = self._allocator.next_for(contact.phone)
 
         if not gate.allowed:
             return base.model_copy(
@@ -283,28 +269,16 @@ class CampaignRunner:
                 }
             )
 
-        # A credit is only ever actually spent by a *connected* call. Every
-        # early return below hands the reserved slot back, because none of them
-        # reached a person - without that, a run with a credit ceiling burns a
-        # credit per refused contact and eventually blocks later contacts for a
-        # reason that never happened. The one path that keeps its credit is the
-        # answered call at the bottom.
-        async def release_credit() -> None:
-            if reserved_credit:
-                async with self._calls_made_lock:
-                    self._credits_reserved -= 1
-
-        if self._trunk_id is None:
-            log.info("dial refused for %s - no connected number", mask(contact.phone))
-            await release_credit()
+        if not self._lines or self._allocator is None:
+            log.info("dial refused for %s - no verified number", mask(contact.phone))
             return base.model_copy(
                 update={
                     "status": "FAILED",
                     "error": DialFailure.PROVIDER_UNAVAILABLE.value,
                     "disposition": Disposition.SKIPPED,
                     "disposition_reason": (
-                        "This campaign has no connected number to call from. "
-                        "Connect one to its voice agent, then start the run again."
+                        "This run has no verified number to call from. "
+                        "Connect one in Integrations, then pick it when you start the run."
                     ),
                 }
             )
@@ -315,34 +289,39 @@ class CampaignRunner:
         # saying "hello?" into silence. The gate belongs before the dial.
         if not self._voice_agent:
             log.info("dial refused for %s - no voice agent", mask(contact.phone))
-            await release_credit()
             return base.model_copy(
                 update={
                     "status": "FAILED",
                     "error": DialFailure.PROVIDER_UNAVAILABLE.value,
                     "disposition": Disposition.SKIPPED,
                     "disposition_reason": (
-                        "This campaign's voice agent has no speech or language providers set. "
+                        "This run's agent has no speech or language providers set. "
                         "Finish setting it up, then start the run again."
                     ),
                 }
             )
 
         room = self._room_name(contact)
-        # The rendered goal is what the agent worker is told to accomplish. It
-        # is built here, where the campaign and contact are both in hand, and
-        # travels to the worker as room metadata.
-        goal = render_goal(campaign, contact)
+        # What the agent worker is told. Built here, where the agent and the
+        # contact are both in hand, and travelling to the worker as room
+        # metadata - so each person hears about their own case.
+        prompt = render_call_prompt(
+            system_prompt=agent.system_prompt,
+            contact=PromptContact(name=contact.name, context=contact.context),
+            collect_fields=agent.collect_fields,
+            run_instruction=self._run_instruction,
+        )
 
         try:
-            created = await self._originate(contact=contact, campaign=campaign, room=room, goal=goal)
+            created = await self._originate(
+                contact=contact, agent=agent, room=room, prompt=prompt, line=line
+            )
         except EngineError as exc:
             failure = classify_error(exc)
             # `mask()` on the phone and `failure.value` rather than the
             # exception text: a vendor message can carry the dialled number or
             # internal hostnames, and this string reaches a user-facing field.
             log.warning("call failed for %s: %s", mask(contact.phone), failure.value)
-            await release_credit()
             retryable = failure in _RETRYABLE_FAILURES
             return base.model_copy(
                 update={
@@ -361,7 +340,6 @@ class CampaignRunner:
             # interpolated into a user-facing field - unlike a DialFailure
             # value, a raw exception string is untrusted content.
             log.exception("call failed for %s", mask(contact.phone))
-            await release_credit()
             return base.model_copy(
                 update={
                     "status": "FAILED",
@@ -371,7 +349,7 @@ class CampaignRunner:
                 }
             )
 
-        # Answered, not finished - and the only path that keeps its credit. The
+        # Answered, not finished. The
         # worker is in the room having the conversation and will POST the
         # transcript and terminal status back when it ends (P1-T4); this row
         # stays IN_FLIGHT until it does.
@@ -381,6 +359,11 @@ class CampaignRunner:
                 "run_id": created["sip_call_id"] or created["participant_id"],
                 "disposition": Disposition.IN_FLIGHT,
                 "disposition_reason": "In conversation…",
+                # Masked, because this row is read back to a person and a full
+                # number is a separate permissioned reveal (CLAUDE.md #4). A run
+                # spread across several lines is exactly when "which number
+                # called them?" is a question worth being able to answer.
+                "from_number_masked": mask(line.phone_e164) if line else None,
             }
         )
 
@@ -397,14 +380,20 @@ class CampaignRunner:
         return f"call-{scope}-{phone_hash(contact.phone)[:12]}"
 
     async def _originate(
-        self, *, contact: Contact, campaign: Campaign, room: str, goal: str
+        self,
+        *,
+        contact: Contact,
+        agent: RunAgent,
+        room: str,
+        prompt: str,
+        line: DialLine | None,
     ) -> JsonObject:
         """Place the call, using the batch's gateway or a private one.
 
         `run_one()` is called directly as well as through `run()`, so it cannot
         assume the batch session exists.
         """
-        assert self._trunk_id is not None  # guarded by the caller
+        assert line is not None  # guarded by the caller
         identity = f"contact-{phone_hash(contact.phone)[:12]}"
 
         # What the worker needs to hold the conversation and to attribute the
@@ -426,14 +415,27 @@ class CampaignRunner:
         # customer's data is context for the conversation, never control of it.
         max_call_seconds = int(config.poll_timeout_seconds)
         metadata: JsonObject = {
-            **contact.context,
-            "goal": goal,
-            "campaign_id": campaign.id,
-            "campaign_name": campaign.name,
+            # Stripped as well as spread first. Spreading first protects the keys
+            # this dict goes on to set, but `goal` was renamed to `prompt`, so a
+            # hostile column called `goal` stopped colliding with anything and
+            # simply rode along - inert today, and exactly the kind of thing that
+            # becomes live again when a future reader adds a `goal` key back.
+            # `visible_context` is the one list both this and the prompt strip
+            # against, so the two cannot drift.
+            **visible_context(contact.context),
+            "prompt": prompt,
+            "voice_agent_id": agent.id,
+            "agent_name": agent.name,
             "contact_name": contact.name,
             "phone_masked": mask(contact.phone),
             "result_schema": self.result_schema,
-            "language": contact.language or campaign.language,
+            # The same field list the prompt renders, as data the worker can
+            # build a `record_field` tool from. Sent rather than re-derived so
+            # what the agent is asked for and what it can record cannot drift.
+            # The reserved key is `collect_schema`, so a spreadsheet column by
+            # that name is already stripped upstream.
+            "collect_schema": [f.model_dump() for f in agent.collect_fields],
+            "language": contact.language or agent.language,
             # The key `AgentSpec.from_metadata()` reads. Both sides of this
             # contract live in this repo and are tested against each other
             # (`test_dispatch_contract.py`) - they were written apart once, and
@@ -448,7 +450,7 @@ class CampaignRunner:
             metadata["run_id"] = self._run_id
 
         kwargs: JsonObject = {
-            "trunk_id": self._trunk_id,
+            "trunk_id": line.outbound_trunk_id,
             "phone": contact.phone,
             "room_name": room,
             "participant_identity": identity,

@@ -29,7 +29,12 @@ from typing import Any, Self
 
 import httpx
 
-from app.integrations.telephony import CarrierError, CarrierTrunk, sip_uri
+from app.integrations.telephony import (
+    CarrierError,
+    CarrierNumber,
+    CarrierTrunk,
+    sip_uri,
+)
 
 log = logging.getLogger("app.integrations.telephony.plivo")
 
@@ -39,6 +44,13 @@ _BASE = "https://api.plivo.com/v1/Account"
 # carries the dialled number - which is exactly the kind of thing CLAUDE.md's
 # no-PII-in-transit instinct says not to send in the clear when a flag avoids it.
 DEFAULT_TRANSPORT = "tls"
+
+# Pagination. `_MAX_NUMBER_PAGES` is a ceiling, not an expected count: a vendor
+# that kept returning a next page would otherwise hold the request open, and a
+# picker that silently stopped at page one would hide an org's own numbers.
+_MAX_NUMBER_PAGES = 100
+_PAGE_SIZE = 100
+
 
 
 class PlivoCarrier:
@@ -77,6 +89,67 @@ class PlivoCarrier:
             await self._client.aclose()
             self._client = None
 
+    async def _get(self, path: str, *, action: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+        if self._client is None:
+            raise RuntimeError("PlivoCarrier is not open. Use `async with PlivoCarrier(...)`.")
+        url = f"{_BASE}/{self._auth_id}/{path}"
+        try:
+            response = await self._client.get(url, params=params, auth=self._auth)
+        except httpx.HTTPError as exc:
+            raise CarrierError("Plivo", action, f"could not be reached ({type(exc).__name__}).") from exc
+        if response.status_code >= 300:
+            raise CarrierError("Plivo", action, _detail(response))
+        try:
+            return response.json()
+        except ValueError:
+            return {}
+
+    async def list_numbers(self) -> list[CarrierNumber]:
+        """The voice-capable numbers already on this Plivo account.
+
+        Plivo pages with `limit`/`offset` and reports the total in
+        `meta.total_count`, so the loop advances by offset rather than following
+        a cursor the way Twilio does.
+        """
+        numbers: list[CarrierNumber] = []
+        offset = 0
+
+        for _ in range(_MAX_NUMBER_PAGES):
+            body = await self._get(
+                "Number/",
+                action="list the numbers on this account",
+                params={"limit": _PAGE_SIZE, "offset": offset},
+            )
+            objects = body.get("objects") or []
+            for item in objects:
+                e164 = (item.get("number") or "").strip()
+                if not e164:
+                    continue
+                # Plivo reports this as the string "voice", "sms" or "voice,sms".
+                raw = item.get("voice_enabled")
+                capabilities = {"voice"} if raw in (True, "true", "True") else set()
+                if not capabilities and (item.get("type") or "") in ("", "local", "tollfree"):
+                    # Older responses omit the flag entirely; a plain number is
+                    # voice-capable unless the vendor says otherwise.
+                    capabilities = {"voice"}
+                numbers.append(
+                    CarrierNumber(
+                        provider="plivo",
+                        e164=e164 if e164.startswith("+") else f"+{e164}",
+                        # Plivo addresses a number by the E.164 itself.
+                        number_ref=e164,
+                        label=(item.get("alias") or "").strip() or None,
+                        capabilities=frozenset(capabilities),
+                    )
+                )
+
+            offset += len(objects)
+            total = (body.get("meta") or {}).get("total_count")
+            if not objects or total is None or offset >= int(total):
+                break
+
+        return numbers
+
     async def _post(self, path: str, payload: dict[str, Any], *, action: str) -> dict[str, Any]:
         if self._client is None:
             raise RuntimeError("PlivoCarrier is not open. Use `async with PlivoCarrier(...)`.")
@@ -105,8 +178,16 @@ class PlivoCarrier:
         auth_username: str,
         auth_password: str,
         transport: str = DEFAULT_TRANSPORT,
+        attach_number: bool = True,
     ) -> CarrierTrunk:
         """Point a Plivo number at LiveKit, both directions.
+
+        `attach_number=False` stops before the final step that repoints the
+        number's inbound routing, which makes the whole call non-destructive:
+        everything created is new, and the number keeps whatever was already
+        answering it. That is the default, because a carrier sync is not
+        consent to redirect a line that may already be a support queue
+        (`ISSUES.md` #168).
 
         `number_ref` is the E.164 number itself - Plivo addresses numbers
         directly, unlike Twilio's SID. Named uniformly across the adapters so
@@ -152,11 +233,12 @@ class PlivoCarrier:
             outbound.get("termination_sip_domain") or f"{outbound_id}.zt.plivo.com"
         )
 
-        await self._post(
-            f"Number/{number_ref.lstrip('+')}/",
-            {"app_type": "trunk", "trunk_id": inbound_id},
-            action="attach the phone number to the trunk",
-        )
+        if attach_number:
+            await self._post(
+                f"Number/{number_ref.lstrip('+')}/",
+                {"app_type": "trunk", "trunk_id": inbound_id},
+                action="attach the phone number to the trunk",
+            )
 
         log.info("configured Plivo trunks in=%s out=%s", inbound_id, outbound_id)
         return CarrierTrunk(

@@ -9,6 +9,7 @@
     "local:logs": "node scripts/local.js logs",
     "local:status": "node scripts/local.js status",
     "local:migrate": "node scripts/local.js migrate",
+    "voice": "node scripts/voice.js",
     "db:migrate": "node scripts/db.js migrate",
     "db:generate": "node scripts/db.js generate",
     "db:reset": "node scripts/db.js reset"

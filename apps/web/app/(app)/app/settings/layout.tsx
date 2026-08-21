@@ -10,7 +10,6 @@ import { useSession } from '@/lib/hooks/use-session';
 // listing it here gave Settings a tab that threw you out of Settings the moment
 // you clicked it, which reads as a broken tab rather than a moved feature.
 const TABS = [
-  { slug: 'safety', label: 'Safety', permission: 'safety:read' },
   { slug: 'api-keys', label: 'API keys', permission: 'api_keys:read' },
   { slug: 'billing', label: 'Billing', permission: 'billing:read' },
 ] as const;
@@ -45,13 +44,12 @@ export default function SettingsLayout({
           The controls behind every run
         </h1>
         <p className="measure text-small text-text-dim">
-          Guards, credentials, connected numbers, and the plan this organisation
-          is on.
+          Credentials, connected numbers, and the plan this organisation is on.
         </p>
       </div>
 
-      {/* Real links rather than a tab widget: each pane is its own URL, so a setting
-          can be linked to directly - which the safety guard popovers rely on. */}
+      {/* Real links rather than a tab widget: each pane is its own URL, so a
+          setting can be linked to directly. */}
       <nav
         aria-label="Settings sections"
         className="-mb-px overflow-x-auto border-b border-rule"

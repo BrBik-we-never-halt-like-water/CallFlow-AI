@@ -91,6 +91,67 @@ npm run local:migrate    # run migrations only
 
 ---
 
+## Running it natively, without Docker
+
+Some people run the API and web directly against a hosted Supabase project
+instead of the container stack. That works, and it needs **three** processes -
+the third is the one people forget.
+
+```bash
+# 1. API                 (from apps/api/)
+uvicorn app.main:app --reload --port 8000
+
+# 2. Web                 (from apps/web/)
+npm run dev
+
+# 3. Voice worker        (from the repo root)
+npm run voice
+```
+
+**Nothing dials without the worker.** The API places the call and the carrier
+rings the contact, but the worker is what actually speaks and listens - so
+without it a call connects to silence, the contact hangs up, and the run row
+sits at "In conversation…" forever because the worker is also what reports the
+result. There is no error on screen, which is what makes it worth stating here.
+
+Its first start is slow: `livekit.agents` imports a large dependency tree and
+takes around 30 seconds before it prints `registered worker`, then a few seconds
+on later runs. Wait for that line rather than assuming it hung.
+
+The worker has **no reloader** - `python -m app.worker start` registers with
+LiveKit and holds the connection - so restart it after editing
+`apps/voice-runtime/`, and after changing any value it reads from `.env`.
+
+**Stopping it needs the port back.** Ctrl+C does not always release 8081, and
+the next start then fails with `only one usage of each socket address`. That
+error means an old worker is still alive, not that something else took the port:
+
+```powershell
+Get-CimInstance Win32_Process |
+  Where-Object { $_.CommandLine -match 'app\.worker' } |
+  ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
+```
+
+**Plugins are per vendor.** `npm run voice` fails with a `ModuleNotFoundError`
+naming a `livekit.plugins.*` package when an agent uses a vendor that is not
+installed. Install the ones your agents actually use, from `apps/voice-runtime/`:
+
+```bash
+pip install -e ".[sarvam,openai,silero]"
+```
+
+`silero` is always needed - it is the voice-activity detector every STT pipeline
+uses to know when the contact stopped talking.
+
+**`localhost` is not safe here.** `CALLFLOW_PUBLIC_API_URL` in the repo-root
+`.env` is what the worker reports results to, and on Windows `localhost`
+resolves to IPv6 `::1` first. With Docker Desktop running, `[::1]:8000` is held
+by its `wslrelay` while uvicorn listens only on IPv4 - so every report fails with
+`RemoteProtocolError` and no call ever records a transcript. Use
+`http://127.0.0.1:8000` (`ISSUES.md` #163).
+
+---
+
 ## Working day to day
 
 You start the stack once and leave it running. Editing code is the normal case
@@ -139,11 +200,24 @@ changes, and there is no error to read. `-V` (`--renew-anon-volumes`) is what
 tells compose to take the image's copy instead. The same applies in reverse:
 `npm install` on the host never reaches the container.
 
-**The database init scripts only run once.** `docker/volumes/db/*.sql` create the
-roles and schemas Supabase's services expect, and Postgres runs them against an
-empty data directory and never again. Changing one means throwing the volume
-away, which is what `npm run local:reset -- --yes` does - and it takes your local
-accounts and data with it, so sign up again afterwards.
+**The database init scripts only run once.** `docker/volumes/db/*.sql` fill in
+the roles, schemas and grants the `supabase/postgres` image does not create
+itself, and Postgres runs them against an empty data directory and never again.
+Changing one means throwing the volume away, which is what
+`npm run local:reset -- --yes` does - and it takes your local accounts and data
+with it, so sign up again afterwards.
+
+**They interleave with the image's own init, and the order is fixed.** The
+entrypoint globs `/docker-entrypoint-initdb.d/*` - an ASCII sort - so `01` and
+`02` run first, then the image's `migrate.sh` (`m` sorts after any digit), which
+runs the `init-scripts/` the entrypoint itself skips as a directory. Those
+scripts create `anon`, `authenticated`, `service_role`, `authenticator`,
+`supabase_auth_admin` and `supabase_storage_admin` **unguarded**, so `01` must
+not create any of them: doing so aborts `migrate.sh` on "role already exists",
+and ON_ERROR_STOP then skips everything after it - `auth.users` is never built
+and GoTrue crash-loops on a half-built schema. Anything needing those roles goes
+in `03-post-init.sql`, mounted at `/etc/postgresql.schema.sql`, the hook
+`migrate.sh` runs last. No filename in `initdb.d` can run later than it.
 
 **Migrations do not run on their own after the first start.** `migrate` is a
 one-shot container: it waits for the `auth` schema to exist, runs
@@ -175,6 +249,9 @@ It is warm after that.
 | Signing in bounces straight back to `/login` | the middleware cannot reach Supabase | check `callflow-web` logged `localhost:54321 -> kong:8000` on start |
 | The API 500s on a column that exists in your branch | migrations have not run | `npm run local:migrate` |
 | A service is `unhealthy` and nothing works | look at the one *below* it | `npm run local:logs db auth` - a failed database init surfaces two services away |
+| `db` never goes healthy, and its log has `role "anon" already exists` | an init script in `docker/volumes/db/` creates a role the image already creates, which aborts the image's own init | that role must not be created there - see "They interleave with the image's own init" above, then `npm run local:reset -- --yes` |
+| `auth` crash-loops on `relation "schema_migrations" already exists` | the volume has the image's 2017 GoTrue baseline, which GoTrue v2 cannot migrate over | `npm run local:reset -- --yes` - `03-post-init.sql` hands GoTrue an empty `auth` schema |
+| Alembic fails with `permission denied for schema public` | the image demotes `postgres` to NOSUPERUSER in its post-setup | `npm run local:reset -- --yes` - `03-post-init.sql` restores it |
 | `port is already allocated` | something else holds 3000/8000/54321/55432 | stop it, or set `WEB_PORT`/`API_PORT` in `docker/.env` |
 | Studio shows `unhealthy` | its healthcheck expects the analytics service, which this stack leaves out | ignore it - Studio works |
 | Chat does not update until you reload; escalations and share requests are stale too | your database predates the `realtime` schema being created at init, so Realtime has no `subscription` table | `npm run local:reset -- --yes` (rebuilds the volume), or apply it in place: `docker compose -f docker/docker-compose.yml exec db psql -U postgres -c "create schema if not exists realtime authorization supabase_admin;" && docker compose -f docker/docker-compose.yml restart realtime` |

@@ -14,7 +14,7 @@ same predicate as `CallOutcome.answered`) - a dial that never rang through
 (no answer, busy, an invalid number, a provider error) does not spend a
 credit, and this is enforced at dial time
 (`domain/safety.py::check_dial_allowed`'s `credits_remaining` param, wired up
-in `services/campaign_runner.py`), not just displayed. This *was* originally
+in `services/run_dialer.py`), not just displayed. This *was* originally
 a display-only number with no dial-time gate (migration `43a7b26f6038`'s own
 docstring); enforcement was added afterward - see `ISSUES.md`.
 """

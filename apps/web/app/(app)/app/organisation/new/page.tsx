@@ -91,7 +91,7 @@ export default function NewOrganisationPage() {
         </h1>
         <p className="measure text-small text-text-dim">
           {step === 'name'
-            ? 'A separate workspace with its own team, campaigns, and settings.'
+            ? 'A separate workspace with its own team, agents, and settings.'
             : 'Optional - everyone you invite will see this next to the name.'}
         </p>
       </div>

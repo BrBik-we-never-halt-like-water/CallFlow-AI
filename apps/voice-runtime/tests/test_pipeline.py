@@ -186,3 +186,76 @@ def test_the_registries_are_the_only_place_a_vendor_is_named() -> None:
     end = body.index("__all__")
     for vendor in ("sarvam", "deepgram", "elevenlabs", "openrouter", "openai"):
         assert vendor not in body[start:end].lower(), f"{vendor} is hard-coded in build_pipeline"
+
+
+# --- a voice that belongs to another vendor -----------------------------------
+#
+# `voice_id` is one column shared by every TTS provider, so an agent moved from
+# ElevenLabs to Sarvam still carries "Rachel". Sarvam validates the speaker in
+# its constructor, so passing it on raised and took the *whole* pipeline with
+# it - with the contact already ringing, hearing nothing (`ISSUES.md` #162).
+
+
+def _speakers(monkeypatch, known):
+    """Pin what the plugin would report, so these run with or without it.
+
+    The vendor plugins are optional extras: CI installs none of them, and a
+    deployment installs only the vendors its organisations use. Tests that
+    assumed the plugin was importable passed locally and failed in CI, which is
+    how `#177` reached main - the resolver's plugin-absent branch was the one
+    nobody exercised.
+    """
+    monkeypatch.setattr("app.pipeline._sarvam_known_speakers", lambda: known)
+
+
+def test_a_voice_from_another_vendor_is_dropped(monkeypatch) -> None:
+    from app.pipeline import _sarvam_speaker
+
+    _speakers(monkeypatch, {"shubh", "ritu"})
+    assert _sarvam_speaker("Rachel") is None
+    assert _sarvam_speaker(None) is None
+
+
+def test_a_speaker_the_current_model_rejects_is_dropped_too(monkeypatch) -> None:
+    """`anushka` is a real Sarvam speaker - for bulbul:v2. The plugin defaults to
+    v3, which refuses it, so checking membership of *any* model's list is not
+    enough."""
+    from app.pipeline import _sarvam_speaker
+
+    _speakers(monkeypatch, {"shubh", "ritu"})
+    assert _sarvam_speaker("anushka") is None
+
+
+def test_a_speaker_the_current_model_has_is_kept(monkeypatch) -> None:
+    from app.pipeline import _sarvam_speaker
+
+    _speakers(monkeypatch, {"shubh", "ritu"})
+    assert _sarvam_speaker("shubh") == "shubh"
+    assert _sarvam_speaker("SHUBH") == "SHUBH"
+
+
+def test_with_no_plugin_installed_the_voice_is_passed_through(monkeypatch) -> None:
+    """Not dropped. With nothing able to judge the name, silently replacing the
+    operator's chosen voice with the model default is the exact failure this
+    resolver exists to prevent - so the plugin gets to decide instead."""
+    from app.pipeline import _sarvam_speaker
+
+    _speakers(monkeypatch, None)
+    assert _sarvam_speaker("ritu") == "ritu"
+    assert _sarvam_speaker("Rachel") == "Rachel"
+    assert _sarvam_speaker(None) is None
+
+
+def test_the_real_plugin_agrees_when_it_is_installed() -> None:
+    """The mocked tests above prove the logic; this proves the thing it reads.
+
+    Skipped where the extra is not installed, which is CI - so it never fails
+    for the absence it is written to tolerate.
+    """
+    pytest.importorskip("livekit.plugins.sarvam")
+    from app.pipeline import _sarvam_known_speakers
+
+    known = _sarvam_known_speakers()
+    assert known, "the plugin is installed but reported no speakers"
+    assert "shubh" in known
+    assert "anushka" not in known, "bulbul:v2 speakers must not appear for v3"

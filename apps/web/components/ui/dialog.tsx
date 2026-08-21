@@ -39,11 +39,19 @@ export function Dialog({
   children?: React.ReactNode;
   footer?: React.ReactNode;
   className?: string;
-  size?: 'sm' | 'md' | 'lg';
+  /** `full` is the record-inspection size: a near-full-viewport panel for
+   *  content that has to be read alongside itself - a transcript next to the
+   *  fields extracted from it. */
+  size?: 'sm' | 'md' | 'lg' | 'full';
   /** False for a mandatory step: no close button, no Esc, no click-outside. */
   dismissible?: boolean;
 }) {
-  const width = { sm: 'max-w-sm', md: 'max-w-lg', lg: 'max-w-2xl' }[size];
+  const width = {
+    sm: 'max-w-sm',
+    md: 'max-w-lg',
+    lg: 'max-w-2xl',
+    full: 'max-w-none',
+  }[size];
   const container = usePortalContainer();
 
   return (
@@ -54,8 +62,11 @@ export function Dialog({
         onPointerDownOutside={(e) => !dismissible && e.preventDefault()}
         onInteractOutside={(e) => !dismissible && e.preventDefault()}
         className={cn(
-          'dark-overlay fixed left-1/2 top-1/2 z-50 w-[calc(100vw-32px)] -translate-x-1/2 -translate-y-1/2',
-          'max-h-[calc(100dvh-64px)] overflow-y-auto rounded-md border border-rule-strong bg-surface-raised shadow-overlay',
+          'dark-overlay fixed left-1/2 top-1/2 z-50 -translate-x-1/2 -translate-y-1/2',
+          'overflow-y-auto rounded-md border border-rule-strong bg-surface-raised shadow-overlay',
+          size === 'full'
+            ? 'h-[90dvh] w-[80vw] max-w-[80vw]'
+            : 'w-[calc(100vw-32px)] max-h-[calc(100dvh-64px)]',
           width,
           className,
         )}

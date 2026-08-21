@@ -31,6 +31,7 @@ from app.core.crypto import CredentialsNotConfigured, pack_fields
 from app.database import database
 from app.database.repositories import provider_credentials as credentials_repo
 from app.domain.providers import PROVIDERS, ConnectMethod, ProviderSpec, spec
+from app.services.credential_check import check_credentials
 
 router = APIRouter(prefix="/api/v1/integrations", tags=["integrations"])
 
@@ -100,6 +101,16 @@ class ProviderCredentialOut(BaseModel):
     phone_number: str | None
     created_at: datetime
     updated_at: datetime
+    #: Whether the vendor confirmed these credentials work. `None` means the
+    #: check could not be completed - no probe is declared for this provider,
+    #: the vendor was unreachable, or the key authenticated but was scoped too
+    #: narrowly to verify. Reported rather than dropped: the credential is
+    #: stored either way, and telling someone it is "Connected" when nothing
+    #: confirmed it is a success state for something that did not happen
+    #: (CLAUDE.md non-negotiable #9, `ISSUES.md` #169).
+    verified: bool | None = None
+    #: Why, when `verified` is None and there is something to say.
+    verification_note: str | None = None
 
 
 class ProviderCredentialIn(BaseModel):
@@ -316,23 +327,41 @@ async def connect_provider(
     body: ProviderCredentialIn,
     user: Annotated[CurrentUser, Depends(RequirePermission(Permission.INTEGRATIONS_WRITE))],
 ) -> ProviderCredentialOut:
-    """Store one provider's credentials.
+    """Verify one provider's credentials against the vendor, then store them.
 
-    Storing them is all this does, for every provider. For a carrier or a speech
-    or model vendor that is enough to make it usable on a call; for storage,
-    automation and observability vendors nothing reads the credential yet, and
-    the catalogue's `wired` flag is what the interface uses to say so.
+    For a carrier or a speech or model vendor, storing is enough to make the
+    credential usable on a call; for storage, automation and observability
+    vendors nothing reads it yet, and the catalogue's `wired` flag is what the
+    interface uses to say so.
+
+    **A credential the vendor rejects is not stored.** It used to be: whatever
+    was typed was saved and the card read "Connected", so a mistyped key
+    surfaced later as a sync that found nothing or a call that reached silence,
+    a long way from the form that caused it. A vendor that cannot be *reached*
+    is a different case and does not block the save - an outage at the vendor
+    must not stop someone configuring a working account.
     """
     _require_known(provider)
     provider_spec = spec(provider)
     assert provider_spec is not None  # guarded above
 
-    return await _store(
+    fields = _validated_fields(provider_spec, body.fields)
+    checked = await check_credentials(provider_spec, fields)
+    if checked.ok is False:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=checked.detail or f"{provider_spec.name} rejected these credentials.",
+        )
+
+    stored = await _store(
         user=user,
         provider=provider,
-        fields=_validated_fields(provider_spec, body.fields),
+        fields=fields,
         phone_number=body.phone_number,
         label=body.label,
+    )
+    return stored.model_copy(
+        update={"verified": checked.ok, "verification_note": checked.detail}
     )
 
 

@@ -316,20 +316,75 @@ def _sarvam_stt(agent: AgentSpec) -> Any:
     )
 
 
+def _sarvam_speaker(voice_id: str | None) -> str | None:
+    """`voice_id` only when Sarvam's *current* model actually has that speaker.
+
+    Sarvam ties its speaker list to the TTS model and changed both between
+    bulbul v2 and v3, so the answer is asked of the plugin rather than copied
+    into a set here - a hardcoded list goes stale silently and reintroduces the
+    exact failure this exists to prevent. Unknown names resolve to `None`, which
+    the plugin documents as "pick this model's default".
+    """
+    if not voice_id:
+        return None
+
+    known = _sarvam_known_speakers()
+    if known is None:
+        # The plugin is not installed, or moved its table. Nothing here can
+        # judge the name, and dropping it would replace a voice an operator
+        # chose with the model default *and say nothing* - the failure this
+        # function exists to prevent, arriving by a different route. Passing it
+        # through lets the plugin decide, which is the only thing that can
+        # (`ISSUES.md` #177).
+        return voice_id
+    return voice_id if voice_id.lower() in known else None
+
+
+def _sarvam_known_speakers() -> set[str] | None:
+    """Sarvam's speaker list for the model the plugin will build with.
+
+    `None` when the plugin cannot be asked - it is an optional extra, absent in
+    CI and in any deployment whose organisations do not use Sarvam. That is
+    different from "this name is not a speaker", and the caller treats it so.
+
+    The model matters, not just the vendor: `anushka` is a valid bulbul:v2
+    speaker and rejected by v3, so the union of every model's list would still
+    let a call fail in the constructor.
+    """
+    try:
+        from livekit.plugins.sarvam import tts as _sarvam_plugin
+
+        model = _sarvam_plugin.TTS.__init__.__kwdefaults__.get("model")
+        table = _sarvam_plugin.MODEL_SPEAKER_COMPATIBILITY
+    except Exception:  # pragma: no cover - plugin absent or table moved
+        return None
+
+    speakers = table.get(model, {}).get("all", ())
+    if not speakers:
+        return None
+    return {s.lower() for s in speakers}
+
+
 def _sarvam_tts(agent: AgentSpec) -> Any:
     creds = agent.credentials_for("tts")
+    # `voice_id` is one column shared by every provider, so an agent whose TTS
+    # was switched from, say, ElevenLabs still carries that vendor's voice name
+    # ("Rachel"). Passing it through made Sarvam raise in its constructor, which
+    # fails the whole pipeline with the contact already ringing - they hear
+    # nothing and the call is charged (`ISSUES.md` #162).
+    speaker = _sarvam_speaker(agent.voice_id)
+    if agent.voice_id and speaker is None:
+        log.warning(
+            "voice %r is not a Sarvam speaker - using the model's default instead",
+            agent.voice_id,
+        )
     return _construct(
         _SARVAM,
         "TTS",
         {
             **creds,
             "target_language_code": agent.language or "en-IN",
-            # No fallback speaker. Sarvam ties its speaker list to the TTS model
-            # and changed both between bulbul v2 and v3, so a hardcoded default
-            # here goes stale silently and the plugin then refuses the whole
-            # pipeline mid-call. Omitting it lets the vendor pick one that its
-            # own current model actually supports.
-            "speaker": agent.voice_id,
+            "speaker": speaker,
         },
     )
 

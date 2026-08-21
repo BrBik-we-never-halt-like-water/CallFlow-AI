@@ -7,6 +7,31 @@ export const metadata = {
 
 Newest first. Dates are the day a change reached production.
 
+## 2026-08-18 — Voice agents replace campaigns
+
+A campaign bundled the goal, the fields, and the line to dial from into one object. Those
+are three different decisions with three different lifetimes, so they are three things
+now.
+
+- **Campaigns are gone,** replaced by **voice agents**. An agent holds how a call sounds
+  and thinks — a transcription provider, a voice, a model, a system prompt, and the
+  fields it must collect. It is shared across the organisation and reused by every run.
+- **Numbers belong to the organisation, not to an agent.** Connect a carrier in
+  Integrations and sync what the account holds; a run then picks which lines it may dial
+  from. One agent can dial through any carrier you have connected.
+- **A run binds an agent to numbers and contacts.** `POST /api/v1/runs` takes a
+  `voice_agent_id` and `number_ids` in place of a `campaign_id`, plus an optional
+  `run_instruction` appended to every prompt in that run only — so a one-off note does
+  not mean editing an agent the whole organisation shares.
+- **Any spreadsheet column is now per-contact context.** A `destination` column reaches
+  that one contact's prompt, so one agent opens with Bali for the first enquiry and
+  Singapore for the third.
+- **A required field that never got answered escalates.** A call that connected, ran to
+  completion, and still ended without a field you marked required is routed to a person
+  with the missing fields named, rather than counted as closed.
+- **The `/api/v1/campaigns` endpoints are removed,** including the goal preview. Agents
+  live at `/api/v1/voice-agents` and numbers at `/api/v1/telephony/numbers`.
+
 ## 2026-08-07 — Dry run removed, runs are persisted
 
 Every run now dials for real from the first one — there is no longer a simulated mode.

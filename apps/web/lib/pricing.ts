@@ -97,9 +97,9 @@ export const PLANS: Plan[] = [
     features: [
       "Everything in Free",
       "Live calling with your own caller ID",
-      "Custom campaigns and extraction fields",
+      "Custom agents and extraction fields",
       "CSV export",
-      "Suppression list across every campaign",
+      "Suppression list across every run",
       "3 seats",
     ],
     cta: "Start free",
@@ -267,7 +267,7 @@ export const FEATURE_MATRIX: MatrixCategory[] = [
         values: { free: true, starter: true, growth: true, scale: true },
       },
       {
-        label: "Suppression list across every campaign",
+        label: "Suppression list across every run",
         values: { free: true, starter: true, growth: true, scale: true },
       },
       {
@@ -372,7 +372,7 @@ export const PRICING_FAQ: { q: string; a: string }[] = [
   },
   {
     q: "Can I bring my own number?",
-    a: "Yes, from Starter up. You verify a caller ID you already own and campaigns dial from it, so the number your contacts see is the one they recognise. Enterprise can bring an entire number pool and carrier.",
+    a: "Yes, from Starter up. You verify a caller ID you already own and runs dial from it, so the number your contacts see is the one they recognise. Enterprise can bring an entire number pool and carrier.",
   },
   {
     q: "What happens if I run out of credits during a run?",

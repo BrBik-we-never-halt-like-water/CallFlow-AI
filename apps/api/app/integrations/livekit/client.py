@@ -297,7 +297,7 @@ class LiveKitGateway:
         how they stop agreeing.
 
         `metadata` is how the worker learns what this call is for - the rendered
-        goal, the campaign, the contact's own context. It is JSON-encoded and
+        prompt, the agent, the contact's own context. It is JSON-encoded and
         attached to the **agent dispatch**, which is where the worker reads it
         from (`ctx.job.metadata`). **It must never carry the dialled number**:
         it reaches LiveKit's own logs and dashboards, outside CallFlow's

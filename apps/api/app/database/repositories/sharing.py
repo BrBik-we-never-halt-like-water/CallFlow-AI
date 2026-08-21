@@ -1,4 +1,4 @@
-"""SQL for peer-to-peer campaign/escalation sharing - the role-based UI
+"""SQL for peer-to-peer escalation sharing - the role-based UI
 roadmap's Phase 4. `resolve_resource_owner`/`list_*_directory` are
 `SECURITY DEFINER` Postgres functions (migration `4cbc5103657f`), not
 regular queries - they deliberately bypass the requester's own RLS scope,
@@ -20,10 +20,6 @@ async def resolve_resource_owner(
         resource_type,
         resource_id,
     )
-
-
-async def list_campaign_directory(conn: asyncpg.Connection, org_id: UUID) -> list[asyncpg.Record]:
-    return await conn.fetch("select * from public.list_campaign_directory($1)", org_id)
 
 
 async def list_escalation_directory(conn: asyncpg.Connection, org_id: UUID) -> list[asyncpg.Record]:
@@ -62,13 +58,17 @@ async def list_for_org(conn: asyncpg.Connection, org_id: UUID) -> list[asyncpg.R
     requests, plus any directed at them to decide (or, for admin/owner,
     every request in the org).
 
-    `resource_name` is a best-effort label (the campaign's name, or the
-    escalation's contact name) via a plain join - not the `SECURITY
-    DEFINER` directory functions. That's deliberate: this connection's own
-    RLS already lets the resource's *owner* see it directly, so the join
-    resolves for them; for the *requester*'s own sent rows it resolves to
-    null (the exact resource they don't have access to yet), which the
-    frontend falls back to showing the raw id for.
+    `resource_name` is a best-effort label (the escalation's contact name) via a
+    plain join - not the `SECURITY DEFINER` directory functions. That's
+    deliberate: this connection's own RLS already lets the resource's *owner* see
+    it directly, so the join resolves for them; for the *requester*'s own sent
+    rows it resolves to null (the exact resource they don't have access to yet),
+    which the frontend falls back to showing the raw id for.
+
+    The `campaign` arm is gone with campaigns (ADR-8). `case` is kept rather than
+    reduced to `co.contact_name` because `resource_type` is still a column with a
+    check constraint, and a second shareable resource type should have to add its
+    own arm here rather than silently render an escalation's name.
     """
     return await conn.fetch(
         """
@@ -77,14 +77,11 @@ async def list_for_org(conn: asyncpg.Connection, org_id: UUID) -> list[asyncpg.R
                sr.requested_by, req.name as requested_by_name,
                sr.owner_user_id, own.name as owner_name,
                case sr.resource_type
-                 when 'campaign' then c.name
                  when 'escalation' then co.contact_name
                end as resource_name
         from public.share_requests sr
         left join public.users req on req.id = sr.requested_by
         left join public.users own on own.id = sr.owner_user_id
-        left join public.campaigns c
-          on sr.resource_type = 'campaign' and c.org_id = sr.org_id and c.id = sr.resource_id
         left join public.escalations e
           on sr.resource_type = 'escalation' and e.org_id = sr.org_id
           and e.id = (case when sr.resource_type = 'escalation' then sr.resource_id::uuid end)

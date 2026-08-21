@@ -1,12 +1,14 @@
-"""Peer-to-peer campaign/escalation sharing - role-based UI roadmap, Phase 4.
+"""Peer-to-peer escalation sharing - role-based UI roadmap, Phase 4.
 
-An operator can ask for a teammate's campaign or to take over their
-escalation; only the resource's actual owner can decide. Approving a
-**campaign** request clones it (`created_by = requester`, a new id,
-independent from that point on - edits after this never write back to the
-original). Approving an **escalation** request reassigns it
-(`assigned_to = requester`) - one real event, not a fork, unlike a
-reusable campaign template.
+An operator can ask to take over a teammate's escalation; only its actual owner
+can decide. Approving reassigns it (`assigned_to = requester`) rather than
+copying anything - an escalation is one real event that needs one owner.
+
+Campaign sharing used to live here too, and cloning was the right shape for it:
+a campaign was a reusable template, so two people could own independent copies.
+That went with campaigns (ADR-8). An agent is deliberately *not* offered here in
+its place - agents are already org-wide readable, so there is nothing to request,
+and shipping a share flow with nothing behind it is what CLAUDE.md #9 forbids.
 """
 
 from __future__ import annotations
@@ -22,14 +24,15 @@ from pydantic import BaseModel, Field
 from app.auth.dependencies import CurrentUser, RequirePermission, current_user
 from app.auth.permissions import Permission
 from app.database import database
-from app.database.repositories import campaigns as campaigns_repo
 from app.database.repositories import escalations as escalations_repo
 from app.database.repositories import sharing as sharing_repo
-from app.domain.campaigns import BUILT_IN_IDS, slugify
 
 router = APIRouter(prefix="/api/v1/share-requests", tags=["sharing"])
 
-_RESOURCE_TYPES = {"campaign", "escalation"}
+# Escalations only. Campaign sharing went with campaigns (ADR-8), and the
+# `share_requests_resource_type_valid` check constraint agrees - a request for
+# anything else would be refused by the database anyway.
+_RESOURCE_TYPES = {"escalation"}
 
 
 def _require_uuid(value: str, *, what: str) -> None:
@@ -235,57 +238,23 @@ async def _decide(
                 detail="This request was just decided by someone else.",
             )
 
+        # Approving an escalation request hands it over: the requester becomes the
+        # assignee. There is no clone branch any more - a campaign was the only
+        # resource that could be copied, and copying is not what taking over an
+        # escalation means.
         if approve:
-            if existing["resource_type"] == "campaign":
-                await _clone_campaign(
-                    conn,
-                    org_id=user.org_id,
-                    campaign_id=existing["resource_id"],
-                    new_owner=existing["requested_by"],
+            updated = await escalations_repo.assign(
+                conn,
+                org_id=user.org_id,
+                escalation_id=UUID(existing["resource_id"]),
+                assigned_to=existing["requested_by"],
+                assigned_by=user.id,
+            )
+            if updated is None:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="That escalation no longer exists, or is no longer open.",
                 )
-            else:
-                updated = await escalations_repo.assign(
-                    conn,
-                    org_id=user.org_id,
-                    escalation_id=UUID(existing["resource_id"]),
-                    assigned_to=existing["requested_by"],
-                    assigned_by=user.id,
-                )
-                if updated is None:
-                    raise HTTPException(
-                        status_code=status.HTTP_404_NOT_FOUND,
-                        detail="That escalation no longer exists, or is no longer open.",
-                    )
-
-
-async def _clone_campaign(conn, *, org_id: UUID, campaign_id: str, new_owner: UUID) -> None:
-    original = await campaigns_repo.get_org_campaign(conn, org_id, campaign_id)
-    if original is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="That campaign no longer exists."
-        )
-
-    existing = await campaigns_repo.list_org_campaigns(conn, org_id)
-    taken = {r["id"] for r in existing} | BUILT_IN_IDS
-    base = slugify(f"{original['name']} (shared)")
-    candidate = base
-    suffix = 2
-    while candidate in taken:
-        candidate = f"{base}-{suffix}"
-        suffix += 1
-
-    # The dedup above stays a plain, RLS-scoped read (the approver already
-    # has full read access to their own campaign and can list the org's ids
-    # to avoid a slug collision) - only the actual privileged write goes
-    # through the `SECURITY DEFINER` path. See `clone_for_share()`'s own
-    # docstring for why a plain insert can't work here.
-    await campaigns_repo.clone_for_share(
-        conn,
-        org_id=org_id,
-        source_campaign_id=campaign_id,
-        new_campaign_id=candidate,
-        new_owner=new_owner,
-    )
 
 
 @router.post("/{request_id}/approve", status_code=status.HTTP_204_NO_CONTENT)

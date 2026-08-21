@@ -17,6 +17,8 @@ dependencies = [
     "psycopg[binary]>=3.2.0",
     "PyJWT>=2.9.0",
     "cryptography>=43.0.0",
+    "openpyxl>=3.1.0",
+    "python-multipart>=0.0.9",
 ]
 
 [project.optional-dependencies]
