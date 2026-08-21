@@ -359,7 +359,7 @@ export function AgentEditor({ existing }: { existing?: VoiceAgent }) {
               page that benefits from the whole line length. */}
           <section className="flex flex-col gap-3">
             <div className="flex flex-wrap items-center gap-3">
-              <h2 className="font-display text-h4 leading-none text-text">
+              <h2 className="text-[0.6875rem] font-semibold uppercase tracking-[0.05em] leading-none" style={{ color: 'var(--dash-text)' }}>
                 System prompt
               </h2>
               <PersonaTag persona={existing?.prebuilt_persona ?? null} />

@@ -23,6 +23,7 @@ import {
   stripForRun,
 } from '@/lib/lamp';
 import { useAppStore } from '@/lib/app-store';
+import { PageHeader } from '@/components/app/page-header';
 
 /**
  * The live run view.
@@ -116,10 +117,7 @@ export default function RunDetailPage() {
       {/* ---- Header ------------------------------------------------------ */}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex flex-col gap-1.5">
-          <p className="text-small font-bold text-text-mute">Run</p>
-          <h1 className="font-display text-h2 text-text">
-            {agentName ?? 'Run'}
-          </h1>
+          <PageHeader title="Run" figure={agentName ?? undefined} />
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-mono text-data text-text-mute">{run.id}</span>
             <LampBadge state={runLamp.state} pulse={runLamp.pulse}>

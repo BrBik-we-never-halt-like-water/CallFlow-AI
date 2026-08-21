@@ -26,6 +26,7 @@ import {
 } from '@/lib/contacts';
 import { useOrgScopedEffect } from '@/lib/hooks/use-org-scoped-effect';
 import { useSession } from '@/lib/hooks/use-session';
+import { PageHeader } from '@/components/app/page-header';
 
 /**
  * The run composer: an agent, the number(s) it calls from, and a sheet.
@@ -264,9 +265,9 @@ function RunComposer() {
 
       {/* ---- 1 · Agent --------------------------------------------------- */}
       <Step
-        n="01"
         title="Agent"
         detail="Who calls, what they say, and what they have to come back with."
+        done={Boolean(agentId)}
       >
         {agents.length === 0 ? (
           <div className="flex flex-wrap items-center gap-3">
@@ -284,42 +285,82 @@ function RunComposer() {
           </div>
         ) : (
           <div className="flex flex-col gap-3">
-            <ul className="flex flex-col gap-2">
-              {agents.map((option) => (
-                <li key={option.id}>
-                  <button
-                    type="button"
-                    aria-pressed={option.id === agentId}
-                    onClick={() => setChosenAgentId(option.id)}
-                    className={cn(
-                      'flex w-full flex-wrap items-center justify-between gap-3 rounded-xl px-4 py-3 text-left ring-1 transition-colors duration-(--dur-fast)',
-                      'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--primary)',
-                      option.id === agentId
-                        ? 'bg-surface-raised ring-(--primary)'
-                        : 'bg-surface ring-rule hover:ring-rule-strong',
-                    )}
-                  >
-                    <span className="flex min-w-0 flex-col gap-0.5">
-                      <span className="truncate text-body font-medium text-text">
+            {/* A deck, not a list: agents as cards on a horizontal snap
+                track, flicked through on touch and scrolled on desktop, with
+                the chosen one held in brand. Radio semantics, so arrow keys
+                move the choice the way the swipe does. */}
+            <ul
+              role="radiogroup"
+              aria-label="Which agent calls"
+              className="dash-scroll-x -mx-1 flex snap-x snap-mandatory gap-2.5 px-1 pb-1"
+            >
+              {agents.map((option) => {
+                const chosen = option.id === agentId;
+                return (
+                  <li key={option.id} className="w-52 shrink-0 snap-start">
+                    <button
+                      type="button"
+                      role="radio"
+                      aria-checked={chosen}
+                      onClick={() => setChosenAgentId(option.id)}
+                      className={cn(
+                        'flex h-full w-full flex-col gap-2.5 rounded-xl border px-3.5 py-3 text-left',
+                        'transition-[border-color,box-shadow,transform] duration-(--dur-micro)',
+                        'focus-visible:outline-none',
+                      )}
+                      style={
+                        chosen
+                          ? {
+                              borderColor: 'var(--dash-brand)',
+                              background: 'var(--dash-brand-soft)',
+                              boxShadow:
+                                '0 0 0 3px color-mix(in oklab, var(--dash-brand) 18%, transparent)',
+                            }
+                          : {
+                              borderColor: 'var(--dash-border)',
+                              background: 'var(--dash-surface)',
+                            }
+                      }
+                    >
+                      <span
+                        className="truncate text-[0.8125rem] font-semibold"
+                        style={{ color: 'var(--dash-text)' }}
+                      >
                         {option.name}
                       </span>
-                      <span className="truncate text-small text-text-mute">
+                      <span className="flex flex-col gap-0.5">
                         {[
                           option.llm_model,
                           option.tts_provider,
                           option.stt_provider,
                         ]
                           .filter(Boolean)
-                          .join(' · ') || 'No pipeline configured'}
+                          .slice(0, 3)
+                          .map((part) => (
+                            <span
+                              key={String(part)}
+                              className="truncate text-[0.625rem]"
+                              style={{ color: 'var(--dash-text-mute)' }}
+                            >
+                              {part}
+                            </span>
+                          ))}
                       </span>
-                    </span>
-                    <span className="shrink-0 font-mono text-data text-text-dim">
-                      {option.collect_fields.length}{' '}
-                      {option.collect_fields.length === 1 ? 'field' : 'fields'}
-                    </span>
-                  </button>
-                </li>
-              ))}
+                      <span
+                        className="dash-num mt-auto text-[0.625rem] font-medium"
+                        style={{
+                          color: chosen
+                            ? 'var(--dash-brand-ink)'
+                            : 'var(--dash-text-dim)',
+                        }}
+                      >
+                        {option.collect_fields.length}{' '}
+                        {option.collect_fields.length === 1 ? 'field' : 'fields'}
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
             </ul>
 
             {agent && agent.collect_fields.length === 0 ? (
@@ -334,9 +375,9 @@ function RunComposer() {
 
       {/* ---- 2 · Numbers ------------------------------------------------- */}
       <Step
-        n="02"
         title="Call from"
         detail="Pick one number, some, or all. Calls are spread across whatever you choose."
+        done={selectedNumberIds.length > 0}
       >
         <div className="flex flex-col gap-4">
           {loadingNumbers ? (
@@ -476,9 +517,9 @@ function RunComposer() {
 
       {/* ---- 3 · Contacts ------------------------------------------------ */}
       <Step
-        n="03"
         title="Contacts"
         detail="Name, phone, and a note. Any other column becomes that person's own context."
+        done={validRows.length > 0}
       >
         <div className="flex flex-col gap-3">
           <ContactGrid rows={rows} onChange={setRows} />
@@ -496,9 +537,10 @@ function RunComposer() {
 
       {/* ---- 4 · Run ----------------------------------------------------- */}
       <Step
-        n="04"
         title="Run"
         detail="Name it, add anything specific to this run, then start dialling."
+        done={Boolean(agentId) && selectedNumberIds.length > 0 && validRows.length > 0}
+        last
       >
         <div className="flex flex-col gap-4 pl-4 border-l-2 border-l-rule-strong">
           <div className="grid gap-4 md:grid-cols-2">
@@ -565,12 +607,7 @@ function RunComposer() {
 }
 
 function ComposerHeading() {
-  return (
-    <div className="flex flex-col gap-1">
-      <p className="text-small font-bold text-text-mute">New run</p>
-      <h1 className="font-display text-h2 text-text">Start a run</h1>
-    </div>
-  );
+  return <PageHeader title="Start a run" />;
 }
 
 function ComposerFallback() {
@@ -586,30 +623,65 @@ function ComposerFallback() {
   );
 }
 
+/**
+ * One stage of the run pipeline, drawn as a node on a wired rail.
+ *
+ * The rail is the composer's structure made visible: a run flows agent ->
+ * numbers -> contacts -> instruction, and the connecting line says so where
+ * the old numbered panels ("01", "02") only implied it. `done` lights the
+ * node once the stage has what it needs, so a glance down the rail shows
+ * how much of the run is assembled.
+ */
 function Step({
-  n,
   title,
   detail,
+  done = false,
+  last = false,
   children,
 }: {
-  n: string;
   title: string;
   detail: string;
+  /** The stage has what it needs - its node lights in brand. */
+  done?: boolean;
+  /** The last node ends the rail rather than dangling a line into nothing. */
+  last?: boolean;
   children: React.ReactNode;
 }) {
   return (
-    <Panel className="flex flex-col gap-5 p-4 sm:p-5">
-      <div className="flex items-start gap-3">
-        <span className="mt-1 shrink-0 text-small font-bold text-text">
-          {n}
-        </span>
+    <div className="flex gap-3 sm:gap-4">
+      <div className="flex shrink-0 flex-col items-center pt-4">
+        <span
+          aria-hidden
+          className="size-2.5 rounded-full transition-colors duration-(--dur-base)"
+          style={{
+            background: done ? 'var(--dash-brand)' : 'var(--dash-border-strong)',
+            boxShadow: done
+              ? '0 0 0 3px color-mix(in oklab, var(--dash-brand) 22%, transparent)'
+              : 'none',
+          }}
+        />
+        {!last ? (
+          <span
+            aria-hidden
+            className="mt-1 w-px flex-1"
+            style={{ background: 'var(--dash-border)' }}
+          />
+        ) : null}
+      </div>
+
+      <Panel className="mb-3 flex min-w-0 flex-1 flex-col gap-4 p-4 sm:p-5">
         <div className="flex flex-col gap-0.5">
-          <h2 className="text-h3 font-medium text-text">{title}</h2>
+          <h2
+            className="text-[0.6875rem] font-semibold uppercase tracking-[0.05em]"
+            style={{ color: 'var(--dash-text)' }}
+          >
+            {title}
+          </h2>
           <p className="text-small text-text-dim">{detail}</p>
         </div>
-      </div>
-      {children}
-    </Panel>
+        {children}
+      </Panel>
+    </div>
   );
 }
 

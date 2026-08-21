@@ -8,10 +8,12 @@ import {
   PaperPlaneTiltIcon,
   PencilSimpleIcon,
   PlusIcon,
+  PushPinIcon,
   TrashIcon,
   UsersIcon,
   XIcon,
 } from '@phosphor-icons/react/dist/ssr';
+import { ConversationRow } from '@/components/app/chat/conversation-row';
 import { Button } from '@/components/ui/button';
 import { Checkbox, RadioGroup } from '@/components/ui/checkbox';
 import { Dialog, DialogRoot } from '@/components/ui/dialog';
@@ -38,12 +40,6 @@ const MESSAGE_PAGE_SIZE = 50;
 /** How long to wait after the last keystroke before searching - avoids a
  * request per character while typing a name. */
 const SEARCH_DEBOUNCE_MS = 300;
-/** Roughly matches the space `<main>` actually gives this page once the
- * header row above it is accounted for - not exact (the header's own height
- * varies with the unread count text), so this leans a little short rather
- * than risk clipping the composer on a small screen. */
-const PANES_HEIGHT = 'h-[calc(100dvh-15rem)] min-h-[420px] md:h-[calc(100dvh-12rem)]';
-
 /** The `channel_id` a Realtime payload's changed row belongs to, from
  * whichever of `new`/`old` actually carries it - `old` is only a partial row
  * under Postgres's default replica identity, but `channel_id` is always
@@ -244,6 +240,11 @@ export function ChatShell() {
       session.profile.active.role === 'owner');
 
   const [channels, setChannels] = useState<Channel[]>([]);
+  const [pendingDelete, setPendingDelete] = useState<Channel | null>(null);
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<
+    { id: string; side: 'before' | 'after' } | null
+  >(null);
   const [loadingChannels, setLoadingChannels] = useState(true);
   const [members, setMembers] = useState<Member[]>([]);
   const [composerBody, setComposerBody] = useState('');
@@ -368,6 +369,112 @@ export function ChatShell() {
   function refetchChannels() {
     if (!orgId) return;
     api.listChannels().then(setChannels).catch(() => undefined);
+  }
+
+  const pinnedCount = channels.filter((c) => c.pinned_at !== null).length;
+
+  // The server returns this order already; sorting again here is what makes
+  // an optimistic pin move the row on the same frame it was clicked, instead
+  // of only after the refetch lands.
+  const orderedChannels = useMemo(
+    () =>
+      [...channels].sort((a, b) => {
+        if ((a.pinned_at === null) !== (b.pinned_at === null)) {
+          return a.pinned_at === null ? 1 : -1;
+        }
+        if (a.sort_order !== b.sort_order) {
+          return (a.sort_order ?? Infinity) - (b.sort_order ?? Infinity);
+        }
+        return b.created_at.localeCompare(a.created_at);
+      }),
+    [channels],
+  );
+
+  async function togglePin(channel: Channel) {
+    const next = channel.pinned_at === null;
+    // Optimistic: the row moves under the cursor immediately, and a failed
+    // request refetches rather than leaving the list lying about the state.
+    setChannels((current) =>
+      current.map((c) =>
+        c.id === channel.id
+          ? { ...c, pinned_at: next ? new Date().toISOString() : null }
+          : c,
+      ),
+    );
+    try {
+      await api.pinChannel(channel.id, next);
+      refetchChannels();
+    } catch (error) {
+      refetchChannels();
+      toast({
+        tone: 'error',
+        title:
+          error instanceof Error && error.message
+            ? error.message
+            : 'That pin did not save.',
+      });
+    }
+  }
+
+  /**
+   * Moves the carried row to the insertion point the pointer is showing.
+   *
+   * The new `sort_order` is the midpoint of the two rows it lands between,
+   * which is the whole reason the column is a float: one row is written,
+   * nothing else is renumbered. Landing at either end steps a whole unit
+   * past the outermost neighbour instead.
+   */
+  async function commitReorder() {
+    const dragged = draggingId;
+    const target = dropTarget;
+    setDraggingId(null);
+    setDropTarget(null);
+    if (!dragged || !target || dragged === target.id) return;
+
+    const ordered = [...orderedChannels];
+    const from = ordered.findIndex((c) => c.id === dragged);
+    const targetIndex = ordered.findIndex((c) => c.id === target.id);
+    if (from < 0 || targetIndex < 0) return;
+
+    const [moved] = ordered.splice(from, 1);
+    // The target's index shifts when the carried row came from above it.
+    const base = targetIndex > from ? targetIndex - 1 : targetIndex;
+    const at = target.side === 'before' ? base : base + 1;
+
+    const above = ordered[at - 1];
+    const below = ordered[at];
+    const lo = above?.sort_order ?? (below?.sort_order ?? 1) - 2;
+    const hi = below?.sort_order ?? lo + 2;
+    const next = (lo + hi) / 2;
+
+    ordered.splice(at, 0, { ...moved, sort_order: next });
+    setChannels(ordered);
+
+    try {
+      await api.reorderChannel(dragged, next);
+    } catch {
+      refetchChannels();
+      toast({ tone: 'error', title: 'That move did not save.' });
+    }
+  }
+
+  async function confirmDelete(channel: Channel) {
+    try {
+      await api.deleteChannel(channel.id);
+      setChannels((current) => current.filter((c) => c.id !== channel.id));
+      if (channelId === channel.id) setChannelId(null);
+      toast({ tone: 'success', title: 'Conversation deleted' });
+    } catch (error) {
+      toast({
+        tone: 'error',
+        title:
+          error instanceof Error && error.message
+            ? error.message
+            : 'That conversation could not be deleted.',
+      });
+    } finally {
+      setPendingDelete(null);
+    }
   }
   useOrgRealtime('channels', orgId, refetchChannels);
 
@@ -764,57 +871,47 @@ export function ChatShell() {
     composerRef.current?.focus();
   }
 
-  const totalUnread = channels.reduce((sum, c) => sum + c.unread_count, 0);
   const showListPane = channelId === null;
   const dmSearchActive = dmSearch.query.trim().length > 0;
 
   return (
-    <div className="flex flex-col gap-4">
+    // Fills the viewport the shell hands it (`isFixedViewport`) and lets the
+    // panes take the remainder - no more guessing the header's height with a
+    // `calc()` that broke whenever the header changed.
+    <div className="flex h-full min-h-0 flex-1 flex-col gap-2 px-3 pb-2 pt-2.5">
       <Suspense fallback={null}>
         <ChannelIdSync onChange={setChannelId} />
       </Suspense>
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div className="flex flex-col gap-1">
-          <p className="text-small font-bold text-text-mute">Chat</p>
-          <h1 className="font-display text-h2 text-text">
-            Team chat
-            {totalUnread > 0 ? (
-              <span className="ml-2 align-middle text-body text-lamp-flare-text">
-                {totalUnread} unread
-              </span>
-            ) : null}
-          </h1>
-          <p className="measure text-small text-text-dim">
-            Channels and DMs between teammates in your organisation.
-          </p>
-        </div>
-        {canSend ? (
-          <Button onClick={() => setCreateOpen(true)}>
-            <PlusIcon aria-hidden className="size-4" />
-            New group
-          </Button>
-        ) : null}
-      </div>
-
-      <div className={cn('flex min-h-0 gap-4', PANES_HEIGHT)}>
+      <div className="flex min-h-0 flex-1 gap-3">
         {/* --- conversation list + start-a-chat search ---------------------- */}
         <div
           className={cn(
-            'w-full min-h-0 flex-col gap-3 md:flex md:w-[320px] md:shrink-0',
+            'w-full min-h-0 flex-col gap-2 overflow-hidden md:flex md:w-[248px] md:shrink-0',
             showListPane ? 'flex' : 'hidden',
           )}
         >
           {canSend ? (
-            <SearchInput
-              value={dmSearch.query}
-              onChange={(e) => dmSearch.setQuery(e.target.value)}
-              onClear={() => dmSearch.setQuery('')}
-              placeholder="Search a teammate to message..."
-              aria-label="Search teammates to start a conversation"
-            />
+            <div className="flex shrink-0 items-center gap-2">
+              <SearchInput
+                value={dmSearch.query}
+                onChange={(e) => dmSearch.setQuery(e.target.value)}
+                onClear={() => dmSearch.setQuery('')}
+                placeholder="Search a teammate..."
+                aria-label="Search teammates to start a conversation"
+                className="min-w-0 flex-1"
+              />
+              <Button
+                size="sm"
+                onClick={() => setCreateOpen(true)}
+                aria-label="New group"
+                className="shrink-0 px-2.5"
+              >
+                <PlusIcon aria-hidden className="size-4" />
+              </Button>
+            </div>
           ) : null}
 
-          <div className="min-h-0 flex-1 overflow-y-auto pt-2">
+          <div className="dash-scroll min-h-0 flex-1 pt-1">
             {dmSearchActive ? (
               dmSearch.loading ? (
                 <p className="p-2 text-small text-text-mute">Searching...</p>
@@ -869,48 +966,87 @@ export function ChatShell() {
               </Panel>
             ) : (
               <ul className="flex flex-col gap-2">
-                {channels.map((channel) => (
-                  <li key={channel.id}>
-                    <button
-                      type="button"
-                      onClick={() => openChannel(channel.id)}
-                      className="w-full text-left"
+                {orderedChannels.map((channel) => (
+                  <ConversationRow
+                    key={channel.id}
+                    pinned={channel.pinned_at !== null}
+                    canPin={pinnedCount < 3}
+                    canManage={canSend && channel.kind !== 'dm'}
+                    dragging={draggingId === channel.id}
+                    dropSide={
+                      dropTarget?.id === channel.id ? dropTarget.side : null
+                    }
+                    onOpen={() => openChannel(channel.id)}
+                    onTogglePin={() => void togglePin(channel)}
+                    onRename={() => {
+                      // Rename edits the open conversation's own header, so
+                      // the menu opens it and arms that field rather than
+                      // duplicating the form in a second place.
+                      openChannel(channel.id);
+                      setRenameValue(channel.name ?? '');
+                      setRenaming(true);
+                    }}
+                    onRequestDelete={() => setPendingDelete(channel)}
+                    onDragStart={() => setDraggingId(channel.id)}
+                    onDragEnter={(side) => {
+                      if (draggingId && draggingId !== channel.id) {
+                        setDropTarget({ id: channel.id, side });
+                      }
+                    }}
+                    onDragEnd={() => void commitReorder()}
+                  >
+                    <Panel
+                      interactive
+                      className={cn(
+                        'flex items-center justify-between gap-3 py-3 pl-3.5 pr-9',
+                        channel.id === channelId &&
+                          'border-primary/40 bg-primary/5',
+                      )}
                     >
-                      <Panel
-                        interactive
-                        className={cn(
-                          'flex items-center justify-between gap-3 p-4',
-                          channel.id === channelId && 'border-primary/40 bg-primary/5',
-                        )}
-                      >
-                        <div className="flex flex-col gap-0.5">
-                          <p className="font-medium text-text">
+                      <div className="flex min-w-0 flex-col gap-0.5">
+                        <span className="flex min-w-0 items-center gap-2">
+                          {channel.pinned_at !== null ? (
+                            <PushPinIcon
+                              aria-label="Pinned"
+                              weight="fill"
+                              className="size-3 shrink-0"
+                              style={{ color: 'var(--dash-brand)' }}
+                            />
+                          ) : null}
+                          <span className="truncate text-[0.8125rem] font-semibold text-text">
                             {currentUserId
                               ? channelLabel(channel, currentUserId, namesById)
                               : (channel.name ?? 'DM')}
-                          </p>
-                          <p className="text-small text-text-mute">
-                            {channel.kind === 'dm' ? 'Direct message' : 'Channel'} ·{' '}
-                            {channel.member_ids.length}{' '}
-                            {channel.member_ids.length === 1 ? 'member' : 'members'}
-                          </p>
-                        </div>
-                        <div className="flex shrink-0 items-center gap-2">
-                          {channel.unread_count > 0 ? (
-                            <span
-                              className="flex min-w-5 items-center justify-center rounded-full px-1.5 py-0.5 text-label font-bold text-white"
-                              style={{ background: 'var(--lamp-flare)' }}
-                            >
-                              {channel.unread_count > 99 ? '99+' : channel.unread_count}
-                            </span>
-                          ) : null}
-                          <span className="text-small text-text-mute">
-                            {formatAge(channel.created_at)}
                           </span>
-                        </div>
-                      </Panel>
-                    </button>
-                  </li>
+                        </span>
+                        <span className="truncate text-[0.6875rem] text-text-mute">
+                          {channel.kind === 'dm' ? 'Direct message' : 'Channel'}{' '}
+                          · {channel.member_ids.length}{' '}
+                          {channel.member_ids.length === 1
+                            ? 'member'
+                            : 'members'}
+                        </span>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-2">
+                        {channel.unread_count > 0 ? (
+                          <span
+                            className="dash-num flex min-w-4 items-center justify-center rounded-full px-1.5 text-[0.625rem] font-bold"
+                            style={{
+                              background: 'var(--dash-brand)',
+                              color: 'var(--dash-brand-on)',
+                            }}
+                          >
+                            {channel.unread_count > 99
+                              ? '99+'
+                              : channel.unread_count}
+                          </span>
+                        ) : null}
+                        <span className="text-[0.625rem] text-text-mute">
+                          {formatAge(channel.created_at)}
+                        </span>
+                      </div>
+                    </Panel>
+                  </ConversationRow>
                 ))}
               </ul>
             )}
@@ -1002,7 +1138,7 @@ export function ChatShell() {
                         </button>
                       </form>
                     ) : (
-                      <p className="truncate font-display text-h3 text-text">
+                      <p className="truncate text-[0.875rem] font-semibold text-text">
                         {currentUserId
                           ? channelLabel(selectedChannel, currentUserId, namesById)
                           : 'Conversation'}
@@ -1012,7 +1148,7 @@ export function ChatShell() {
                       <span>{selectedChannel.kind === 'dm' ? 'Direct message' : 'Channel'}</span>
                       <button
                         type="button"
-                        className="flex items-center gap-1 underline decoration-dotted underline-offset-2 hover:text-text"
+                        className="flex items-center gap-1.5 underline decoration-dotted underline-offset-2 hover:text-text"
                         onClick={() => setMembersPanelOpen((v) => !v)}
                       >
                         <UsersIcon aria-hidden className="size-3.5" />
@@ -1022,7 +1158,7 @@ export function ChatShell() {
                       {canManageChannel && selectedChannel.kind === 'channel' && !renaming ? (
                         <button
                           type="button"
-                          className="flex items-center gap-1 underline decoration-dotted underline-offset-2 hover:text-text"
+                          className="flex items-center gap-1.5 underline decoration-dotted underline-offset-2 hover:text-text"
                           onClick={() => {
                             setRenameValue(selectedChannel.name ?? '');
                             setRenaming(true);
@@ -1168,11 +1304,19 @@ export function ChatShell() {
                             </form>
                           ) : (
                             <p
-                              className={`measure rounded-md px-3 py-2 text-small ${
+                              className="measure rounded-[10px] px-3 py-2 text-small"
+                              style={
                                 mine
-                                  ? 'bg-surface-inverse text-text-inverse'
-                                  : 'border border-rule bg-surface-raised text-text'
-                              }`}
+                                  ? {
+                                      background: 'var(--dash-brand)',
+                                      color: 'var(--dash-brand-on)',
+                                    }
+                                  : {
+                                      background: 'var(--dash-sunken)',
+                                      color: 'var(--dash-text)',
+                                      border: '1px solid var(--dash-border)',
+                                    }
+                              }
                             >
                               {renderMessageBody(m.body, channelMemberNames)}
                             </p>
@@ -1187,7 +1331,7 @@ export function ChatShell() {
               <div className="border-t border-rule p-4 md:p-5">
                 {canSend ? (
                   <form
-                    className="relative flex w-full items-end gap-2"
+                    className="relative w-full"
                     onSubmit={(e) => {
                       e.preventDefault();
                       void handleSend();
@@ -1222,16 +1366,27 @@ export function ChatShell() {
                         if (e.key === 'Escape' && mention) setMention(null);
                       }}
                       placeholder="Write a message... (@ to mention someone)"
-                      className="min-h-10 flex-1"
+                      // Right padding reserves the send button's own space so
+                      // a long line never runs underneath it.
+                      className="min-h-10 w-full pr-12"
                       maxLength={4000}
                     />
-                    <Button
+                    <button
                       type="submit"
-                      disabled={!composerBody.trim()}
-                      loading={sending}
+                      disabled={!composerBody.trim() || sending}
+                      aria-label="Send message"
+                      className="absolute bottom-2 right-2 flex size-8 items-center justify-center rounded-[8px] transition-colors disabled:opacity-40"
+                      style={{
+                        background: composerBody.trim()
+                          ? 'var(--dash-brand)'
+                          : 'var(--dash-hover)',
+                        color: composerBody.trim()
+                          ? 'var(--dash-brand-on)'
+                          : 'var(--dash-text-mute)',
+                      }}
                     >
                       <PaperPlaneTiltIcon aria-hidden className="size-4" />
-                    </Button>
+                    </button>
                   </form>
                 ) : (
                   <p className="text-small text-text-mute">
@@ -1282,6 +1437,44 @@ export function ChatShell() {
             existingMemberIds={selectedChannel.member_ids}
             onCancel={() => setAddMemberOpen(false)}
             onAdd={(userId) => void handleAddMember(userId)}
+          />
+        ) : null}
+      </DialogRoot>
+
+      {/* Confirmation, not an undo: a swipe that destroys a conversation on
+          release is how people lose one they meant to keep. Centre of the
+          screen, on the same surface as every other dialog. */}
+      <DialogRoot
+        open={pendingDelete !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingDelete(null);
+        }}
+      >
+        {pendingDelete ? (
+          <Dialog
+            size="sm"
+            title="Delete this conversation?"
+            description={`"${
+              currentUserId
+                ? channelLabel(pendingDelete, currentUserId, namesById)
+                : (pendingDelete.name ?? 'This channel')
+            }" disappears from everyone's list. The messages are kept.`}
+            footer={
+              <>
+                <Button
+                  variant="secondary"
+                  onClick={() => setPendingDelete(null)}
+                >
+                  Keep it
+                </Button>
+                <Button
+                  variant="danger"
+                  onClick={() => void confirmDelete(pendingDelete)}
+                >
+                  Delete
+                </Button>
+              </>
+            }
           />
         ) : null}
       </DialogRoot>

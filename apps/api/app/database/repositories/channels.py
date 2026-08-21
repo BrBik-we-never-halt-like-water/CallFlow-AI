@@ -76,15 +76,30 @@ _CHANNEL_COLUMNS = """
 
 async def list_my_channels(conn: asyncpg.Connection, org_id: UUID) -> list[asyncpg.Record]:
     """Relies on RLS (`channels_select`) to narrow to the caller's own channels -
-    same reasoning as `runs_repo.summarize_by_member()` leaning entirely on RLS."""
+    same reasoning as `runs_repo.summarize_by_member()` leaning entirely on RLS.
+
+    Ordering is the caller's own: pinned first, then anything they have
+    dragged into place, then the rest by recency. `me` is the caller's own
+    membership row (joined separately from `m`, which is aggregated for
+    `member_ids`) - that is where `pinned_at`/`sort_order` live, because both
+    are one person's view and must not move the channel for anyone else.
+    """
     return await conn.fetch(
         f"""
-        select {_CHANNEL_COLUMNS}
+        select {_CHANNEL_COLUMNS},
+               max(me.pinned_at) as pinned_at,
+               max(me.sort_order) as sort_order
         from public.channels c
         join public.channel_members m on m.channel_id = c.id
+        join public.channel_members me
+          on me.channel_id = c.id and me.user_id = public.current_user_id()
         where c.org_id = $1
+          and c.deleted_at is null
         group by c.id, c.kind, c.name, c.created_at, c.created_by
-        order by c.created_at desc
+        order by
+          max(me.pinned_at) desc nulls last,
+          max(me.sort_order) asc nulls last,
+          c.created_at desc
         """,
         org_id,
     )
@@ -128,6 +143,7 @@ async def get_channel(conn: asyncpg.Connection, channel_id: UUID) -> asyncpg.Rec
         from public.channels c
         join public.channel_members m on m.channel_id = c.id
         where c.id = $1
+          and c.deleted_at is null
         group by c.id, c.kind, c.name, c.created_at, c.created_by
         """,
         channel_id,
@@ -207,3 +223,75 @@ async def mark_read(conn: asyncpg.Connection, *, channel_id: UUID, user_id: UUID
         channel_id,
         user_id,
     )
+
+
+async def set_pinned(
+    conn: asyncpg.Connection,
+    *,
+    channel_id: UUID,
+    user_id: UUID,
+    pinned: bool,
+) -> bool:
+    """Pin or unpin one conversation for one member.
+
+    The at-most-three rule is a trigger on the table
+    (`enforce_channel_pin_limit`, migration `e5c9d02a7f31`), not a check here:
+    counting in Python would race two concurrent pins past the limit, and the
+    limit has to hold for any caller, not just this code path.
+    """
+    result = await conn.execute(
+        """
+        update public.channel_members
+        set pinned_at = case when $3 then now() else null end
+        where channel_id = $1 and user_id = $2
+        """,
+        channel_id,
+        user_id,
+        pinned,
+    )
+    return result.endswith("1")
+
+
+async def set_sort_order(
+    conn: asyncpg.Connection,
+    *,
+    channel_id: UUID,
+    user_id: UUID,
+    sort_order: float,
+) -> bool:
+    """Place one conversation in the caller's own list.
+
+    The caller sends the midpoint between the two rows it was dropped between,
+    which is why the column is a float: inserting between neighbours costs one
+    UPDATE rather than renumbering everything below it.
+    """
+    result = await conn.execute(
+        """
+        update public.channel_members
+        set sort_order = $3
+        where channel_id = $1 and user_id = $2
+        """,
+        channel_id,
+        user_id,
+        sort_order,
+    )
+    return result.endswith("1")
+
+
+async def soft_delete_channel(conn: asyncpg.Connection, channel_id: UUID) -> bool:
+    """Remove a channel from every member's list, keeping its messages.
+
+    A soft delete because the messages are a record of what people said to
+    each other; dropping the row would take that with it. RLS decides whether
+    this caller may write the channel at all, so there is no ownership check
+    here - the same division every other write in this file follows.
+    """
+    result = await conn.execute(
+        """
+        update public.channels
+        set deleted_at = now()
+        where id = $1 and deleted_at is null
+        """,
+        channel_id,
+    )
+    return result.endswith("1")

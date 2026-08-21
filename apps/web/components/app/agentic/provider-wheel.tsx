@@ -95,7 +95,10 @@ export function ProviderWheel({
           card below - it is one affordance, and it was the only thing keeping
           that card alive once the quality notes moved to hover. */}
       <div className="flex items-center justify-center gap-1.5">
-        <h2 className="text-center font-display text-h4 leading-none text-text">
+        <h2
+          className="text-center text-[0.6875rem] font-semibold uppercase tracking-[0.05em] leading-none"
+          style={{ color: 'var(--dash-text)' }}
+        >
           {title}
         </h2>
         {category === 'tts' && selected?.preview_available ? (

@@ -1,13 +1,9 @@
 'use client';
 
-import type { Icon } from '@phosphor-icons/react';
 import {
-  BuildingsIcon,
   CaretUpDownIcon,
   CheckIcon,
-  GearSixIcon,
   PlusIcon,
-  SidebarSimpleIcon,
   XIcon,
 } from '@phosphor-icons/react/dist/ssr';
 import Link from 'next/link';
@@ -34,7 +30,9 @@ import { useSidebarCollapsed } from '@/lib/hooks/use-sidebar-collapsed';
 import { usePrefersReducedMotion } from '@/lib/hooks/use-external-store';
 import { useAppStore } from '@/lib/app-store';
 import { useChatUnreadCount } from '@/lib/hooks/use-chat-unread';
-import { AppTabBar, isActive, OrgMark, PRIMARY_NAV_ITEMS } from './app-nav';
+import { AppTabBar, OrgMark } from './app-nav';
+import { DashSidebar } from '@/components/app/dashboard/dash-sidebar';
+import { DashProfileMenu } from '@/components/app/dashboard/dash-profile-menu';
 import { type SessionProfile, useSession } from '@/lib/hooks/use-session';
 import { useSessionExpiry } from '@/lib/hooks/use-session-expiry';
 
@@ -47,25 +45,6 @@ const MINIMAL_CHROME_ROUTES: { path: string; label: string }[] = [
   { path: '/app/profile', label: 'Profile' },
 ];
 
-/**
- * Organisation, Settings - two of the three destinations `UserMenu`'s account
- * dropdown already covers (user-menu.tsx), offered a second way for anyone
- * working from the desktop sidebar. The third, Profile, gets its own bespoke
- * row instead of a slot in this list (`ProfileFooterLink`, below) - it needs
- * to show the signed-in person's actual avatar and name, not a generic icon
- * and label. Deliberately *not* a replacement for `UserMenu`: with `AppTopBar`
- * removed entirely (the user asked for no persistent top bar), `AppSidebar`
- * is still `lg:flex`-only and still disappears below that breakpoint, where
- * `AppTabBar` (app-nav.tsx) now carries its own account-menu trigger instead
- * (`UserMenu`'s `variant="tab"`) rather than losing account access on mobile
- * altogether. Sign out itself stays `UserMenu`-only everywhere: this list is
- * destinations, not actions, and duplicating a destructive action across two
- * surfaces is worse than duplicating a couple of plain links.
- */
-const SIDEBAR_FOOTER_ITEMS: { label: string; href: string; icon: Icon }[] = [
-  { label: 'Organisation', href: '/app/organisation', icon: BuildingsIcon },
-  { label: 'Settings', href: '/app/settings', icon: GearSixIcon },
-];
 
 /**
  * Dashboard shell: a fixed-width left sidebar (brand, org switcher, primary
@@ -112,6 +91,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     setHasPriorInAppPage(true);
   }
 
+  // Fixed-viewport routes: the page fills the screen and its panes scroll
+  // internally, instead of the page scrolling. The dashboard's grid and the
+  // chat's two panes both need a bounded height to divide - chat previously
+  // approximated one with `calc(100dvh - 15rem)`, which guessed the header's
+  // height and broke the moment the header changed (same failure class as
+  // the dashboard's retired `--dash-chrome`).
+  const isFixedViewport = pathname === '/app' || pathname === '/app/chat';
+  const isDashboard = isFixedViewport;
+
   const { escalations } = useAppStore();
   const session = useSession();
   // Once, in the one component every authenticated page renders inside, rather
@@ -127,7 +115,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       // layout below), so the whole wrapper gets it, not just a nested
       // column. `MinimalTopBar` already carries its own `app-chrome`, so
       // nesting it inside this doesn't change its look, only `<main>`'s.
-      <div className="app-canvas flex min-h-dvh flex-col">
+      <div className="dash app-canvas flex min-h-dvh flex-col">
         <a href="#app-main" className="skip-link">
           Skip to content
         </a>
@@ -153,7 +141,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     // what actually shows through the sidebar's translucent glass (they're
     // flex siblings, not stacked), so it stays plain near-black, never
     // purple - see `.app-canvas`'s own comment in globals.css.
-    <div className="flex min-h-dvh bg-surface">
+    // The dashboard is a fixed viewport, not a page: `h-dvh` + `overflow-hidden`
+    // rather than `min-h-dvh`, because `min-h` only sets a floor - it leaves the
+    // height unbounded, so a child's `h-full` has nothing to resolve against and
+    // the grid grows to fit its content instead of fitting the screen.
+    <div
+      className={cn(
+        'dash flex bg-surface',
+        isDashboard ? 'h-dvh overflow-hidden' : 'min-h-dvh',
+      )}
+    >
       <a href="#app-main" className="skip-link">
         Skip to content
       </a>
@@ -172,10 +169,26 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           it - the same "chrome/canvas dark, content light" transitional
           state this round's report documents as expected, just now visible
           on every route instead of only behind the sidebar. */}
-      <div className="app-canvas flex min-w-0 flex-1 flex-col">
+      <div
+        className={cn(
+          'flex min-w-0 flex-1 flex-col',
+          // The dashboard is a fixed viewport managing its own grid; every
+          // other route scrolls normally. Both sit on the same flat canvas -
+          // `app-canvas`'s indigo gradient is overridden to `--dash-bg`
+          // inside `.dash` (see the bridge in globals.css), so the class is
+          // kept only for the routes that still reference it in their own
+          // styles rather than for the gradient it used to paint.
+          isDashboard ? 'min-h-0 overflow-hidden' : 'app-canvas',
+        )}
+      >
         <main
           id="app-main"
-          className="mx-auto w-full max-w-(--container-app) flex-1 px-4 py-6 sm:px-6"
+          className={cn(
+            'w-full flex-1',
+            isDashboard
+              ? 'flex min-h-0 flex-col'
+              : 'mx-auto max-w-(--container-app) px-4 py-6 sm:px-6',
+          )}
         >
           {scopedChildren}
         </main>
@@ -220,7 +233,13 @@ function MinimalTopBar({
   }
 
   return (
-    <header className="app-chrome sticky top-0 z-30 flex h-(--h-app-topbar) shrink-0 items-center gap-3 border-b px-4 sm:px-6">
+    <header
+      className="sticky top-0 z-30 flex h-(--h-app-topbar) shrink-0 items-center gap-3 border-b px-4 sm:px-6"
+      style={{
+        background: 'var(--dash-sidebar)',
+        borderColor: 'var(--dash-border)',
+      }}
+    >
       <Link
         href="/app"
         className="flex shrink-0 items-center gap-2.5 text-text"
@@ -263,24 +282,27 @@ function AppSidebar({
   escalationCount: number;
   chatUnreadCount: number;
 }) {
-  const pathname = usePathname() ?? '';
   const [collapsed, setCollapsed] = useSidebarCollapsed();
   const reducedMotion = usePrefersReducedMotion();
   // Organisation/Settings are owner+admin destinations - operators and
   // viewers get neither the sidebar link nor the account-menu one
   // (`UserMenu`), not just a read-only version of the page behind it.
-  const footerItems = hasRole(profile, 'owner', 'admin')
-    ? SIDEBAR_FOOTER_ITEMS
-    : [];
+  // The grouped nav (`DashSidebar`) carries Settings and the plan card, so
+  // the shell's own footer list is always a duplicate of both.
 
   return (
     <aside
       className={cn(
-        'app-chrome sticky top-0 hidden h-dvh shrink-0 flex-col border-r lg:flex',
+        'sticky top-0 hidden h-dvh min-h-0 shrink-0 flex-col overflow-hidden border-r lg:flex',
+
         collapsed ? 'w-(--w-app-sidebar-collapsed)' : 'w-(--w-app-sidebar)',
         !reducedMotion &&
           'transition-[width] duration-(--dur-base) ease-(--ease-out)',
       )}
+      style={{
+        background: 'var(--dash-sidebar)',
+        borderColor: 'var(--dash-border)',
+      }}
     >
       <Link
         href="/app"
@@ -293,252 +315,38 @@ function AppSidebar({
         <span className="sr-only">CallFlow AI dashboard</span>
       </Link>
 
+      {/* On the dashboard this slot is the account control, which names the
+          organisation and switches it as well - two controls asking "which
+          context am I in" cost a whole row of the nav column. */}
       <div
         className={cn(
-          'border-b p-3',
-          collapsed ? 'flex justify-center border-transparent' : 'border-rule',
+          'p-3',
+          collapsed ? 'flex justify-center' : '',
+          // No rule under the account control on the dashboard: the card it
+          // sits in already has its own edge, and a second line directly
+          // beneath reads as a stray divider.
         )}
       >
-        <SidebarOrgSwitcher
+        <DashProfileMenu
           profile={profile}
           refreshSession={refreshSession}
           collapsed={collapsed}
         />
       </div>
 
-      <nav
-        aria-label="Primary"
-        className={cn(
-          'flex flex-1 flex-col gap-1 overflow-y-auto p-3',
-          collapsed && 'items-center',
-        )}
-      >
-        {PRIMARY_NAV_ITEMS.map((item) => {
-          const active = isActive(pathname, item.href);
-          const badge = item.href === '/app/escalations' ? escalationCount : 0;
-          // A plain unread count, not a lamp colour - this is a chat inbox
-          // total, not call/run/escalation state, so it takes --primary (the
-          // one non-lamp colour) rather than the flare dot below.
-          const chatBadge = item.href === '/app/chat' ? chatUnreadCount : 0;
+      <DashSidebar
+        profile={profile}
+        escalationCount={escalationCount}
+        chatUnreadCount={chatUnreadCount}
+        planName={null}
+        collapsed={collapsed}
+        onToggleCollapsed={() => setCollapsed(!collapsed)}
+      />
 
-          const link = (
-            <Link
-              href={item.href}
-              aria-current={active ? 'page' : undefined}
-              className={cn(
-                'relative flex items-center gap-2.5 rounded-md text-small transition-colors duration-(--dur-micro) hover:bg-surface-hover',
-                collapsed ? 'size-10 justify-center' : 'px-2.5 py-2',
-                active
-                  ? 'font-medium text-text'
-                  : 'text-text-mute hover:text-text',
-              )}
-            >
-              <item.icon
-                aria-hidden
-                weight={active ? 'fill' : 'regular'}
-                className="size-4.5 shrink-0"
-              />
-              {!collapsed && (
-                <span className="min-w-0 flex-1 truncate">{item.label}</span>
-              )}
-              {/* Always a plain dot, never a numeric pill, in either sidebar
-                  state - the only persistently-coloured element in the
-                  sidebar, because it is the only thing in the product that
-                  needs immediate human action. A count of zero renders
-                  nothing at all - not a grey dot. The exact count still
-                  reaches a screen reader either way. */}
-              {badge > 0 ? (
-                <span
-                  aria-hidden
-                  className="absolute right-1.5 top-1.5 size-2 rounded-full"
-                  style={{ background: 'var(--lamp-flare)' }}
-                />
-              ) : null}
-              {badge > 0 ? (
-                <span className="sr-only">{badge} waiting for a person</span>
-              ) : null}
-              {chatBadge > 0 ? (
-                <span
-                  aria-hidden
-                  className="absolute right-1 top-1 flex min-w-4 items-center justify-center rounded-full px-1 text-[0.625rem] font-bold leading-4 text-primary-on"
-                  style={{ background: 'var(--primary)' }}
-                >
-                  {chatBadge > 99 ? '99+' : chatBadge}
-                </span>
-              ) : null}
-              {chatBadge > 0 ? (
-                <span className="sr-only">{chatBadge} unread messages</span>
-              ) : null}
-            </Link>
-          );
-
-          return collapsed ? (
-            <Tooltip key={item.href} content={item.label} side="right">
-              {link}
-            </Tooltip>
-          ) : (
-            <span key={item.href} className="contents">
-              {link}
-            </span>
-          );
-        })}
-      </nav>
-
-      {/* Plain icon+label rows, no filled pill even when active - the same
-          "weight/colour shift only" active-state rule every other nav
-          surface in this product follows (DESIGN_NOTES §14), not the
-          primary list's look above it. See SIDEBAR_FOOTER_ITEMS and
-          ProfileFooterLink for why these exist alongside, not instead of,
-          UserMenu. */}
-      <div
-        className={cn(
-          'flex flex-col gap-1 border-t p-3',
-          collapsed ? 'items-center border-transparent' : 'border-rule',
-        )}
-      >
-        <ProfileFooterLink
-          profile={profile}
-          collapsed={collapsed}
-          active={isActive(pathname, '/app/profile')}
-        />
-
-        {footerItems.map((item) => {
-          const active = isActive(pathname, item.href);
-
-          const link = (
-            <Link
-              href={item.href}
-              aria-current={active ? 'page' : undefined}
-              className={cn(
-                'flex items-center gap-2.5 rounded-md text-small transition-colors duration-(--dur-micro) hover:bg-surface-hover',
-                collapsed ? 'size-10 justify-center' : 'px-2.5 py-2',
-                active
-                  ? 'font-medium text-text'
-                  : 'text-text-mute hover:text-text',
-              )}
-            >
-              <item.icon
-                aria-hidden
-                weight={active ? 'fill' : 'regular'}
-                className="size-4.5 shrink-0"
-              />
-              {!collapsed && (
-                <span className="min-w-0 flex-1 truncate">{item.label}</span>
-              )}
-            </Link>
-          );
-
-          return collapsed ? (
-            <Tooltip key={item.href} content={item.label} side="right">
-              {link}
-            </Tooltip>
-          ) : (
-            <span key={item.href} className="contents">
-              {link}
-            </span>
-          );
-        })}
-      </div>
-
-      <div
-        className={cn(
-          'border-t p-3',
-          collapsed ? 'flex justify-center border-transparent' : 'border-rule',
-        )}
-      >
-        <Tooltip
-          content={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          side="right"
-        >
-          <button
-            type="button"
-            onClick={() => setCollapsed(!collapsed)}
-            aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-            aria-pressed={collapsed}
-            className={cn(
-              'flex items-center gap-2.5 rounded-md text-small text-text-mute transition-colors hover:bg-surface-hover hover:text-text',
-              collapsed ? 'size-10 justify-center' : 'w-full px-2.5 py-2',
-            )}
-          >
-            <SidebarSimpleIcon
-              aria-hidden
-              weight={collapsed ? 'fill' : 'regular'}
-              className="size-4.5 shrink-0"
-            />
-            {!collapsed && <span>Collapse sidebar</span>}
-          </button>
-        </Tooltip>
-      </div>
     </aside>
   );
 }
 
-/**
- * The sidebar footer's Profile row - the signed-in person's actual avatar
- * (or their initial, the same fallback `OrgMark` already uses for a
- * logo-less organisation - not a new pattern) plus their name, instead of a
- * generic icon and the word "Profile". Collapsed, the name drops the same
- * way every other row's label does, leaving just the photo - still enough
- * to recognise at a glance, which a generic person-outline icon never was.
- */
-function ProfileFooterLink({
-  profile,
-  collapsed,
-  active,
-}: {
-  profile: SessionProfile | null;
-  collapsed: boolean;
-  active: boolean;
-}) {
-  if (!profile) {
-    return (
-      <span
-        className={cn(
-          'block h-9 rounded-md bg-surface-sunken',
-          collapsed ? 'w-9' : 'w-full',
-        )}
-      />
-    );
-  }
-
-  const label = profile.name?.trim() || profile.email;
-  const initial = label.charAt(0).toUpperCase();
-
-  const avatar = profile.avatar_url ? (
-    <img
-      src={profile.avatar_url}
-      alt=""
-      className="size-6 shrink-0 rounded-full border border-rule object-cover"
-    />
-  ) : (
-    <span className="flex size-6 shrink-0 items-center justify-center rounded-full border border-rule bg-surface-sunken font-mono text-label text-text">
-      {initial}
-    </span>
-  );
-
-  const link = (
-    <Link
-      href="/app/profile"
-      aria-current={active ? 'page' : undefined}
-      className={cn(
-        'flex items-center gap-2.5 rounded-md text-small transition-colors duration-(--dur-micro) hover:bg-surface-hover',
-        collapsed ? 'size-10 justify-center' : 'px-2.5 py-2',
-        active ? 'font-medium text-text' : 'text-text-mute hover:text-text',
-      )}
-    >
-      {avatar}
-      {!collapsed && <span className="min-w-0 flex-1 truncate">{label}</span>}
-    </Link>
-  );
-
-  return collapsed ? (
-    <Tooltip content={label} side="right">
-      {link}
-    </Tooltip>
-  ) : (
-    <span className="contents">{link}</span>
-  );
-}
 
 /**
  * The one real place to switch, create, or manage organisations. Same
