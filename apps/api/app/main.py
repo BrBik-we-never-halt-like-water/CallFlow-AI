@@ -67,6 +67,38 @@ _origins = [
     *config.cors_origins,
 ]
 
+@app.middleware("http")
+async def _unhandled_errors_answer_with_cors(request: Request, call_next: Any) -> Any:
+    """Turn an unhandled exception into a JSON 500 *inside* the CORS layer.
+
+    Without this, a server error is invisible to a browser. Starlette builds its
+    stack as `[ServerErrorMiddleware, *user_middleware, ExceptionMiddleware]` and
+    wraps in reverse, so `ServerErrorMiddleware` ends up **outside**
+    `CORSMiddleware` - an unhandled exception is caught out there and its 500 never
+    passes back through CORS, so it reaches the browser with no
+    `Access-Control-Allow-Origin` and surfaces as `TypeError: Failed to fetch`.
+    Indistinguishable from the API being down, which is exactly how one real bug
+    here was misdiagnosed as a network problem.
+
+    `@app.exception_handler(Exception)` does **not** fix that: Starlette installs
+    handlers registered for `500`/`Exception` onto `ServerErrorMiddleware` itself,
+    which is still outside CORS. It has to be user middleware, and it has to be
+    registered *before* the CORS one so that CORS ends up outermost among them -
+    `add_middleware` inserts at index 0, so the last registered is the outermost.
+    """
+    try:
+        return await call_next(request)
+    except Exception:
+        # Logged with the traceback here because this is now the only place that
+        # sees it - swallowing it into a JSONResponse means Starlette's own error
+        # logging never runs.
+        log.exception("unhandled error serving %s %s", request.method, request.url.path)
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"detail": "Something failed on our side. Nothing was changed."},
+        )
+
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_origins,

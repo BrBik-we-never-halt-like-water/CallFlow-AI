@@ -12,18 +12,45 @@ network.
 
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
+
 import pytest
 from fastapi.testclient import TestClient
 
 from app.api.v1.routes import billing as billing_routes
+from app.domain.rates import RateCard
 from app.integrations.payments.protocol import PaymentCapability
 from app.integrations.payments.stub import StubPaymentProvider
 from app.main import app
+
+#: What every test in this file gets back for "the rate card", so the shape
+#: assertions below stay independent of whatever `usage_rates` seeds to. Chosen
+#: deliberately different from a round number, so a test that accidentally
+#: read the real platform fee instead of this stub would be obvious.
+STUB_RATE_CARD = RateCard(platform_fee=137, add_ons={})
 
 
 @pytest.fixture
 def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     monkeypatch.setattr(billing_routes.billing, "provider", StubPaymentProvider)
+
+    # The route reads the platform fee from `usage_rates` through
+    # `database.anonymous()` - real for production, but this suite has no live
+    # database and must not gain one just to answer a shape question.
+    # `TestClient(app)` used outside a `with` block never runs the app's
+    # lifespan either, so `database.connect()` is never called - without this,
+    # every request here would hit `DatabaseNotReady` before it even reached
+    # `load_rate_card`.
+    @asynccontextmanager
+    async def _no_connection_needed():
+        yield None
+
+    monkeypatch.setattr(billing_routes.database, "anonymous", _no_connection_needed)
+
+    async def _stub_rate_card(_conn: object) -> RateCard:
+        return STUB_RATE_CARD
+
+    monkeypatch.setattr(billing_routes.rates_repo, "load_rate_card", _stub_rate_card)
     return TestClient(app)
 
 
@@ -75,7 +102,17 @@ def test_the_response_carries_only_the_ladder_and_its_prices(client: TestClient)
             "prices",
             "self_serve",
             "current",
+            "baseline_rate_paise_per_minute",
         }
+
+
+def test_baseline_rate_is_the_same_for_every_plan(client: TestClient) -> None:
+    """The platform fee is one number in `usage_rates`, not per-plan copy - a
+    Growth card quoting a cheaper per-minute floor than Free would be a bug in
+    the rate card, not a feature of the plan."""
+    plans = _plans(client)
+    assert len(plans) == 4
+    assert all(plan["baseline_rate_paise_per_minute"] == 137 for plan in plans)
 
 
 def test_prices_are_the_gateways_own_minor_units(client: TestClient) -> None:
@@ -100,11 +137,17 @@ def test_free_and_enterprise_have_no_price_and_no_checkout(client: TestClient) -
 
 
 def test_a_gateway_that_cannot_be_asked_for_prices_still_returns_every_plan(
-    monkeypatch: pytest.MonkeyPatch,
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A gateway outage must not blank the pricing section. Every plan still
     renders with its entitlements; only the amounts are missing, which the page is
-    built to say out loud rather than print a zero for (CLAUDE.md §4 #9)."""
+    built to say out loud rather than print a zero for (CLAUDE.md §4 #9).
+
+    Takes the `client` fixture too, not just `monkeypatch` - it needs the same
+    database and payment-provider stubbing `client` already set up, and the
+    override below layers a second provider swap on top of it via the same
+    `monkeypatch` instance.
+    """
 
     class NoPrices(StubPaymentProvider):
         def supports(self, capability: PaymentCapability) -> bool:
@@ -113,7 +156,7 @@ def test_a_gateway_that_cannot_be_asked_for_prices_still_returns_every_plan(
             return super().supports(capability)
 
     monkeypatch.setattr(billing_routes.billing, "provider", NoPrices)
-    plans = _plans(TestClient(app))
+    plans = _plans(client)
 
     assert len(plans) == 4
     assert all(plan["prices"] == [] for plan in plans)

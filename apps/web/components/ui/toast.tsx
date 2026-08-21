@@ -184,7 +184,7 @@ function ToastItem({
 
       <RadixToast.Close
         aria-label="Dismiss"
-        className="-m-1 flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-sm text-text-mute hover:bg-surface-hover hover:text-text"
+        className="hit-target press -m-1 flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-sm text-text-mute hover:bg-surface-hover hover:text-text"
       >
         <XIcon aria-hidden className="size-3.5" />
       </RadixToast.Close>

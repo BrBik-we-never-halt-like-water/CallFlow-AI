@@ -28,8 +28,9 @@ from app.domain.subscriptions import (
     SubscriptionStatus,
     check_transition,
     effective_plan_id,
+    grants_via_subscription,
 )
-from app.integrations.payments.dodo import DodoGateway
+from app.integrations.payments.dodo import CREDIT_PACK, DodoGateway
 from app.integrations.payments.protocol import (
     GatewayUnavailable,
     NotImplementedForProvider,
@@ -76,6 +77,25 @@ class EffectivePlan:
     entitlements: Entitlements
     subscription: asyncpg.Record | None
     has_custom_limits: bool
+
+
+def subscription_grants_credit(effective: EffectivePlan) -> bool:
+    """Whether `effective.subscription` is why usage credit should arrive via
+    `credit.grant_for_period` rather than the lazy, unsubscribed-org path
+    (`credit.ensure_period_credit`).
+
+    Deliberately checks the row's *status*, not merely whether a row exists.
+    `effective.subscription` is `resolve_plan`'s "latest ever" record
+    (`subs_repo.get_latest_for_org`), which stays populated forever once an
+    organisation has subscribed once - including through `cancelled`,
+    `expired`, `failed`, or an abandoned `pending` checkout. Treating any of
+    those as "has a subscription" was the bug: an organisation whose
+    subscription lapsed would be told, forever after, that a subscription
+    covers its grants, while nothing ever grants against a lapsed one again.
+    """
+    if effective.subscription is None:
+        return False
+    return grants_via_subscription(SubscriptionStatus(effective.subscription["status"]))
 
 
 async def resolve_plan(conn: asyncpg.Connection, org_id: UUID, stored_plan_id: str) -> EffectivePlan:
@@ -211,6 +231,91 @@ async def _payment_settled(gateway_subscription_id: str | None) -> bool:
     return found is not None and not found.has_unsettled_payment
 
 
+async def _grant_period_credit(
+    conn: asyncpg.Connection,
+    *,
+    org_id: UUID,
+    plan_id: str,
+    subscription_id: str,
+    period_end: datetime | None,
+    expire_remainder: bool,
+) -> None:
+    """Give this organisation its plan's usage credit for one period.
+
+    Failures are logged and swallowed on purpose. This runs inside webhook
+    handling, and a webhook that raises is a webhook the gateway retries for ten
+    hours - so a credit grant that cannot complete must not take down the
+    *subscription* update it rides along with. The subscription is the thing the
+    customer paid for; the credit is recoverable by the next renewal or by hand,
+    and `POST /billing/sync` exists for exactly this class of drift.
+
+    Imported here rather than at module scope: `services.credit` imports the
+    entitlement ladder, and a top-level import would make two service modules
+    depend on each other's import order for no benefit.
+    """
+    from app.services import credit as credit_service
+
+    try:
+        effective = await resolve_plan(conn, org_id, plan_id)
+        await credit_service.grant_for_period(
+            conn,
+            org_id=org_id,
+            entitlements=effective.entitlements,
+            period_key=credit_service.period_key_for(subscription_id, period_end),
+            expire_remainder=expire_remainder,
+        )
+    except Exception:
+        log.exception("could not grant usage credit to org %s", org_id)
+
+
+async def _handle_topup_payment(conn: asyncpg.Connection, event: WebhookEvent) -> WebhookOutcome:
+    """A one-time credit-pack purchase, resolved without a subscription row.
+
+    `record_payment` already accepts `subscription_id=None` - it never needed a
+    subscription to record a payment, `handle_event`'s early return on a
+    missing `row` was the only thing standing in the way.
+    """
+    org_id = event.org_id
+    if org_id is None:
+        return WebhookOutcome(False, "Top-up payment carries no org_id.", None)
+
+    recorded = False
+    if event.gateway_payment_id and event.amount_minor is not None and event.currency:
+        recorded = await subs_repo.record_payment(
+            conn,
+            org_id=org_id,
+            subscription_id=None,
+            gateway=GATEWAY_NAME,
+            gateway_payment_id=event.gateway_payment_id,
+            amount_minor=event.amount_minor,
+            currency=event.currency,
+            status="succeeded" if event.kind is WebhookKind.PAYMENT_SUCCEEDED else "failed",
+            description=event.raw_type,
+            paid_at=None,
+        )
+
+    if (
+        event.kind is WebhookKind.PAYMENT_SUCCEEDED
+        and event.gateway_payment_id
+        and event.amount_minor
+    ):
+        from app.services import credit as credit_service
+
+        try:
+            await credit_service.grant_for_topup(
+                conn,
+                org_id=org_id,
+                amount_paise=event.amount_minor,
+                gateway_payment_id=event.gateway_payment_id,
+            )
+        except Exception:
+            log.exception("could not grant top-up credit to org %s", org_id)
+
+    return WebhookOutcome(
+        recorded, "Top-up recorded." if recorded else "Already recorded.", org_id
+    )
+
+
 async def handle_event(conn: asyncpg.Connection, event: WebhookEvent) -> WebhookOutcome:
     """Apply one verified webhook. Runs on `database.anonymous()`.
 
@@ -225,6 +330,16 @@ async def handle_event(conn: asyncpg.Connection, event: WebhookEvent) -> Webhook
         subscription_row_id=event.subscription_row_id,
     )
     if row is None:
+        # A credit-pack top-up is not a subscription and never gets an
+        # `org_subscriptions` row, so it always misses the lookup above - this
+        # is the one place that resolves it anyway, straight from checkout
+        # metadata rather than a subscription.
+        if (
+            event.kind in {WebhookKind.PAYMENT_SUCCEEDED, WebhookKind.PAYMENT_FAILED}
+            and event.plan_id == CREDIT_PACK
+            and event.org_id is not None
+        ):
+            return await _handle_topup_payment(conn, event)
         return WebhookOutcome(False, f"No subscription matches {event.raw_type}.", event.org_id)
 
     org_id: UUID = row["org_id"]
@@ -258,17 +373,42 @@ async def handle_event(conn: asyncpg.Connection, event: WebhookEvent) -> Webhook
             current_period_end=event.current_period_end,
             effective_plan_id=row["plan_id"],
         )
+        if extended:
+            # A new period means new usage credit, and the old period's remainder
+            # is written off first because plan credit does not roll over. Keyed
+            # on the period rather than the delivery, so a redelivered renewal
+            # grants once. Only on `extended`: if the guarded update did not
+            # match, another delivery already handled this period.
+            await _grant_period_credit(
+                conn,
+                org_id=org_id,
+                plan_id=row["plan_id"],
+                subscription_id=event.gateway_subscription_id
+                or row["gateway_subscription_id"]
+                or str(subscription_id),
+                period_end=event.current_period_end,
+                expire_remainder=True,
+            )
         return WebhookOutcome(extended, "Period extended." if extended else "Not active.", org_id)
 
     if event.kind in {WebhookKind.PAYMENT_SUCCEEDED, WebhookKind.PAYMENT_FAILED}:
         return WebhookOutcome(True, "Payment recorded.", org_id)
 
-    target = _TARGET_STATUS.get(event.kind)
-    if target is None:
-        # `subscription.updated` and anything this version does not act on.
-        # Recorded and acknowledged, never rejected: a gateway adding an event
-        # type must not start failing deliveries.
-        return WebhookOutcome(False, f"No action for {event.raw_type}.", org_id)
+    if event.kind is WebhookKind.SUBSCRIPTION_UPDATED:
+        # `subscription.updated`/`.plan_changed` never move status on their
+        # own - a plan change or a cancel-at-period-end both edit a field on an
+        # already-active (or already-on-hold) row. Setting `target = current`
+        # routes straight into the "same status, different details" branch
+        # below rather than through `_TARGET_STATUS`, which has no entry for
+        # this kind on purpose: there is no fixed status to look up.
+        target = current
+    else:
+        target = _TARGET_STATUS.get(event.kind)
+        if target is None:
+            # Anything this version does not act on. Recorded and
+            # acknowledged, never rejected: a gateway adding an event type
+            # must not start failing deliveries.
+            return WebhookOutcome(False, f"No action for {event.raw_type}.", org_id)
 
     if target is current:
         # Same status, different details - a plan change the gateway has confirmed,
@@ -360,6 +500,42 @@ async def handle_event(conn: asyncpg.Connection, event: WebhookEvent) -> Webhook
     )
     if not applied:
         return WebhookOutcome(False, "Another delivery applied this first.", org_id)
+
+    if target is SubscriptionStatus.ACTIVE:
+        # Two different moves land here, and only one is a first grant.
+        # First activation (`pending -> active`): no remainder to expire -
+        # whatever a Free organisation had left is theirs, and writing it off
+        # on upgrade would take credit away from someone who just paid.
+        # Recovery (`on_hold -> active`): the *opposite* rule applies, same as
+        # a renewal - the on-hold period's balance does not roll over into the
+        # new one just because the card that failed got fixed.
+        #
+        # Guarded by `applied`, so only the delivery that actually moved the
+        # subscription grants - and by the period key inside, so two deliveries
+        # that both somehow got here still grant once.
+        recovering_from_hold = current is SubscriptionStatus.ON_HOLD
+        if recovering_from_hold and event.current_period_end is None:
+            # `period_key_for` would otherwise fall back to `row["current_period_end"]`
+            # - the pre-transition value, which may already be the dedupe key an
+            # earlier grant used. `_grant_period_credit` swallows that as a no-op
+            # grant rather than raising, so this is the only place it becomes
+            # visible: a distinct, searchable warning instead of a generic
+            # "could not grant" a few lines later.
+            log.warning(
+                "on_hold recovery for org %s arrived with no current_period_end - "
+                "the renewal grant may key on a stale period and skip itself",
+                org_id,
+            )
+        await _grant_period_credit(
+            conn,
+            org_id=org_id,
+            plan_id=resolved,
+            subscription_id=event.gateway_subscription_id
+            or row["gateway_subscription_id"]
+            or str(subscription_id),
+            period_end=event.current_period_end or row["current_period_end"],
+            expire_remainder=recovering_from_hold,
+        )
 
     log.info(
         "subscription moved",

@@ -18,6 +18,7 @@ import {
 } from '@/lib/agent-draft';
 import { cn } from '@/lib/cn';
 import { api, type VoiceAgent } from '@/lib/api';
+import { useScopedOrgId } from '@/lib/hooks/use-active-org';
 import { useOrgScopedEffect } from '@/lib/hooks/use-org-scoped-effect';
 import {
   isAtLimit,
@@ -136,11 +137,16 @@ function DraftCard({
 function CreateAgentAction({
   limits,
   agentCount,
+  lockedCount,
   canUpgrade,
 }: {
   limits: PlanLimits;
   /** `null` while the list is still loading. */
   agentCount: number | null;
+  /** How many the API says the plan no longer covers. Reported by the server
+   *  rather than derived from `agentCount - allowed`, because which agents are
+   *  locked depends on explicit choices the client does not resolve. */
+  lockedCount: number;
   canUpgrade: boolean;
 }) {
   const create = (
@@ -164,12 +170,35 @@ function CreateAgentAction({
           <Link href="/app/billing">Upgrade plan</Link>
         </Button>
       ) : null}
-      <p className="text-small text-text-dim">
+      <p className="measure text-small text-text-dim">
         {limits.planName} includes {allowed}{' '}
-        {allowed === 1 ? 'agent' : 'agents'}, and{' '}
-        {allowed === 1 ? "it's" : "they're"} all in use.
+        {allowed === 1 ? 'agent' : 'agents'}.{' '}
+        {lockedCount > 0
+          ? `${lockedCount} of your ${agentCount} ${
+              agentCount === 1 ? 'agent is' : 'agents are'
+            } locked and can't place calls - nothing was deleted, and you can make a different one active.`
+          : `${allowed === 1 ? "It's" : "They're"} all in use.`}
         {canUpgrade ? null : ' Ask an owner to upgrade.'}
       </p>
+    </div>
+  );
+}
+
+/** A quiet group label with its count - the same hairline-and-words treatment
+ *  the tab row above uses, rather than a second filled control competing with
+ *  it for attention. */
+function SectionHeading({
+  children,
+  count,
+}: {
+  children: React.ReactNode;
+  count: number;
+}) {
+  return (
+    <div className="flex items-center gap-3">
+      <h2 className="text-small font-medium text-text">{children}</h2>
+      <span className="text-small tabular-nums text-text-mute">{count}</span>
+      <span aria-hidden className="h-px flex-1 bg-rule" />
     </div>
   );
 }
@@ -178,15 +207,26 @@ function AgenticContent({ profile }: { profile: SessionProfile }) {
   const toast = useToast();
   const canRead = profile.permissions.includes('agents:read');
   const canWrite = profile.permissions.includes('agents:write');
-  const canDelete = profile.permissions.includes('agents:delete');
+  // Two different questions, and conflating them is what put a Delete button
+  // on agents the caller could not delete. `agents:delete` says whether this
+  // role may delete agents at all; the role says whether that extends past
+  // their own. `voice_agents_delete` enforces exactly this split in the
+  // database - the UI only has to agree with it, never to be trusted for it.
+  const canDeleteAgents = profile.permissions.includes('agents:delete');
+  const canDeleteAnyAgent =
+    profile.active.role === 'owner' || profile.active.role === 'admin';
+  const mayDelete = (agent: VoiceAgent) =>
+    canDeleteAgents &&
+    (canDeleteAnyAgent || agent.created_by === profile.user_id);
 
   const [agents, setAgents] = useState<VoiceAgent[] | null>(null);
   // Lazy initialiser, not an effect: `react-hooks/set-state-in-effect` is an
   // error here, and this only ever runs on the client - `SessionGate` has
   // already resolved a session by the time this renders, so there is no
   // server pass whose markup this could disagree with.
+  const scopedOrgId = useScopedOrgId();
   const [drafts, setDrafts] = useState<StoredAgentDraft[]>(() =>
-    typeof window === 'undefined' ? [] : listUnsavedAgentDrafts(),
+    typeof window === 'undefined' ? [] : listUnsavedAgentDrafts(scopedOrgId),
   );
   const [tab, setTab] = useState<'agents' | 'drafts'>('agents');
   const planLimits = usePlanLimits();
@@ -246,6 +286,7 @@ function AgenticContent({ profile }: { profile: SessionProfile }) {
           <CreateAgentAction
             limits={planLimits}
             agentCount={agents?.length ?? null}
+            lockedCount={agents?.filter((a) => a.locked).length ?? 0}
             canUpgrade={profile.permissions.includes('billing:write')}
           />
         ) : null}
@@ -289,18 +330,50 @@ function AgenticContent({ profile }: { profile: SessionProfile }) {
         ) : agents.length === 0 ? (
           <EmptyLine>No agents created.</EmptyLine>
         ) : (
-          <ul className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-            {agents.map((agent) => (
-              <li key={agent.id} className="flex">
-                <AgentCard
-                  agent={agent}
-                  canDelete={canDelete}
-                  onChanged={load}
-                  currentUserId={profile.user_id}
-                />
-              </li>
-            ))}
-          </ul>
+          /* Split by who built it, and only when there is something on both
+             sides - a single heading over the only group you have is a label,
+             not information. What the split earns: your own agents are the
+             ones you can edit and remove, so finding them shouldn't mean
+             reading every card's "by" line. */
+          (() => {
+            const mine = agents.filter((a) => a.created_by === profile.user_id);
+            const theirs = agents.filter(
+              (a) => a.created_by !== profile.user_id,
+            );
+            const grid = (list: VoiceAgent[]) => (
+              <ul className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                {list.map((agent) => (
+                  <li key={agent.id} className="flex">
+                    <AgentCard
+                      agent={agent}
+                      canDelete={mayDelete(agent)}
+                      onChanged={load}
+                      currentUserId={profile.user_id}
+                    />
+                  </li>
+                ))}
+              </ul>
+            );
+
+            if (mine.length === 0 || theirs.length === 0) return grid(agents);
+
+            return (
+              <div className="flex flex-col gap-8">
+                <section className="flex flex-col gap-4">
+                  <SectionHeading count={mine.length}>
+                    Built by you
+                  </SectionHeading>
+                  {grid(mine)}
+                </section>
+                <section className="flex flex-col gap-4">
+                  <SectionHeading count={theirs.length}>
+                    Built by your team
+                  </SectionHeading>
+                  {grid(theirs)}
+                </section>
+              </div>
+            );
+          })()
         )
       ) : drafts.length === 0 ? (
         <EmptyLine>No drafts.</EmptyLine>
@@ -312,7 +385,7 @@ function AgenticContent({ profile }: { profile: SessionProfile }) {
                 draft={entry.draft}
                 onDiscard={() => {
                   clearAgentDraftByKey(entry.key);
-                  setDrafts(listUnsavedAgentDrafts());
+                  setDrafts(listUnsavedAgentDrafts(scopedOrgId));
                 }}
               />
             </li>

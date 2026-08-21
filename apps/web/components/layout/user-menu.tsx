@@ -120,7 +120,7 @@ export function UserMenu({
         // whole button, so a hover *background* would never show through
         // it - a ring around the outside is the one hover treatment that
         // still reads regardless of which fallback state is showing.
-        className="flex size-9 cursor-pointer items-center justify-center overflow-hidden rounded-full border border-rule ring-2 ring-transparent transition-[background-color,box-shadow] hover:ring-surface-hover"
+        className="hit-target press flex size-9 cursor-pointer items-center justify-center overflow-hidden rounded-full border border-rule ring-2 ring-transparent transition-[background-color,box-shadow] hover:ring-surface-hover"
       >
         {avatar}
       </button>

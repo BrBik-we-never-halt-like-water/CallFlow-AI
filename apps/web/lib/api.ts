@@ -289,13 +289,15 @@ export interface TeamPerformance {
   total_calls: number;
   calls_closed: number;
   open_escalations: number;
-  daily_allocation: number;
-  credits_used_today: number;
+  /** `null` means nobody has set a usage-credit share for this teammate — only
+   *  the organisation-wide balance governs them. Money in paise. */
+  credit_cap_paise: number | null;
+  credit_spent_paise: number;
 }
 
 export interface MyCredits {
-  daily_allocation: number;
-  used_today: number;
+  credit_cap_paise: number | null;
+  credit_spent_paise: number;
 }
 
 /**
@@ -308,6 +310,9 @@ export interface Entitlements {
   max_organisations: number | null;
   max_ai_integrations: number | null;
   daily_call_budget: number | null;
+  /** Paise granted each period. The plan's real economic limit - `daily_call_budget`
+   *  is a uniform runaway bound, not a differentiator. */
+  monthly_credit_paise: number | null;
   llm_spend_limit_usd: number;
 }
 
@@ -339,6 +344,11 @@ export interface PlanOption {
   prices: PlanPrice[];
   self_serve: boolean;
   current: boolean;
+  /** What a connected minute costs on your own model keys — the platform fee
+   *  alone, since no tier add-on applies once nothing runs on CallFlow's keys.
+   *  The same value on every plan; carried per option so a card can show it
+   *  next to the included credit without a second request. */
+  baseline_rate_paise_per_minute: number;
 }
 
 export type SubscriptionStatus =
@@ -420,6 +430,31 @@ export interface OverrideInput {
   reason: string;
 }
 
+export interface Credit {
+  /** Paise. Negative is real: a call that overran its hold settles for more than
+   *  was reserved rather than being cut off mid-sentence. */
+  balance_paise: number;
+  granted_this_period_paise: number;
+  rate_paise_per_minute: number;
+  /** Derived from the *current* rate, so it is an estimate and must be labelled
+   *  one - the next call may use a different pipeline. */
+  estimated_minutes_left: number;
+  /** True for a plan with no credit ceiling: render "unlimited", not a bar. */
+  is_uncapped: boolean;
+}
+
+export interface LedgerEntry {
+  id: string;
+  entry_kind: 'grant' | 'hold' | 'release' | 'spend' | 'expiry' | 'adjustment';
+  /** Signed. Positive added credit, negative consumed or expired it. */
+  amount_minor: number;
+  currency: string;
+  call_key: string | null;
+  rate_paise_per_minute: number | null;
+  reason: string | null;
+  created_at: string;
+}
+
 export interface BillingOverview {
   plan_id: string;
   plan_name: string;
@@ -441,6 +476,7 @@ export interface BillingOverview {
   effective_daily_call_budget: number;
   /** True when a platform admin has set a negotiated limit on this org. */
   has_custom_limits: boolean;
+  credit: Credit;
   payments: PaymentRecord[];
   /**
    * False on a deployment with no gateway key. The Billing page uses this to keep
@@ -448,6 +484,13 @@ export interface BillingOverview {
    * button that would run against a stub and take no money (CLAUDE.md §4 #9).
    */
   payments_configured: boolean;
+  /**
+   * False when the deployment has no credit-pack product configured. Distinct
+   * from `payments_configured` - a deployment can take real subscription
+   * payments and still have no top-up product - so the "Top up" button reads
+   * this rather than `payments_configured` alone (CLAUDE.md §4 #9).
+   */
+  credit_pack_configured: boolean;
 }
 
 export interface InvitationPreview {
@@ -456,6 +499,9 @@ export interface InvitationPreview {
   org_name: string | null;
   role: string | null;
   email: string | null;
+  /** The invited address already has a CallFlow account, so this person needs
+   *  to sign in rather than create one. */
+  account_exists: boolean;
 }
 
 export interface Profile {
@@ -673,6 +719,12 @@ export interface VoiceAgent {
   created_by: string | null;
   created_by_name: string | null;
   created_by_avatar_url: string | null;
+  /** When the customer chose to keep this agent active over the plan's limit. */
+  kept_at: string | null;
+  /** True when the plan no longer covers this agent, so it cannot place calls.
+   *  Locked, never deleted - it comes back the moment the plan does, and the
+   *  customer can make *this* one the active agent instead of upgrading. */
+  locked: boolean;
 }
 
 export interface VoicePreviewRequest {
@@ -862,10 +914,12 @@ export const api = {
     authReq<TeamPerformance[]>('/api/v1/organisations/me/team-performance'),
   myCredits: () =>
     authReq<MyCredits>('/api/v1/organisations/me/members/me/credits'),
-  setMemberCredits: (userId: string, dailyAllocation: number) =>
-    authReq<void>(`/api/v1/organisations/me/members/${userId}/credits`, {
+  /** `capPaise: null` explicitly clears the cap (uncapped — only the
+   *  organisation-wide balance governs this teammate). */
+  setMemberCreditCap: (userId: string, capPaise: number | null) =>
+    authReq<void>(`/api/v1/organisations/me/members/${userId}/credit-cap`, {
       method: 'PATCH',
-      body: JSON.stringify({ daily_allocation: dailyAllocation }),
+      body: JSON.stringify({ monthly_credit_cap_paise: capPaise }),
     }),
 
   // --- platform admin ------------------------------------------------------
@@ -904,6 +958,15 @@ export const api = {
   publicPlans: () => req<PlanOption[]>('/api/v1/public/billing/plans'),
   billingPlans: () => authReq<PlanOption[]>('/api/v1/billing/plans'),
   billingOverview: () => authReq<BillingOverview>('/api/v1/billing/subscription'),
+  creditLedger: (limit = 100) =>
+    authReq<LedgerEntry[]>(`/api/v1/billing/credit-ledger?limit=${limit}`),
+  /** Buys a one-time credit pack. The credit is granted by the resulting webhook,
+   *  not by this call - so the balance moves once the payment settles. */
+  startTopUp: (idempotencyKey: string) =>
+    authReq<{ checkout_url: string }>('/api/v1/billing/top-up', {
+      method: 'POST',
+      body: JSON.stringify({ idempotency_key: idempotencyKey }),
+    }),
   /**
    * The gateway's invoice PDF for one payment, as a blob.
    *
@@ -1063,6 +1126,13 @@ export const api = {
 
   // --- voice agents + ai providers (Agentic tab) ----------------------------
   listVoiceAgents: () => authReq<VoiceAgent[]>('/api/v1/voice-agents'),
+  /** Choose which agents stay usable when the plan covers fewer than exist.
+   *  Marking more than the limit is allowed - the most recent choice wins and the
+   *  oldest falls out, so nobody has to work out what to unmark first. */
+  keepAgent: (id: string, keep = true) =>
+    authReq<VoiceAgent>(`/api/v1/voice-agents/${id}/keep?keep=${keep}`, {
+      method: 'POST',
+    }),
   createVoiceAgent: (draft: VoiceAgentDraft) =>
     authReq<VoiceAgent>('/api/v1/voice-agents', {
       method: 'POST',

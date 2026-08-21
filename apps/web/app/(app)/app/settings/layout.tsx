@@ -5,10 +5,18 @@ import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/cn';
 import { useSession } from '@/lib/hooks/use-session';
 
+// Integrations and Billing are both deliberately absent, for the same reason and
+// by two independent decisions that met in a merge. Each lives in the primary nav
+// now, and each old Settings path is only a redirect - so listing either here gave
+// Settings a tab that threw you out of Settings the moment you clicked it, which
+// reads as a broken tab rather than a moved feature.
+//
+// Billing left because the plan gates how much of the product exists at all and
+// every 402 points there; Integrations because connecting a carrier and a speech
+// vendor is what a new organisation must do before anything works.
 const TABS = [
   { slug: 'safety', label: 'Safety', permission: 'safety:read' },
   { slug: 'api-keys', label: 'API keys', permission: 'api_keys:read' },
-  { slug: 'integrations', label: 'Integrations', permission: 'integrations:read' },
 ] as const;
 
 export default function SettingsLayout({

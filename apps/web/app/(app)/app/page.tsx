@@ -24,7 +24,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { Panel } from '@/components/ui/panel';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
-import { formatAge, formatDuration } from '@/lib/format';
+import { formatAge, formatDuration, formatMinorUnits } from '@/lib/format';
 import { countLamps, lampForOutcome, type LampState } from '@/lib/lamp';
 import {
   api,
@@ -738,7 +738,7 @@ function TeamPerformancePanel() {
                 <th className="py-2 pr-4 text-right font-bold">
                   Needs a person
                 </th>
-                <th className="py-2 text-right font-bold">Credits today</th>
+                <th className="py-2 text-right font-bold">Usage credit</th>
               </tr>
             </thead>
             <tbody>
@@ -785,9 +785,9 @@ function TeamPerformancePanel() {
                     )}
                   </td>
                   <td className="py-2.5 text-right font-mono text-data tabular-nums text-text-mute">
-                    {row.daily_allocation > 0
-                      ? `${row.credits_used_today} / ${row.daily_allocation}`
-                      : 'unallocated'}
+                    {row.credit_cap_paise !== null
+                      ? `${formatMinorUnits(row.credit_spent_paise, 'INR')} / ${formatMinorUnits(row.credit_cap_paise, 'INR')}`
+                      : 'uncapped'}
                   </td>
                 </tr>
               ))}

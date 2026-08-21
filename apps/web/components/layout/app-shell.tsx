@@ -13,7 +13,7 @@ import {
 } from '@phosphor-icons/react/dist/ssr';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import { cn } from '@/lib/cn';
 import { BrandLockup } from '@/components/brand/wordmark';
 import { Mark } from '@/components/brand/mark';
@@ -83,6 +83,27 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname() ?? '';
   const minimalRoute = MINIMAL_CHROME_ROUTES.find((r) => r.path === pathname);
 
+  /**
+   * Every page remounts when the active organisation changes.
+   *
+   * Pages keep their own state - lists, filters, a loaded record - and
+   * re-fetching on switch does not clear any of it: the old organisation's
+   * rows stay on screen until the new response arrives, and stay indefinitely
+   * if it fails. Auditing ten pages for that would fix ten pages; keying the
+   * subtree fixes the class, including pages not written yet, because a
+   * remount resets every `useState` to its initial value (`ISSUES.md` #127).
+   *
+   * Keyed on `useActiveOrg()` - the value `useOrgScopedEffect` and the API
+   * client's `X-Org-Id` both read - rather than the session's copy, which
+   * only updates once `/me` returns and would remount *after* the new data
+   * had already loaded, throwing it away.
+   *
+   * Losing scroll position and in-page state on a switch is the correct
+   * outcome here: you are looking at a different tenant.
+   */
+  const [activeOrgId] = useActiveOrg();
+  const scopedChildren = <Fragment key={activeOrgId}>{children}</Fragment>;
+
   // Tracks whether this AppShell instance has ever rendered a *different*
   // pathname than the one it's on now, so "close" (MinimalTopBar) can tell a
   // real in-app back-navigation apart from a same-tab link in from outside
@@ -124,7 +145,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           id="app-main"
           className="mx-auto w-full max-w-(--container-app) flex-1 px-4 py-6 sm:px-6"
         >
-          {children}
+          {scopedChildren}
         </main>
       </div>
     );
@@ -160,7 +181,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           id="app-main"
           className="mx-auto w-full max-w-(--container-app) flex-1 px-4 py-6 sm:px-6"
         >
-          {children}
+          {scopedChildren}
         </main>
 
         <AppTabBar
@@ -570,11 +591,37 @@ function SidebarOrgSwitcher({
     );
   }
 
-  // Switching between organisations - and everything that implies about
-  // managing more than one - is an admin/owner concern. An operator or
-  // viewer only ever needs to know which org they're in, not a control for
-  // moving between orgs they don't manage.
-  if (!hasRole(profile, 'owner', 'admin')) {
+  function switchOrg(orgId: string) {
+    if (orgId === profile?.active.org_id) return;
+    setActiveOrgId(orgId);
+    refreshSession();
+  }
+
+  const list = orgs ?? [
+    {
+      id: profile.active.org_id,
+      name: profile.active.org_name,
+      slug: profile.active.org_slug,
+      logo_url: profile.active.org_logo_url,
+      role: profile.active.role,
+    },
+  ];
+
+  // Belonging to more than one organisation is what entitles someone to move
+  // between them - their role is not part of that question. This used to be
+  // gated on owner/admin, which read reasonably ("managing several orgs is an
+  // admin concern") and stranded people in practice: anyone whose role differs
+  // between organisations - an owner of A who is a viewer in B - lost the
+  // control the moment they arrived in B, with no way back short of clearing
+  // site data (`ISSUES.md` #127). Role governs what you can do *inside* an
+  // organisation; `GET /organisations` has always returned every membership to
+  // every member, so the API never agreed with that gate either.
+  //
+  // The admin case stays in the condition because this menu is also where
+  // "New organisation" lives: a single-org owner still needs it.
+  const canSwitch = list.length > 1 || hasRole(profile, 'owner', 'admin');
+
+  if (!canSwitch) {
     return (
       <div
         className={cn(
@@ -591,22 +638,6 @@ function SidebarOrgSwitcher({
       </div>
     );
   }
-
-  function switchOrg(orgId: string) {
-    if (orgId === profile?.active.org_id) return;
-    setActiveOrgId(orgId);
-    refreshSession();
-  }
-
-  const list = orgs ?? [
-    {
-      id: profile.active.org_id,
-      name: profile.active.org_name,
-      slug: profile.active.org_slug,
-      logo_url: profile.active.org_logo_url,
-      role: profile.active.role,
-    },
-  ];
 
   const trigger = (
     <button

@@ -129,7 +129,7 @@ export const SearchInput = forwardRef<
           type="button"
           onClick={onClear}
           aria-label="Clear search"
-          className="absolute right-1 top-1/2 flex size-8 -translate-y-1/2 cursor-pointer items-center justify-center rounded-sm text-text-mute hover:bg-surface-hover hover:text-text"
+          className="hit-target absolute right-1 top-1/2 flex size-8 -translate-y-1/2 cursor-pointer items-center justify-center rounded-sm text-text-mute hover:bg-surface-hover hover:text-text"
         >
           ×
         </button>

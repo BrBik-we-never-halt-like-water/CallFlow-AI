@@ -87,6 +87,11 @@ from app.integrations.payments.protocol import (
 
 log = logging.getLogger("callflow.payments.dodo")
 
+#: The pseudo-plan a one-time credit pack is configured under. Deliberately not
+#: a `PlanId`: a top-up changes no subscription, and letting it into the ladder
+#: would make it look like a plan someone could be on.
+CREDIT_PACK = "credit_pack"
+
 _SUPPORTED = frozenset(
     {
         PaymentCapability.HOSTED_CHECKOUT,
@@ -118,6 +123,12 @@ _KIND_BY_TYPE: Mapping[str, WebhookKind] = {
     "subscription.expired": WebhookKind.SUBSCRIPTION_EXPIRED,
     "subscription.failed": WebhookKind.SUBSCRIPTION_FAILED,
     "subscription.updated": WebhookKind.SUBSCRIPTION_UPDATED,
+    # A plan change (`change_plan`) and a cancel-at-period-end (`cancel`) both
+    # move fields on an already-active subscription rather than its status, so
+    # Dodo reports them as `.plan_changed`/`.updated` rather than `.active`.
+    # Both map onto the same kind: `handle_event`'s "same status, different
+    # details" branch is what actually applies either one.
+    "subscription.plan_changed": WebhookKind.SUBSCRIPTION_UPDATED,
     "payment.succeeded": WebhookKind.PAYMENT_SUCCEEDED,
     "payment.failed": WebhookKind.PAYMENT_FAILED,
 }
@@ -225,12 +236,19 @@ class DodoGateway:
 
     def _product_ids(self) -> dict[tuple[str, BillingPeriod], str]:
         """Only configured plans appear. A plan without a product id has no
-        checkout, which `list_prices()` reports by omission rather than raising."""
+        checkout, which `list_prices()` reports by omission rather than raising.
+
+        `credit_pack` is a one-time product rather than a plan, and it is listed
+        here so `create_checkout` can find it by the same lookup. It is filtered
+        out of `list_prices()` below, because a top-up is not a rung on the ladder
+        and showing it as one would put a fourth card on the pricing page.
+        """
         configured = {
             ("starter", BillingPeriod.MONTHLY): config.dodo_product_starter_monthly,
             ("starter", BillingPeriod.ANNUAL): config.dodo_product_starter_annual,
             ("growth", BillingPeriod.MONTHLY): config.dodo_product_growth_monthly,
             ("growth", BillingPeriod.ANNUAL): config.dodo_product_growth_annual,
+            (CREDIT_PACK, BillingPeriod.MONTHLY): config.dodo_product_credit_pack,
         }
         return {key: value for key, value in configured.items() if value}
 
@@ -277,6 +295,11 @@ class DodoGateway:
     async def list_prices(self) -> Mapping[tuple[str, BillingPeriod], Price]:
         prices: dict[tuple[str, BillingPeriod], Price] = {}
         for (plan_id, period), product_id in self._product_ids().items():
+            if plan_id == CREDIT_PACK:
+                # A top-up is not a plan. Included in `_product_ids` so checkout
+                # can find it, excluded here so it never renders as a fourth rung
+                # on the ladder.
+                continue
             try:
                 product = await self._client.products.retrieve(product_id)
             except Exception as exc:  # noqa: BLE001 - normalised immediately below

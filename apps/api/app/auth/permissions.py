@@ -107,6 +107,14 @@ _OPERATOR = _READ_ONLY | {
     Permission.CAMPAIGNS_WRITE,
     Permission.CAMPAIGNS_DELETE,
     Permission.AGENTS_WRITE,
+    # May delete agents - *which* agents is the database's decision, not this
+    # matrix's. `voice_agents_delete` allows an owner or admin any agent in the
+    # organisation, and everyone else only the ones they created. Withholding
+    # the permission here instead left an operator able to build an agent and
+    # then unable to remove it, with no one but an admin able to clean it up
+    # (`ISSUES.md` #129). Same division as `MESSAGES_SEND`: the permission
+    # gates whether you can use the operation at all, RLS gates which rows.
+    Permission.AGENTS_DELETE,
     Permission.RUNS_START,
     Permission.CONTACTS_WRITE,
     Permission.SUPPRESSIONS_ADD,
@@ -122,7 +130,6 @@ _ADMIN = _OPERATOR | {
     Permission.TEAM_INVITE,
     Permission.TEAM_REMOVE,
     Permission.TEAM_SET_ROLE,
-    Permission.AGENTS_DELETE,
     Permission.CONTACTS_REVEAL,
     Permission.SAFETY_WRITE,
     Permission.API_KEYS_READ,

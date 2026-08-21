@@ -31,7 +31,7 @@ import {
   type ShareRequest,
   type Team,
 } from '@/lib/api';
-import { formatAge, formatTimestamp } from '@/lib/format';
+import { formatAge, formatTimestamp, parseMajorUnitsToMinor } from '@/lib/format';
 import { useActiveOrg } from '@/lib/hooks/use-active-org';
 import { useOrgRealtime } from '@/lib/hooks/use-org-realtime';
 import { useOrgScopedEffect } from '@/lib/hooks/use-org-scoped-effect';
@@ -331,7 +331,7 @@ function TeamPane({ profile }: { profile: SessionProfile }) {
   const [loading, setLoading] = useState(true);
   const [inviting, setInviting] = useState(false);
   const [pendingRemove, setPendingRemove] = useState<Member | null>(null);
-  const [allocations, setAllocations] = useState<Map<string, number>>(
+  const [allocations, setAllocations] = useState<Map<string, number | null>>(
     new Map(),
   );
 
@@ -357,7 +357,7 @@ function TeamPane({ profile }: { profile: SessionProfile }) {
           new Map(
             rows
               .filter((r): r is typeof r & { user_id: string } => !!r.user_id)
-              .map((r) => [r.user_id, r.daily_allocation]),
+              .map((r) => [r.user_id, r.credit_cap_paise]),
           ),
         ),
       )
@@ -403,7 +403,7 @@ function TeamPane({ profile }: { profile: SessionProfile }) {
                 canRemove={canRemove}
                 canSetRole={canSetRole}
                 canSetCredits={canSetCredits}
-                dailyAllocation={allocations.get(member.user_id) ?? 0}
+                creditCapPaise={allocations.get(member.user_id) ?? null}
                 onChanged={load}
                 onCreditsChanged={loadAllocations}
                 onRequestRemove={setPendingRemove}
@@ -691,7 +691,7 @@ function MemberRow({
   canRemove,
   canSetRole,
   canSetCredits,
-  dailyAllocation,
+  creditCapPaise,
   onChanged,
   onCreditsChanged,
   onRequestRemove,
@@ -701,7 +701,7 @@ function MemberRow({
   canRemove: boolean;
   canSetRole: boolean;
   canSetCredits: boolean;
-  dailyAllocation: number;
+  creditCapPaise: number | null;
   onChanged: () => void;
   onCreditsChanged: () => void;
   onRequestRemove: (member: Member) => void;
@@ -758,9 +758,9 @@ function MemberRow({
       </div>
       <div className="flex items-center gap-2">
         {canSetCredits && !isOwner ? (
-          <CreditsField
+          <CreditCapField
             userId={member.user_id}
-            initialAllocation={dailyAllocation}
+            initialCapPaise={creditCapPaise}
             onSaved={onCreditsChanged}
           />
         ) : null}
@@ -804,43 +804,54 @@ function MemberRow({
 }
 
 /**
- * A teammate's slice of the org's existing daily call budget - a
- * subdivision, not a second limit (CLAUDE.md's own framing for this table:
- * `member_credit_allocations` never bypasses `org_safety_settings.daily_budget`,
- * which still applies on top). Saves on blur/Enter rather than needing a
- * separate confirm button, matching how small a single-number field like
- * this should be to commit.
+ * One teammate's share of the organisation's usage credit - money in paise,
+ * spent by the second. Blank means uncapped: only the organisation-wide
+ * balance governs this person. Parsed through `parseMajorUnitsToMinor` rather
+ * than a bare number input, so typing "850" means ₹850, never 850 paise. The
+ * API refuses a share larger than the plan's own per-period grant - there is
+ * no client-side ceiling here, since that number depends on the org's current
+ * plan and belongs to one source of truth.
  */
-function CreditsField({
+function CreditCapField({
   userId,
-  initialAllocation,
+  initialCapPaise,
   onSaved,
 }: {
   userId: string;
-  initialAllocation: number;
+  initialCapPaise: number | null;
   onSaved: () => void;
 }) {
   const toast = useToast();
-  const [value, setValue] = useState(String(initialAllocation));
+  const initialText = initialCapPaise != null ? String(initialCapPaise / 100) : '';
+  const [value, setValue] = useState(initialText);
   const [saving, setSaving] = useState(false);
 
   async function save() {
-    const parsed = Number.parseInt(value, 10);
-    if (!Number.isFinite(parsed) || parsed < 0) {
-      setValue(String(initialAllocation));
+    if (value.trim() === '') {
+      if (initialCapPaise === null) return;
+      await commit(null);
       return;
     }
-    if (parsed === initialAllocation) return;
+    const parsed = parseMajorUnitsToMinor(value, 'INR');
+    if (parsed === null) {
+      setValue(initialText);
+      return;
+    }
+    if (parsed === initialCapPaise) return;
+    await commit(parsed);
+  }
+
+  async function commit(capPaise: number | null) {
     setSaving(true);
     try {
-      await api.setMemberCredits(userId, parsed);
-      toast({ tone: 'success', title: 'Daily credits updated' });
+      await api.setMemberCreditCap(userId, capPaise);
+      toast({ tone: 'success', title: 'Usage-credit share updated' });
       onSaved();
     } catch (error) {
-      setValue(String(initialAllocation));
+      setValue(initialText);
       toast({
         tone: 'error',
-        title: "Couldn't update their daily credits",
+        title: "Couldn't update their usage-credit share",
         body: error instanceof Error ? error.message : undefined,
       });
     } finally {
@@ -850,10 +861,11 @@ function CreditsField({
 
   return (
     <label className="flex items-center gap-1.5 text-small text-text-dim">
-      Credits/day
+      ₹/month
       <Input
-        type="number"
-        min={0}
+        type="text"
+        inputMode="decimal"
+        placeholder="Uncapped"
         value={value}
         disabled={saving}
         onChange={(e) => setValue(e.target.value)}
@@ -861,8 +873,8 @@ function CreditsField({
         onKeyDown={(e) => {
           if (e.key === 'Enter') e.currentTarget.blur();
         }}
-        className="h-8 w-20 px-2 text-right"
-        aria-label="Daily credit allocation"
+        className="h-8 w-24 px-2 text-right"
+        aria-label="Monthly usage-credit share, in rupees"
       />
     </label>
   );

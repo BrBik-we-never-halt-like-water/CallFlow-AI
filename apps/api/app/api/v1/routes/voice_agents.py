@@ -28,7 +28,11 @@ from app.database.repositories import (
 from app.database.repositories import provider_credentials as provider_credentials_repo
 from app.database.repositories import voice_agents as voice_agents_repo
 from app.domain.campaigns import FIELD_TYPES
-from app.domain.entitlements import check_agent_create_allowed
+from app.domain.entitlements import (
+    AgentStanding,
+    check_agent_create_allowed,
+    usable_agent_ids,
+)
 from app.domain.safety import mask
 from app.integrations.ai_providers import catalog
 from app.services import billing, voice_preview
@@ -75,6 +79,14 @@ class VoiceAgentOut(VoiceAgentIn):
     created_by: str | None = None
     created_by_name: str | None = None
     created_by_avatar_url: str | None = None
+    kept_at: datetime | None = None
+    """When the customer chose to keep this agent active over the plan's limit."""
+    locked: bool = False
+    """True when the plan no longer covers this agent, so it cannot place calls.
+
+    Locked, never deleted: an agent is configuration and comes back the moment the
+    plan does. The interface must offer the way out that costs nothing - making
+    *this* one active instead - alongside the upgrade."""
 
 
 class TelephonyOptionOut(BaseModel):
@@ -144,7 +156,63 @@ async def list_voice_agents(
 ) -> list[VoiceAgentOut]:
     async with database.as_user(user.auth_user_id) as conn:
         rows = await voice_agents_repo.list_org_agents(conn, user.org_id)
-    return [_row_json(r) for r in rows]
+        effective = await billing.resolve_plan(conn, user.org_id, user.org_plan_id)
+
+    usable = usable_agent_ids(
+        [
+            AgentStanding(
+                agent_id=str(r["id"]), created_at=r["created_at"], kept_at=r["kept_at"]
+            )
+            for r in rows
+        ],
+        limit=effective.entitlements.max_voice_agents,
+    )
+    return [
+        _row_json(r).model_copy(update={"locked": str(r["id"]) not in usable})
+        for r in rows
+    ]
+
+
+@router.post("/{agent_id}/keep", response_model=VoiceAgentOut)
+async def set_agent_kept(
+    agent_id: UUID,
+    keep: bool = True,
+    user: Annotated[CurrentUser, Depends(RequirePermission(Permission.AGENTS_WRITE))] = ...,
+) -> VoiceAgentOut:
+    """Choose which agents stay active when the plan covers fewer than exist.
+
+    Not a billing action, so it needs `agents:write` rather than `billing:write` -
+    an operator deciding which of their own agents runs is not a commercial
+    decision, and gating it behind an owner would leave the person actually
+    blocked unable to unblock themselves.
+
+    Marking more agents than the plan allows is permitted: the most recent choice
+    wins and the older one falls out (`usable_agent_ids`). Refusing instead would
+    force a customer to work out which to unmark first, to reach a state the rule
+    can already resolve.
+    """
+    async with database.as_user(user.auth_user_id) as conn:
+        updated = await voice_agents_repo.set_kept(
+            conn, user.org_id, agent_id, keep=keep
+        )
+        if updated is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="No such agent."
+            )
+        rows = await voice_agents_repo.list_org_agents(conn, user.org_id)
+        effective = await billing.resolve_plan(conn, user.org_id, user.org_plan_id)
+
+    usable = usable_agent_ids(
+        [
+            AgentStanding(
+                agent_id=str(r["id"]), created_at=r["created_at"], kept_at=r["kept_at"]
+            )
+            for r in rows
+        ],
+        limit=effective.entitlements.max_voice_agents,
+    )
+    row = next(r for r in rows if str(r["id"]) == str(agent_id))
+    return _row_json(row).model_copy(update={"locked": str(agent_id) not in usable})
 
 
 def _serialize_catalog(
@@ -328,7 +396,23 @@ async def delete_voice_agent(
 ) -> None:
     async with database.as_user(user.auth_user_id) as conn:
         deleted = await voice_agents_repo.delete_agent(conn, user.org_id, agent_id)
+        if deleted is None:
+            # `voice_agents_delete` allows an owner or admin any agent, and
+            # everyone else only their own - so a DELETE that removes nothing
+            # has two very different causes. The agent being *readable*
+            # (`voice_agents_select` is plain org membership) separates them.
+            # Reporting "unknown" for an agent the caller is looking at on
+            # screen would be a lie about what happened.
+            visible = await voice_agents_repo.get_org_agent(conn, user.org_id, agent_id)
     if deleted is None:
+        if visible is not None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=(
+                    "This agent was created by someone else. You can delete agents "
+                    "you created; an owner or admin can delete any of them."
+                ),
+            )
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail=f"Unknown voice agent: {agent_id}"
         )

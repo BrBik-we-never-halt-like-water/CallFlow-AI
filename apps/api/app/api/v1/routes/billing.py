@@ -24,10 +24,19 @@ from app.auth.permissions import Permission
 from app.core.config import config
 from app.core.rate_limit import limiter
 from app.database import database
+from app.database.repositories import credits as credits_repo
 from app.database.repositories import safety_settings as safety_repo
 from app.database.repositories import subscriptions as subs_repo
+from app.database.repositories import usage_rates as rates_repo
 from app.domain.plans import Entitlements, PlanId, ladder
 from app.domain.safety import resolve_safety_settings
+
+# The pseudo-plan a credit pack is looked up under. Not a `PlanId`: a top-up is
+# not a plan and must never appear in the ladder, or it would show up as a
+# fourth card someone could "upgrade" to. Shared with `services/billing.py`'s
+# webhook handling, which is how it recognises a top-up payment with no
+# subscription row to key off - one constant, so the two cannot drift.
+from app.integrations.payments.dodo import CREDIT_PACK
 from app.integrations.payments.protocol import (
     BillingPeriod,
     GatewayUnavailable,
@@ -35,6 +44,7 @@ from app.integrations.payments.protocol import (
     PaymentCapability,
 )
 from app.services import billing
+from app.services import credit as credit_service
 
 log = logging.getLogger("callflow.billing.routes")
 
@@ -55,6 +65,10 @@ class EntitlementsOut(BaseModel):
     max_organisations: int | None
     max_ai_integrations: int | None
     daily_call_budget: int | None
+    """A runaway bound, identical on every plan - not a plan feature. Usage credit
+    is the economic limit and binds first by a wide margin, so this is shown under
+    Settings -> Safety rather than on a plan card."""
+    monthly_credit_paise: int | None
     llm_spend_limit_usd: float
 
 
@@ -79,6 +93,13 @@ class PlanOptionOut(BaseModel):
     prices: list[PlanPriceOut]
     self_serve: bool
     current: bool
+    baseline_rate_paise_per_minute: int
+    """What a connected minute costs on your own model keys - the platform fee
+    alone, since no tier add-on applies once nothing runs on CallFlow's keys.
+    The same number for every plan (`usage_rates`' one platform-fee row), carried
+    per option so a card can show it and the credit together without a second
+    request. A real call may cost more if it runs on CallFlow's keys for a tiered
+    leg - see `docs/PRICING_DECISIONS.md` §3."""
 
 
 class SubscriptionOut(BaseModel):
@@ -102,6 +123,42 @@ class PaymentOut(BaseModel):
     rather than showing one on every row and letting a third of them 404."""
 
 
+class CreditOut(BaseModel):
+    """Usage credit. **Money is the truth; minutes are an estimate.**
+
+    `estimated_minutes_left` is derived from the organisation's *current* rate, and
+    the next call may use a different pipeline. With a 23x cost spread across
+    pipelines there is no single honest conversion, which is why the interface
+    shows the money figure and labels the minutes as approximate.
+    """
+
+    balance_paise: int
+    granted_this_period_paise: int
+    rate_paise_per_minute: int
+    estimated_minutes_left: int
+    is_uncapped: bool
+    """True for a plan with no credit ceiling. The meter renders "unlimited"
+    rather than a bar, and the dial gate does not check a balance at all."""
+
+
+class LedgerEntryOut(BaseModel):
+    id: str
+    entry_kind: str
+    amount_minor: int
+    """Signed. Positive added credit, negative consumed or expired it."""
+    currency: str
+    call_key: str | None
+    rate_paise_per_minute: int | None
+    reason: str | None
+    created_at: str
+
+
+class TopUpIn(BaseModel):
+    # Same contract as `/checkout`: the caller's own retry token, so a
+    # double-click buys one pack rather than two.
+    idempotency_key: str = Field(min_length=8, max_length=120)
+
+
 class BillingOverviewOut(BaseModel):
     plan_id: str
     plan_name: str
@@ -114,11 +171,18 @@ class BillingOverviewOut(BaseModel):
     meter shows this; `entitlements.daily_call_budget` is what the *plan* permits,
     which can be higher."""
     has_custom_limits: bool
+    credit: CreditOut
     payments: list[PaymentOut]
     payments_configured: bool
     """False on a deployment with no gateway key. The interface uses this to keep
     saying "no payment processor is connected" instead of offering an upgrade
     button that would run against the stub (CLAUDE.md §4 #9)."""
+    credit_pack_configured: bool
+    """False when `DODO_PRODUCT_CREDIT_PACK` is unset. Distinct from
+    `payments_configured`: a deployment can take real subscription payments and
+    still have no top-up product, and the "Top up" button reads this rather than
+    `payments_configured` alone - CLAUDE.md §4 #9 again, the same reasoning that
+    gates the subscription buttons above, just for the other purchase."""
 
 
 class CheckoutIn(BaseModel):
@@ -152,6 +216,7 @@ def _entitlements_out(entitlements: Entitlements) -> EntitlementsOut:
         max_organisations=entitlements.max_organisations,
         max_ai_integrations=entitlements.max_ai_integrations,
         daily_call_budget=entitlements.daily_call_budget,
+        monthly_credit_paise=entitlements.monthly_credit_paise,
         llm_spend_limit_usd=float(entitlements.llm_spend_limit_usd),
     )
 
@@ -209,7 +274,10 @@ async def _live_prices() -> dict[tuple[str, BillingPeriod], Any]:
 
 
 def _plan_options(
-    prices: dict[tuple[str, BillingPeriod], Any], *, current_plan_id: str | None
+    prices: dict[tuple[str, BillingPeriod], Any],
+    *,
+    current_plan_id: str | None,
+    baseline_rate_paise_per_minute: int,
 ) -> list[PlanOptionOut]:
     """The ladder as the interface renders it.
 
@@ -234,6 +302,7 @@ def _plan_options(
             ],
             self_serve=plan.value in _SELF_SERVE,
             current=plan.value == current_plan_id,
+            baseline_rate_paise_per_minute=baseline_rate_paise_per_minute,
         )
         for plan, entitlements in ladder().items()
     ]
@@ -246,11 +315,22 @@ async def list_public_plans() -> list[PlanOptionOut]:
     Unauthenticated, and the only billing route that is. It exposes nothing an
     organisation owns: the ladder is the same for everybody, the prices are the
     ones the gateway shows on its own hosted checkout, and `current` is always
-    false because there is nobody to be current for. No database connection is
-    opened at all, which is what keeps a public route off the RLS surface
-    entirely.
+    false because there is nobody to be current for.
+
+    The one read this needs - the platform-fee row of `usage_rates` - goes
+    through `database.anonymous()`, which sets the session to Postgres' `anon`
+    role rather than opening an authenticated, org-scoped connection. `anon`
+    holds a plain `select` on `usage_rates` (seeded in the same migration as the
+    table), so this stays off the per-organisation RLS surface entirely; it is
+    a public rate card, not a query that could leak a tenant's row.
     """
-    return _plan_options(await _live_prices(), current_plan_id=None)
+    async with database.anonymous() as conn:
+        card = await rates_repo.load_rate_card(conn)
+    return _plan_options(
+        await _live_prices(),
+        current_plan_id=None,
+        baseline_rate_paise_per_minute=card.platform_fee,
+    )
 
 
 @router.get("/plans", response_model=list[PlanOptionOut])
@@ -267,7 +347,12 @@ async def list_plans(user: Annotated[CurrentUser, Depends(current_user)]) -> lis
     prices = await _live_prices()
     async with database.as_user(user.auth_user_id) as conn:
         effective = await billing.resolve_plan(conn, user.org_id, user.org_plan_id)
-    return _plan_options(prices, current_plan_id=effective.plan_id)
+        card = await rates_repo.load_rate_card(conn)
+    return _plan_options(
+        prices,
+        current_plan_id=effective.plan_id,
+        baseline_rate_paise_per_minute=card.platform_fee,
+    )
 
 
 @router.get("/subscription", response_model=BillingOverviewOut)
@@ -281,6 +366,23 @@ async def get_overview(
         )
         usage = await billing.usage_for(conn, user.org_id, calls_today=calls_today)
         payments = await subs_repo.list_payments(conn, user.org_id)
+        # The organisation's *current* rate, which today is the platform fee for
+        # everyone: no leg runs on a CallFlow key because CallFlow holds none, so
+        # `PipelineLeg` defaults `on_platform_key` to false. When platform keys
+        # exist this becomes a per-agent question and moves to the agent read.
+        # Same lazy grant as the run gate, so the meter shows what a Free
+        # organisation actually has rather than a zero it would only discover
+        # when a run was refused.
+        await credit_service.ensure_period_credit(
+            conn,
+            org_id=user.org_id,
+            entitlements=effective.entitlements,
+            has_subscription=billing.subscription_grants_credit(effective),
+        )
+        rate = await credit_service.rate_for(conn, ())
+        credit_view = await credit_service.overview(
+            conn, org_id=user.org_id, entitlements=effective.entitlements, rate=rate
+        )
 
     row = effective.subscription
     subscription = (
@@ -300,6 +402,13 @@ async def get_overview(
     receipts_available = billing.provider().supports(PaymentCapability.INVOICE_LIST)
 
     return BillingOverviewOut(
+        credit=CreditOut(
+            balance_paise=credit_view.balance_paise,
+            granted_this_period_paise=credit_view.granted_this_period_paise,
+            rate_paise_per_minute=credit_view.rate_paise_per_minute,
+            estimated_minutes_left=credit_view.estimated_minutes_left,
+            is_uncapped=credit_view.is_uncapped,
+        ),
         plan_id=effective.plan_id,
         plan_name=billing.plan_name(effective.plan_id),
         subscription=subscription,
@@ -326,7 +435,85 @@ async def get_overview(
             for p in payments
         ],
         payments_configured=config.payments_configured,
+        credit_pack_configured=bool(config.dodo_product_credit_pack),
     )
+
+
+@router.get("/credit-ledger", response_model=list[LedgerEntryOut])
+async def credit_ledger(
+    user: Annotated[CurrentUser, Depends(RequirePermission(Permission.BILLING_READ))],
+    limit: int = 100,
+) -> list[LedgerEntryOut]:
+    """The statement: every grant, hold, release, spend and expiry.
+
+    Holds and their releases are both shown rather than netted away. A customer
+    asking "why did my balance dip and come back" deserves to see that a call was
+    reserved for and did not connect - netting it would make the ledger tidier and
+    less true.
+    """
+    async with database.as_user(user.auth_user_id) as conn:
+        rows = await credits_repo.list_ledger(conn, user.org_id, limit=min(limit, 500))
+    return [
+        LedgerEntryOut(
+            id=str(row["id"]),
+            entry_kind=row["entry_kind"],
+            amount_minor=row["amount_minor"],
+            currency=row["currency"],
+            call_key=row["call_key"],
+            rate_paise_per_minute=row["rate_paise_per_minute"],
+            reason=row["reason"],
+            created_at=row["created_at"].isoformat(),
+        )
+        for row in rows
+    ]
+
+
+@router.post("/top-up", response_model=CheckoutOut)
+async def start_top_up(
+    body: TopUpIn,
+    user: Annotated[CurrentUser, Depends(RequirePermission(Permission.BILLING_WRITE))],
+) -> CheckoutOut:
+    """Buy more usage credit mid-period.
+
+    A one-time purchase, not a subscription change - so it goes through the
+    gateway's ordinary checkout against a credit-pack product, and the credit is
+    granted by the resulting `payment.succeeded` webhook rather than here. Granting
+    on this response would hand out credit for a payment that had not settled,
+    which is the rule `withholds_grant` exists to hold.
+
+    404 rather than 400 when no pack is configured: a deployment without one has
+    no top-up feature, and saying so is honest where a 400 would imply the request
+    was malformed.
+    """
+    if not config.dodo_product_credit_pack:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No credit pack is configured on this deployment.",
+        )
+
+    gateway = billing.provider()
+    if not gateway.supports(PaymentCapability.HOSTED_CHECKOUT):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="This deployment cannot take payments yet.",
+        )
+
+    try:
+        session = await gateway.create_checkout(
+            plan_id=CREDIT_PACK,
+            period=BillingPeriod.MONTHLY,
+            org_id=user.org_id,
+            subscription_row_id=uuid4(),
+            customer_email=user.email,
+            customer_name=user.name,
+            return_url=f"{config.site_url}/app/billing",
+        )
+    except GatewayUnavailable as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY, detail=exc.detail
+        ) from exc
+
+    return CheckoutOut(checkout_url=session.url)
 
 
 @router.get("/payments/{payment_id}/receipt")

@@ -427,64 +427,6 @@ async def test_ceiling_holds_under_concurrent_dialing(monkeypatch: pytest.Monkey
     assert len(blocked) == 3
 
 
-async def test_credits_already_used_before_this_run_count_toward_the_ceiling() -> None:
-    # Purely a pre-dial gate check - never reaches origination, so this holds
-    # regardless of what places the call.
-    runner = CampaignRunner(credit_ceiling=1, credits_used_before_run=1)
-    result = await runner.run_one(TRAVEL_DISCOVERY, Contact(name="A", phone="+15555550100"))
-    assert result.status == "BLOCKED"
-    assert result.disposition is Disposition.SKIPPED
-    assert "credit" in (result.disposition_reason or "")
-
-
-async def test_an_undiallable_call_releases_its_reserved_credit_for_the_next_contact() -> None:
-    # A credit is only ever actually spent by a *connected* call. A campaign
-    # with no connected number never reaches one, so a ceiling of 1 must not
-    # block a second contact once the first's reservation is handed back.
-    runner = CampaignRunner(credit_ceiling=1, credits_used_before_run=0)
-
-    first = await runner.run_one(TRAVEL_DISCOVERY, Contact(name="A", phone="+15555550100"))
-    second = await runner.run_one(TRAVEL_DISCOVERY, Contact(name="B", phone="+15555550101"))
-
-    # Both are Disposition.SKIPPED - a gate block and an undiallable campaign
-    # share that disposition, so only `status` tells "never got past the gate"
-    # (BLOCKED_STATUS) apart from "got past it and failed honestly" (this).
-    assert first.status == UNDIALLABLE_STATUS, "the call itself was never blocked"
-    assert second.status == UNDIALLABLE_STATUS, "the released credit was not reusable"
-
-
-async def test_a_carrier_failure_releases_its_reserved_credit() -> None:
-    """The same rule, on the path that actually dials. A busy line spends no
-    credit, so a ceiling of 1 must still admit the next contact."""
-    runner, _ = _dialling_runner(
-        StubGateway(fail_with=_twirp("internal", sip_status=486)),
-        credit_ceiling=1,
-        credits_used_before_run=0,
-        max_calls_per_run=5,
-    )
-
-    first = await runner.run_one(TRAVEL_DISCOVERY, Contact(name="A", phone="+15555550100"))
-    second = await runner.run_one(TRAVEL_DISCOVERY, Contact(name="B", phone="+15555550101"))
-
-    assert first.error == DialFailure.BUSY.value
-    assert second.error == DialFailure.BUSY.value, "the released credit was not reusable"
-
-
-async def test_an_answered_call_keeps_its_credit() -> None:
-    """The one path that does spend one. With a ceiling of 1, the second
-    contact must be refused - otherwise the ceiling means nothing."""
-    runner, _ = _dialling_runner(
-        credit_ceiling=1, credits_used_before_run=0, max_calls_per_run=5
-    )
-
-    first = await runner.run_one(TRAVEL_DISCOVERY, Contact(name="A", phone="+15555550100"))
-    second = await runner.run_one(TRAVEL_DISCOVERY, Contact(name="B", phone="+15555550101"))
-
-    assert first.status == "IN_PROGRESS"
-    assert second.status == BLOCKED_STATUS
-    assert "credit" in (second.disposition_reason or "")
-
-
 async def test_an_unanswered_call_is_not_credited_as_connected() -> None:
     result = await CampaignRunner().run_one(TRAVEL_DISCOVERY, Contact(name="A", phone="+15555550100"))
     assert result.answered is False

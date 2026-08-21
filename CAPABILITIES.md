@@ -342,14 +342,22 @@ approve/reject means you're signed in as someone other than the resource's actua
 
 ## 8. Credits & billing
 
-**What it is.** Two related but distinct things: the organisation's overall plan/usage
-(admin/owner), and an optional per-teammate slice of the org's existing daily call
-budget that an admin/owner can set (everyone's own "My credits" view).
+**What it is.** The organisation's overall plan/usage (admin/owner), and the
+organisation's *usage credit* - money in paise, spent per connected second, described in
+`docs/BILLING.md` and `docs/PRICING_DECISIONS.md` - which carries an optional per-teammate
+money ceiling, "My credits" for anyone who has one.
 
-**Frontend.** `/app/billing` (a sidebar destination) - admin/owner see the real plan + org-wide usage;
-everyone else sees "My credits" (their own allocation + today's usage, or a placeholder
-if nobody's set one yet). Organisation → Team pane has a per-member "Credits/day" field,
-editable by admin/owner only.
+**Superseded, kept as a marker** (`ISSUES.md` #146): a per-teammate *daily call*
+allowance ("Calls/day," a count of connected calls, separate from and money-blind to the
+usage credit above) used to sit alongside it. Retired - calls-per-day stopped being a
+meaningful lever once usage credit became the thing plans are actually sold on, and a
+second, money-blind ceiling next to the real one was confusing rather than useful.
+
+**Frontend.** `/app/billing` (a sidebar destination) - admin/owner see the real plan,
+org-wide usage, and the usage-credit meter/statement; everyone else sees "My credits"
+(their own usage-credit share and this month's spend, or a placeholder if nobody's set a
+share yet). Organisation → Team pane has one per-member field, "₹/month" (the usage-credit
+share), editable by admin/owner only.
 
 **Backend.**
 
@@ -357,26 +365,19 @@ editable by admin/owner only.
 |---|---|---|
 | `GET /api/v1/me` (`active.plan_id`) | signed in | The org's plan name - part of the identity payload, not a separate call. |
 | `GET /api/health` (`limits`) | none | The org-wide daily budget and today's real usage against it. |
-| `GET /api/v1/organisations/me/members/me/credits` | signed in | Your own allocation + `used_today` - RLS scopes this to your own row automatically. |
-| `PATCH /api/v1/organisations/me/members/{id}/credits` | `credits:write` (admin/owner) | Set a teammate's daily allocation (`>= 0`). `0` means "not set yet" in the UI's own display convention - but internally, a `0` row is enforced ("blocked entirely"), distinct from no row at all ("ungated") - see below. |
-| `GET /api/v1/organisations/me/team-performance` | `runs:read_team` | Every teammate's allocation + usage in one call - the admin/owner dashboard view. |
+| `GET /api/v1/organisations/me/members/me/credits` | signed in | Your own usage-credit cap + this month's spend - RLS scopes this to your own row automatically. |
+| `PATCH /api/v1/organisations/me/members/{id}/credit-cap` | `credits:write` (admin/owner) | Set (or clear, with `null`) a teammate's share of the organisation's usage credit, in paise. Refused with `400` above the plan's own per-period grant. |
+| `GET /api/v1/organisations/me/team-performance` | `runs:read_team` | Every teammate's usage-credit cap and spend in one call - the admin/owner dashboard view. |
+| `GET /api/v1/billing/credit-ledger` | `billing:read` | The usage-credit statement: every grant, hold, release, spend and expiry. |
+| `POST /api/v1/billing/top-up` | `billing:write` | Buy more usage credit mid-period through a one-time gateway checkout; 404 if the deployment has no credit-pack product configured. |
 
-**What to expect - the one thing worth stating explicitly:** **1 credit = 1 connected
-call, and it's enforced** (`ISSUES.md` iteration 30) - layered on top of, never instead
-of, the org-wide daily budget ([§9](#9-safety-guards--suppression-list)), which still
-applies regardless of any individual allocation. Two things trip people up:
-
-- **`used_today` counts connected calls only**, not every attempt - a call that never
-  rings through (busy, no answer, an invalid number) does not spend a credit. Testing
-  against the reserved fictional number range (`+1 555 0100`–`0199`) will therefore
-  *never* increase `used_today`, since those numbers never connect - that's correct, not
-  a stuck counter.
-- **Setting someone's allocation to `0` blocks them immediately**, before any real
-  number is dialled - but a teammate nobody has ever set an allocation for is **not**
-  gated by this check at all (only the org-wide budget applies to them). The API
-  distinguishes "no row" from "a row with `0`" internally
-  (`credits_repo.get_enforced_ceiling()`); the "My credits" display's own `0`-means-
-  unset convention is a UI simplification that doesn't apply to enforcement.
+**What to expect - the one thing worth stating explicitly:** the usage-credit cap is
+**enforced at the run gate** (`ISSUES.md` #144), alongside the organisation-wide balance -
+either can refuse a run, and both are checked once per run, not per dial. A teammate
+nobody has ever set a share for is **not** gated by this check at all (only the org-wide
+balance applies to them); the API distinguishes "no row" (`null`, ungated) from "a row
+with `0`" (blocked entirely) the same way every other tri-state ceiling in this ladder
+does.
 
 **Plans are now enforced, and money moves.** A plan grants entitlements - voice agents,
 seats, organisations, model-provider keys, and a daily call ceiling - and hitting one
@@ -386,21 +387,19 @@ protocol: hosted checkout, plan change, cancel-at-period-end, a signature-verifi
 webhook, and a Sync fallback for a delivery that was missed. Calls themselves are still
 never billed per-call.
 
-Two limits worth knowing: an **enterprise deal cannot yet be given custom limits** through
-the product (`org_entitlement_overrides` and the platform-admin surface are designed in
-`docs/PLATFORM_ADMIN.md` but not built, so `has_custom_limits` is always `false`), and
-**a credential connected on a higher plan keeps working after a downgrade** - only new
-connects are refused, deliberately, so a failed renewal never breaks a live operation.
+One limit worth knowing: **a credential connected on a higher plan keeps working after a
+downgrade** - only new connects are refused, deliberately, so a failed renewal never
+breaks a live operation. An enterprise deal *can* be given custom limits, through the
+platform-admin surface (`docs/PLATFORM_ADMIN.md`, `ISSUES.md` #136) - `has_custom_limits`
+reflects a real `org_entitlement_overrides` row, not a hard-coded `false`.
 
-**Debugging this section.** `used_today` in both the "My credits" view and the admin
-Team-performance panel are two independent live SQL queries against the same underlying
-`call_outcomes`/`runs` data - they should always agree for the same person on the same
-day. If they don't, that's a real bug worth reporting with both response bodies and a
-timestamp (UTC day boundaries are the most likely explanation, not a calculation error).
-This number is **not** the same as `GET /api/health`'s org-wide `used_today` - that one
-is an in-process rate-limiter counter that resets on every deploy/restart (a known,
-documented limitation, `SYSTEM.md` §7) and is correct only for "since the process last
-restarted," never "since midnight."
+**Debugging this section.** `credit_spent_paise` in both the "My credits" view and the
+admin Team-performance panel go through the same `credit_service.member_credit_cap_status`
+call - they should always agree for the same person at the same moment. If they don't,
+that's a real bug worth reporting with both response bodies and a timestamp. This number is
+**not** the same as `GET /api/health`'s org-wide `used_today` - that one is a call count
+from an in-process rate-limiter that resets on every deploy/restart (a known, documented
+limitation, `SYSTEM.md` §7), not a money figure at all.
 
 ---
 
@@ -486,7 +485,8 @@ eventually place calls from its own number instead of relying on the shared voic
 provider is separate, not-yet-built work** - the UI says so plainly rather than
 pretending it's wired up.
 
-**Frontend.** `/app/settings/integrations` (admin/owner only) - connect, update,
+**Frontend.** `/app/integrations` (admin/owner only, primary nav - the old
+`/app/settings/integrations` path redirects here) - connect, update,
 disconnect, with a `NotWiredNotice` explaining that dialling through these isn't live
 yet.
 

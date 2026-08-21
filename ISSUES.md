@@ -145,10 +145,28 @@ exist in this repo**; `SYSTEM.md` §12 is the closest real gap map until it's wr
 | [#123](#123--every-deploy-to-dev-has-failed-for-20-hours-its-database-is-stamped-at-an-alembic-revision-that-exists-nowhere-in-this-repository) | S1  | Every deploy to dev fails - dev's database is stamped at a revision that exists nowhere in the repo                   | infra          | it-42 | **FIXED**        |
 | [#124](#124--a-conversation-stuck-on-its-loader-forever-after-both-of-its-requests-returned-200) | S2  | Conversation stuck on its loader forever, after both its requests returned 200                                        | web            | it-42 | **FIXED**        |
 | [#125](#125--a-500ms-anti-flicker-floor-could-stay-raised-forever-and-it-gated-the-entire-conversation-panel) | S2  | A 500ms anti-flicker floor could stay raised forever, and it gated the whole conversation panel                       | web            | it-42 | **FIXED**        |
-| [#126](#126--a-seat-limit-counted-when-an-invitation-was-sent-and-never-again-so-a-downgrade-let-an-organisation-past-it-one-accept-at-a-time) | S2  | Seat limit counted at invite, never at accept - a downgrade let an org past it one accept at a time | api | it-43 | **FIXED** |
-| [#127](#127--the-enterprise-tier-could-not-be-sold-has_custom_limits-was-hard-coded-false-and-no-override-table-existed) | S2  | Enterprise tier unsellable: `has_custom_limits` hard-coded `false`, no override table, no platform surface | api+web | it-43 | **FIXED** |
-| [#128](#128--the-cap-was-reachable-through-four-ui-surfaces-that-all-walked-someone-into-the-refusal) | S3  | Four UI surfaces offered an action the plan would refuse | web | it-43 | **FIXED** |
-| [#129](#129--not-a-bug-the-llm-spend-cap-enforces-nothing-because-the-feature-it-would-gate-does-not-exist) | -  | LLM spend cap enforces nothing - the key-minting feature it would gate does not exist | api | it-43 | **INVALID** |
+| [#126](#126--accepting-an-invitation-offered-a-signup-form-to-people-who-already-have-an-account) | S2  | Accepting an invitation offered a signup form to people who already have an account                                   | web + backend  | it-43 | **FIXED**        |
+| [#127](#127--your-role-in-one-organisation-decided-whether-you-could-leave-it) | S2  | Your role in one organisation decided whether you could leave it - mixed-role members got stranded                    | web            | it-43 | **FIXED**        |
+| [#128](#128--agent-drafts-followed-you-into-the-next-organisation) | S2  | Agent drafts followed you into the next organisation and prefilled a new agent there                                  | web            | it-43 | **FIXED**        |
+| [#129](#129--an-operator-could-build-an-agent-and-then-had-no-way-to-remove-it) | S2  | An operator could build an agent and then had no way to remove it, their own included                                 | backend + web  | it-43 | **FIXED**        |
+| [#130](#130--the-canvas-loop-measured-and-reallocated-itself-every-frame) | S3  | Every animated canvas forced a layout and reallocated its backing store 60x a second                                  | web            | it-44 | **FIXED**        |
+| [#131](#131--the-wheel-picker-read-scrolltop-back-after-writing-it-forcing-a-layout-every-frame) | S3  | The wheel picker read `scrollTop` back after writing it - layout thrash on preset selection                            | web            | it-44 | **FIXED**        |
+| [#132](#132--voice-agents-were-visible-to-every-member-missing-the-per-creator-silo-the-rest-of-the-product-already-had) | S2  | Voice agents were visible to every member - missing the per-creator silo campaigns and runs already had                | backend        | it-44 | **FIXED**        |
+| [#133](#133--nine-icon-only-controls-had-hit-areas-below-44x44-and-no-control-moved-when-pressed) | S3  | Nine icon-only controls had hit areas below 44x44, and no control moved when pressed                                  | web            | it-45 | **FIXED**        |
+| [#134](#134--settings-listed-an-integrations-tab-that-threw-you-out-of-settings) | S4  | Settings listed an Integrations tab that threw you out of Settings                                                     | web            | it-45 | **FIXED**        |
+| [#135](#135--a-seat-limit-counted-when-an-invitation-was-sent-and-never-again-so-a-downgrade-let-an-organisation-past-it-one-accept-at-a-time) | S2  | Seat limit counted at invite, never at accept - a downgrade let an org past it one accept at a time | api | it-46 | **FIXED** |
+| [#136](#136--the-enterprise-tier-could-not-be-sold-has_custom_limits-was-hard-coded-false-and-no-override-table-existed) | S2  | Enterprise tier unsellable: `has_custom_limits` hard-coded `false`, no override table, no platform surface | api+web | it-46 | **FIXED** |
+| [#137](#137--the-cap-was-reachable-through-four-ui-surfaces-that-all-walked-someone-into-the-refusal) | S3  | Four UI surfaces offered an action the plan would refuse | web | it-46 | **FIXED** |
+| [#138](#138--not-a-bug-the-llm-spend-cap-enforces-nothing-because-the-feature-it-would-gate-does-not-exist) | -  | LLM spend cap enforces nothing - the key-minting feature it would gate does not exist | api | it-46 | **INVALID** |
+| [#139](#139--credit_appendcredit_balancecredit_member_spend-took-org_id-as-a-plain-argument---any-signed-in-user-could-forge-or-read-another-organisations-usage-credit) | S1  | `credit_append`/`credit_balance`/`credit_member_spend` had no caller check - any signed-in user could forge or read another organisation's usage credit | api | it-47 | **FIXED** |
+| [#140](#140--a-lapsed-or-abandoned-subscription-permanently-froze-an-organisations-usage-credit-grants) | S1  | A lapsed or abandoned subscription permanently froze an organisation's usage-credit grants | api | it-47 | **FIXED** |
+| [#141](#141--subscriptionplan_changedupdated-webhook-events-were-unmapped---a-plan-change-or-a-scheduled-cancellation-never-applied) | S1  | `subscription.plan_changed`/`.updated` webhook events were unmapped - a plan change or a scheduled cancellation never applied | api | it-47 | **FIXED** |
+| [#142](#142--credit-pack-top-ups-were-unwired-end-to-end---no-subscription-row-to-match-and-no-code-anywhere-granted-credit) | S2  | Credit-pack top-ups were unwired end to end - no subscription row to match, and no code anywhere granted credit | api | it-47 | **FIXED** |
+| [#143](#143--the-growth-pricing-card-and-the-trust-page-advertised-features-that-dont-exist) | S2  | The Growth pricing card and the `/trust` page advertised features that don't exist | web | it-47 | **FIXED** |
+| [#144](#144--the-per-member-usage-credit-cap-had-a-column-and-an-enforcement-function-and-no-caller) | S3  | The per-member usage-credit cap had a column and an enforcement function, and no caller | api+web | it-47 | **FIXED** |
+| [#145](#145--three-smaller-billing-ui-gaps-a-naming-collision-a-false-unlimited-claim-and-a-stale-sidebar) | S4  | Three smaller billing UI gaps: a naming collision, a false "Unlimited" claim, and a stale sidebar | web | it-47 | **FIXED** |
+| [#146](#146--retired-the-per-teammate-call-count-allocation-usage-credit-is-the-one-share-left) | -   | Retired the per-teammate call-count allocation - usage credit is the one share left | api+web | it-47 | **FIXED** |
+| [#147](#147--a-teammates-usage-credit-cap-could-be-set-above-the-plans-own-per-period-grant) | S2  | A teammate's usage-credit cap could be set above the plan's own per-period grant | api | it-47 | **FIXED** |
 
 ---
 
@@ -4898,12 +4916,268 @@ Two defects here, and either alone is enough:
 
 **Verified.** `eslint` clean (including `react-hooks/set-state-in-effect` and `react-hooks/purity`, both of which caught real problems in the first drafts of this fix), `tsc` clean.
 
-## Iteration 43 - 2026-08-18 · closing the plan model: a seat limit nobody re-checked, and the enterprise tier that could not be sold
+## Iteration 43 - 2026-08-17 · an invitee who already had an account was shown a signup form that could not succeed
+
+### #126 - accepting an invitation offered a signup form to people who already have an account
+
+**S2 · FIXED · web + backend · `apps/web/app/(auth)/accept-invite/[token]/page.tsx`, `public.lookup_invitation()`**
+
+Reported live. Someone with an existing CallFlow account, signed out, opens an invitation link:
+
+1. The page offers **"Set a password and you'll join the team"** - a signup form.
+2. They fill in name and password and submit.
+3. Supabase rejects it: a user with that email already exists, sign in or reset instead.
+4. The only way through is to leave the page, sign in by the normal route, and open the link a second time - at which point it works, because the signed-in branch just asks them to accept.
+
+The page branched on **whether the visitor was signed in**, and nothing else. Signed out meant "new person, collect a password", which is wrong for every invitee who already has an account - and inviting an existing user into a second organisation is a completely ordinary thing to do, not an edge case.
+
+**Impact.** Every existing user invited to another organisation hit a dead end that blamed them ("a user with this email already exists") for following the link they were sent. Recoverable only by knowing to sign in first and re-open the link, which nothing on the page said.
+
+**Fix.** `public.lookup_invitation()` gains `account_exists`, so the page can branch on *who the invitee is* rather than only on whether they happen to be signed in already. Signed out now has two branches: an address with an account gets a sign-in form (read-only email, password, "Sign in and join", and a **Forgot your password?** link); an address without one gets the signup form as before. Both accept the invitation immediately after authenticating, so the link works on the first click either way.
+
+The card's own copy follows the branch - "Sign in to join the team" rather than "Set a password" - since promising a password step and then not offering one is its own small lie.
+
+**Not an enumeration surface.** `account_exists` is reachable only through a valid invitation token, which is a secret delivered to that mailbox, and the same response already returns the invited address. There is no way to ask this question about an arbitrary email.
+
+**Verified.** Migration `f4b2c9e17a35` applied locally, single head. The function was exercised directly against the real schema with two invitations - one to an address that has an account, one to an address that does not - asserting `account_exists` is `true` and `false` respectively, with the probe rows deleted afterwards. `ruff` clean, backend suite 381 passed against the same baseline, `eslint` and `tsc` clean.
+
+**No regression test.** The DB-backed tests cannot run locally (`gen_salt` is unavailable - `pgcrypto` sits in `extensions`, off the tests' `search_path`, the same cause behind the 146 pre-existing errors) and CI's API job completes in ~20s, which is too fast to be running them either. Until that environment works, a test here would be written and never executed, so the direct database probe above is the verification of record. Worth fixing the test environment before this area changes again.
+
+### #127 - your role in one organisation decided whether you could leave it
+
+**S2 · FIXED · web · `apps/web/components/layout/app-shell.tsx`, `apps/web/app/(app)/app/chat/chat-shell.tsx`**
+
+Two defects found while auditing whether one organisation's data can reach another.
+
+**1. The org switcher was gated on role, and the gate read the *current* org.**
+
+```tsx
+// Switching between organisations ... is an admin/owner concern.
+if (!hasRole(profile, 'owner', 'admin')) {  // <- static label, no switcher
+```
+
+The reasoning reads sensibly and is wrong in a way that only shows up with mixed roles: someone who owns organisation A and is a *viewer* in B loses the switcher the moment they arrive in B - the control that would take them back is the one being hidden. **They are stranded there**, with no route out short of clearing site data, because the pinned org lives in `localStorage`.
+
+The API never agreed with the gate: `GET /organisations` (`list_mine`) takes a plain `Depends(current_user)` with no permission requirement and has always returned every membership to every member. This was a UI-only restriction, so lifting it needed no backend change.
+
+Membership is what entitles someone to move between organisations; role governs what they can do *inside* one. The condition is now `list.length > 1 || hasRole(profile, 'owner', 'admin')` - the admin half stays only because this menu is also where **New organisation** lives, and a single-org owner still needs it.
+
+**2. An open conversation survived an org switch.**
+
+Chat's channel list and member list both key on `orgId` and refetch on a switch, but the open conversation lives in the `?c=` query param, which does not change - so the right-hand pane went on showing the **previous organisation's conversation and its already-fetched messages** beside a list that had moved on. RLS blocks any new read of that channel, but nothing un-renders what is already on screen. Now the conversation closes when the active org changes: a channel id from another organisation has no meaning in this one, so no selection is the honest result.
+
+**3. The previous organisation's data stayed on screen during the switch.**
+
+Re-fetching on switch is not the same as isolating, and every org-scoped surface got this wrong in the same way. `app-store` and each page replace their state only when the *new* response arrives, so for the length of a request the dashboard showed organisation A's runs, escalations and safety numbers while the switcher already said B. The `catch` branches make it worse: keeping stale data on a failed refresh is right for a refresh of the same organisation and wrong across a switch, where it leaves A's rows up **indefinitely** while you are in B.
+
+Fixed in two places, because they sit either side of the provider boundary:
+
+- `AppStoreProvider` clears runs, escalations and safety settings during render the moment the org changes, before anything can render them.
+- `AppShell` keys the page subtree on the active org (`<Fragment key={activeOrgId}>`), so **every page remounts** on a switch and every `useState` in it returns to its initial value. Auditing ten pages would have fixed ten pages; keying the subtree fixes the class, including pages nobody has written yet.
+
+Both key on `useActiveOrg()` rather than `session.profile.active.org_id`, deliberately. That is the same value `useOrgScopedEffect` and the API client's `X-Org-Id` read, so the clear and the re-fetch are driven by one signal in the right order. The session's copy only updates once `/me` returns - *after* the re-fetch - so resetting on it would wipe the new organisation's freshly-loaded data and leave nothing to trigger another load.
+
+Losing scroll position and in-page state on a switch is the correct outcome: you are looking at a different tenant.
+
+**What was checked and found already correct.** Worth recording so the next audit is shorter:
+
+- Every other org-scoped page refetches on switch, via `useOrgScopedEffect` or `useAppStore` (which uses it). `runs/new` and `settings/safety` looked exposed but read through the store; `profile` and `organisation/new` are not org-scoped.
+- Locally persisted state is keyed by entity id (`callflow.campaign.settings.<campaignId>`, `callflow.agent.draft.<agentId>`), and a campaign or agent belongs to exactly one organisation, so those cannot bleed. `callflow.campaign.draft` is a one-shot `sessionStorage` handoff, read and removed immediately.
+- **Server-side isolation verified directly**, not assumed: with `request.jwt.claims` and `role` set exactly as `database.as_user()` installs them, a user belonging to 2 of the 8 organisations in the database saw 2 organisations, 3 memberships, and **zero rows belonging to an organisation they are not a member of**. RLS is doing its job.
+
+**Impact.** Anyone with different roles across organisations could be trapped in one of them - which for a multi-tenant product is the switch feature not working at all for exactly the people who need it most. The chat leak is narrower but is literally one organisation's content displayed while inside another.
+
+**Verified.** `eslint` 0 errors on both changed files (one pre-existing `<img>` warning elsewhere in `app-shell.tsx`), `tsc` clean, cross-tenant probe above.
+
+### #128 - agent drafts followed you into the next organisation
+
+**S2 · FIXED · web · `apps/web/lib/agent-draft.ts`, `apps/web/lib/hooks/use-active-org.ts`**
+
+Reported live, and a hole in #127's own audit. That entry recorded locally-persisted state as safe because it is "keyed by entity id, and a campaign or agent belongs to exactly one organisation". True only once the entity exists. **A new agent has no id yet**, and every draft key was `callflow.agent.draft.<agentId|new>[.<fingerprint>]` - no organisation anywhere in it.
+
+Two consequences, both reported:
+
+- `listUnsavedAgentDrafts()` scanned a prefix shared by every organisation, so the Drafts tab in organisation B listed work started in A - including the draft of an agent that had already been created in A, whose real card had correctly disappeared on the switch.
+- `loadAgentDraft(null)` returned "the newest unsaved draft in this browser" with no organisation filter, so opening **Create agent** in B prefilled the name, prompt, providers and voice last used in A.
+
+**Impact.** One organisation's configuration presented as the starting point for another's, in the one part of the product where a wrong provider or prompt is invisible until a call is placed. It also made #127's isolation guarantee untrue in a place it claimed to have checked.
+
+**Fix.** The organisation is now part of the key: `callflow.agent.draft.v2.<orgId>.<agentId|new>[.<fingerprint>]`. Every read, write, clear and eviction is scoped to one organisation and no-ops when no organisation has resolved yet, rather than guessing.
+
+The `v2` segment exists to make the old keys identifiable: `<orgId>` and `<agentId>` are both UUIDs in the same position, so the two shapes are otherwise indistinguishable. `purgeLegacyAgentDrafts()` deletes everything under the old prefix on the next read - without it those drafts are merely *unreachable* rather than gone, which would leave the reporter's current bleeding drafts sitting in storage forever, and still on screen until a reload.
+
+**Which organisation id.** A new `useScopedOrgId()` prefers the switcher's value (`useActiveOrg()`) and falls back to the session's. Neither alone works: the switcher's is empty until someone switches for the first time, so early drafts would land under a key that becomes unreachable the moment they do; the session's lags a switch, because it only updates once `/me` returns - long enough to read the previous organisation's drafts into a freshly-opened editor. Together they give a real id at all times that moves when the rest of the app moves.
+
+**Checked at the same time:** `campaign-draft.ts` has the same `?? 'default'` shape (`settingsKey(existing?.id ?? '')`) but is **not** affected - `.default` is only ever read, never written, because every save goes through `saveLocalSettings(saved.id, …)` with a real id. So the key never exists and the read falls through to `DEFAULT_SETTINGS`. Left alone rather than changed for symmetry.
+
+**Verified.** `eslint` clean - it caught a real missing `scopedOrgId` dependency on the editor's persist effect - and `tsc` clean.
+
+### #129 - an operator could build an agent and then had no way to remove it
+
+**S2 · FIXED · backend + web · `app/auth/permissions.py`, `voice_agents_delete`, `apps/web/app/(app)/app/agentic/page.tsx`**
+
+Reported live. An operator creates a voice agent and cannot delete it - not someone else's, their own. The only way to remove it was to ask an owner or admin.
+
+Wrong in two independent layers, which is why it was total rather than partial:
+
+| Layer | Before |
+| --- | --- |
+| `app/auth/permissions.py` | `AGENTS_DELETE` sat in `_ADMIN` only, so the route rejected an operator before RLS was ever consulted |
+| `voice_agents_delete` | `has_org_role(org_id, ['owner','admin'])` - no creator branch at all |
+
+Meanwhile `voice_agents_insert` has always allowed an operator. A role that can create something and can never remove it accumulates its own mess and needs someone senior to clean it up.
+
+**Fix.** The two layers now answer two different questions, which is the division the rest of the schema already uses (`channels_update`, `messages_update`):
+
+- `AGENTS_DELETE` moves to `_OPERATOR`, and means "may delete agents **at all**". Viewer still cannot.
+- `voice_agents_delete` becomes `has_org_role(org_id, ['owner','admin']) or created_by = public.current_user_id()` - owner or admin may remove any agent in the organisation, everyone else only what they created.
+
+`created_by` has been on the table since `202608151200`, so no backfill: rows written before it existed have `created_by is null` and stay owner/admin-only, which is the safe side.
+
+**The route no longer lies about why.** A delete that removes nothing had one message - `404 Unknown voice agent` - for two very different causes. Since `voice_agents_select` is plain org membership, the caller is usually *looking at* the agent they were just told does not exist. The route now re-reads it: still visible means `403` naming the actual rule ("This agent was created by someone else. You can delete agents you created; an owner or admin can delete any of them"), genuinely absent still means `404`.
+
+**UI.** The Delete control now appears only where it would succeed - `agents:delete` **and** (owner/admin **or** you created it) - rather than on every card for a role that mostly could not use it. The agents list also splits into **Built by you** and **Built by your team** when there is something on both sides, so the agents you can edit and remove are findable without reading every card's "by" line. One group on its own stays ungrouped: a heading over the only section you have is a label, not information.
+
+**Verified at the database level**, not just in the UI. Two real members of one organisation, an agent created by each, acting with `request.jwt.claims` set exactly as `database.as_user()` installs them:
+
+```
+operator deletes OWN agent       -> rows deleted: 1
+operator deletes ANOTHER's agent -> rows deleted: 0
+operator can still SEE that agent -> visible: 1
+```
+
+That third line is the one that justifies the 403: the row is readable and undeletable, so "unknown" would have been false. Probe ran inside a transaction and was rolled back.
+
+`test_permissions.py` caught the change, as it should have - the old test asserted an operator *cannot* delete agents. Rewritten to state the new rule and why the two questions are separate, rather than deleted. Backend suite back to its baseline exactly (1 pre-existing failure, 381 passed, 146 pre-existing errors), `ruff`, `eslint` and `tsc` clean.
+
+**Left alone deliberately: `voice_agents_update`.** Any operator may still edit any agent in the organisation, so you can edit a colleague's agent but not delete it. That asymmetry is real and worth a decision, but tightening it would silently break teams who share agents on purpose - it should not ride along inside a delete fix.
+
+## Iteration 44 - 2026-08-17 · scrolling was jittery because every canvas forced a layout sixty times a second
+
+### #130 - the canvas loop measured and reallocated itself every frame
+
+**S3 · FIXED · web · `apps/web/lib/hooks/use-canvas-animation.ts`, `apps/web/components/brand/voice-field.tsx`**
+
+Reported as "scrolling on the Agents page is very jittery". The cause is in the shared canvas driver, so it applied to every animated canvas in the product - the Agents hero, the brand wave, and four marketing sections.
+
+`useCanvasAnimation`'s frame loop opened with `const s = size()`, and `size()` did two of the most expensive things available, sixty times a second:
+
+- `getBoundingClientRect()` - a **forced synchronous layout**. During a scroll, when the browser is already mid-layout, this is the textbook way to produce jank.
+- `cv.width = …; cv.height = …` - assigning either **discards the canvas backing store and allocates a new one**, even when the value is unchanged. Plus a `getContext` and a `setTransform` behind it.
+
+None of it was needed per frame. The size only changes when the element changes size, and a `ResizeObserver` was already watching for exactly that - the per-frame call was redundant work, not a safeguard.
+
+On top of that, `VoiceField` called `getComputedStyle(document.documentElement)` once per frame to read `--field-ink` and `--field-gain` - a forced **style** resolution to go with the forced layout.
+
+**Fix.** `size()` now runs on mount and from the `ResizeObserver`, caches the context and dimensions, and only touches `width`/`height` when they actually differ. The frame loop reads the cache and draws. `VoiceField` samples its two tokens at 4Hz instead of 60Hz - neither is animated; the accent follows the theme and the gain dims a whole surface.
+
+**One trap in that sampling, worth recording.** The first version keyed the cache on the frame's own `t`, which restarts at zero for every canvas instance - a second field mounting would have sat on a cache stamped in the first one's future and never resampled. It also would have broken the reduced-motion path, which paints **exactly one frame and never again**: a stale sample there is not a quarter-second of the wrong accent, it is the wrong accent until a reload - precisely the bug the hook's `theme` dependency was added to prevent. Now keyed on `performance.now()`, and forced whenever `reduced` is set.
+
+**Impact.** Two forced layout/style passes per frame per canvas, removed. This was jitter rather than breakage, which is why it survived: nothing errors, the page just never feels settled.
+
+**Verified.** `eslint` 0 errors, `tsc` clean on source. **Not measured** - a before/after frame profile needs a browser, and the reasoning here is structural rather than empirical: forced layout and backing-store reallocation per frame are wrong regardless of what a profile would say. Worth a devtools performance trace on the Agents page to confirm the felt improvement.
+
+### #131 - the wheel picker read `scrollTop` back after writing it, forcing a layout every frame
+
+**S3 · FIXED · web · `apps/web/components/ui/wheel-picker.tsx`**
+
+Reported as "this section is very jittery when I select presets" - the Transcriber / Model / Voice wheels on the agent editor. The "when I select presets" part is the clue: a preset spins **several wheels at once**, each with its own animation loop.
+
+`scrollTop` is a layout property. Writing it invalidates layout; reading it again in the same frame forces the browser to flush that layout synchronously before it can answer. The eased spin did exactly that, twice:
+
+```ts
+element.scrollTop = from + distance * eased;                 // write
+… (element.scrollTop / ITEM_HEIGHT).toFixed(3)              // read  -> forced layout
+const row = Math.round(element.scrollTop / ITEM_HEIGHT);    // read  -> again
+```
+
+One wheel is survivable. Four wheels, each running that loop, interleaving writes and reads across the same frame, is layout thrashing - and the value being read back is the value that was just assigned, so none of it bought anything.
+
+The gesture path had a milder version: `recentre()` may write `scrollTop`, and `paintOffset()` plus the index calculation then each read it back.
+
+**Fix.** The animation loop computes the position once into a local and uses it for all three writes. `recentre()` returns where the wheel ended up and `paintOffset()` takes an optional position, so a gesture frame reads `scrollTop` exactly once. The remaining reads are all one-per-animation setup rather than per-frame.
+
+Nothing about the animation's design changed - the hand-driven `scrollTop` write per frame is still right, and the comment explaining why (`snap-mandatory` re-snapping a native smooth scroll) still stands. What changed is that the loop no longer asks the DOM to re-measure what it just set.
+
+**Impact.** Jitter, not breakage, on the one interaction where the product shows off - picking a voice stack. It got worse the more wheels a preset touched, which is why it read as "presets are janky" rather than "the wheel is janky".
+
+**Verified.** `eslint` clean, `tsc` clean on source, page serves. **Not measured** - same caveat as #130: confirming the felt improvement needs a devtools frame profile while selecting a preset, which needs a browser.
+
+### #132 - voice agents were visible to every member, missing the per-creator silo the rest of the product already had
+
+**S2 · FIXED · backend · `voice_agents_select` / `_update` / `_delete` (migration `c9f47a1e6b28`)**
+
+Requested: an operator should have access to their own agents and nobody else's; an admin should see everyone's.
+
+Campaigns, runs and call outcomes were narrowed to exactly that in `202608092000` - "operators see only what they created; owner, admin and viewer keep seeing everything". Voice agents were built afterwards and kept the older flat `is_org_member(org_id)`, so every operator could see every colleague's agent. This is that migration's rule, applied to the table that missed it.
+
+Viewer follows the precedent and keeps seeing everything, which is what makes it the read-only oversight role rather than a weaker operator.
+
+**Three policies moved, not one.** Visibility alone would have been a half-measure:
+
+| Policy | Before | After |
+| --- | --- | --- |
+| `select` | `is_org_member(org_id)` | owner/admin/viewer see all, everyone else their own |
+| `update` | **any** operator, **any** agent in the org | owner/admin any; operator their own |
+| `delete` | owner/admin, or `created_by` (from `b6d1e93af472`) | same, plus the role check below |
+
+`update` is the one that mattered. Left as it was, an operator would have been unable to *see* a colleague's agent while still being permitted to overwrite one whose id they happened to hold - visibility narrowed, write surface not. `202608092000` could leave its write policies alone because they were already creator-scoped; this table's were not. It also settles the asymmetry `#129` deliberately left open ("you may edit a colleague's agent but not delete it") - the requirement here decides it rather than a guess.
+
+**Each non-owner branch also requires the `operator` role**, not just a `created_by` match. Without it, someone demoted from operator to viewer would keep write access to agents they had created, because `created_by` does not change when a role does. The API blocks that anyway - viewer holds neither `AGENTS_WRITE` nor `AGENTS_DELETE` - but RLS has to be right on its own (CLAUDE.md §4b). `insert` is unchanged: who may create an agent is a role question and it already answers it.
+
+**Checked before narrowing.** `telephony_provisioning`'s agent existence check reads `voice_agents` through the caller's own RLS connection, and its docstring already leans on `voice_agents_select` for security ("an agent id from another org simply is not there"). Narrowing makes that check stricter, not broken: an operator can now only provision a number for an agent they own, which is the same rule. It is the only other reader; nothing else joins to the table.
+
+**Verified at the database level.** Two real members of one organisation, an agent created by each, claims installed exactly as `database.as_user()` does:
+
+```
+OPERATOR sees: silo-mine                      (their own only)
+OPERATOR edits another's agent -> rows: 0     (blocked)
+OWNER sees:    silo-mine, silo-theirs         (everything)
+```
+
+Both probes ran in transactions and were rolled back. `ruff` clean; backend suite at its baseline exactly (1 pre-existing failure, 381 passed, 146 pre-existing errors).
+
+**No frontend change was needed**, which is worth stating rather than assuming: for an operator the "Built by your team" group is now always empty, so `#129`'s split collapses to a single grid on its own, and Delete correctly appears on everything an operator can see.
+
+**Open question, deliberately not answered here.** Nothing tells an operator their view is scoped - they see their own agents and cannot tell whether others exist. Campaigns and runs have behaved this way since `202608092000` with no such copy either, so this follows the precedent rather than inventing a one-off. If it should be said, it should be said on all three surfaces at once.
+
+**Still no regression test**, for the third time in this area: the DB-backed tests cannot run locally (`gen_salt`, `pgcrypto` off the tests' `search_path`) and CI's API job finishes too fast to be running them. A per-creator RLS rule is exactly what a cross-tenant test exists to protect, so the database probe above is the verification of record. **Fixing that test environment should come before the next change here.**
+
+## Iteration 45 - 2026-08-18 · a UI polish pass, scoped by an audit rather than by taste
+
+### #133 - nine icon-only controls had hit areas below 44x44, and no control moved when pressed
+
+**S3 · FIXED · web · `apps/web/app/globals.css` + 6 components**
+
+Asked to "fix the UI and design". The audit found the design system in good shape - 2,410 lines of tokens, 23 documented rounds, skip links, `aria-label`s, reduced-motion, token-only colour - so this was scoped to preserve-mode polish rather than a restyle. Two real defects came out of it.
+
+**Hit areas.** A dialog's close, a toast's dismiss, the input clear, the avatar trigger, and two overflow menus sat at 32px or 36px. WCAG 2.5.5 asks 44x44; Apple and Google land on 44pt and 48dp. New `.hit-target` grows the tappable region with a centred pseudo-element and leaves the visual untouched, so the deliberate compactness survives. Applied to seven of nine - **not** to `Button`'s `sm`, whose toolbar neighbours would then have *overlapping* hit areas, which mis-taps worse than a small target and is what WCAG's spacing exception exists for.
+
+**Tactile press.** Colour said "registered"; nothing said "pushed". The reason it was missing is documented above `VARIANTS`: `primary`/`secondary` take their pressed colour from unlayered `.btn-glass-*`, so no Tailwind `active:` utility can win on `background`. `.press` uses `translate` instead - a different property, GPU-composited, applied once to the base rather than per variant. Off under `prefers-reduced-motion`.
+
+Tailwind v4 compiles `-translate-y-1/2` to that same `translate` property, so the input's clear button gets `hit-target` **without** `press` - together they would have knocked it out of vertical centre on click.
+
+**Two candidates were left alone**, which is the more reusable half: typography (§20 already re-scaled it, no defect found) and spacing rhythm (a grep suggested `gap-6` vs `gap-1` across pages; the `gap-1` hits were page-*title* stacks where 4px is correct, so the measurement was wrong, not the spacing). `DESIGN_NOTES.md` §24 records both non-findings, because the next person asked to fix the UI will run the same two greps.
+
+**Verified.** `eslint` 0 errors, `tsc` clean on source. Not measured in a browser - hit-area growth is geometric rather than perceptual, but a device check on the toast dismiss and the avatar trigger is worth doing.
+
+### #134 - Settings listed an Integrations tab that threw you out of Settings
+
+**S4 · FIXED · web · `apps/web/app/(app)/app/settings/layout.tsx`, `CAPABILITIES.md`**
+
+Integrations had already moved to the primary nav, and `settings/integrations/page.tsx` was reduced to a bare `redirect('/app/integrations')` - kept deliberately, since the old path is in browser history and in `SYSTEM.md`. What survived the move was the **nav entry**. Clicking "Integrations" inside Settings therefore navigated out of Settings entirely, which reads as a broken tab rather than a relocated feature.
+
+Removed the entry; kept the redirect. A comment sits where the tab used to be so it does not get helpfully restored.
+
+`CAPABILITIES.md` still told readers the frontend lived at `/app/settings/integrations` and now names the real path. `SYSTEM.md` was already correct. Nothing in code linked to the old route - the two remaining mentions describe `ConnectDialog` as a structural template, which is still accurate since that component moved with the page.
+
+**Left alone:** `VOICE_AGENT_PLATFORM.md` still points at the old file for the `COMING_SOON` vendor list. It is a planning document rather than a reference one, so correcting it was not folded into this.
+## Iteration 46 - 2026-08-19 · closing the plan model: a seat limit nobody re-checked, and the enterprise tier that could not be sold
 
 Four gaps found by auditing the billing work against `docs/BILLING.md`'s own plan rather than
 against the code written for it. Three were real; the fourth turned out not to exist.
 
-### #126 - a seat limit counted when an invitation was sent and never again, so a downgrade let an organisation past it one accept at a time
+### #135 - a seat limit counted when an invitation was sent and never again, so a downgrade let an organisation past it one accept at a time
 
 **S2 · FIXED · api · `alembic/versions/202608181000_enforce_seat_limit_on_membership_insert.py`, `repositories/invitations.py`, `routes/invitations.py`**
 
@@ -4932,7 +5206,7 @@ two- and three-member orgs on Free, which allows one seat. Fixed at the tenant f
 than at a dozen call sites, with a comment saying why, because a seat refusal inside an RLS test
 looks exactly like a policy failure.
 
-### #127 - the enterprise tier could not be sold: `has_custom_limits` was hard-coded `false` and no override table existed
+### #136 - the enterprise tier could not be sold: `has_custom_limits` was hard-coded `false` and no override table existed
 
 **S2 · FIXED · api+web · four migrations, `auth/platform.py`, `routes/platform.py`, `repositories/platform.py`, `services/billing.py`, `app/(app)/app/platform/`, `scripts/platform_admin.py`**
 
@@ -4975,7 +5249,7 @@ alone grants nothing; a platform admin browsing normally sees only their own org
 policy anywhere references the predicate; team chat stays invisible even to an elevated session;
 and an expired grant stops working.
 
-### #128 - the cap was reachable through four UI surfaces that all walked someone into the refusal
+### #137 - the cap was reachable through four UI surfaces that all walked someone into the refusal
 
 **S3 · FIXED · web · `lib/hooks/use-plan-limits.ts`, `components/app/plan-limit-notice.tsx`, `agentic/page.tsx`, `organisation/new/page.tsx`, `invite-dialog.tsx`, `app-shell.tsx`**
 
@@ -4992,7 +5266,7 @@ them. Only owners hold `billing:write`, so anyone else gets the reason and no bu
 402 and the triggers are the gate; this only stops someone filling in a form that will be
 refused.
 
-### #129 - not a bug: the LLM spend cap enforces nothing because the feature it would gate does not exist
+### #138 - not a bug: the LLM spend cap enforces nothing because the feature it would gate does not exist
 
 **INVALID · api**
 
@@ -5009,6 +5283,230 @@ Same shape as `ConnectAiKeyDialog`, which is fully built and mounted nowhere - w
 
 **Verified.** 721 tests pass (`test_platform_admin.py` 31, `test_entitlement_enforcement.py` 22).
 `ruff` clean. `eslint`, `tsc` and `next build` clean.
+
+## Iteration 47 - 2026-08-22 · auditing the credit ledger, the subscription webhook path, and the billing UI against each other
+
+Three parallel audits, one per surface, then a security pass while writing the tests for what
+they found - which is how #139 turned up: none of the three had checked function `EXECUTE`
+grants directly, only Python call sites.
+
+### #139 - `credit_append`/`credit_balance`/`credit_member_spend` took `org_id` as a plain argument - any signed-in user could forge or read another organisation's usage credit
+
+**S1 · FIXED · api · `alembic/versions/202608221000_credit_and_subscription_functions_check_the_caller.py`, `tests/test_credit_ledger.py`**
+
+All three are `SECURITY DEFINER` (migration `202608190900`) and none checked that the caller had
+anything to do with `target_org_id`. Postgres grants `EXECUTE` to `PUBLIC` on every function
+unless something revokes it - CLAUDE.md's own warning about this ("function EXECUTE defaults to
+PUBLIC") describes exactly this shape, and it was missed. In practice: any authenticated session
+could call `select public.credit_append(<any org>, null, 'grant', 999999999, 'x', null, null,
+null)` and hand itself another organisation's credit, or the same call with `'spend'` to drain
+one to nothing. The read direction leaked a balance or a teammate's spend the same way.
+
+The three subscription-webhook functions from `202608172100` (`record_gateway_payment`,
+`apply_subscription_event`, `lookup_org_for_subscription`) had the identical gap, for the same
+reason - and that migration's own comment on `attach_gateway_ids` names the intended rule
+precisely: *"the one function here a session is meant to call, so it is the one that has to
+check who is calling"* - implying the other three were never meant to be reachable from a
+session at all. They were not revoked either.
+
+**Two different fixes, because the functions are called two different ways.**
+`credit_append`/`credit_balance`/`credit_member_spend` are called by both an ordinary
+authenticated session (its own organisation) and the anonymous webhook path (granting on a
+renewal or a top-up), so an outright `revoke` would have broken the legitimate calls. These three
+gained an internal check instead: allowed when the session is `anon`, or when
+`public.is_org_member(target_org_id)` is true. `record_gateway_payment`,
+`apply_subscription_event`, and `lookup_org_for_subscription` are called *only* from the
+anonymous webhook path - confirmed by grepping every caller in `services/billing.py` - so they
+simply lost `EXECUTE` from `authenticated` and `PUBLIC`.
+
+**The bug inside the fix, caught by its own test before it shipped.** The first draft checked
+`current_user = 'anon'`. Inside a `SECURITY DEFINER` function, `current_user` reports the
+function's *owner*, not the calling session, for the whole duration of the call - `SET
+ROLE`/`set_config('role', ...)` does not change that. Every anonymous grant would have been
+rejected: a webhook-driven renewal or top-up would have failed 100% of the time. Fixed to
+`current_setting('role', true)`, an ordinary session GUC untouched by entering a definer
+function - the same reason `auth.uid()` already worked correctly there. `test_credit_ledger.py`'s
+reaper test is what caught it, by actually driving the anonymous path rather than only the
+authenticated one.
+
+### #140 - a lapsed or abandoned subscription permanently froze an organisation's usage-credit grants
+
+**S1 · FIXED · api · `domain/subscriptions.py`, `services/billing.py`, `routes/runs.py`, `routes/billing.py`**
+
+`ensure_period_credit` (the lazy grant for an organisation with no *live* subscription) was
+gated on `effective_plan.subscription is not None` - but that field is `resolve_plan`'s "latest
+ever" row, which stays populated forever once an organisation has subscribed once, including
+through `cancelled`, `expired`, `failed`, or an abandoned `pending` checkout. Once a subscription
+reached any of those, the org was told forever after that a subscription covered its grants,
+while `grant_for_period` (the subscription-driven path) only ever fires from an active-webhook
+branch - so it received credit from neither path again, permanently.
+
+Fixed with `domain/subscriptions.grants_via_subscription()`, checking the row's *status* (`active`
+or `on_hold` only) rather than its mere existence, via a new `services/billing.subscription_grants_credit()`
+helper used at both call sites.
+
+### #141 - `subscription.plan_changed`/`.updated` webhook events were unmapped - a plan change or a scheduled cancellation never applied
+
+**S1 · FIXED · api · `integrations/payments/dodo.py`, `integrations/payments/stub.py`, `services/billing.py`, `tests/test_billing_webhook_handling.py`**
+
+`handle_event` returned a no-op for any event whose kind was not a key in `_TARGET_STATUS` -
+and Dodo reports a plan change as `subscription.plan_changed` (unmapped entirely) and a
+cancel-at-period-end as `subscription.updated` (mapped, but `_TARGET_STATUS` deliberately has no
+entry for it). Both hit the no-op branch **before** ever reaching the "same status, different
+details" branch a few lines later, which already correctly handled a payment-gated plan swap and
+a `cancel_at_period_end` update - that branch was fully written and simply unreachable for the
+event names Dodo actually sends. In practice: a customer clicked "change plan," was charged the
+prorated difference at the gateway, and `organisations.plan_id` never moved until someone
+manually ran `POST /billing/sync`. The same mechanism silently dropped every scheduled
+cancellation.
+
+Fixed by mapping `subscription.plan_changed` onto the existing `SUBSCRIPTION_UPDATED` kind (no
+new enum member needed) and special-casing that kind in `handle_event` to set `target = current`
+directly, routing into the branch that already worked.
+
+**A related gap found while fixing it: `on_hold → active` recovery never expired the prior
+period's remainder.** Every activation called `_grant_period_credit(expire_remainder=False)`,
+correct for a first activation but wrong for a recovery from a failed-payment hold - unlike
+`subscription.renewed`, a recovery was granting a full new period on top of whatever balance was
+left when the hold started, the opposite of "credit does not roll over." Fixed by keying
+`expire_remainder` on whether the prior status was `on_hold`. Also hardened: a recovery whose
+webhook omits `current_period_end` now logs a distinguishable warning rather than silently
+granting nothing through a stale, already-used dedupe key.
+
+No test exercised `handle_event` end to end before this - `test_subscription_state.py` is pure,
+`test_payment_gating.py` tests `withholds_grant` in isolation, and `test_public_billing.py` never
+reaches the webhook route. That gap is exactly how this shipped unnoticed.
+
+### #142 - credit-pack top-ups were unwired end to end - no subscription row to match, and no code anywhere granted credit
+
+**S2 · FIXED (latent until `DODO_PRODUCT_CREDIT_PACK` is configured) · api · `services/billing.py`, `services/credit.py`, `routes/billing.py`**
+
+`POST /billing/top-up` opens a checkout with a `subscription_row_id` that is never persisted
+anywhere (a top-up is not a subscription). `handle_event`'s first step is to look up a
+subscription row by that id; when it found none, it returned immediately - **before**
+`record_payment` ever ran, and there was no code anywhere that turned a settled top-up payment
+into a credit grant, despite both the route's own docstring and `docs/PRICING_DECISIONS.md`
+describing that wiring as real.
+
+Fixed without touching the checkout call (its `subscription_row_id` is harmless noise once the
+fix stops depending on it resolving to a row): `handle_event` now recognises a `payment.succeeded`/
+`.failed` with no matching row, `event.plan_id == CREDIT_PACK`, and a present `event.org_id`
+(planted in checkout metadata independently of any subscription lookup) as a standalone one-time
+payment, calling `record_payment(subscription_id=None, ...)` - which already accepted a null
+subscription - and a new `credit.grant_for_topup()`, one paise of credit per paise paid, keyed on
+the gateway's own payment id.
+
+Known simplification, tracked rather than fixed here: top-up credit does not expire on its own
+(the original design's 365-day expiry was never built); it lapses only through the ordinary
+monthly `expire_remainder` write-off at the next renewal.
+
+### #143 - the Growth pricing card and the `/trust` page advertised features that don't exist
+
+**S2 · FIXED · web · `lib/pricing.ts`, `app/(marketing)/trust/page.tsx`**
+
+Three of the four bullets shown for Growth on the homepage (`plan.features.slice(0, 4)`) named
+features with no server-side implementation: "Webhooks with a delivery log and replay" (no such
+route or table exists), "CRM integrations" (`routes/integrations.py`'s own docstring says nothing
+reads these credentials yet), and "Scheduled runs and calling windows per campaign" (`#20`, still
+open, and the exact claim `CLAUDE.md` §4 #8 warns against making) - a live recurrence of `#20`'s
+bug class in a surface that fix's sweep did not reach. `/trust` separately claimed an AI-disclosure
+line "is on by default... and it cannot be removed entirely"; grepping `apps/api` and
+`apps/voice-runtime` for any disclosure/consent construction returns nothing.
+
+Fixed by removing the three unbuilt claims from Growth's card and the matching `FEATURE_MATRIX`
+rows, and softening `/trust`'s paragraph to describe policy intent rather than a shipped,
+unremovable mechanism. This corrects the claim; it does not build webhooks, CRM integrations,
+calling-window enforcement, or a real disclosure-line mechanism, each of which is its own feature.
+
+### #144 - the per-member usage-credit cap had a column and an enforcement function, and no caller
+
+**S3 · FIXED · api+web · `database/repositories/credits.py`, `domain/entitlements.py` (already had `check_member_credit_cap`), `services/credit.py`, `routes/runs.py`, `routes/organisations.py`, `lib/api.ts`, `organisation/page.tsx`**
+
+`member_credit_allocations.monthly_credit_cap_paise` (migration `202608190900`) and
+`check_member_credit_cap`/`credits_repo.member_spend_this_period` existed with zero callers -
+grepping the whole app found them referenced only from pure unit tests. The per-teammate paise
+cap the original design described was never enforced anywhere, and nothing let an owner set one.
+
+Wired up: the run gate now reads the cap and this calendar month's spend
+(`credit.member_credit_cap_status`) alongside the org-wide balance check, refusing a run either
+way can refuse it; a new `PATCH .../members/{id}/credit-cap` endpoint sets it (`null` explicitly
+uncapped, `0` a real "blocks them entirely," never conflated - the same tri-state convention
+`get_enforced_ceiling` already established for the call-count allocation); and Organisation →
+Team gained a second, adjacent field for it, parsed through a new `lib/format.parseMajorUnitsToMinor`
+rather than a bare number input, so typing "850" means ₹850 and not 850 paise.
+
+### #145 - three smaller billing UI gaps: a naming collision, a false "Unlimited" claim, and a stale sidebar
+
+**S4 · FIXED · web · `organisation/page.tsx`, `app/(app)/app/page.tsx`, `lib/pricing.ts`, `lib/hooks/use-entitlements-version.ts` (new), `lib/hooks/use-plan-limits.ts`, `billing/page.tsx`**
+
+- "Credits/day" and "Credits today" carried no qualifier next to the new money-denominated
+  "usage credit," reproducing the exact collision `MANUAL_TESTING.md` already documents and
+  Billing's own "My credits" panel already avoids. Renamed to "Calls/day"/"Calls today".
+- `PLAN_LIMITS.enterprise.seats` and two feature-matrix rows said "Unlimited seats and
+  organisations"; `domain/plans.py` seeds Enterprise at Growth's real numbers (10 seats, 3 orgs)
+  by design, specifically to avoid a window with no ceiling before a human writes the override.
+  Changed to "Custom", matching how `agents`/`credit` already handle Enterprise honestly.
+- The sidebar org switcher's `usePlanLimits()` mounts once per session and only refetched on an
+  org switch, so an in-place plan change on Billing could leave "Upgrade to create another"
+  showing after the upgrade until the next switch or reload. Fixed with a small
+  `useSyncExternalStore`-backed version counter, bumped by Billing's plan-change/cancel/sync
+  handlers, that `usePlanLimits` now depends on.
+
+**Verified.** 800 tests pass, including 8 new (`test_credit_ledger.py`), 2 new
+(`test_billing_webhook_handling.py`), and 4 new (`test_subscription_state.py`), against the real
+dev database. `ruff` clean. `eslint`, `tsc` and `next build` clean.
+
+### #146 - retired the per-teammate call-count allocation - usage credit is the one share left
+
+**FIXED · api+web · `campaign_runner.py`, `domain/safety.py`, `routes/runs.py`, `routes/organisations.py`, `database/repositories/credits.py`, migration `202608221200`, `organisation/page.tsx`, `billing/page.tsx`, `app/page.tsx`**
+
+A product decision, not a bug: `member_credit_allocations.daily_allocation` let an owner
+give a teammate a slice of the org-wide daily call budget ("13 calls a day"), enforced at
+dial time via `check_dial_allowed`'s `credits_remaining` param and `CampaignRunner`'s
+in-run reservation bookkeeping (`_credit_ceiling`/`_credits_reserved`). Calls-per-day
+stopped being a meaningful lever once the usage-credit model shipped - the org-wide daily
+budget is now a uniform runaway safety rail on every plan (`RUNAWAY_CALL_CEILING`) rather
+than a packaging number, and a plan's real flow limit is its usage credit. Keeping a
+second, money-blind allocation next to the real one was confusing rather than useful - a
+teammate told "13 calls a day" could still be capped by usage credit well before reaching
+it, or the reverse.
+
+Removed end to end: `check_dial_allowed`'s `credits_remaining` param and the dial-time
+gate it drove; `CampaignRunner`'s reservation bookkeeping and its four `release_credit()`
+call sites; `credits_repo.get_allocation`/`get_enforced_ceiling`/`used_today`/
+`used_today_by_member`/`list_allocations`/`set_allocation`; the
+`PATCH .../members/{id}/credits` route; the `daily_allocation`/`used_today` fields
+everywhere they appeared (`TeamPerformanceOut`, `MyCreditsOut`, the Team pane, the
+dashboard's per-teammate table, Billing's "My credits" panel); and the column itself
+(`member_credit_allocations.daily_allocation`, migration `202608221200`, along with its
+`>= 0` check constraint).
+
+The per-teammate **usage-credit** cap (`monthly_credit_cap_paise`, `#144`) is the one
+ceiling that remains, and is now what a teammate's "share" means end to end. The Team
+pane's second field ("Calls/day") is gone; only "₹/month" remains next to each name.
+Billing's "My credits" panel and the dashboard's per-teammate table were rewritten to show
+usage-credit spend/cap instead of calls-used/allowance.
+
+**Not touched:** the organisation-wide daily budget (`org_safety_settings.daily_budget`,
+`CALLFLOW_DAILY_BUDGET`) and its own `used_today` in `GET /api/health` - a different,
+still-real safety rail, unrelated to this per-teammate concept.
+
+### #147 - a teammate's usage-credit cap could be set above the plan's own per-period grant
+
+**S2 · FIXED · api · `routes/organisations.py::set_member_credit_cap`**
+
+`PATCH .../members/{id}/credit-cap` accepted any non-negative paise value with no upper
+bound, so an owner could set a teammate's share to, say, ₹5,000 a month on a plan that
+grants the whole organisation ₹850 a month - a number with no real meaning, since the
+organisation-wide balance would refuse the run long before that share was ever reached.
+Found by a user testing the field directly, the same session it shipped in.
+
+Fixed by resolving the org's effective plan inside the route and refusing (`400`) a cap
+larger than `entitlements.monthly_credit_paise`, naming the actual ceiling in the error so
+the refusal is informative rather than a bare validation failure. Bounded by the plan's
+*per-period grant*, not the current balance - a balance-based bound would make the same
+share setting appear to shrink every time the organisation spent money, which is not what
+"a teammate's share" should mean.
 
 ## Template for the next iteration
 

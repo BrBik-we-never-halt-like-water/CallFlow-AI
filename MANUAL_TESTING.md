@@ -1,13 +1,25 @@
-# Manual testing guide — roles, sharing, and credits
+# Manual testing guide — roles, sharing, credits, and billing
 
-A click-through script for verifying the three systems built in the role-based UI
-roadmap: the four-role permission matrix, peer-to-peer campaign/escalation sharing, and
-per-teammate credits. Everything below is checkable in a browser, with what to look at
-in DevTools when a step doesn't match what's expected.
+A click-through script for verifying what is built: the four-role permission matrix,
+peer-to-peer campaign/escalation sharing, per-teammate usage-credit shares, and the
+plan/entitlement/usage-credit layer. Parts 1–5 are all checkable in a browser, with what
+to look at in DevTools when a step doesn't match what's expected. **Part 6 is the
+exception** — it covers placing a real call end to end, which cannot be done through the
+product today, and it lists exactly what blocks it so nobody books an afternoon for it
+first.
+
+**Part 4** is a teammate's own *share* of the organisation's usage credit (money, set in
+Organisation → Team's "₹/month" field); **Part 5** is the organisation-wide usage credit
+itself (the same money, spent per connected second). They are the same rail, checked at
+two different scopes - a naming collision used to exist here between this and a separate,
+now-retired daily call-count allowance (`ISSUES.md` #146); it no longer does.
 
 **Companion docs:** [`TEAM_COLLABORATION_ROADMAP.md`](TEAM_COLLABORATION_ROADMAP.md) (why
 each phase is shaped the way it is) · [`SYSTEM.md`](SYSTEM.md) (exact API shapes) ·
-[`ISSUES.md`](ISSUES.md) (known quirks - check there before reporting something as new).
+[`docs/BILLING.md`](docs/BILLING.md) and
+[`docs/PRICING_DECISIONS.md`](docs/PRICING_DECISIONS.md) (what the plans mean and why the
+rates are what they are) · [`ISSUES.md`](ISSUES.md) (known quirks - check there before
+reporting something as new).
 
 ---
 
@@ -197,48 +209,212 @@ Request Headers on the failing call if you belong to more than one organisation.
 
 ---
 
-## Part 4 — Credits system walkthrough
+## Part 4 — Per-teammate usage-credit share walkthrough
+
+**Superseded, kept as a marker:** this part used to walk through a per-teammate *daily
+call allowance* ("Credits/day," a count of connected calls). That concept is retired
+(`ISSUES.md` #146) - the org-wide daily budget is now a uniform runaway safety rail on
+every plan rather than a packaging number, and a plan's real flow limit is its usage
+credit. The one per-teammate ceiling left is a share of that usage credit, in money -
+this walkthrough now covers that instead.
 
 1. As **owner or admin**, go to **Organisation → Team**. Each member row has a
-   **"Credits/day"** field - set Operator A's to something small, e.g. `3`.
-2. As **Operator A**, go to **Billing** in the sidebar. You should see **"My credits"**
-   showing `0 of 3 calls used` (or whatever you set), with a progress bar - not the org's
-   overall plan/usage, which stays hidden for this role.
-3. **1 credit = 1 *connected* call, not 1 attempt** (`ISSUES.md` iteration 30) - `used`
-   only goes up once the callee actually answers. Start a run as Operator A against 1–2
-   numbers from the reserved range (`+1 555 0100`–`0199`, see the warning at the top) -
-   these never connect to a real phone, by design. After the run finishes, refresh
-   Billing and confirm **`used` is still `0`** - the attempt itself doesn't
-   spend a credit, only a connected conversation does. This is the correct result, not a
-   bug; it's also the safest way to test the "non-connect doesn't spend" half of the rule
-   without risking a real dial.
-4. As the **owner/admin**, open **Organisation** (dashboard, or the Team pane) and check
-   the **Team performance** panel / member row - it should show the same
-   `credits_used_today` number for Operator A that Operator A themselves saw (both `0`,
-   per step 3), confirming both views read the same live, connected-only source.
-5. **Confirm the ceiling actually blocks dialling** - set Operator A's allocation to `0`
-   and have them start a run against any contact. The outcome should show as **Blocked**
-   with a reason mentioning "daily credit limit reached", and it appears instantly - a
-   ceiling of `0` denies before any real number is dialled at all, so this check is 100%
-   safe to run regardless of what number you use.
-6. **Fully confirming the positive path** - a *connected* call correctly counting toward
-   the ceiling and eventually blocking the next one - needs a real, live-answered call,
-   which this guide deliberately does not instruct you to place against an arbitrary
-   number (CLAUDE.md's non-negotiable: every run dials for real, and sample data must
-   stay within the reserved range). That path is already covered by the automated test
-   suite instead - `test_orchestrator.py`'s `test_credit_ceiling_blocks_the_next_contact_
-   once_a_call_connects` and `test_a_call_that_never_connects_does_not_spend_a_credit`.
-7. As a **viewer**, confirm Billing shows the same "My credits" personal view
-   as an operator (not the org-wide plan), and that nobody except owner/admin can edit
-   any "Credits/day" field.
+   **"₹/month"** field - set Operator A's to something small, e.g. `50`.
+2. **Try setting it above the plan's own grant** - e.g. `9999` on a Starter org (₹850 a
+   period). Expect a **400**, surfaced as a toast naming the actual ceiling ("Starter
+   grants only ₹850 of usage credit a period..."), not a silent clamp or a generic
+   validation error (`ISSUES.md` #147).
+3. As **Operator A**, go to **Billing** in the sidebar. You should see **"My credits"**
+   showing `₹0 / ₹50` (or whatever you set) - not the org's overall plan/usage, which
+   stays hidden for this role.
+4. As the **owner/admin**, open the **dashboard**'s per-teammate table and check it shows
+   the same `₹0 / ₹50` for Operator A that Operator A themselves saw, confirming both
+   views read the same `credit_service.member_credit_cap_status` call.
+5. **Confirm the cap actually blocks a run** - set Operator A's share to `0` and have them
+   start a run. It should refuse with a reason naming their usage-credit share, before any
+   number is dialled - safe to test regardless of which number you use, since the run
+   never starts.
+6. **Confirm it's independent of the org-wide balance** - a teammate with no share set at
+   all is not gated by this check; only the organisation-wide balance applies to them
+   (see Part 5 for exercising that balance directly).
+7. As a **viewer**, confirm Billing shows the same "My credits" personal view as an
+   operator, and that nobody except owner/admin can edit the "₹/month" field.
 
 **What to check in DevTools if a number looks wrong:** Network tab → find
 `/api/v1/organisations/me/members/me/credits` (self view) or
 `/api/v1/organisations/me/team-performance` (admin/owner view) → Response tab. Compare
-`used_today` in both - they're independent SQL queries against the same tables and
-should always agree. If they disagree, note the exact numbers and timestamp; that's a
-real inconsistency worth reporting, not a UI rendering issue (there's no client-side math
-involved beyond formatting).
+`credit_cap_paise`/`credit_spent_paise` in both - they should always agree. If they
+disagree, note the exact numbers and timestamp; that's a real inconsistency worth
+reporting, not a UI rendering issue (there's no client-side math involved beyond
+formatting).
+
+---
+
+## Part 5 — Billing, entitlements and usage credit
+
+**All of this works today.** Nothing here needs a phone call, a carrier, or the
+voice worker — which is what makes it the part worth doing first.
+
+### 5.1 A plan gate you can see before it bites
+
+1. On **Free**, go to **Agents**. With one agent created, the Create button is
+   *replaced* by **Upgrade plan**, reading "Free includes 1 agent." A greyed-out
+   button would say the product is broken; naming the plan's own number says what
+   actually happened.
+2. Check the other three surfaces refuse the same way, with a reason and no dead
+   button: the **org switcher** ("Upgrade to create another"), **New
+   organisation**, and the **invite dialog**.
+3. Repeat as a **non-owner**. Expect the reason and *no* button — only an owner
+   holds `billing:write`, and a button that 403s is worse than none.
+4. Now bypass the interface and `POST /api/v1/voice-agents` directly. It answers
+   **402 Payment Required**, not 403. That distinction is why the interface can
+   offer an upgrade instead of a dead end.
+
+### 5.2 Locked agents — the downgrade case
+
+Needs an organisation over its limit. Quickest route: create 3 agents on a paid
+plan, then set the org back to `free` in the database.
+
+1. **Agents** shows two cards blurred behind a padlock, "Locked by your plan", and
+   **Make active** / **Upgrade**.
+2. Press **Make active** on a locked one. It activates and the previously active
+   one locks — the toast says so, because on a one-agent plan that swap is
+   unavoidable and discovering it later is worse.
+3. **Tab through the page.** A locked card must be entirely unreachable: it is
+   `inert`, not merely blurred. If tabbing lands on a link inside a blurred card
+   that is a bug — blur is a visual effect and does not stop a keyboard.
+4. Confirm nothing was destroyed: the agent count is unchanged and every agent is
+   still editable.
+
+### 5.3 Credit: grant, spend, replay
+
+1. On Free with an empty ledger, open **Billing**. Expect **₹100 left of ₹100**,
+   0 used, and "about 66 minutes at your current rate of ₹1.50 a minute". The grant
+   is lazy and lands on first read, so needing one reload is expected rather than a
+   sign of failure.
+2. **See statement** lists one `Credit added` row and nothing else.
+3. Drive a settle by hand — the only way to exercise spending until calls work.
+   You need a **real** `run_id`: start a run (every contact is skipped, but the run
+   row is created and the response returns its id), then
+
+       curl -X POST "http://127.0.0.1:8002/internal/v1/runs/$RUN_ID/complete" \
+         -H "x-callflow-internal-key: $CALLFLOW_INTERNAL_API_SECRET" \
+         -H "content-type: application/json" \
+         -d '{"contact_name":"Asha","phone_masked":"+1 555 0142","status":"COMPLETED","duration_seconds":245}'
+
+   The balance drops **₹6.13** — 245 seconds at ₹1.50/min, prorated by the second
+   rather than rounded up to a whole minute. A 404 here means either the internal
+   secret is unset/wrong or the run id does not resolve; both answer 404 on purpose,
+   so a caller without the secret learns nothing about which runs exist.
+4. **Send that request again, unchanged.** The balance must not move. `call_key` is
+   `run_id:contact_name:phone_masked`, so keep all three identical — that is the
+   `dedupe_key` guarantee, and it is what makes a retrying worker safe.
+5. Spend to zero, then start a run. Refused before anything dials, with *"Free's
+   usage credit is spent. Top up in Billing, or wait for the next period to
+   start."* Then press **Top up** — it 404s until `DODO_PRODUCT_CREDIT_PACK` is set,
+   which is honest rather than a button that cannot work.
+6. Set the balance unreadable (stop Postgres mid-request, or revoke the grant) and
+   start a run. It must **refuse**, not proceed. A credit check that cannot complete
+   has to deny — otherwise an outage is free calling.
+
+### 5.4 Subscription, through the real gateway
+
+Needs `DODO_API_KEY` and `DODO_WEBHOOK_KEY` (both already set) plus a public tunnel:
+`cloudflared tunnel --url http://127.0.0.1:8002`, then point Dodo's webhook at
+`<tunnel>/api/v1/webhooks/dodo`.
+
+1. **Billing → Upgrade to Starter**, complete the Dodo test checkout.
+2. In the API log expect `subscription.active` applied, then `payment.succeeded`
+   recorded. In the database: `org_subscriptions.status = 'active'`,
+   `organisations.plan_id = 'starter'`, one `payments` row, and a `credit_ledger`
+   grant of **85000** paise.
+3. **Replay the same delivery** from Dodo's dashboard. No second payment row and no
+   second grant — the payment is keyed on the gateway's id, the grant on the
+   subscription period.
+4. Kill the tunnel, buy again, restore it, then press **Sync with provider**. Plan
+   and credit catch up. That path exists because a webhook can be missed, and it is
+   the difference between a recoverable gap and a support ticket.
+5. **Receipt**: a settled payment offers a **Receipt** button that opens the
+   gateway's own invoice PDF. A failed one shows `-`, not a link that 404s.
+
+---
+
+## Part 6 — A real call, end to end
+
+**Read this before booking time for it.** A call cannot currently be placed through
+the product, and the reason is a code gap rather than configuration.
+
+### 6.1 What blocks it today
+
+| # | blocker | what it needs |
+|---|---|---|
+| 1 | **`POST /api/v1/runs` never passes `trunk_id` or `voice_agent`** to `CampaignRunner`, so every contact is skipped with "no connected number to call from" (`campaign_runner.py:297`). It is the only `CampaignRunner(...)` construction in the app. | a code fix |
+| 2 | `LIVEKIT_URL` / `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET` are empty | a LiveKit project |
+| 3 | no carrier credentials and no provisioned number — `provider_credentials` and `telephony_provisioning` are both empty | a Twilio/Plivo account and a number |
+| 4 | `livekit-agents` is not installed, so the worker cannot start | `pip install -e "apps/voice-runtime[deepgram,elevenlabs,openai,silero]"` |
+| 5 | `CALLFLOW_INTERNAL_API_SECRET` is empty, so the worker's completion callback is refused with 404 — deliberately fails closed | set it in `.env` |
+
+Only #1 is engineering work; the rest is accounts and setup.
+
+**The one path that dials today** is `scripts/telephony_check.py`, a manual
+one-contact CLI check that supplies the trunk and agent itself — which is exactly
+what the run route omits.
+
+### 6.2 Once unblocked, the walkthrough
+
+1. **Integrations** → connect a carrier, provision a number, confirm
+   `telephony_provisioning` reaches a verified state.
+2. Connect **STT / LLM / TTS** keys. There is no CallFlow-owned fallback, so a call
+   cannot run without the organisation's own keys.
+3. **Agents** → build one on those three legs plus the connected number. The
+   builder's cost bar shows what a minute will cost before you commit to it.
+4. Start the worker: `python -m app.worker` from `apps/voice-runtime`.
+5. **Campaigns** → write a goal and a result schema. **Runs → New** → add exactly
+   *one* contact: your own phone.
+   - Keep `CALLFLOW_ALLOWLIST` set to that number. It is the guard that stops a test
+     reaching a stranger, and it is checked per dial rather than once per run.
+6. Answer, talk, hang up.
+7. Then check, in order:
+   - `call_outcomes` has one row with a real `duration_seconds`
+   - `credit_ledger` has a **spend** for that call, at the platform-fee rate
+   - the spend equals `duration × rate`, prorated by the second
+   - the run closed — `runs.finished_at` is set
+   - **Billing** shows the reduced balance and the call in the statement
+
+   **Expect no `hold` row.** `reserve_for_call` is written and tested but has no
+   caller, so nothing reserves credit before dialling — the settle resolves the rate
+   itself and charges correctly either way. It shares a root cause with blocker #1:
+   the dial path that would place the hold is the one that cannot dial. Until it is
+   wired, a run can overspend its balance within a single batch, because the balance
+   is only checked once at run start.
+
+### 6.3 Refusals worth doing deliberately
+
+Each of these is a guard that must hold on the very first call an organisation ever
+makes, which is exactly when nobody is watching.
+
+- a number **not on the allowlist** → refused, and the reason names the allowlist
+- a **suppressed** number → refused per dial, not merely hidden in the interface
+- **credit at zero** → refused before dialling
+- a **locked agent** → should refuse. *Not yet wired*: `check_agent_usable` is
+  written and tested but has no caller, because nothing resolves a campaign's
+  agent. Expect this to pass wrongly until blocker #1 is fixed.
+- **kill the worker mid-call** → the call's in-flight row is swept and the run does
+  not hang. The credit half of that sweep (`sweep_stale_holds`) has nothing to
+  release yet, for the reason in 6.2 step 7 — so verify the run closes, not that
+  credit came back.
+
+### 6.4 What to watch in the logs
+
+The worker POSTs to `/internal/v1/runs/{run_id}/complete`. If a call happens and
+nothing appears in `call_outcomes`, check that callback first: a 404 there means the
+internal secret is unset or mismatched, and it fails closed on purpose rather than
+accepting an anonymous write.
+
+Also worth knowing: an unhandled 500 now reaches the browser as a JSON 500 with CORS
+headers. Before this iteration it arrived as `TypeError: Failed to fetch`, which is
+indistinguishable from the API being down — one real bug was misdiagnosed as a
+network fault because of it.
 
 ---
 
@@ -269,11 +445,11 @@ wrong:
 - **First accept-invite attempt can 403; the "Join {org}" retry button fixes it
   immediately.** A pre-existing timing race, not something this round introduced or
   fixed - documented, low-severity, has a working mitigation already in the UI.
-- **Per-teammate credits only count *connected* calls, not attempts** - a run against
-  reserved-range numbers (they never connect) correctly leaves `used` at `0`, even after
-  several calls. That's the rule working as designed, not a stuck counter. The org-wide
-  daily budget (`GET/PATCH /api/v1/safety`) still applies on top regardless of any
-  individual teammate's allocation.
+- **The per-teammate usage-credit share is independent of the org-wide daily budget** -
+  a teammate can be well under their own share and still have a run refused by the
+  organisation-wide balance, or the reverse. The org-wide daily budget
+  (`GET/PATCH /api/v1/safety`) is a separate, uniform runaway safety rail, unrelated to
+  either.
 - **Calling-window / retry-policy fields in the campaign editor are `localStorage` only**
   and not enforced anywhere server-side, despite looking like real settings.
 - **`ice` (the fifth lamp colour) never appears anywhere** - it's reserved, not a bug.
@@ -281,6 +457,20 @@ wrong:
   you've sent," before it's decided) is correct, not a missing-data bug - your own RLS
   scope genuinely can't see a resource you don't own yet. It fills in once the request
   is approved.
+
+- **The usage-credit meter is absent, not zeroed, before the first grant lands.** The
+  grant for an unsubscribed plan is lazy — it is written on the first read of Billing or
+  the first run — so a brand-new org may need one reload before the meter appears. A
+  meter reading "0 of 0" would be a bug; no meter at all is the intended state.
+- **`credit_ledger` contains no `hold` rows.** Nothing reserves credit before dialling
+  yet; the settle resolves the rate and charges the real duration. See Part 6.2.
+- **Every rate is the platform fee alone (₹1.50/min).** The nine per-leg tier add-ons are
+  seeded and tested but unreachable: every key a call uses comes from the organisation's
+  own `ai_provider_credentials`, so every pipeline is bring-your-own by necessity. A
+  builder cost bar showing only the platform fee is correct.
+- **"Calls per day" is no longer a plan difference.** All four plans carry the same 500,
+  which is a runaway-run safety rail rather than a packaging lever — the plan's real flow
+  limit is its usage credit.
 
 For anything not listed above that doesn't match this guide, check `ISSUES.md` first (it
 may already be a known, tracked issue) before treating it as new.

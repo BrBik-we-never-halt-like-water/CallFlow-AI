@@ -44,7 +44,7 @@ export function PricingPreview() {
       <Reveal>
         <SectionHeading
           title="Pick a plan, not a call budget."
-          sub="Calls are never billed per minute or per call. What a plan buys is how much of the operation you can run at once - agents, seats, and calls a day."
+          sub="Calls are never billed per minute. A plan buys how much you can stand up - agents and seats - plus calling credit, spent by the second at a rate that drops when you bring your own model providers."
         />
       </Reveal>
 
@@ -137,6 +137,7 @@ function PlanColumn({ plan, live }: { plan: Plan; live: LivePlans }) {
       <div className="flex flex-col gap-1">
         <PriceLine planId={plan.id} live={live} />
         <p className="text-small text-text-mute">{limitsSummary(plan.id)}</p>
+        <RateLine planId={plan.id} live={live} />
       </div>
 
       <p className="text-small text-text-dim">{plan.tagline}</p>
@@ -216,6 +217,39 @@ function PriceLine({ planId, live }: { planId: string; live: LivePlans }) {
         </span>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * "≈66 min at ₹1.50/min with your own keys" - what the included credit actually
+ * buys, at the one rate that is the same for every plan: the platform fee alone,
+ * which is what a call costs once nothing runs on CallFlow's own keys. The
+ * per-provider tier add-ons (`docs/PRICING_DECISIONS.md` §3) can raise it above
+ * this, so "with your own keys" is load-bearing rather than decoration - it is
+ * the floor, not a promise every call lands there.
+ *
+ * Loads with the same request `PriceLine` makes, so it renders nothing rather
+ * than a skeleton while that is in flight - a second loading indicator for one
+ * fetch is noise, and the price line already carries that signal.
+ */
+function RateLine({ planId, live }: { planId: string; live: LivePlans }) {
+  if (live.status !== 'ready') return null;
+
+  const plan = live.plans.find((option) => option.plan_id === planId);
+  const rate = plan?.baseline_rate_paise_per_minute;
+  if (!rate || rate <= 0) return null;
+
+  const rateText = `${formatMinorUnits(rate, 'INR')}/min with your own keys`;
+  const credit = plan?.entitlements.monthly_credit_paise;
+  if (credit == null || credit <= 0) {
+    return <p className="text-small text-text-mute">{rateText}</p>;
+  }
+
+  const minutes = Math.floor(credit / rate);
+  return (
+    <p className="text-small text-text-mute">
+      ≈{minutes} min at {rateText}
+    </p>
   );
 }
 

@@ -2,7 +2,7 @@
 
 > **Status: proposal for review. Nothing here is built.** The mechanism is designed
 > (`docs/BILLING.md` and the implementation plan cover it); every *number* below is a
-> placeholder derived from our own cost catalogue, not a researched price. §9 lists the seven
+> placeholder derived from our own cost catalogue, not a researched price. §10 lists the seven
 > decisions that need a named owner before any of this bills a customer.
 
 Today a plan grants **a count of calls per day**. This proposes replacing that with a
@@ -46,7 +46,7 @@ This is worth internalising because it inverts the usual instinct.
 
 A phone conversation carries very few tokens — the LLM figures above assume **1,500 input +
 200 output tokens per minute**, which is our own existing assumption from
-`agent-metrics.tsx:30`, not a measured figure (nothing measures tokens today; see §11). At that
+`agent-metrics.tsx:30`, not a measured figure (nothing measures tokens today; see §12). At that
 rate the model is nearly free: `gpt-4o-mini` costs **₹0.03/min**, and even `claude-sonnet-4.5`
 is **₹0.66/min**. Meanwhile `elevenlabs-turbo` alone is **₹7.67/min** — more than twice the
 entire median pipeline.
@@ -66,7 +66,7 @@ tokens/minute would cost us **₹6.60/min**, not ₹3.30 — and the premium LLM
 would then be underwater on its own.
 
 **This is the single number most worth measuring first**, and measuring it is cheap: the voice
-worker's framework already collects per-call token counts and we discard them (§10).
+worker's framework already collects per-call token counts and we discard them (§11).
 
 **Consequence for positioning:** below the premium bin, "which model" is close to a free
 choice — so we should let customers pick a good one rather than gating intelligence. **Voice
@@ -307,7 +307,39 @@ Read the two right-hand columns together: managed costs them **₹861 more** and
 
 ---
 
-## 5. How a plan is actually charged
+## 5. "Calls per day" is no longer a plan feature
+
+The old ladder sold 20 / 200 / 1,000 calls a day. Under credit those numbers cannot
+bind, so they were a limit in appearance only:
+
+| plan | old cap | that is, per month | calls the credit actually allows, at 90s each |
+|---|---|---|---|
+| Free | 20 | 600 | **44** |
+| Starter | 200 | 6,000 | **378** |
+| Growth | 1,000 | 30,000 | **1,889** |
+
+Credit is 13-16x tighter at every rung, so no customer would ever reach the cap.
+Worse, **neither number describes what a customer gets**: the same Free plan is 44
+calls at 90 seconds and 11 at six minutes, and "20 per day" is neither.
+
+Running both limits also made the binding one depend on average call length rather
+than on anything either number states - a caller averaging 90 seconds would hit the
+cap with credit unspent, one averaging six minutes runs out of credit at a fraction
+of the cap.
+
+**So it stops being sold and stays being enforced.** One ceiling, identical on
+every plan (`RUNAWAY_CALL_CEILING`, currently 500/day), removed from the pricing
+page and the plan cards. It exists because credit does not bound everything that
+matters: credit limits money spent, not how many people a loop can disturb in an
+hour, and that is a real guard worth keeping (CLAUDE.md §4 #8). An organisation may
+still set itself lower in Settings → Safety.
+
+The pricing page shows **included calling credit** in its place - the number that
+does bind.
+
+---
+
+## 6. How a plan is actually charged
 
 Two separate money movements, both through Dodo. **The subscription is fixed. Usage is
 prepaid, never invoiced in arrears.**
@@ -352,7 +384,7 @@ keeps that promise.
 
 ---
 
-## 6. What is never charged
+## 7. What is never charged
 
 | leg | who pays | in our deduction? |
 |---|---|---|
@@ -368,7 +400,7 @@ must never touch their credit.
 
 ---
 
-## 7. Free tier exposure
+## 8. Free tier exposure
 
 A free organisation pointing at `azure-stt + claude-opus-4.1 + elevenlabs-turbo` costs us
 **₹12.94/min** against zero revenue. At 20 calls/day averaging 3 minutes that is
@@ -387,7 +419,7 @@ Starter must not keep dialling premium after a downgrade to Free.
 
 ---
 
-## 8. The unit customers see
+## 9. The unit customers see
 
 **Money, not minutes.** With a 23× spread, "500 minutes included" would mean four different
 things depending on the pipeline, so minutes cannot be the headline.
@@ -403,7 +435,7 @@ anyone doing arithmetic: the same ₹530 reads as ~353 minutes on their own keys
 
 ---
 
-## 9. The decisions
+## 10. The decisions
 
 Each needs a named owner. My recommendation is given, with what it trades away.
 
@@ -429,20 +461,20 @@ Each needs a named owner. My recommendation is given, with what it trades away.
 
 ---
 
-## 10. What is not being proposed
+## 11. What is not being proposed
 
 - **Per-token billing.** Not needed under tiers, and it produces unpredictable bills, which
   customers dislike more than a slightly higher fixed rate. We will still *measure* tokens
   (the voice worker's framework already collects them and we discard it) — but for margin
   analysis, to check whether these tiers hold, not to charge.
-- **Charging for the carrier.** Their own Twilio account on both sides — see §6.
+- **Charging for the carrier.** Their own Twilio account on both sides — see §7.
 - **Using the payment gateway's own credit system.** Its deduction is asynchronous, so it
   cannot gate a dial; a run of 100 contacts would pass the check 100 times before the balance
   moved.
 
 ---
 
-## 11. One thing to know about the state of the code
+## 12. One thing to know about the state of the code
 
 `POST /api/v1/runs` **cannot currently place a call** — the run route never passes a trunk or
 a voice agent to the runner, so every contact is skipped with "no connected number". So there

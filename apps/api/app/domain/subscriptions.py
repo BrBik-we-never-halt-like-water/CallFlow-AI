@@ -150,6 +150,22 @@ def is_retryable(failure: PaymentFailure) -> bool:
     return failure in _RETRYABLE
 
 
+def grants_via_subscription(status: SubscriptionStatus | None) -> bool:
+    """Whether a subscription in this status is the reason usage credit should
+    arrive from `services.credit.grant_for_period` rather than the lazy,
+    unsubscribed-org path (`ensure_period_credit`).
+
+    Narrower than `is_live()`: a `pending` checkout is live (it holds the
+    one-per-org slot) but has never been activated, so nothing has granted
+    against it yet and the lazy path must still cover the organisation. Once a
+    subscription reaches a terminal status - `cancelled`, `expired`, `failed` -
+    or is abandoned at `pending` forever, this returns `False` again, which is
+    what lets the lazy path pick the organisation back up rather than leaving it
+    stuck believing a subscription will grant on its behalf indefinitely.
+    """
+    return status in {SubscriptionStatus.ACTIVE, SubscriptionStatus.ON_HOLD}
+
+
 def effective_plan_id(
     *,
     status: SubscriptionStatus | None,

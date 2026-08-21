@@ -68,23 +68,31 @@ export interface Plan {
  */
 export const PLAN_LIMITS: Record<
   PlanId,
-  { agents: string; seats: string; callsPerDay: string }
+  { agents: string; seats: string; credit: string }
 > = {
-  free: { agents: "1", seats: "1", callsPerDay: "20" },
-  starter: { agents: "3", seats: "3", callsPerDay: "200" },
-  growth: { agents: "10", seats: "10", callsPerDay: "1,000" },
-  enterprise: { agents: "Custom", seats: "Unlimited", callsPerDay: "Custom" },
+  free: { agents: "1", seats: "1", credit: "₹100" },
+  starter: { agents: "3", seats: "3", credit: "₹850" },
+  growth: { agents: "10", seats: "10", credit: "₹4,250" },
+  enterprise: { agents: "Custom", seats: "Custom", credit: "Agreed" },
 };
 
-/** "3 agents · 3 seats · 200 calls a day". The plan card's one-line summary. */
+/** "3 agents · 3 seats · ₹850 of calling". The plan card's one-line summary.
+ *
+ *  `callsPerDay` used to be the third value here and was removed, not renamed.
+ *  It could never be the binding limit - at 90-second calls Free's credit allows
+ *  44 calls a *month* against a cap of 600 - so it was a number no customer would
+ *  reach, printed where they look for the one that stops them. The daily ceiling
+ *  still exists as a runaway bound (`domain/plans.py`'s `RUNAWAY_CALL_CEILING`),
+ *  identical on every plan, and is a Settings → Safety concern rather than a
+ *  pricing one. */
 export function limitsSummary(id: PlanId): string {
-  const { agents, seats, callsPerDay } = PLAN_LIMITS[id];
+  const { agents, seats, credit } = PLAN_LIMITS[id];
   const plural = (value: string, noun: string) =>
     value === "1" ? `1 ${noun}` : `${value} ${noun}s`;
   return [
     plural(agents, "agent"),
     plural(seats, "seat"),
-    `${callsPerDay} calls a day`,
+    `${credit} of calling`,
   ].join(" · ");
 }
 
@@ -94,7 +102,7 @@ export const PLANS: Plan[] = [
     name: "Free",
     tagline: "Prove the pipeline before you spend anything.",
     features: [
-      "Free daily call budget, no card required",
+      "Calling credit included, no card required",
       "Connect your own number and carrier",
       "All starter campaign templates",
       "Typed results and sentiment on every call",
@@ -126,9 +134,6 @@ export const PLANS: Plan[] = [
     tagline: "A team that calls every day and triages the results.",
     features: [
       "Everything in Starter",
-      "Webhooks with a delivery log and replay",
-      "CRM integrations",
-      "Scheduled runs and calling windows per campaign",
       "Assignment and resolution on escalations",
       "Mix any model providers you like",
       "10 agents, 10 seats, 3 organisations",
@@ -146,7 +151,7 @@ export const PLANS: Plan[] = [
     features: [
       "Everything in Growth",
       "Limits set to whatever you actually need",
-      "Unlimited seats and organisations",
+      "Seats and organisations sized to your team",
       "Role-based access and audit log",
       "Custom data retention window",
       "Signed DPA and security review",
@@ -199,9 +204,9 @@ export const FEATURE_MATRIX: MatrixCategory[] = [
     name: "Calling",
     rows: [
       {
-        label: "Calls per day",
-        hint: "A ceiling, not an allowance you are billed against. You can set your own lower limit in Settings → Safety.",
-        values: byPlan((id) => PLAN_LIMITS[id].callsPerDay),
+        label: "Included calling credit",
+        hint: "Spent by the second, at a rate that depends on whose model providers ran the call. Your own keys cost the least. Top up any time; unused credit does not roll over.",
+        values: byPlan((id) => PLAN_LIMITS[id].credit),
       },
       {
         label: "Your own caller ID",
@@ -216,10 +221,6 @@ export const FEATURE_MATRIX: MatrixCategory[] = [
       {
         label: "Voicemail and IVR handling",
         values: { free: true, starter: true, growth: true, enterprise: true },
-      },
-      {
-        label: "Calling windows per campaign",
-        values: { free: false, starter: false, growth: true, enterprise: true },
       },
     ],
   },
@@ -266,11 +267,6 @@ export const FEATURE_MATRIX: MatrixCategory[] = [
         values: { free: true, starter: true, growth: true, enterprise: true },
       },
       {
-        label: "Editable AI-disclosure line",
-        hint: "On by default and cannot be fully removed.",
-        values: { free: true, starter: true, growth: true, enterprise: true },
-      },
-      {
         label: "Audit log",
         values: { free: false, starter: false, growth: false, enterprise: true },
       },
@@ -290,7 +286,7 @@ export const FEATURE_MATRIX: MatrixCategory[] = [
       {
         label: "Organisations",
         hint: "Separate workspaces, each with its own contacts, campaigns and team.",
-        values: { free: "1", starter: "1", growth: "3", enterprise: "Unlimited" },
+        values: { free: "1", starter: "1", growth: "3", enterprise: "Custom" },
       },
       {
         label: "Model providers you can connect",
@@ -300,14 +296,6 @@ export const FEATURE_MATRIX: MatrixCategory[] = [
       {
         label: "CSV export",
         values: { free: false, starter: true, growth: true, enterprise: true },
-      },
-      {
-        label: "Webhooks with replay",
-        values: { free: false, starter: false, growth: true, enterprise: true },
-      },
-      {
-        label: "CRM integrations",
-        values: { free: false, starter: false, growth: true, enterprise: true },
       },
       {
         label: "API access",
@@ -385,26 +373,28 @@ export const ROI_DEFAULTS = {
    Rewritten for entitlement-based plans. The previous answers described a
    metered product this one is not: an overage rate, "you are not cut off
    mid-run", a run that "pauses and resumes once you top up", and a pro-rata
-   refund window. There is no overage, no top-up, and no pause/resume endpoint,
-   so every one of those was a promise the code contradicted.
+   refund window. There is no overage and no pause/resume endpoint, so those
+   were promises the code contradicted. Top-up shipped afterward
+   (`POST /api/v1/billing/top-up`) - the FAQ answer below about topping up is
+   current; this comment is about what was true when the rewrite happened.
    --------------------------------------------------------------------------- */
 
 export const PRICING_FAQ: { q: string; a: string }[] = [
   {
     q: "Am I charged per call?",
-    a: "No. Plans are a monthly subscription and calls are not metered or billed individually. What a plan sets is how much you can stand up — voice agents, seats, organisations — and a daily call ceiling. You will never get a bill that depends on how busy last month was.",
+    a: "Not per call, no. Your plan includes calling credit, and a call spends it by the second — so a twelve-second voicemail costs a twelve-second slice rather than a whole call. The rate depends on whose model providers ran it: bring your own keys and you pay only our platform fee. Runs stop when the credit is spent, so nothing arrives as a surprise on a bill.",
   },
   {
-    q: "What happens when I hit my daily call limit?",
-    a: "Runs stop at the ceiling and tell you that is why. Nothing is billed extra and nothing is silently dropped — contacts that were not reached stay in the run, and the limit resets the next day. If you want a lower ceiling than your plan allows, set one in Settings → Safety.",
+    q: "What happens when my calling credit runs out?",
+    a: "Runs stop and tell you that is why. Nothing is billed extra and nothing is silently dropped — contacts that were not reached stay in the run. A call already in progress always finishes; we would rather absorb the overrun than cut someone off mid-sentence. You can top up straight away, or wait for the next period, when a fresh allowance lands. Unused credit does not roll over.",
   },
   {
     q: "Who pays for the phone calls and the AI?",
-    a: "You connect your own carrier account and your own speech or language provider keys, and those vendors bill you directly at their rates. We do not mark them up or resell them. That is also why connecting a number is included on every plan, including Free.",
+    a: "The phone calls are yours: you connect your own carrier account and it bills you directly, at any plan including Free. For the AI you have a choice. Bring your own speech and language keys and those vendors bill you directly — you pay us only our per-minute platform fee, which is the cheapest way to run. Use ours instead and we charge a published per-minute rate for each part we supply, so the convenience has a price you can see before you pick a model rather than after.",
   },
   {
     q: "Can I use it on the free plan without a card?",
-    a: "Yes. Free includes a daily call budget, one voice agent and one seat, and it dials real numbers through your own carrier. No card is required and there is no trial clock.",
+    a: "Yes. Free includes calling credit, one voice agent and one seat, and it dials real numbers through your own carrier. No card is required and there is no trial clock.",
   },
   {
     q: "What happens if a payment fails?",

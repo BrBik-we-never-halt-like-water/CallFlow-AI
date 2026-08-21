@@ -225,6 +225,14 @@ class Config:
         default_factory=lambda: os.getenv("DODO_PRODUCT_GROWTH_ANNUAL", "")
     )
 
+    # A one-time purchase, not a plan: a top-up adds usage credit mid-period and
+    # never changes what the organisation is subscribed to. Empty is a supported
+    # state - `POST /billing/top-up` answers 404 and the interface offers no
+    # top-up button, rather than one that cannot complete.
+    dodo_product_credit_pack: str = field(
+        default_factory=lambda: os.getenv("DODO_PRODUCT_CREDIT_PACK", "")
+    )
+
     @property
     def payments_configured(self) -> bool:
         """Whether a real gateway is reachable.

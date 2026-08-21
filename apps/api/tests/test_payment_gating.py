@@ -139,3 +139,103 @@ def test_a_settled_payment_grants_normally() -> None:
     assert not withholds_grant(
         remote.status, has_unsettled_payment=remote.has_unsettled_payment
     )
+
+
+# --- an unsubscribed plan still gets its credit ----------------------------------
+
+
+class _FakeConn:
+    """Records the grants a caller attempts, so `ensure_period_credit`'s decision
+    can be asserted without a database."""
+
+    def __init__(self, already: set[str] | None = None) -> None:
+        self.granted: list[tuple[int, str]] = []
+        self._already = already or set()
+
+    async def fetchval(self, sql: str, *args: object) -> object:
+        # `credits_repo.grant` calls `credit_append(...)`; the dedupe key is $3.
+        key = str(args[2])
+        if key in self._already:
+            return False
+        self._already.add(key)
+        self.granted.append((int(args[1]), key))  # type: ignore[arg-type]
+        return True
+
+
+@pytest.mark.asyncio
+async def test_an_unsubscribed_plan_is_granted_its_credit() -> None:
+    """The hole this closes: `grant_for_period` runs off subscription webhooks, so
+    a Free organisation - which has no subscription - would never receive the
+    credit its plan advertises. Its balance would sit at zero and every run would
+    be refused, while the pricing page promised otherwise."""
+    from app.domain.plans import entitlements_for
+    from app.services import credit as credit_service
+
+    conn = _FakeConn()
+    granted = await credit_service.ensure_period_credit(
+        conn,  # type: ignore[arg-type]
+        org_id=uuid4(),
+        entitlements=entitlements_for("free"),
+        has_subscription=False,
+    )
+    assert granted is True
+    assert conn.granted[0][0] == 10_000
+
+
+@pytest.mark.asyncio
+async def test_a_subscribed_plan_is_not_granted_twice() -> None:
+    """Its renewal webhook already grants, keyed on the gateway period. Granting
+    here as well would hand it two allowances a month."""
+    from app.domain.plans import entitlements_for
+    from app.services import credit as credit_service
+
+    conn = _FakeConn()
+    granted = await credit_service.ensure_period_credit(
+        conn,  # type: ignore[arg-type]
+        org_id=uuid4(),
+        entitlements=entitlements_for("starter"),
+        has_subscription=True,
+    )
+    assert granted is False
+    assert conn.granted == []
+
+
+@pytest.mark.asyncio
+async def test_the_lazy_grant_is_idempotent_within_a_month() -> None:
+    """It is called on every Billing read and every run start, so a second call in
+    the same month must add nothing."""
+    from app.domain.plans import entitlements_for
+    from app.services import credit as credit_service
+
+    conn = _FakeConn()
+    org, ents = uuid4(), entitlements_for("free")
+    first = await credit_service.ensure_period_credit(
+        conn, org_id=org, entitlements=ents, has_subscription=False  # type: ignore[arg-type]
+    )
+    second = await credit_service.ensure_period_credit(
+        conn, org_id=org, entitlements=ents, has_subscription=False  # type: ignore[arg-type]
+    )
+    assert (first, second) == (True, False)
+    assert len(conn.granted) == 1
+
+
+@pytest.mark.asyncio
+async def test_a_new_month_grants_again() -> None:
+    """The key carries the calendar month, so the allowance rolls over on its own
+    without a scheduler - there is none in this deployment."""
+    from datetime import UTC, datetime
+
+    from app.domain.plans import entitlements_for
+    from app.services import credit as credit_service
+
+    conn = _FakeConn()
+    org, ents = uuid4(), entitlements_for("free")
+    for month in (8, 9):
+        await credit_service.ensure_period_credit(
+            conn,  # type: ignore[arg-type]
+            org_id=org,
+            entitlements=ents,
+            has_subscription=False,
+            now=datetime(2026, month, 15, tzinfo=UTC),
+        )
+    assert len(conn.granted) == 2

@@ -29,7 +29,7 @@ entitlements come from a per-organisation override set by a platform admin (§4)
 
 `∞` is `NULL`, never a sentinel like `-1`. `0` is a real, enforced value and is
 deliberately distinguishable from `NULL` — the same distinction
-`credits_repo.get_enforced_ceiling()` already relies on.
+`credits_repo.get_credit_cap()` already relies on.
 
 **`enterprise`'s seeded row is a floor, not a blank.** It carries `growth`'s numbers so
 an enterprise organisation created before its override is written is merely
@@ -265,7 +265,8 @@ Only `starter` and `growth` have Dodo products, so four ids in config
 | `subscription.on_hold` | record it, keep entitlements to period end | `status = on_hold`, `last_error` |
 | `subscription.failed` | terminal failure | `status = failed`, `last_error` |
 | `subscription.updated` | reconcile changed fields | whichever changed |
-| `payment.succeeded` / `.failed` | ledger only | insert `payments` |
+| `subscription.plan_changed` | mapped onto the same kind as `.updated` (`ISSUES.md` #141) | plan swap, gated on settlement |
+| `payment.succeeded` / `.failed` | ledger only; a credit-pack top-up (no subscription row) grants usage credit instead | insert `payments`, maybe `credit_ledger` |
 
 Callers read a **normalised** internal event kind, never the vendor string — the same
 reason `DialFailure` (`domain/entities.py:39-63`) exists for call failures.
@@ -297,6 +298,9 @@ hours, and a retry cannot fix any of those conditions.
 | `POST /api/v1/billing/checkout` | `billing:write` | returns a `checkout_url`; body carries an `idempotency_key` |
 | `POST /api/v1/billing/change-plan` | `billing:write` | upgrade or downgrade, prorated immediately |
 | `POST /api/v1/billing/cancel` | `billing:write` | cancel at period end |
+| `GET /api/v1/billing/credit-ledger` | `billing:read` | the usage-credit statement: every grant/hold/release/spend/expiry |
+| `POST /api/v1/billing/top-up` | `billing:write` | one-time credit-pack checkout; 404 if `DODO_PRODUCT_CREDIT_PACK` is unset |
+| `PATCH /api/v1/organisations/me/members/{id}/credit-cap` | `credits:write` | one teammate's share of the organisation's usage credit, in paise |
 | `POST /api/v1/webhooks/dodo` | none — signature is the boundary | the only inbound write path |
 
 `billing:read` is admin+, `billing:write` is **owner only**
@@ -322,6 +326,9 @@ public `/pricing` page was deleted in the first place.
 | `org_entitlement_overrides` | `org_id` | the enterprise tier. Readable by the org; writable only via the platform definer function |
 | `platform_admins` | none | RLS on, **no policies, no grant**. Rows created out of band only |
 | `platform_audit_log` | none | append-only |
+| `credit_ledger` | `org_id` | usage credit, append-only signed deltas (`grant`/`hold`/`release`/`spend`/`expiry`). `select` to `authenticated`; writes only through `credit_append`/`credit_settle`/`credit_release_stale_holds` (`SECURITY DEFINER`, and — since `ISSUES.md` #139 — checking the caller belongs to `org_id` unless the session is `anon`) |
+| `usage_rates`, `provider_tiers` | reference | the published rate card: one platform-fee row plus per-leg tier add-ons, and which tier each vendor sits in. `select` to `authenticated, anon` — a public rate card, not tenant data |
+| `member_credit_allocations` | `org_id` | `monthly_credit_cap_paise` — one per-teammate usage-credit ceiling, in money. Used to also hold `daily_allocation` (a call-count ceiling); retired (`ISSUES.md` #146) |
 
 `payments.amount_minor` is BIGINT and holds the currency's minor unit — paise for INR,
 cents for USD. This generalises CLAUDE.md §4 #3's "money is integers, paise, BIGINT" to a
@@ -338,9 +345,15 @@ silently dropping a paid subscription.
 
 ## 9. What this does *not* do
 
+**Superseded: a credit ledger shipped.** The row directly below described the state before
+usage credit existed; it is kept, struck through in spirit, as a marker of what changed
+rather than silently deleted. `credit_ledger` (migration `202608190900`) is real, append-only,
+and `organisations.credit_balance_paise` is now a live, written cache of it — not dead. See
+§8 and `docs/PRICING_DECISIONS.md` for the model: a platform fee per connected minute, plus
+per-leg tier add-ons only when CallFlow's own key paid for that leg.
+
 | not built | why |
 |---|---|
-| a credit wallet or ledger | this is an entitlement model. `organisations.credit_balance_paise` stays dead — zero readers, zero writers |
 | overage billing | calls are never charged per-call; the daily budget is a hard stop, not a metered overflow |
 | a telephony limit | bring-your-own carrier costs CallFlow nothing (§1) |
 | self-serve enterprise checkout | invoiced outside the product |
@@ -358,7 +371,7 @@ silently dropping a paid subscription.
 |---|---|
 | `GET /api/health`'s org-wide `used_today` | still the in-process rate-limiter counter — resets on deploy, wrong across replicas |
 | calling-window enforcement | still absent server-side (`ISSUES.md` #20) |
-| per-teammate credits | untouched. `member_credit_allocations` keeps working as a separate layer on top |
+| per-teammate usage-credit cap | now real: `monthly_credit_cap_paise` on `member_credit_allocations`, enforced at the run gate (`ISSUES.md` #144) — the one per-teammate ceiling this ladder has. A separate call-count allowance (`daily_allocation`) used to sit alongside it and was retired (`ISSUES.md` #146) |
 
 ---
 
@@ -375,8 +388,12 @@ silently dropping a paid subscription.
 | `/app/billing` | real: plan, meters, live gateway prices, checkout/switch/cancel, payments | `app/(app)/app/billing/page.tsx` |
 | `GET /api/v1/public/billing/plans` | real, unauthenticated, opens no connection — the marketing site's pricing section | `api/v1/routes/billing.py` |
 | `pricing.ts` prices | still absent **by design** — the gateway is the price of record and the UI reads it back | `lib/pricing.ts` |
-| `organisations.credit_balance_paise` | still declared, still dead. This is an entitlement model, not a wallet | `database/models.py:129-131` |
-| per-teammate credits | real **and enforced** at dial time; a separate layer, untouched | `repositories/credits.py`, `domain/safety.py:112` |
+| `credit_ledger` | real — usage credit, append-only, granted on subscribe/renew/top-up, spent per connected second at the platform fee (no leg runs on CallFlow's own keys yet, so tier add-ons are seeded and unreachable) | `services/credit.py`, `database/repositories/credits.py` |
+| `organisations.credit_balance_paise` | real — a live cache of `credit_ledger`'s sum, moved in the same statement as every ledger row | `database/models.py` |
+| per-teammate daily call allowance | real **and enforced** at dial time; a separate layer from usage credit | `repositories/credits.py`, `domain/safety.py:112` |
+| per-teammate usage-credit cap | real and enforced at the run gate, independent of the call allowance above | `domain/entitlements.py::check_member_credit_cap`, `routes/runs.py` |
+| the subscription webhook's plan-change and cancellation path | real — `subscription.plan_changed`/`.updated` now apply, where before they were silently dropped | `services/billing.py` (`ISSUES.md` #141) |
+| credit-pack top-ups | real end to end once `DODO_PRODUCT_CREDIT_PACK` is configured | `services/billing.py`, `services/credit.py` (`ISSUES.md` #142) |
 | platform-admin identity + capabilities | real — `platform_admins`, RLS forced, no policies, no grants; granted only by `scripts/platform_admin.py` through `privileged.acquire` | `auth/platform.py` |
 | the cross-tenant read path | real — `platform_can_read` on 17 `select` policies as *separate* permissive policies, plus `as_platform_reader` (read-only, audited, flag transaction-local) | `database/session.py` |
 | entitlement overrides | real, and they reach the SQL guards via `effective_limit`, not just the Billing display | `platform_set_org_entitlements` |

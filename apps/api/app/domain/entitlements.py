@@ -9,7 +9,9 @@ than 403, so the interface can tell "your plan doesn't include this" apart from
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import datetime
 
 from app.domain.plans import Entitlements
 
@@ -201,3 +203,204 @@ __all__ = [
     "check_seat_available",
     "effective_daily_call_budget",
 ]
+
+
+# --- usage credit and the managed-key tier ---------------------------------------
+#
+# Both of these gate a *call*, not a stored row, so they are checked at dial time
+# as well as wherever the interface offers the action. An agent saved on Starter
+# must not keep dialling premium on CallFlow's keys after a downgrade to Free.
+
+
+def check_own_keys_allowed(
+    *, entitlements: Entitlements, plan_name: str
+) -> EntitlementVerdict:
+    """Whether this plan may connect its own STT/LLM/TTS vendor key.
+
+    Free may not; every paid plan may. The refusal names the capability rather
+    than a count, because there is no number to be at the end of - `_check`'s
+    "does not include" wording exists for exactly this shape but reads oddly for
+    something the customer already owns.
+
+    Deliberately not about telephony. A carrier is always the organisation's own
+    account and is mandatory to dial at all, so a "you may not bring your own"
+    rule that swept it up would stop Free working entirely.
+    """
+    if entitlements.may_bring_own_keys:
+        return _ALLOWED
+    return EntitlementVerdict(
+        False,
+        f"{plan_name} runs on CallFlow's model providers, so your own keys "
+        f"can't be connected on it. {_UPGRADE} to use your own vendors.",
+    )
+
+
+def check_managed_tier_allowed(
+    *, entitlements: Entitlements, plan_name: str, tier: str, leg_label: str
+) -> EntitlementVerdict:
+    """Whether this plan may run `leg_label` at `tier` on **CallFlow's** key.
+
+    Callers must not reach here for a leg on the customer's own key: what the
+    customer pays their own vendor is not something this product gets an opinion
+    on, and refusing it would be refusing a model they are entitled to use.
+
+    An unrecognised tier refuses. That is the fail-closed direction (CLAUDE.md
+    §4 #2) - `domain/rates.py` already bills an untiered provider at the top of
+    the card, and permitting here what is charged at premium there would let a
+    Free organisation run the most expensive pipeline for Rs 100.
+    """
+    order = ("economy", "standard", "premium")
+    allowed = entitlements.max_managed_tier
+    if allowed not in order or tier not in order:
+        return EntitlementVerdict(
+            False,
+            f"{leg_label} isn't priced on {plan_name} yet. {_UPGRADE} to use it.",
+        )
+    if order.index(tier) <= order.index(allowed):
+        return _ALLOWED
+    return EntitlementVerdict(
+        False,
+        f"{plan_name} covers {allowed} model providers on CallFlow's keys, and "
+        f"this {leg_label} is {tier}. {_UPGRADE}, or connect your own key for it.",
+    )
+
+
+def check_credit_available(
+    *, balance_paise: int | None, plan_name: str
+) -> EntitlementVerdict:
+    """Whether there is credit left to place a call.
+
+    `None` means the balance could not be read, and that **refuses**. A credit
+    check that cannot complete must deny, or an outage becomes free calling
+    (CLAUDE.md §4 #2) - the same reason the rate limiter fails closed.
+
+    A negative balance also refuses, but it is a normal state rather than an
+    error: a call that overran its hold settles for more than was reserved,
+    because a conversation already happening with a person is never cut off over
+    money. The next call is the one that stops.
+    """
+    if balance_paise is None:
+        return EntitlementVerdict(
+            False,
+            "Your usage credit couldn't be checked, so no call was placed. "
+            "Try again in a moment.",
+        )
+    if balance_paise > 0:
+        return _ALLOWED
+    return EntitlementVerdict(
+        False,
+        f"{plan_name}'s usage credit is spent. Top up in Billing, or wait for "
+        "the next period to start.",
+    )
+
+
+def check_member_credit_cap(
+    *, cap_paise: int | None, spent_paise: int, plan_name: str
+) -> EntitlementVerdict:
+    """One teammate's share of the organisation's credit.
+
+    `None` means nobody set a cap for this person, so only the organisation-wide
+    balance governs them - "no row is ungated," the reason a cap of `0` must
+    stay distinguishable from it. `0` blocks them entirely, which is a real
+    thing an owner may want.
+    """
+    if cap_paise is None:
+        return _ALLOWED
+    if spent_paise < cap_paise:
+        return _ALLOWED
+    if cap_paise == 0:
+        return EntitlementVerdict(
+            False,
+            "You have no usage credit allocated. Ask an owner or admin to set "
+            "some in Organisation → Team.",
+        )
+    return EntitlementVerdict(
+        False,
+        "You have used your share of this period's usage credit. Ask an owner "
+        "or admin to raise it in Organisation → Team.",
+    )
+
+
+# --- which agents an over-limit organisation may still use ----------------------
+
+
+@dataclass(frozen=True)
+class AgentStanding:
+    """One agent, as the usability rule needs to see it."""
+
+    agent_id: str
+    created_at: datetime
+    kept_at: datetime | None = None
+    """When the customer explicitly chose to keep this one active, if they have.
+
+    Nullable because most organisations never go over their limit and never make
+    the choice. It is a *preference*, not a state: it survives an upgrade, so
+    downgrading twice does not ask the same question twice.
+    """
+
+
+def usable_agent_ids(
+    agents: Sequence[AgentStanding], *, limit: int | None
+) -> frozenset[str]:
+    """Which agents may still place calls.
+
+    `None` is unlimited and every agent is usable. Otherwise the allowance is
+    filled in this order, and the rest are locked:
+
+      1. agents the customer explicitly kept, most recent choice first
+      2. everything else, oldest first
+
+    **Oldest-first rather than newest** for the default, because the agent someone
+    built on day one is the likeliest to be the one running their work - and if the
+    guess is wrong they can override it, which is what `kept_at` is for. Newest-first
+    would lock the established agent in favour of one made five minutes ago.
+
+    **Locked, never deleted.** An agent is a configuration row; making it unusable
+    destroys nothing and it comes back the moment the plan does. That is different
+    from a vendor credential, which holds a secret this product could not recreate -
+    which is why `docs/BILLING.md` §3 leaves *those* alone on a downgrade and this
+    rule does not extend to them.
+
+    A limit of `0` locks everything, and that is deliberate rather than an edge to
+    round away: an organisation whose plan includes no agents has none it may use.
+    """
+    if limit is None:
+        return frozenset(agent.agent_id for agent in agents)
+    if limit <= 0:
+        return frozenset()
+
+    ranked = sorted(
+        agents,
+        key=lambda a: (
+            a.kept_at is None,
+            # Negated via the tuple's second slot below rather than `reverse`,
+            # because the other keys sort ascending and one `reverse` would flip
+            # them all.
+            -(a.kept_at.timestamp() if a.kept_at else 0.0),
+            a.created_at,
+        ),
+    )
+    return frozenset(agent.agent_id for agent in ranked[:limit])
+
+
+def check_agent_usable(
+    *, agent_id: str, usable: frozenset[str], plan_name: str, limit: int | None
+) -> EntitlementVerdict:
+    """Refuse a run whose agent is locked by the plan.
+
+    Separate from `check_agent_create_allowed`, which gates *making* one. Without
+    this second check the limit is a one-time toll rather than an entitlement:
+    subscribe for a month, create ten agents, downgrade, keep using all ten.
+    """
+    if agent_id in usable:
+        return _ALLOWED
+    if limit == 0:
+        return EntitlementVerdict(
+            False, f"{plan_name} does not include voice agents. {_UPGRADE}."
+        )
+    return EntitlementVerdict(
+        False,
+        f"This agent is locked - {plan_name} covers "
+        f"{limit} {'agent' if limit == 1 else 'agents'} and others are active. "
+        f"{_UPGRADE}, or make this one active in Agents.",
+    )

@@ -79,6 +79,35 @@ export function formatMinorUnits(
   }).format(amountMinor / divisor);
 }
 
+/**
+ * The inverse of `formatMinorUnits`: what a human typed in major units (`"850"`,
+ * `"12.50"`) → integer minor units for the currency's smallest unit (`85000`).
+ * `null` for anything that doesn't parse as a non-negative number, so a caller
+ * can tell "not a number" apart from a legitimate `0`.
+ *
+ * Exists because a money-shaped input field must never store what a human
+ * typed as-is - "850" typed into a paise field would silently mean 850 paise
+ * (₹8.50), not ₹850, unless something here does the same digit-aware
+ * conversion `formatMinorUnits` does for display.
+ */
+export function parseMajorUnitsToMinor(input: string, currency: string): number | null {
+  const trimmed = input.trim();
+  if (trimmed === '') return null;
+  const amount = Number(trimmed);
+  if (!Number.isFinite(amount) || amount < 0) return null;
+
+  const locale = currency === 'INR' ? 'en-IN' : 'en-US';
+  let digits: number;
+  try {
+    digits =
+      new Intl.NumberFormat(locale, { style: 'currency', currency }).resolvedOptions()
+        .maximumFractionDigits ?? 2;
+  } catch {
+    return null;
+  }
+  return Math.round(amount * 10 ** digits);
+}
+
 /** Per-call overage rates are small; they need decimals the plan price doesn't. */
 export function formatRate(
   amount: number | null | undefined,

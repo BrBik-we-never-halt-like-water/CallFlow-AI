@@ -134,7 +134,7 @@ def check_dial_allowed(
     is_suppressed: bool = False,
     max_calls_per_run: int | None = None,
     allowlist: Iterable[str] | None = None,
-    credits_remaining: int | None = None,
+    usage_credit_paise: int | None = None,
 ) -> GateResult:
     """Final gate before a number is dialed.
 
@@ -144,15 +144,6 @@ def check_dial_allowed(
     deployment's env-var config when omitted; the caller passes an organisation's
     own override (`org_safety_settings`) when one exists, resolved once per run,
     the same way the suppression verdict already is.
-
-    `credits_remaining` is the caller's own per-teammate credit headroom -
-    `None` when no per-teammate ceiling has been set for them (the org-wide
-    daily budget, checked separately, is the only gate in that case), and an
-    already-net int otherwise (allocation minus today's already-connected
-    calls minus this run's own reservations so far - see
-    `CampaignRunner.run_one`, which reserves before dialling and releases the
-    reservation if the call doesn't connect, since a credit is only ever
-    actually spent by a connected call).
     """
     if is_suppressed:
         return GateResult(False, f"{mask(phone)} opted out and is on the suppression list")
@@ -168,11 +159,18 @@ def check_dial_allowed(
             "Raise it in Settings → Safety to continue.",
         )
 
-    if credits_remaining is not None and credits_remaining <= 0:
+    # Usage credit: money, spent by the second.
+    #
+    # `None` means this organisation has no credit ceiling (an uncapped plan), so
+    # the gate does not apply. Zero or less refuses. The caller is responsible
+    # for passing `0` rather than `None` when the balance could not be read,
+    # because a credit check that cannot complete must deny (CLAUDE.md §4 #2)
+    # and this module cannot tell an absent ceiling from a failed lookup.
+    if usage_credit_paise is not None and usage_credit_paise <= 0:
         return GateResult(
             False,
-            "daily credit limit reached. Ask an owner or admin to raise your "
-            "allocation in Organisation → Team.",
+            "this organisation's usage credit is spent. Top up in Billing, or "
+            "wait for the next period.",
         )
 
     # A non-empty allowlist means development mode: only these numbers are dialable.

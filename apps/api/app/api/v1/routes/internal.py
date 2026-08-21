@@ -22,8 +22,10 @@ from __future__ import annotations
 
 import logging
 import secrets
+import uuid
 from typing import Annotated, Any
 
+import asyncpg
 from fastapi import APIRouter, Header, HTTPException, status
 from pydantic import BaseModel, Field
 
@@ -38,7 +40,9 @@ from app.domain.entities import (
     TERMINAL_STATUSES,
     CallOutcome,
 )
+from app.domain.plans import PlanId, entitlements_for
 from app.domain.triage import triage
+from app.services import credit as credit_service
 
 log = logging.getLogger("app.api.v1.internal")
 
@@ -83,6 +87,48 @@ def _require_internal_key(presented: str | None) -> None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
     if not presented or not secrets.compare_digest(presented, config.internal_api_secret):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+
+
+async def _settle_usage_credit(
+    conn: asyncpg.Connection,
+    *,
+    org_id: uuid.UUID,
+    run_id: str,
+    contact_name: str,
+    phone_masked: str,
+    duration_seconds: int | None,
+) -> None:
+    """Spend credit for one finished call, and release its hold.
+
+    `call_key` is `run_id:contact_name:phone_masked` - the same triple
+    `call_outcomes` is keyed on, so the settle finds the hold the dial placed and
+    two writes about one call cannot disagree about which call they mean.
+
+    The rate is resolved now rather than read from the hold, because the hold may
+    not exist: nothing places one yet on the dial path (see the note in
+    `routes/runs.py`). Resolving it here means the charge is right either way, and
+    for a bring-your-own-keys pipeline - which is every pipeline today - it is the
+    platform fee, which does not vary.
+    """
+    entitlements = entitlements_for(
+        await conn.fetchval(
+            "select plan_id from public.organisations where id = $1", org_id
+        )
+        or PlanId.FREE.value
+    )
+    if entitlements.monthly_credit_paise is None:
+        # An uncapped plan spends nothing and has no balance to move.
+        return
+
+    rate = await credit_service.rate_for(conn, ())
+    await credit_service.settle_call(
+        conn,
+        org_id=org_id,
+        user_id=None,
+        call_key=f"{run_id}:{contact_name}:{phone_masked}",
+        rate=rate,
+        duration_seconds=duration_seconds,
+    )
 
 
 @router.post("/runs/{run_id}/complete", status_code=status.HTTP_200_OK)
@@ -171,6 +217,27 @@ async def complete_call(
                     run_id=run_id,
                     call_outcome_id=call_outcome_id,
                 )
+            # Charge the call. This is the only place usage credit is actually
+            # spent, because it is the only place a real duration exists - the
+            # dial path returns while the call is still in flight.
+            #
+            # Idempotent on the call key, so the worker retrying its callback
+            # settles once. Failures are logged and swallowed: this callback also
+            # records the *result* of a customer's call, and losing a transcript
+            # because a ledger write failed would be the wrong trade. An unsettled
+            # call leaves its hold, which the stale-hold sweep releases.
+            try:
+                await _settle_usage_credit(
+                    conn,
+                    org_id=owner["org_id"],
+                    run_id=run_id,
+                    contact_name=payload.contact_name,
+                    phone_masked=payload.phone_masked,
+                    duration_seconds=payload.duration_seconds,
+                )
+            except Exception:
+                log.exception("could not settle usage credit for run %s", run_id)
+
             closed = await runs_repo.finish_if_all_settled(
                 conn, run_id, stale_after_seconds=_STALE_AFTER_SECONDS
             )

@@ -21,6 +21,11 @@ class InvitationPreviewOut(BaseModel):
     org_name: str | None
     role: str | None
     email: str | None
+    # Whether the invited address already has a CallFlow account, so the page
+    # can ask that person to sign in instead of offering them a signup form
+    # that cannot succeed. Scoped to the token's own address - there is no way
+    # to ask this about an arbitrary email.
+    account_exists: bool
 
 
 class AcceptedOut(BaseModel):
@@ -41,6 +46,7 @@ async def preview(token: str) -> InvitationPreviewOut:
         org_name=row["org_name"],
         role=row["role"],
         email=row["email"],
+        account_exists=row["account_exists"],
     )
 
 

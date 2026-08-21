@@ -9,16 +9,20 @@ import {
   SettingsSection,
 } from '@/components/app/settings-section';
 import { Button } from '@/components/ui/button';
+import { Meter } from '@/components/ui/meter';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/components/ui/toast';
 import {
   api,
   type BillingOverview,
+  type Credit,
+  type LedgerEntry,
   type MyCredits,
   type PaymentRecord,
   type PlanOption,
 } from '@/lib/api';
-import { formatMinorUnits } from '@/lib/format';
+import { formatMinorUnits, formatNumber } from '@/lib/format';
+import { bumpEntitlementsVersion } from '@/lib/hooks/use-entitlements-version';
 import { useOrgScopedEffect } from '@/lib/hooks/use-org-scoped-effect';
 import { useSession, type SessionProfile } from '@/lib/hooks/use-session';
 
@@ -54,7 +58,7 @@ function BillingContent({ profile }: { profile: SessionProfile }) {
         <p className="measure text-small text-text-dim">
           {canRead
             ? 'The plan, the limits every run is checked against, and what has been paid.'
-            : 'How many calls you can still place today.'}
+            : "Your own share of the organisation's usage credit."}
         </p>
       </div>
 
@@ -64,7 +68,7 @@ function BillingContent({ profile }: { profile: SessionProfile }) {
 }
 
 /* --------------------------------------------------------------------------
-   Operators and viewers: their own slice of the daily budget. Unchanged.
+   Operators and viewers: their own share of the organisation's usage credit.
    -------------------------------------------------------------------------- */
 
 function MyCreditsPanel() {
@@ -83,26 +87,42 @@ function MyCreditsPanel() {
     <div className="flex max-w-3xl flex-col gap-4">
       <SettingsSection
         title="My credits"
-        description="Your own share of this organisation's daily call budget."
+        description="Your own share of this organisation's usage credit - money, spent by the second."
       >
         {myCredits === null ? (
           <div className="flex flex-col gap-2">
             <Skeleton className="h-8 w-48" />
             <Skeleton className="h-2 w-full" />
           </div>
-        ) : myCredits.daily_allocation === 0 ? (
+        ) : myCredits.credit_cap_paise === null ? (
           <NotWiredNotice>
-            An owner or admin hasn&apos;t set your daily credit allocation yet -
-            until they do, you draw from the organisation&apos;s shared daily
-            budget like everyone else.
+            An owner or admin hasn&apos;t set your usage-credit share yet -
+            until they do, you draw from the organisation&apos;s shared balance
+            like everyone else.
           </NotWiredNotice>
         ) : (
-          <EntitlementMeter
-            label="Calls used today"
-            used={myCredits.used_today}
-            limit={myCredits.daily_allocation}
-            atLimitHint="Ask an owner or admin to raise your allocation."
-          />
+          <div className="flex flex-col gap-1.5">
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="text-small text-text-dim">Spent this month</span>
+              <span className="font-mono text-small tabular-nums text-text">
+                {formatMinorUnits(myCredits.credit_spent_paise, 'INR')}
+                <span className="text-text-mute">
+                  {' / '}
+                  {formatMinorUnits(myCredits.credit_cap_paise, 'INR')}
+                </span>
+              </span>
+            </div>
+            <Meter
+              value={myCredits.credit_spent_paise}
+              max={myCredits.credit_cap_paise}
+              label="Usage credit spent this month"
+            />
+            {myCredits.credit_spent_paise >= myCredits.credit_cap_paise ? (
+              <p className="text-small text-text-mute">
+                Ask an owner or admin to raise your share in Organisation → Team.
+              </p>
+            ) : null}
+          </div>
         )}
       </SettingsSection>
     </div>
@@ -187,6 +207,7 @@ function OrgBilling({ profile }: { profile: SessionProfile }) {
               : 'The provider is processing the change. Use Sync with provider once it settles.',
           });
           setNonce((n) => n + 1);
+          bumpEntitlementsVersion();
           return;
         }
         const { checkout_url } = await api.startCheckout(
@@ -219,7 +240,10 @@ function OrgBilling({ profile }: { profile: SessionProfile }) {
         title: applied ? 'Updated from the provider' : 'Nothing to update',
         body: detail,
       });
-      if (applied) setNonce((n) => n + 1);
+      if (applied) {
+        setNonce((n) => n + 1);
+        bumpEntitlementsVersion();
+      }
     } catch (error) {
       toast({
         tone: 'error',
@@ -241,6 +265,7 @@ function OrgBilling({ profile }: { profile: SessionProfile }) {
         body: 'Your plan runs to the end of the period you have paid for.',
       });
       setNonce((n) => n + 1);
+      bumpEntitlementsVersion();
     } catch (error) {
       toast({
         tone: 'error',
@@ -343,13 +368,20 @@ function OrgBilling({ profile }: { profile: SessionProfile }) {
         </div>
       </SettingsSection>
 
+      <CreditSection
+        credit={overview.credit}
+        canTopUp={
+          canPurchase && overview.payments_configured && overview.credit_pack_configured
+        }
+      />
+
       <SettingsSection
-        title="Usage today"
+        title="Calls today"
         description={
           limits.daily_call_budget !== null &&
           overview.effective_daily_call_budget < limits.daily_call_budget
-            ? `The same limiter every run passes through, over a rolling 24 hours. Your plan allows ${limits.daily_call_budget}; this organisation is set lower.`
-            : 'The same limiter every run passes through, over a rolling 24 hours - nothing here is estimated.'
+            ? `A safety ceiling, not a plan allowance - it exists to bound a runaway, and usage credit above is what actually limits how much you can call. This organisation is set to ${overview.effective_daily_call_budget}, below the ${limits.daily_call_budget} the deployment permits.`
+            : 'A safety ceiling over a rolling 24 hours, identical on every plan - it exists to bound a runaway, not to meter you. Usage credit above is the real limit. Set a lower one in Settings → Safety.'
         }
       >
         <EntitlementMeter
@@ -552,3 +584,178 @@ function ReceiptLink({ payment }: { payment: PaymentRecord }) {
     </Button>
   );
 }
+
+
+/**
+ * Usage credit: money spent by the second, shown as money.
+ *
+ * **Minutes are a footnote, not the headline.** The same balance buys wildly
+ * different amounts of talking depending on which models a call runs on, so a
+ * minutes figure is only true for the rate the organisation is on right now -
+ * which is why it is prefixed "about" and the rate is stated beside it.
+ *
+ * A negative balance is a real state, not an error: a call that overran its hold
+ * settles for more than was reserved, because a conversation already happening
+ * with a person is never cut off over money. It renders as spent-and-then-some
+ * rather than as a bug.
+ */
+function CreditSection({
+  credit,
+  canTopUp,
+}: {
+  /** Whether to offer the "Top up" button at all - not whether it might work.
+   *  A deployment can take real subscription payments with no credit-pack
+   *  product configured (`credit_pack_configured`), in which case the button
+   *  must not render: clicking it always 404s, and rendering it anyway turns
+   *  an honest "not offered here" into a control that looks broken. */
+  credit: Credit;
+  canTopUp: boolean;
+}) {
+  const toast = useToast();
+  const [busy, setBusy] = useState(false);
+  const [ledger, setLedger] = useState<LedgerEntry[] | null>(null);
+  const [showLedger, setShowLedger] = useState(false);
+
+  const openLedger = useCallback(async () => {
+    setShowLedger(true);
+    if (ledger !== null) return;
+    try {
+      setLedger(await api.creditLedger(50));
+    } catch {
+      // An empty array, not a stuck spinner: the statement is supporting detail,
+      // and the balance above it is already the answer to the real question.
+      setLedger([]);
+    }
+  }, [ledger]);
+
+  const topUp = useCallback(async () => {
+    setBusy(true);
+    try {
+      const { checkout_url } = await api.startTopUp(crypto.randomUUID());
+      window.location.href = checkout_url;
+    } catch (error) {
+      toast({
+        tone: 'error',
+        title: 'Could not start the top-up',
+        body: error instanceof Error ? error.message : undefined,
+      });
+    } finally {
+      setBusy(false);
+    }
+  }, [toast]);
+
+  if (credit.is_uncapped) {
+    return (
+      <SettingsSection
+        title="Usage credit"
+        description="What calls draw against, spent by the second."
+      >
+        <p className="text-small text-text-dim">
+          This plan has no usage ceiling, so calls are not metered against a
+          balance.
+        </p>
+      </SettingsSection>
+    );
+  }
+
+  // Clamped, and the meter is hidden entirely when nothing has been granted yet.
+  // `granted` now comes from the ledger rather than the plan, so the two agree -
+  // but a meter is a ratio, and a ratio with a zero denominator has no honest
+  // rendering. Showing "0 / 0" as a full bar is what made an organisation that
+  // had used nothing look like it had used everything.
+  const granted = credit.granted_this_period_paise;
+  const spent = Math.max(granted - credit.balance_paise, 0);
+
+  return (
+    <SettingsSection
+      title="Usage credit"
+      description="What calls draw against. Spent by the second, at a rate that depends on whose model providers ran the call."
+      footer={
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <Button variant="ghost" size="sm" onClick={openLedger}>
+            {showLedger ? 'Statement' : 'See statement'}
+          </Button>
+          {canTopUp ? (
+            <Button variant="secondary" size="sm" loading={busy} onClick={topUp}>
+              Top up
+            </Button>
+          ) : null}
+        </div>
+      }
+    >
+      <div className="flex flex-col gap-4">
+        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+          <span className="font-mono text-h3 tabular-nums text-text">
+            {formatMinorUnits(Math.max(credit.balance_paise, 0), 'INR')}
+          </span>
+          {granted > 0 ? (
+            <span className="text-small text-text-dim">
+              left of {formatMinorUnits(granted, 'INR')}
+            </span>
+          ) : null}
+        </div>
+
+        {granted > 0 ? (
+          <EntitlementMeter
+            label="Credit used this period"
+            used={spent}
+            limit={granted}
+            atLimitHint="Top up, or wait for the next period to start."
+          />
+        ) : (
+          <p className="text-small text-text-dim">
+            No credit has been added this period yet.
+          </p>
+        )}
+
+        <p className="text-small text-text-mute">
+          {credit.balance_paise <= 0
+            ? granted > 0
+              ? 'Spent. Runs will stop until this is topped up or the period rolls over.'
+              : 'Runs will stop until credit is added.'
+            : `About ${formatNumber(credit.estimated_minutes_left)} minutes at your current rate of ${formatMinorUnits(credit.rate_paise_per_minute, 'INR')} a minute - an estimate, because a call on different providers costs a different amount.`}
+        </p>
+
+        {showLedger ? (
+          ledger === null ? (
+            <Skeleton className="h-24 w-full" />
+          ) : ledger.length === 0 ? (
+            <p className="text-small text-text-dim">Nothing recorded yet.</p>
+          ) : (
+            <ul className="flex flex-col gap-1.5 border-t border-rule pt-3">
+              {ledger.map((entry) => (
+                <li
+                  key={entry.id}
+                  className="flex items-baseline justify-between gap-3 text-small"
+                >
+                  <span className="text-text-dim">
+                    {new Date(entry.created_at).toLocaleDateString()}
+                  </span>
+                  <span className="flex-1 text-text-mute">
+                    {LEDGER_LABEL[entry.entry_kind] ?? entry.entry_kind}
+                  </span>
+                  <span className="font-mono tabular-nums text-text">
+                    {entry.amount_minor >= 0 ? '+' : '-'}
+                    {formatMinorUnits(Math.abs(entry.amount_minor), entry.currency)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )
+        ) : null}
+      </div>
+    </SettingsSection>
+  );
+}
+
+/** Ledger kinds in the reader's words, not the schema's. `hold` and `release`
+ *  are both shown rather than netted away - a customer whose balance dipped and
+ *  came back deserves to see that a call was reserved for and never connected. */
+const LEDGER_LABEL: Record<LedgerEntry['entry_kind'], string> = {
+  grant: 'Credit added',
+  hold: 'Reserved for a call',
+  release: 'Reservation returned',
+  spend: 'Call',
+  expiry: 'Expired at period end',
+  adjustment: 'Adjustment',
+};

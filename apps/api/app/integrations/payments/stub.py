@@ -42,6 +42,9 @@ _PRICES: dict[tuple[str, BillingPeriod], Price] = {
     ("starter", BillingPeriod.ANNUAL): Price(999_000, "INR", BillingPeriod.ANNUAL),
     ("growth", BillingPeriod.MONTHLY): Price(499_900, "INR", BillingPeriod.MONTHLY),
     ("growth", BillingPeriod.ANNUAL): Price(4_999_000, "INR", BillingPeriod.ANNUAL),
+    # A one-time credit pack, so the top-up path is exercisable offline. Absent
+    # from `list_prices`'s contract as a *plan* - callers ask for it by name.
+    ("credit_pack", BillingPeriod.MONTHLY): Price(50_000, "INR", BillingPeriod.MONTHLY),
 }
 
 _SUPPORTED = frozenset(
@@ -63,6 +66,9 @@ _KIND_BY_TYPE: Mapping[str, WebhookKind] = {
     "subscription.expired": WebhookKind.SUBSCRIPTION_EXPIRED,
     "subscription.failed": WebhookKind.SUBSCRIPTION_FAILED,
     "subscription.updated": WebhookKind.SUBSCRIPTION_UPDATED,
+    # Mirrors the real adapter (`dodo.py`): a plan change reports as its own
+    # event type, and is handled identically to `.updated` by `handle_event`.
+    "subscription.plan_changed": WebhookKind.SUBSCRIPTION_UPDATED,
     "payment.succeeded": WebhookKind.PAYMENT_SUCCEEDED,
     "payment.failed": WebhookKind.PAYMENT_FAILED,
 }

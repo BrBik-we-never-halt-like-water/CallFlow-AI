@@ -90,19 +90,29 @@ export function PlanCard({
         )}
       </div>
 
+      {/* No "calls per day" row. It is identical on every plan now and can never
+          be the binding limit - usage credit is, and it is shown on the Billing
+          page's own meter rather than as a plan feature (`domain/plans.py`'s
+          `RUNAWAY_CALL_CEILING`). */}
       <dl className="flex flex-col gap-1 text-small">
         {(
           [
+            ['Calling credit', plan.entitlements.monthly_credit_paise],
             ['Voice agents', plan.entitlements.max_voice_agents],
             ['Seats', plan.entitlements.max_seats],
             ['Organisations', plan.entitlements.max_organisations],
             ['Model providers', plan.entitlements.max_ai_integrations],
-            ['Calls per day', plan.entitlements.daily_call_budget],
           ] as const
         ).map(([label, value]) => (
           <div key={label} className="flex justify-between gap-2">
             <dt className="text-text-dim">{label}</dt>
-            <dd className="font-mono tabular-nums text-text">{limitLabel(value)}</dd>
+            <dd className="font-mono tabular-nums text-text">
+              {label === 'Calling credit'
+                ? value === null
+                  ? 'Unlimited'
+                  : formatMinorUnits(value, 'INR')
+                : limitLabel(value)}
+            </dd>
           </div>
         ))}
       </dl>

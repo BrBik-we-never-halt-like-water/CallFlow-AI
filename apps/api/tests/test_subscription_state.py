@@ -17,6 +17,7 @@ from app.domain.subscriptions import (
     can_transition,
     check_transition,
     effective_plan_id,
+    grants_via_subscription,
     is_live,
     is_retryable,
     is_terminal,
@@ -191,6 +192,27 @@ def test_a_paid_status_with_no_known_period_end_is_trusted() -> None:
         )
         == "starter"
     )
+
+
+# --- which statuses currently drive a usage-credit grant ---
+
+
+@pytest.mark.parametrize("status", [S.ACTIVE, S.ON_HOLD])
+def test_active_and_on_hold_grant_via_subscription(status: SubscriptionStatus) -> None:
+    """The two statuses `services/billing.py::handle_event` actually grants
+    against on `subscription.active`/`.renewed`."""
+    assert grants_via_subscription(status) is True
+
+
+@pytest.mark.parametrize("status", [S.PENDING, S.CANCELLED, S.EXPIRED, S.FAILED, None])
+def test_everything_else_falls_back_to_the_lazy_grant(status: SubscriptionStatus | None) -> None:
+    """The bug this function exists to fix: an abandoned `pending` checkout or a
+    subscription that reached any terminal status must **not** be read as "a
+    subscription covers this organisation's grants" - `credit.ensure_period_credit`
+    is the org's only remaining path to ever receiving credit again once this is
+    false, and a stale `latest ever` row (`resolve_plan`'s `subscription` field)
+    must not block it forever."""
+    assert grants_via_subscription(status) is False
 
 
 # --- the failure taxonomy ---

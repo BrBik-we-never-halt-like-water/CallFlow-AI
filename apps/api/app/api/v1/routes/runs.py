@@ -34,8 +34,11 @@ from app.database.repositories import runs as runs_repo
 from app.database.repositories import safety_settings as safety_settings_repo
 from app.database.repositories import suppressions as suppressions_repo
 from app.domain.entities import NEEDS_A_PERSON_DISPOSITIONS, CallOutcome, Contact
+from app.domain.entitlements import check_credit_available, check_member_credit_cap
 from app.domain.plans import entitlements_for
 from app.domain.safety import phone_hash, resolve_safety_settings
+from app.services import billing
+from app.services import credit as credit_service
 from app.services.campaign_runner import CampaignRunner
 
 log = logging.getLogger("app.api.v1.runs")
@@ -99,16 +102,12 @@ async def _run_and_persist(
     suppressed_hashes: frozenset[str],
     max_calls_per_run: int | None,
     allowlist: frozenset[str] | None,
-    credit_ceiling: int | None,
-    credits_used_before_run: int,
 ) -> None:
     runner = CampaignRunner(
         result_schema=result_schema,
         suppressed_hashes=suppressed_hashes,
         max_calls_per_run=max_calls_per_run,
         allowlist=allowlist,
-        credit_ceiling=credit_ceiling,
-        credits_used_before_run=credits_used_before_run,
         run_id=run_id,
     )
 
@@ -206,16 +205,54 @@ async def start_run(
 
     run_id = uuid.uuid4().hex[:12]
     async with database.as_user(user.auth_user_id) as conn:
-        # `None` when nobody has ever set this caller's own allocation - the
-        # per-teammate gate then never applies for them, only the org-wide
-        # daily budget above does. Resolved once here, not once per contact,
-        # the same way suppression/allowlist already are.
-        credit_ceiling = await credits_repo.get_enforced_ceiling(conn, user.org_id, user.id)
-        credits_used_before_run = (
-            await credits_repo.used_today(conn, user.org_id, user.id)
-            if credit_ceiling is not None
-            else 0
-        )
+        # Usage credit, checked once before the run starts rather than per dial.
+        #
+        # **The limit this accepts, stated rather than hidden:** a run that starts
+        # with credit can overspend it, because the money only moves when each
+        # call settles and nothing re-checks the balance mid-run. The exposure is
+        # bounded by the per-run ceiling (`max_calls_per_run`, default 5) times the
+        # rate, which is small - and a call already talking to a person is never
+        # cut off for money anyway, so a mid-run balance check could only refuse
+        # calls that had not started.
+        #
+        # A per-dial persisted hold would close that gap and needs a database
+        # connection inside `CampaignRunner`, which is deliberately I/O-free. That
+        # is a real change to its shape, not a line here.
+        effective_plan = await billing.resolve_plan(conn, user.org_id, user.org_plan_id)
+        if effective_plan.entitlements.monthly_credit_paise is not None:
+            # An unsubscribed plan is granted lazily, because nothing else will:
+            # `grant_for_period` runs off subscription webhooks and Free has no
+            # subscription. Idempotent per calendar month, so this is a no-op after
+            # the first run of the month.
+            await credit_service.ensure_period_credit(
+                conn,
+                org_id=user.org_id,
+                entitlements=effective_plan.entitlements,
+                has_subscription=billing.subscription_grants_credit(effective_plan),
+            )
+            balance = await credits_repo.balance(conn, user.org_id)
+            billing.refuse(
+                check_credit_available(
+                    balance_paise=balance,
+                    plan_name=billing.plan_name(effective_plan.plan_id),
+                )
+            )
+
+            # A ceiling on this teammate's own share of the pool above,
+            # independent of whether the org-wide balance would allow the run -
+            # both are checked, and either can refuse. `cap_paise=None` means
+            # nobody has set a share for this person, so only the org-wide
+            # balance just checked governs them.
+            cap_paise, spent_paise = await credit_service.member_credit_cap_status(
+                conn, org_id=user.org_id, user_id=user.id
+            )
+            billing.refuse(
+                check_member_credit_cap(
+                    cap_paise=cap_paise,
+                    spent_paise=spent_paise,
+                    plan_name=billing.plan_name(effective_plan.plan_id),
+                )
+            )
 
         suppressed: set[str] = set()
         for contact in contacts:
@@ -243,8 +280,6 @@ async def start_run(
         suppressed_hashes=frozenset(suppressed),
         max_calls_per_run=effective.max_calls_per_run,
         allowlist=effective.allowlist,
-        credit_ceiling=credit_ceiling,
-        credits_used_before_run=credits_used_before_run,
     )
     return {"run_id": run_id, "total": len(contacts)}
 

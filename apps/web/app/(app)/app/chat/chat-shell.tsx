@@ -313,6 +313,31 @@ export function ChatShell() {
     router.push('/app/chat', { scroll: false });
   }
 
+  /**
+   * Close the open conversation when the active organisation changes.
+   *
+   * The channel list and member list both key on `orgId` and refetch on a
+   * switch, but the open conversation lives in the `?c=` query param, which
+   * survives one - so the right-hand pane went on showing the previous
+   * organisation's conversation, and its already-fetched messages, while the
+   * list beside it had moved on (`ISSUES.md` #127). RLS stops any *new* read
+   * of that channel, but nothing un-renders what was already on screen.
+   *
+   * A channel id from another organisation has no meaning in this one, so the
+   * honest result is no conversation selected rather than an error about one
+   * the reader never opened. The first run is skipped: `orgId` arrives as null
+   * and then resolves, which is not a switch.
+   */
+  const lastOrgId = useRef<string | null>(null);
+  useEffect(() => {
+    if (!orgId) return;
+    const previous = lastOrgId.current;
+    lastOrgId.current = orgId;
+    if (previous !== null && previous !== orgId && channelId !== null) {
+      router.replace('/app/chat', { scroll: false });
+    }
+  }, [orgId, channelId, router]);
+
   // --- channel list --------------------------------------------------------
 
   useEffect(() => {

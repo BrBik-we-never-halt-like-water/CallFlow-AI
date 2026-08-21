@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { api, type Entitlements, type PlanOption } from '@/lib/api';
+import { useEntitlementsVersion } from '@/lib/hooks/use-entitlements-version';
 import { useOrgScopedEffect } from '@/lib/hooks/use-org-scoped-effect';
 
 /**
@@ -27,6 +28,7 @@ export type PlanLimits =
 
 export function usePlanLimits(): PlanLimits {
   const [state, setState] = useState<PlanLimits>({ status: 'loading' });
+  const entitlementsVersion = useEntitlementsVersion();
 
   useOrgScopedEffect(() => {
     let cancelled = false;
@@ -51,7 +53,7 @@ export function usePlanLimits(): PlanLimits {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [entitlementsVersion]);
 
   return state;
 }

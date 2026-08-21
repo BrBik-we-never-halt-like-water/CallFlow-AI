@@ -77,8 +77,6 @@ class CampaignRunner:
         trunk_id: str | None = None,
         voice_agent: JsonObject | None = None,
         gateway_factory: GatewayFactory | None = None,
-        credit_ceiling: int | None = None,
-        credits_used_before_run: int = 0,
     ) -> None:
         self.result_schema = result_schema
         # The verified LiveKit outbound trunk this run dials through - resolved
@@ -109,19 +107,6 @@ class CampaignRunner:
         # to the deployment's env-var defaults inside check_dial_allowed itself.
         self._max_calls_per_run = max_calls_per_run
         self._allowlist = allowlist
-        # `None` when the caller (the run's own starter) has no per-teammate
-        # allocation set at all - the per-teammate gate then never applies,
-        # only the org-wide daily budget does. `credits_used_before_run` is a
-        # live count of *today's already-connected* calls, resolved once at
-        # run start the same way suppression/allowlist already are.
-        # `_credits_reserved` is this run's own in-flight bookkeeping: a
-        # contact reserves one credit before dialling (so two contacts
-        # dialled concurrently can't both slip under the same last slot) and
-        # gives it back if that particular call never connects - see
-        # `run_one()`'s own comment for why a credit is only ever actually
-        # spent by a connected call, never a mere attempt.
-        self._credit_ceiling = credit_ceiling
-        self._credits_used_before_run = credits_used_before_run
         self._credits_reserved = 0
         # The persisted run this instance belongs to, if any - gives each
         # contact's idempotency key a stable scope (see `run_one()`). `None`
@@ -255,24 +240,15 @@ class CampaignRunner:
         # lost-response attempt still spent a real slot at CALL-E and must
         # still count, per CLAUDE.md's fail-closed rule (`ISSUES.md` #54).
         async with self._calls_made_lock:
-            credits_remaining = (
-                None
-                if self._credit_ceiling is None
-                else self._credit_ceiling - self._credits_used_before_run - self._credits_reserved
-            )
             gate = check_dial_allowed(
                 contact.phone,
                 self._calls_made,
                 is_suppressed=phone_hash(contact.phone) in self._suppressed_hashes,
                 max_calls_per_run=self._max_calls_per_run,
                 allowlist=self._allowlist,
-                credits_remaining=credits_remaining,
             )
-            reserved_credit = gate.allowed and self._credit_ceiling is not None
             if gate.allowed:
                 self._calls_made += 1
-                if reserved_credit:
-                    self._credits_reserved += 1
 
         if not gate.allowed:
             return base.model_copy(
@@ -283,20 +259,8 @@ class CampaignRunner:
                 }
             )
 
-        # A credit is only ever actually spent by a *connected* call. Every
-        # early return below hands the reserved slot back, because none of them
-        # reached a person - without that, a run with a credit ceiling burns a
-        # credit per refused contact and eventually blocks later contacts for a
-        # reason that never happened. The one path that keeps its credit is the
-        # answered call at the bottom.
-        async def release_credit() -> None:
-            if reserved_credit:
-                async with self._calls_made_lock:
-                    self._credits_reserved -= 1
-
         if self._trunk_id is None:
             log.info("dial refused for %s - no connected number", mask(contact.phone))
-            await release_credit()
             return base.model_copy(
                 update={
                     "status": "FAILED",
@@ -315,7 +279,6 @@ class CampaignRunner:
         # saying "hello?" into silence. The gate belongs before the dial.
         if not self._voice_agent:
             log.info("dial refused for %s - no voice agent", mask(contact.phone))
-            await release_credit()
             return base.model_copy(
                 update={
                     "status": "FAILED",
@@ -342,7 +305,6 @@ class CampaignRunner:
             # exception text: a vendor message can carry the dialled number or
             # internal hostnames, and this string reaches a user-facing field.
             log.warning("call failed for %s: %s", mask(contact.phone), failure.value)
-            await release_credit()
             retryable = failure in _RETRYABLE_FAILURES
             return base.model_copy(
                 update={
@@ -361,7 +323,6 @@ class CampaignRunner:
             # interpolated into a user-facing field - unlike a DialFailure
             # value, a raw exception string is untrusted content.
             log.exception("call failed for %s", mask(contact.phone))
-            await release_credit()
             return base.model_copy(
                 update={
                     "status": "FAILED",
