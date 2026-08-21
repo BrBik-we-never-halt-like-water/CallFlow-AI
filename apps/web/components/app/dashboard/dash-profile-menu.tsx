@@ -181,7 +181,7 @@ export function DashProfileMenu({
             <DropdownMenuItem>
               <Link
                 href="/app/organisation/new"
-                className="flex flex-1 items-center gap-2.5"
+                className="flex flex-1 items-center gap-2"
               >
                 <PlusIcon aria-hidden className="size-3.5 shrink-0" />
                 New organisation
@@ -197,7 +197,7 @@ export function DashProfileMenu({
           <DropdownMenuItem>
             <Link
               href="/app/settings?tab=team"
-              className="flex flex-1 items-center gap-2.5"
+              className="flex flex-1 items-center gap-2"
             >
               <UserPlusIcon aria-hidden className="size-3.5 shrink-0" />
               Invite teammate

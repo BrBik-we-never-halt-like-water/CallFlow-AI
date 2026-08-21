@@ -2897,6 +2897,18 @@ button[data-menu][data-state='open']:focus-visible {
   font-size: 0.75rem;
 }
 
+/* Every leading glyph reserves the same width, so the labels start on one
+   axis whether the row's icon is a direct child (Sign out), wrapped in a
+   `<Link>` (Invite teammate), or followed by a submenu caret
+   (Organisation). Without this the three rows each measured their own icon
+   and the column came out ragged. */
+.dash-menu.dash-menu [role='menuitem'] > svg:first-child,
+.dash-menu.dash-menu [role='menuitem'] > a > svg:first-child {
+  width: 0.875rem;
+  height: 0.875rem;
+  flex: none;
+}
+
 /* The frosted layer, on its own element rather than on the menu.
    Radix's popper wrapper carries `transform: translate(...)` to position the
    menu, and a transformed ancestor becomes the containing block for its
