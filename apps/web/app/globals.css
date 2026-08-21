@@ -3293,3 +3293,14 @@ button[data-menu][data-state='open']:focus-visible {
 .dash textarea::placeholder {
   font-size: 0.75rem;
 }
+
+/* Tabs on the management surface. The shared component marks the active tab
+   with `bg-surface-inverse` - near-black, which was the old monochrome
+   palette's accent and is the one colour here that reads as off-system. The
+   rule and its label take the brand instead. */
+.dash [role='tab'][data-state='active'] {
+  color: var(--dash-brand-ink);
+}
+.dash [role='tab'][data-state='active']::after {
+  background: var(--dash-brand) !important;
+}
