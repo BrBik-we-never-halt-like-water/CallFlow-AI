@@ -115,7 +115,7 @@ function PageFallback() {
   );
 }
 
-function OrganisationPane({
+export function OrganisationPane({
   profile,
   refresh,
 }: {
@@ -322,7 +322,7 @@ function DeleteOrgDialog({
   );
 }
 
-function TeamPane({ profile }: { profile: SessionProfile }) {
+export function TeamPane({ profile }: { profile: SessionProfile }) {
   const toast = useToast();
   const [team, setTeam] = useState<Team | null>(null);
   const [loading, setLoading] = useState(true);
@@ -447,7 +447,7 @@ function TeamPane({ profile }: { profile: SessionProfile }) {
  * (`sharing:request`, operator-only); anyone who happens to own a
  * resource, any role, can be on the receiving end.
  */
-function SharingPane({ profile }: { profile: SessionProfile }) {
+export function SharingPane({ profile }: { profile: SessionProfile }) {
   const toast = useToast();
   const [requests, setRequests] = useState<ShareRequest[] | null>(null);
   const [deciding, setDeciding] = useState<string | null>(null);

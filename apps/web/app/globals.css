@@ -2887,10 +2887,14 @@ button[data-menu][data-state='open']:focus-visible {
    14px text on 12px padding - which in a panel-header dropdown is most of
    the box. These are short labels ("Mine", "All", a first name), so the row
    shrinks to match the pill that opened it. */
-.dash-menu.dash-menu [role='menuitem'] {
-  padding: 3px 8px;
-  font-size: 0.6875rem;
-  gap: 0;
+.dash-menu.dash-menu [role='menuitem'],
+.dash-menu.dash-menu [role='menuitem'] > a {
+  /* `gap: 0` was right when these menus were label-only (the scope
+     selectors). The account menu carries an icon per row, and zero gap put
+     the glyph against its label. */
+  gap: 0.5rem;
+  padding: 4px 8px;
+  font-size: 0.75rem;
 }
 
 /* The frosted layer, on its own element rather than on the menu.

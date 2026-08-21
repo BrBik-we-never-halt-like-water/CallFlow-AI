@@ -4,9 +4,9 @@ import {
   BuildingsIcon,
   CaretDownIcon,
   CaretRightIcon,
-  GearSixIcon,
   PlusIcon,
   SignOutIcon,
+  UserPlusIcon,
 } from '@phosphor-icons/react/dist/ssr';
 import Link from 'next/link';
 import {
@@ -142,23 +142,14 @@ export function DashProfileMenu({
         </button>
       </DropdownMenuTrigger>
 
-      <DropdownMenuContent align="start" className="dash-menu w-52">
-        <DropdownMenuItem>
-          <Link
-            href="/app/profile"
-            className="flex flex-1 items-center gap-2"
-          >
-            <GearSixIcon aria-hidden className="size-3.5 shrink-0" />
-            Settings
-          </Link>
-        </DropdownMenuItem>
-
-        {/* Organisation opens a submenu rather than carrying its controls
-            inline: with more than a couple of organisations the row had
-            nowhere to put them, and a hover-only control cannot be reached
-            by keyboard at all. The submenu grows with the list and scrolls
-            past the viewport, so an account in twenty organisations works
-            the same as one in two. */}
+      {/* Three actions, not a second navigation surface. Settings and the
+          organisation list moved into `/app/settings` (its own tabs), so what
+          is left here is only what has nowhere else to live: switching or
+          creating an organisation, inviting someone, and signing out. */}
+      <DropdownMenuContent align="start" className="dash-menu w-56">
+        {/* Switching organisation still needs the list, so this stays a
+            submenu - it grows with the number of organisations and scrolls,
+            where inline rows had nowhere to put themselves past two. */}
         <DropdownMenuSub>
           <DropdownMenuSubTrigger>
             <BuildingsIcon aria-hidden className="size-3.5 shrink-0" />
@@ -190,17 +181,30 @@ export function DashProfileMenu({
             <DropdownMenuItem>
               <Link
                 href="/app/organisation/new"
-                className="flex flex-1 items-center gap-2"
+                className="flex flex-1 items-center gap-2.5"
               >
                 <PlusIcon aria-hidden className="size-3.5 shrink-0" />
-                Add organisation
+                New organisation
               </Link>
             </DropdownMenuItem>
           </DropdownMenuSubContent>
         </DropdownMenuSub>
 
-        {/* `destructive` is the shared menu's own red - signing out is the
-            one irreversible thing in this list. */}
+        {/* Deep-links straight to the pane that does it, rather than to
+            Settings for the reader to find. Only for a role that may
+            actually send an invite. */}
+        {profile.permissions.includes('team:invite') ? (
+          <DropdownMenuItem>
+            <Link
+              href="/app/settings?tab=team"
+              className="flex flex-1 items-center gap-2.5"
+            >
+              <UserPlusIcon aria-hidden className="size-3.5 shrink-0" />
+              Invite teammate
+            </Link>
+          </DropdownMenuItem>
+        ) : null}
+
         <DropdownMenuItem destructive onSelect={() => void signOut()}>
           <SignOutIcon aria-hidden className="size-3.5 shrink-0" />
           Sign out

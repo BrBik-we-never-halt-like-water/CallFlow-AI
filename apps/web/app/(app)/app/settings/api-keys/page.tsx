@@ -28,7 +28,7 @@ export default function ApiKeysSettingsPage() {
   );
 }
 
-function ApiKeysContent({ profile }: { profile: SessionProfile }) {
+export function ApiKeysContent({ profile }: { profile: SessionProfile }) {
   const toast = useToast();
   const canRead = profile.permissions.includes('api_keys:read');
   const canWrite = profile.permissions.includes('api_keys:write');

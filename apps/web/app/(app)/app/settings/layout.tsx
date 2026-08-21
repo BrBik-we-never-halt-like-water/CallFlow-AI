@@ -1,76 +1,15 @@
-'use client';
-
-import Link from 'next/link';
-import { usePathname } from 'next/navigation';
-import { cn } from '@/lib/cn';
-import { useSession } from '@/lib/hooks/use-session';
-import { PageHeader } from '@/components/app/page-header';
-
-// Integrations is deliberately absent. It lives in the primary nav, and its old
-// Settings path is only a redirect now (`settings/integrations/page.tsx`) - so
-// listing it here gave Settings a tab that threw you out of Settings the moment
-// you clicked it, which reads as a broken tab rather than a moved feature.
-// Billing moved to its own top-level route (/app/billing) - as a nested tab
-// its pathname made the sidebar light both Billing and Settings at once,
-// since route matching treats /app/settings/billing as inside Settings.
-const TABS = [
-  { slug: 'api-keys', label: 'API keys', permission: 'api_keys:read' },
-] as const;
-
+/**
+ * A pass-through.
+ *
+ * This used to render the page heading and a tab strip of its own, which
+ * made sense while each Settings pane was a separate route. Settings is now
+ * one tabbed page (`page.tsx`) holding Organisation, Team, Sharing, API keys
+ * and Profile, so a second header and a second tab row here would nest one
+ * inside the other. The remaining child routes (`api-keys`, and the
+ * `billing`/`integrations` redirects) render standalone.
+ */
 export default function SettingsLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
-  const pathname = usePathname() ?? '';
-  const session = useSession();
-  // While the session is still resolving, show every tab rather than
-  // narrowing to none and then snapping wider a moment later - the
-  // permission check below is a convenience for the nav, not the guard
-  // (each page gates its own content), so a one-frame "too wide" beats a
-  // visible layout shift.
-  const tabs =
-    session.status === 'signed-in'
-      ? TABS.filter((tab) =>
-          session.profile.permissions.includes(tab.permission),
-        )
-      : TABS;
-
-  return (
-    <div className="flex flex-col gap-6">
-      <PageHeader title="Settings" />
-
-      {/* Real links rather than a tab widget: each pane is its own URL, so a
-          setting can be linked to directly. */}
-      <nav
-        aria-label="Settings sections"
-        className="-mb-px overflow-x-auto border-b border-rule"
-      >
-        <ul className="flex min-w-max gap-1">
-          {tabs.map((tab) => {
-            const href = `/app/settings/${tab.slug}`;
-            const active = pathname === href;
-            return (
-              <li key={tab.slug}>
-                <Link
-                  href={href}
-                  aria-current={active ? 'page' : undefined}
-                  className={cn(
-                    'relative inline-flex items-center whitespace-nowrap px-3 py-2.5 text-small font-medium',
-                    'transition-colors duration-(--dur-micro)',
-                    'after:absolute after:inset-x-0 after:bottom-0 after:h-0.5',
-                    active
-                      ? 'text-text after:bg-surface-inverse'
-                      : 'text-text-dim after:bg-transparent hover:text-text',
-                  )}
-                >
-                  {tab.label}
-                </Link>
-              </li>
-            );
-          })}
-        </ul>
-      </nav>
-
-      <div className="max-w-3xl">{children}</div>
-    </div>
-  );
+  return <>{children}</>;
 }
