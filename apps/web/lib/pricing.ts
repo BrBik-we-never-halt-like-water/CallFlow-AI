@@ -13,7 +13,7 @@
  * the pages will need again. Treat the unused exports as staged, not dead.
  *
  * Still consumed today:
- *   - `PLANS`        → app/(app)/app/settings/billing/page.tsx
+ *   - `PLANS`        → app/(app)/app/billing/page.tsx
  *   - `ROI_DEFAULTS` → components/marketing/roi-calculator.tsx (solution pages;
  *                      it models the *buyer's* own human-call cost, never ours,
  *                      which is why it survives with pricing undecided)

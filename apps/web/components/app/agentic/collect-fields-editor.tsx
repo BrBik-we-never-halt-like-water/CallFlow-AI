@@ -58,7 +58,7 @@ export function CollectFieldsEditor({
           it is worth reading once, and after that it is a paragraph between
           the builder and the fields they came here to add. */}
       <div className="flex items-center gap-1.5">
-        <h2 className="font-display text-h4 leading-none text-text">
+        <h2 className="text-[0.6875rem] font-semibold uppercase tracking-[0.05em] leading-none" style={{ color: 'var(--dash-text)' }}>
           Add fields
         </h2>
         <Tooltip content="What the agent asks the person for during the call. Each one comes back as a field on the result, so a run can be read as data rather than as transcripts.">

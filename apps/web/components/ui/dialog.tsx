@@ -61,6 +61,7 @@ export function Dialog({
         onEscapeKeyDown={(e) => !dismissible && e.preventDefault()}
         onPointerDownOutside={(e) => !dismissible && e.preventDefault()}
         onInteractOutside={(e) => !dismissible && e.preventDefault()}
+        data-dash-overlay=""
         className={cn(
           'dark-overlay fixed left-1/2 top-1/2 z-50 -translate-x-1/2 -translate-y-1/2',
           'overflow-y-auto rounded-md border border-rule-strong bg-surface-raised shadow-overlay',
@@ -73,7 +74,7 @@ export function Dialog({
       >
         <div className="flex items-start justify-between gap-4 border-b border-rule p-5">
           <div className="flex flex-col gap-1.5">
-            <RadixDialog.Title className="font-display text-h3 text-text">
+            <RadixDialog.Title className="text-[0.8125rem] font-semibold text-text">
               {title}
             </RadixDialog.Title>
             {description ? (
@@ -131,6 +132,7 @@ export function Sheet({
     <RadixDialog.Portal container={container}>
       <Overlay />
       <RadixDialog.Content
+        data-dash-overlay=""
         className={cn(
           'dark-overlay fixed inset-0 z-50 flex flex-col bg-surface-raised shadow-overlay',
           'md:inset-y-0 md:left-auto md:right-0 md:w-[min(720px,92vw)] md:border-l md:border-rule-strong',

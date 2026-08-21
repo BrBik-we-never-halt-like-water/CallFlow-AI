@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import Annotated, Literal
 from uuid import UUID
 
+import asyncpg
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
@@ -33,10 +34,27 @@ class ChannelOut(BaseModel):
     member_ids: list[UUID]
     unread_count: int
     created_at: datetime
+    # The caller's own view of this conversation: when they pinned it, and
+    # where they dragged it. Both are per-member, so two people see the same
+    # channel in different places in their own lists.
+    pinned_at: datetime | None = None
+    sort_order: float | None = None
 
 
 class ChannelRenameIn(BaseModel):
     name: str = Field(min_length=1, max_length=80)
+
+
+class ChannelPinIn(BaseModel):
+    pinned: bool
+
+
+class ChannelOrderIn(BaseModel):
+    """The midpoint between the two rows this conversation was dropped
+    between - a float so placing a row costs one UPDATE instead of
+    renumbering the list."""
+
+    sort_order: float
 
 
 class AddMemberIn(BaseModel):
@@ -70,7 +88,19 @@ def _channel_json(row: object) -> ChannelOut:
         member_ids=list(row["member_ids"]),
         unread_count=row["unread_count"],
         created_at=row["created_at"],
+        # Only `list_my_channels` selects these; single-channel reads use the
+        # same model and simply leave them null.
+        pinned_at=_maybe(row, "pinned_at"),
+        sort_order=_maybe(row, "sort_order"),
     )
+
+
+def _maybe(row: object, key: str) -> object:
+    """A column that only some of the queries feeding `ChannelOut` select."""
+    try:
+        return row[key]
+    except (KeyError, IndexError):
+        return None
 
 
 def _message_json(row: object) -> MessageOut:
@@ -200,6 +230,85 @@ async def rename_channel(
         unread_count=existing["unread_count"],
         created_at=updated["created_at"],
     )
+
+
+@router.patch("/channels/{channel_id}/pin", status_code=status.HTTP_204_NO_CONTENT)
+async def pin_channel(
+    channel_id: UUID,
+    body: ChannelPinIn,
+    user: Annotated[CurrentUser, Depends(RequirePermission(Permission.MESSAGES_READ))],
+) -> None:
+    """Pin or unpin a conversation in the caller's own list.
+
+    `MESSAGES_READ`, not `MESSAGES_SEND`: pinning changes nothing anyone else
+    can see, so a read-only viewer may organise their own list. The
+    at-most-three cap is a database trigger (`enforce_channel_pin_limit`), and
+    its `check_violation` is translated below rather than surfacing as a 500 -
+    the operator needs to be told to unpin one, not shown a server error.
+    """
+    async with database.as_user(user.auth_user_id) as conn:
+        await _get_channel_or_404(conn, channel_id)
+        try:
+            updated = await channels_repo.set_pinned(
+                conn, channel_id=channel_id, user_id=user.id, pinned=body.pinned
+            )
+        except asyncpg.exceptions.CheckViolationError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="You can pin up to 3 conversations. Unpin one first.",
+            ) from exc
+    if not updated:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="You're not a member of that conversation.",
+        )
+
+
+@router.patch("/channels/{channel_id}/order", status_code=status.HTTP_204_NO_CONTENT)
+async def reorder_channel(
+    channel_id: UUID,
+    body: ChannelOrderIn,
+    user: Annotated[CurrentUser, Depends(RequirePermission(Permission.MESSAGES_READ))],
+) -> None:
+    """Place a conversation in the caller's own list. Personal, like pinning."""
+    async with database.as_user(user.auth_user_id) as conn:
+        await _get_channel_or_404(conn, channel_id)
+        updated = await channels_repo.set_sort_order(
+            conn, channel_id=channel_id, user_id=user.id, sort_order=body.sort_order
+        )
+    if not updated:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="You're not a member of that conversation.",
+        )
+
+
+@router.delete("/channels/{channel_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_channel(
+    channel_id: UUID,
+    user: Annotated[CurrentUser, Depends(RequirePermission(Permission.MESSAGES_SEND))],
+) -> None:
+    """Remove a channel from every member's list.
+
+    A soft delete: the messages stay, because they are a record of what people
+    said to each other. Who may do it is `channels_update`'s RLS policy - the
+    channel's creator or an org owner/admin - the same division `rename` uses,
+    which is why a refusal comes back as a 403 rather than being pre-checked
+    here.
+    """
+    async with database.as_user(user.auth_user_id) as conn:
+        existing = await _get_channel_or_404(conn, channel_id)
+        if existing["kind"] == "dm":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="A direct message can't be deleted. Leave it instead.",
+            )
+        deleted = await channels_repo.soft_delete_channel(conn, channel_id)
+    if not deleted:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only this channel's creator or an org owner/admin can delete it.",
+        )
 
 
 @router.post("/channels/{channel_id}/members", status_code=status.HTTP_204_NO_CONTENT)

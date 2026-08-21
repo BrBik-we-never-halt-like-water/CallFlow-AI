@@ -21,10 +21,14 @@ export function DropdownMenuContent({
   children,
   align = "end",
   className,
+  style,
 }: {
   children: React.ReactNode;
   align?: "start" | "center" | "end";
   className?: string;
+  /** Lets a caller size the menu to its own context - see the dashboard's
+   *  `PillSelect`, which matches the menu to the panel it belongs to. */
+  style?: React.CSSProperties;
 }) {
   const container = usePortalContainer();
   return (
@@ -33,8 +37,9 @@ export function DropdownMenuContent({
         align={align}
         sideOffset={4}
         collisionPadding={12}
+        style={{ minWidth: "12rem", ...style }}
         className={cn(
-          "dark-overlay z-50 min-w-48 overflow-hidden rounded-md border border-rule-strong bg-surface-raised p-1 shadow-overlay",
+          "dark-overlay z-50 overflow-hidden rounded-md border border-rule-strong bg-surface-raised p-1 shadow-overlay",
           className,
         )}
       >
@@ -110,4 +115,52 @@ export function DropdownMenuLabel({ children }: { children: React.ReactNode }) {
 
 export function DropdownMenuSeparator() {
   return <Radix.Separator className="my-1 h-px bg-rule" />;
+}
+
+/**
+ * Submenu. Same item styling as the flat list, so a row that opens a panel
+ * and a row that performs an action read as siblings - the caret is the only
+ * thing that says one of them goes deeper.
+ */
+export const DropdownMenuSub = Radix.Sub;
+
+export function DropdownMenuSubTrigger({
+  children,
+  className,
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <Radix.SubTrigger className={cn(ITEM, className)}>
+      {children}
+    </Radix.SubTrigger>
+  );
+}
+
+export function DropdownMenuSubContent({
+  children,
+  className,
+  style,
+}: {
+  children: React.ReactNode;
+  className?: string;
+  style?: React.CSSProperties;
+}) {
+  const container = usePortalContainer();
+  return (
+    <Radix.Portal container={container}>
+      <Radix.SubContent
+        sideOffset={4}
+        collisionPadding={12}
+        style={style}
+        className={cn(
+          "dark-overlay z-50 overflow-hidden rounded-md border border-rule-strong bg-surface-raised p-1 shadow-overlay",
+          className,
+        )}
+      >
+        {children}
+      </Radix.SubContent>
+    </Radix.Portal>
+  );
 }

@@ -7,6 +7,7 @@ import { VoiceField } from '@/components/brand/voice-field';
 import { NotWiredNotice } from '@/components/app/settings-section';
 import { SessionGate } from '@/components/app/session-gate';
 import { Button } from '@/components/ui/button';
+import { PageHeader } from '@/components/app/page-header';
 import { Panel } from '@/components/ui/panel';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/components/ui/toast';
@@ -210,16 +211,13 @@ function AgenticContent({ profile }: { profile: SessionProfile }) {
         <VoiceField />
       </div>
 
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div className="flex flex-col gap-1.5">
-          <h1 className="font-display text-h2 text-text">Agents</h1>
-        </div>
+      <PageHeader title="Agents" figure={agents?.length ?? undefined}>
         {canWrite ? (
-          <Button asChild>
+          <Button asChild size="sm">
             <Link href="/app/agentic/new">Create agent</Link>
           </Button>
         ) : null}
-      </div>
+      </PageHeader>
 
       {/* Words and a divider, not a filled control: there are two of these and
           they sit under a page title that already says where you are. A

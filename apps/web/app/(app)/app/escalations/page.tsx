@@ -6,6 +6,7 @@ import { EscalationCard } from '@/components/app/escalation-card';
 import { ShareRequestDialog } from '@/components/app/share-request-dialog';
 import { TranscriptView } from '@/components/app/transcript-view';
 import { Button } from '@/components/ui/button';
+import { PageHeader } from '@/components/app/page-header';
 import { DialogRoot, Sheet } from '@/components/ui/dialog';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Panel } from '@/components/ui/panel';
@@ -143,21 +144,7 @@ export default function EscalationsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div className="flex flex-col gap-1">
-          <p className="text-small font-bold text-text-mute">Needs a person</p>
-          <h1 className="font-display text-h2 text-text">
-            {openEscalations.length === 0
-              ? 'Nothing needs you'
-              : `${openEscalations.length} waiting`}
-          </h1>
-          <p className="measure text-small text-text-dim">
-            {openEscalations.length > 0
-              ? 'Oldest first - the longest wait is the most expensive one.'
-              : 'Escalations land here when someone sounds frustrated, asks to opt out, or asks for a person.'}
-          </p>
-        </div>
-      </div>
+      <PageHeader title="Needs a person" figure={openEscalations.length} />
 
       <ConnectionBanner phase={phase} />
 

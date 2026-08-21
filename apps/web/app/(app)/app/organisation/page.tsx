@@ -36,6 +36,7 @@ import { useActiveOrg } from '@/lib/hooks/use-active-org';
 import { useOrgRealtime } from '@/lib/hooks/use-org-realtime';
 import { useOrgScopedEffect } from '@/lib/hooks/use-org-scoped-effect';
 import { useSession, type SessionProfile } from '@/lib/hooks/use-session';
+import { PageHeader } from '@/components/app/page-header';
 
 /**
  * Managing this organisation and its team.
@@ -66,18 +67,14 @@ function OrganisationPageContent() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-1">
-        <p className="text-small font-bold text-text-mute">Organisation</p>
-        <h1 className="font-display text-h2 text-text">
-          <SessionGate session={session} skeletonClassName="h-9 w-64">
+      <PageHeader
+        title="Organisation"
+        figure={
+          <SessionGate session={session} skeletonClassName="h-5 w-40">
             {(profile) => profile.active.org_name}
           </SessionGate>
-        </h1>
-        <p className="measure text-small text-text-dim">
-          How this organisation introduces itself on every call, and who&apos;s
-          allowed inside it.
-        </p>
-      </div>
+        }
+      />
 
       <SessionGate session={session}>
         {(profile) => (

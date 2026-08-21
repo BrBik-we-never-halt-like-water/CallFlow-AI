@@ -179,7 +179,7 @@ export function UserMenu({
         ) : (
           <DropdownMenuItem>
             <Link
-              href="/app/settings/billing"
+              href="/app/billing"
               className="flex flex-1 items-center gap-2"
             >
               <CoinsIcon aria-hidden className="size-4" />

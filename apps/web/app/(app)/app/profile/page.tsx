@@ -16,6 +16,7 @@ import { useToast } from '@/components/ui/toast';
 import { api } from '@/lib/api';
 import { signOut, updatePassword } from '@/lib/auth/actions';
 import { useSession, type SessionProfile } from '@/lib/hooks/use-session';
+import { PageHeader } from '@/components/app/page-header';
 
 /**
  * Your profile - deliberately not a Settings tab.
@@ -47,7 +48,7 @@ function Header() {
   return (
     <div className="flex flex-col gap-1">
       <p className="text-small font-bold text-text-mute">Account</p>
-      <h1 className="font-display text-h2 text-text">Your profile</h1>
+      <PageHeader title="Profile" />
       <p className="measure text-small text-text-dim">
         Your name, your photo, and the password only you use - these follow you
         into every organisation you belong to, not just this one.
@@ -95,7 +96,7 @@ function ProfileDetails({
   return (
     <Panel className="flex flex-col gap-4 p-4 sm:p-5">
       <div className="flex flex-col gap-1">
-        <h2 className="text-h3 font-medium text-text">Details</h2>
+        <h2 className="text-[0.6875rem] font-semibold uppercase tracking-[0.05em]" style={{ color: 'var(--dash-text)' }}>Details</h2>
         <p className="measure text-small text-text-dim">
           How you appear to teammates in every organisation you belong to.
         </p>
@@ -163,7 +164,7 @@ function ChangePasswordPanel() {
   return (
     <Panel className="flex flex-col gap-4 p-4 sm:p-5">
       <div className="flex flex-col gap-1">
-        <h2 className="text-h3 font-medium text-text">Password</h2>
+        <h2 className="text-[0.6875rem] font-semibold uppercase tracking-[0.05em]" style={{ color: 'var(--dash-text)' }}>Password</h2>
         <p className="measure text-small text-text-dim">
           Changing it signs you out everywhere else.
         </p>
@@ -216,7 +217,7 @@ function SignOutPanel() {
   return (
     <Panel className="flex flex-wrap items-center justify-between gap-3 p-4 sm:p-5">
       <div className="flex flex-col gap-0.5">
-        <h2 className="text-h3 font-medium text-text">Sign out</h2>
+        <h2 className="text-[0.6875rem] font-semibold uppercase tracking-[0.05em]" style={{ color: 'var(--dash-text)' }}>Sign out</h2>
         <p className="text-small text-text-dim">
           Ends your session on this device.
         </p>

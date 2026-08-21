@@ -29,6 +29,7 @@ import {
 import { beginOAuth, takePendingOAuth } from '@/lib/oauth';
 import { useOrgScopedEffect } from '@/lib/hooks/use-org-scoped-effect';
 import { useSession, type SessionProfile } from '@/lib/hooks/use-session';
+import { PageHeader } from '@/components/app/page-header';
 
 /**
  * One filterable grid, not seven stacked walls of cards.
@@ -346,18 +347,15 @@ function Readiness({
 
   return (
     <header className="flex flex-col gap-3">
-      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-        <h1 className="text-display-l font-medium tracking-tight text-text">
-          Integrations
-        </h1>
+      <PageHeader title="Integrations">
         {loading ? null : (
           <p className="text-small text-text-dim">
-            <span className="font-mono tabular-nums text-text">{done}</span>
+            <span className="dash-num font-semibold" style={{ color: 'var(--dash-figure)' }}>{done}</span>
             <span className="text-text-mute">/{NEEDED.length}</span> ready to
             place a call
           </p>
         )}
-      </div>
+      </PageHeader>
       {loading ? (
         <Skeleton className="h-9 w-full max-w-xl rounded-full" />
       ) : (

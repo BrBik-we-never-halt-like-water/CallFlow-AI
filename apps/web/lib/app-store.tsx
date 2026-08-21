@@ -123,6 +123,15 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
   // for why RLS, not this filter, is the actual security boundary.
   useOrgRealtime('escalations', activeOrgId, refreshEscalations);
 
+  // Runs and their outcomes, on the same mechanism. The 4s poll below only
+  // runs while a run's status is still `running`, so a call that lands after
+  // a run settles - or a run started by a teammate - never reached the
+  // dashboard until something else forced a refetch. Every count on that
+  // screen is derived from these two tables, so this is what makes the whole
+  // dashboard live rather than live-until-the-run-ends.
+  useOrgRealtime('runs', activeOrgId, refresh);
+  useOrgRealtime('call_outcomes', activeOrgId, refresh);
+
   // Runs are organisation-scoped - re-fetching on every org switch (not just on
   // mount, or when `refresh()`/the live poll bump `nonce`) is what makes the
   // dashboard, runs list, and escalations queue stop showing the previous org's

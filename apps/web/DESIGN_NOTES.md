@@ -39,9 +39,19 @@ mono-for-machine-data rule, the safety-first run composer, and the discipline ru
 
 ## 2. The one rule worth protecting
 
-**Colour with meaning is reserved for meaning.** The five lamp colours - `off`, `ice`,
-`brass`, `jade`, `flare` - communicate call state and nothing else. They are never used
-for buttons, links, headings, hovers, or decoration.
+**Colour with meaning is reserved for meaning.** Colour that says something about a
+call, a run, or an escalation is never reused for buttons, links, headings, hovers, or
+decoration.
+
+> **The dashboard (`/app`) carries this rule differently - see §2a.** It runs its own
+> coral palette (`.dash`, `globals.css`) and shows status as **coloured text, not a
+> lamp dot**. Everything below in this section describes the lamp system, which still
+> governs marketing, auth, and every `/app/*` route the dashboard rebuild has not
+> reached. The two are separate surfaces with separate token layers; do not port a
+> value from one to the other.
+
+The five lamp colours - `off`, `ice`, `brass`, `jade`, `flare` - communicate call state
+and nothing else.
 
 Consequences that look odd until you know the rule:
 
@@ -54,7 +64,8 @@ Consequences that look odd until you know the rule:
   palette would put arbitrary colour on screen.
 - Charts and sparklines are drawn in `--rule-strong`, with no series colours.
 
-Three deliberate exceptions, each because the thing being coloured _is_ state:
+Three deliberate exceptions on the lamp surface, each because the thing being coloured
+_is_ state:
 
 1. `Button variant="danger"` uses flare - a destructive action must not be misread.
 2. Toast tones use lamp colours - a toast reports what happened to a call.
@@ -131,6 +142,40 @@ If you add a colour to this product, check it against the rule above first - and
 genuinely decorative, not state, it belongs in `--accent`'s job, not a new token.
 
 ---
+
+## 2a. The dashboard surface
+
+`/app` runs its own palette and its own status convention. Both live in `.dash`
+(`globals.css`); nothing on this surface reads the lamp tokens.
+
+**Coral is the brand.** `--dash-brand` (`#F04A49`) is the identity colour: the active
+nav item, the credits meter, chart bars and line, the selected tab, the upgrade button.
+Red here means *CallFlow*, not *error* - which is exactly why danger needs its own
+value below.
+
+**Status is text, not a dot.** `StatusPill` sets the status *word* in its own colour on
+a soft backing of the same hue. There is no lamp dot anywhere on this surface. The lamp
+treatment paired a coloured circle with a neutral word, so the colour carried the
+meaning and the word only repeated it - two marks doing one job, and unreadable without
+learning the legend. A coloured word needs no legend and reaches a screen reader as the
+same information a sighted user gets.
+
+**The one hazard the rule change introduced.** Brand coral and a red "Failed" status are
+the same hue family, so a danger pill beside a coral button would read as chrome.
+`--dash-danger` (`#C2352F`) is therefore pulled deeper and less orange than the brand,
+far enough that the two never resolve to the same mark. If you ever move the brand
+hue, re-check this separation first - it is the constraint that keeps a failed call
+from looking like a button.
+
+**Dark is layered, not inverted.** Four elevations - app `#0B0D0E`, sidebar `#101214`,
+card `#141719`, elevated `#181C1F` - so panels separate by surface contrast rather than
+by shadow (`--dash-shadow` is `none` in dark). The brand keeps its light value so the
+identity does not shift between themes; only `-soft` and `-ink` are re-derived for a
+dark backing.
+
+**Scoping.** `.dash` is applied by the dashboard page, and the dark variant selector is
+`[data-theme='dark'] .dash` - `data-theme` is set on `<html>` by the pre-paint script
+and is always a concrete value, never absent.
 
 ## 3. Free-axis choices
 

@@ -8,6 +8,7 @@ import { TranscriptView } from "@/components/app/transcript-view";
 import { MaskedPhone } from "@/components/app/masked-phone";
 import { LampBadge, Tag } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/app/page-header";
 import { Dialog, DialogRoot } from "@/components/ui/dialog";
 import { TabPanel, Tabs } from "@/components/ui/disclosure";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -87,15 +88,7 @@ export default function ContactsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="flex flex-col gap-1">
-          <p className="text-small font-bold text-text-mute">Records</p>
-          <h1 className="font-display text-h2 text-text">All records</h1>
-          <p className="measure text-small text-text-dim">
-            Every call your agents have made, and the numbers you&apos;ve told us never
-            to call again. Open a record to read the conversation and what came back.
-          </p>
-        </div>
+      <PageHeader title="Records">
         <div className="flex gap-2">
           {canAdd ? (
             <Button variant="secondary" onClick={() => setAddOpen(true)}>
@@ -108,7 +101,7 @@ export default function ContactsPage() {
             </Button>
           ) : null}
         </div>
-      </div>
+      </PageHeader>
 
       <ConnectionBanner phase={phase} />
 

@@ -150,7 +150,7 @@ export function AgentCard({
       >
         <div className="flex items-start justify-between gap-3">
           <div className="flex min-w-0 flex-col gap-1">
-            <h3 className="min-w-0 truncate font-display text-h4 text-text">
+            <h3 className="min-w-0 truncate text-[0.875rem] font-semibold text-text">
               <Link
                 href={`/app/agentic/${agent.id}`}
                 className="outline-none after:absolute after:inset-0 after:rounded-[inherit] focus-visible:after:ring-2 focus-visible:after:ring-primary"

@@ -258,6 +258,11 @@ export interface RunSummary {
   finished_at: string | null;
   error: string | null;
   completed: number;
+  /** Who started the run. Returned by the list endpoint; null on rows
+   *  written before attribution existed. */
+  started_by: string | null;
+  started_by_name: string | null;
+  started_by_avatar_url: string | null;
 }
 
 /** The deployment's own defaults - `/api/health` is unauthenticated, so this is
@@ -338,6 +343,9 @@ export interface TeamPerformance {
   total_calls: number;
   calls_closed: number;
   open_escalations: number;
+  /** Today's credit ceiling for this member, in credits. 0 means unset. */
+  daily_allocation: number;
+  credits_used_today: number;
 }
 
 export interface InvitationPreview {
@@ -389,6 +397,12 @@ export interface Channel {
   member_ids: string[];
   unread_count: number;
   created_at: string;
+  /** When *you* pinned this conversation. Per-member: pinning it does not
+   *  move it in anyone else's list. Null when not pinned. */
+  pinned_at: string | null;
+  /** Where *you* dragged it. Null means never placed by hand, which sorts
+   *  by recency. */
+  sort_order: number | null;
 }
 
 export interface ChatMessage {
@@ -977,6 +991,18 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify({ name }),
     }),
+  pinChannel: (channelId: string, pinned: boolean) =>
+    authReq<void>(`/api/v1/channels/${channelId}/pin`, {
+      method: 'PATCH',
+      body: JSON.stringify({ pinned }),
+    }),
+  reorderChannel: (channelId: string, sortOrder: number) =>
+    authReq<void>(`/api/v1/channels/${channelId}/order`, {
+      method: 'PATCH',
+      body: JSON.stringify({ sort_order: sortOrder }),
+    }),
+  deleteChannel: (channelId: string) =>
+    authReq<void>(`/api/v1/channels/${channelId}`, { method: 'DELETE' }),
   addChannelMember: (channelId: string, userId: string) =>
     authReq<void>(`/api/v1/channels/${channelId}/members`, {
       method: 'POST',
