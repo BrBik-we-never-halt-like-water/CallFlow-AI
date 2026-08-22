@@ -14,6 +14,7 @@ import {
   siRime,
   siX,
 } from 'simple-icons';
+import { BRAND_LOGOS } from '@/lib/brand-logos';
 import { cn } from '@/lib/cn';
 
 /**
@@ -72,9 +73,32 @@ const ASSETS: Record<string, string> = {
 };
 
 /**
- * Monogram text for vendors Simple Icons doesn't carry. Drawing their marks
- * from memory would be a guess, and a wrong logo is worse than no logo - so
- * these get initials until someone supplies the real asset.
+ * A vendor key here to a provider id in `BRAND_LOGOS`, where the two differ.
+ *
+ * The integrations page keys artwork by the provider ids in
+ * `domain/providers.py`; this file keys it by the vendor half of a catalog
+ * entry id. Mostly they agree, and these are the ones that do not.
+ */
+const LOGO_ALIAS: Record<string, string> = {
+  azure: 'azure_speech',
+  'azure-stt': 'azure_speech',
+  'azure-tts': 'azure_speech',
+  'groq-whisper': 'groq',
+  playht: 'playai',
+  'x-ai': 'xai',
+};
+
+/**
+ * Monogram text for vendors with no artwork from any source. Drawing their
+ * marks from memory would be a guess, and a wrong logo is worse than no logo -
+ * so these get initials until someone supplies the real asset.
+ *
+ * Most of this map is now unreachable and kept deliberately: `BRAND_LOGOS`
+ * (fetched from each vendor's own site by
+ * `apps/web/scripts/fetch-brand-logos.mjs`) covers eleven of these fourteen,
+ * and it is checked first. What is left is the fallback for a vendor the fetch
+ * script could not reach - and the entries that are currently shadowed cost
+ * nothing while making that the answer if a logo is ever removed.
  */
 const MONOGRAM: Record<string, string> = {
   sarvam: 'Sa',
@@ -146,6 +170,32 @@ export function ProviderIcon({
       >
         <path d={brand.path} />
       </svg>
+    );
+  }
+
+  // Self-hosted vendor artwork, shared with the integrations page so the same
+  // vendor does not render as a logo on one screen and as initials on another.
+  // Below `BRANDS` on purpose: a Simple Icons path is a vector that takes
+  // `currentColor`, so it still wins where one exists.
+  const logo = BRAND_LOGOS[LOGO_ALIAS[key] ?? key];
+  if (logo) {
+    return (
+      // A plain <img>, matching `BrandMark` and the four other places in this
+      // app that do the same: already sized for this slot at 128px or vector,
+      // so the optimiser has nothing to gain and would add a request per row of
+      // the provider wheel.
+      <img
+        src={`/brands/${logo}`}
+        alt=""
+        aria-hidden
+        loading="lazy"
+        decoding="async"
+        className={cn(
+          'size-4 shrink-0 rounded-[0.2em] object-contain',
+          monochrome && 'opacity-80',
+          className,
+        )}
+      />
     );
   }
 

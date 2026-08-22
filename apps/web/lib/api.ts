@@ -463,6 +463,12 @@ export interface ProviderSpec {
   /** False means the credential is stored and nothing reads it yet. The card
    * says so rather than showing it as connected. */
   wired: boolean;
+  /** Whether CallFlow can prove a credential for this vendor is real - whether
+   * a probe is declared for it. Separate from `wired`, and a vendor can be
+   * either, both, or neither: it decides whether Re-check is worth offering,
+   * and why an unconfirmed key says "Can't be confirmed" rather than implying a
+   * retry would help. */
+  verifiable: boolean;
   /** One key proxies many models, so the agent must also name which to run. */
   needs_model: boolean;
   /** A short constraint worth stating on the card. */
@@ -480,6 +486,15 @@ export interface ProviderCredential {
    *  or the key is scoped too narrowly to verify. */
   verified?: boolean | null;
   verification_note?: string | null;
+  /** When the vendor last confirmed *these* credentials - the durable half of
+   *  the same answer.
+   *
+   *  `verified` above describes only the request that returned it, so it is
+   *  null on every read. This survives, which is what lets a card say
+   *  "Connected" for a reason rather than falling back to `wired` - that being
+   *  "does a call read this vendor", not "does this key work". `null` is the
+   *  absence of a claim, never a failure. */
+  verified_at?: string | null;
 }
 
 export interface ProviderCredentialInput {
@@ -886,6 +901,17 @@ export const api = {
     authReq<void>(`/api/v1/integrations/providers/${provider}`, {
       method: 'DELETE',
     }),
+  /** Ask the vendor again about a credential already on file.
+   *
+   *  The one case connect-time checking cannot reach: a key revoked or rotated
+   *  at the vendor's end, or one saved while they were unreachable. Throws with
+   *  the vendor's own refusal when it no longer works, and clears
+   *  `verified_at` either way rather than deleting the credential. */
+  verifyProvider: (provider: Provider) =>
+    authReq<ProviderCredential>(
+      `/api/v1/integrations/providers/${provider}/verify`,
+      { method: 'POST' },
+    ),
 
   // --- voice agents + ai providers (Agentic tab) ----------------------------
   // --- the numbers an organisation owns -------------------------------------
