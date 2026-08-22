@@ -97,7 +97,7 @@ frustration, opt-outs, or requests for a human get escalated to the team's workl
 
 - **Team invitation emails cannot currently be delivered to a real teammate.**
   Root cause confirmed directly against Resend's API: the configured from-address's
-  domain (`callflow-ai.brbik.com`) is not verified in the Resend account. This is
+  domain (`calllflow.com`) is not verified in the Resend account. This is
   not a code bug - Resend enforces domain verification account-side, and no
   application code can bypass it. The error message is now specific and actionable
   (names the unverified domain, points at Resend's dashboard) instead of a raw

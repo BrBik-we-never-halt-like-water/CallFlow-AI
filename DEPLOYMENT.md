@@ -38,7 +38,7 @@ sequence. What nginx currently fronts:
 | Port | Serves |
 | --- | --- |
 | 3000 | `brbik.com` |
-| 3001 | `callflow-ai.brbik.com` web - **this app in production** |
+| 3001 | `calllflow.com` web - **this app in production** |
 | 3002 | `dns.brbik.com` (dnsentinel) |
 | 3003 | dev web |
 | 8000 | production API |

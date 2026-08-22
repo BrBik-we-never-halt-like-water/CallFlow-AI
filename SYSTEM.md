@@ -45,7 +45,7 @@ What exists **today**, verified against the running system on 2026-08-07. Not a 
 | UI deps     | Radix primitives, Phosphor icons, framer-motion, nuqs, clsx + tailwind-merge, MDX                                                                                         |
 | Persistence | Supabase Postgres 17. Identity, tenancy, agents, numbers, runs, and call outcomes are all org-scoped Postgres rows under RLS - **nothing calling-related is in-memory anymore** |
 | Auth        | Supabase Auth, email + password. Cookie sessions, RLS-enforced tenancy                                                                                                    |
-| Deployment  | Single VM, nginx + pm2, at `callflow-ai.brbik.com`. `render.yaml` is stale                                                                                                |
+| Deployment  | Single VM, nginx + pm2, at `calllflow.com`. `render.yaml` is stale                                                                                                |
 | CI          | GitHub Actions `ci-cd.yml` - 3 jobs, deploys on push to `main`                                                                                                            |
 | Verified    | 29 API endpoints (all but 3 authenticated) · 50 built routes · **258 backend tests** (59 cross-tenant/cross-role RLS, `test_rls_isolation.py`) · eslint + `tsc` clean · `alembic check` no drift. The endpoint/route counts here predate this doc's most recent few iterations and are known stale (a direct count via `main.py`'s route table is noticeably higher) - not re-audited as part of this change |
 
@@ -1768,8 +1768,8 @@ fails before connecting if `APP_DIR` or `PUBLIC_URL` is unset.
 `cancel-in-progress` is scoped to pull requests. A push is never cancelled: killing a
 run mid-`migrate` can leave the schema between two revisions.
 
-**Deployment** - `main` → `/var/www/callflow-ai` at `callflow-ai.brbik.com`, `dev` →
-`/var/www/callflow-ai-dev` at `dev.callflow-ai.brbik.com`, each with its own `.env`,
+**Deployment** - `main` → `/var/www/callflow-ai` at `calllflow.com`, `dev` →
+`/var/www/callflow-ai-dev` at `dev.calllflow.com`, each with its own `.env`,
 its own Supabase project, and its own pm2 pair. Process names and ports come from
 `ecosystem.config.js` keyed on `CALLFLOW_ENV`: `callflow-api`/`callflow-web` on
 8000/3000, `callflow-api-dev`/`callflow-web-dev` on 8001/3001; `scripts/bootstrap.sh`

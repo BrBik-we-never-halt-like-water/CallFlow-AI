@@ -105,7 +105,7 @@ async def test_unverified_domain_rejection_names_the_domain_and_the_fix(
                 "statusCode": 403,
                 "name": "validation_error",
                 "message": (
-                    "The callflow-ai.brbik.com domain is not verified. Please, "
+                    "The calllflow.com domain is not verified. Please, "
                     "add and verify your domain on https://resend.com/domains"
                 ),
             },
@@ -113,7 +113,7 @@ async def test_unverified_domain_rejection_names_the_domain_and_the_fix(
 
     _install_transport(monkeypatch, handler)
     gateway = EmailGateway(
-        api_key="re_test_key", from_email="CallFlow AI <noreply@callflow-ai.brbik.com>"
+        api_key="re_test_key", from_email="CallFlow AI <noreply@calllflow.com>"
     )
 
     with pytest.raises(EmailAPIError) as exc_info:
@@ -125,7 +125,7 @@ async def test_unverified_domain_rejection_names_the_domain_and_the_fix(
         )
 
     message = str(exc_info.value)
-    assert "callflow-ai.brbik.com" in message
+    assert "calllflow.com" in message
     assert "isn't a domain verified in Resend" in message
     assert "Domains" in message
     # The raw Resend sentence must not be the whole story handed back - the

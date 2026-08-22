@@ -11,7 +11,7 @@ extracts typed results, and escalates only what needs a person.
 [![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
 [![Next.js](https://img.shields.io/badge/Next.js%2016-000000?logo=nextdotjs&logoColor=white)](https://nextjs.org)
 [![Tests](https://img.shields.io/badge/tests-85%20passing-3fb950)](#tests)
-[![Live](https://img.shields.io/badge/live-callflow--ai.brbik.com-4f46e5)](https://callflow-ai.brbik.com)
+[![Live](https://img.shields.io/badge/live-calllflow.com-4f46e5)](https://calllflow.com)
 
 </div>
 
@@ -114,7 +114,7 @@ database. See `SUPABASE_SETUP.md` for the exact dashboard steps.
 
 ## Try it live
 
-**→ [callflow-ai.brbik.com](https://callflow-ai.brbik.com)**
+**→ [calllflow.com](https://calllflow.com)**
 
 There is no more anonymous "enter your number and see what happens" demo -
 the dashboard requires an account. Sign up, and you get an organisation of

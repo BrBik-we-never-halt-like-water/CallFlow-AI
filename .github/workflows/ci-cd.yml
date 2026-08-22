@@ -183,7 +183,11 @@ jobs:
       - run: npm run type-check
       - run: npm run build
         env:
-          NEXT_PUBLIC_API_URL: https://callflow-ai.brbik.com
+          # Only has to be a valid absolute URL: this job proves the build
+          # compiles, and the deployed build sets NEXT_PUBLIC_API_URL from
+          # the per-environment `vars.PUBLIC_URL` instead (see deploy-web),
+          # so dev builds against dev and main against main.
+          NEXT_PUBLIC_API_URL: https://calllflow.com
 
   # ---------------------------------------------------------------------------
   # Deployment: one shared provision, then two independent chains.

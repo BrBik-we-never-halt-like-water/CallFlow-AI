@@ -113,7 +113,7 @@ class Config:
     # empty string when it is unset, which would otherwise beat the default.
     resend_from_email: str = field(
         default_factory=lambda: os.getenv("RESEND_FROM_EMAIL")
-        or "CallFlow AI <noreply@callflow-ai.brbik.com>"
+        or "CallFlow AI <noreply@calllflow.com>"
     )
 
     # Where the web app is served, for building links that go out in email.

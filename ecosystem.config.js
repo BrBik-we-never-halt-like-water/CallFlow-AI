@@ -22,7 +22,7 @@ const suffix = isDev ? '-dev' : '';
 // The VM hosts several sites; as of this writing nginx proxies:
 //
 //   3000  brbik.com
-//   3001  callflow-ai.brbik.com  <- this app's web process
+//   3001  calllflow.com  <- this app's web process
 //   3002  dns.brbik.com (dnsentinel)
 //   8000  this app's API
 //
