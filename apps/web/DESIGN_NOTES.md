@@ -1295,6 +1295,104 @@ the `data-swipe` states and a `prefers-reduced-motion` opt-out.
 
 ---
 
+## 25. One accent, measured: retiring the dash coral
+
+The dashboard revamp introduced a `.dash` token family - 110 declarations, its
+own neutrals, statuses, heat ramp and chart colours, correctly scoped to a class
+and correctly themed. Its accent was a coral, `#f04a49`, and the reason it is now
+`--primary` is measurable rather than a matter of taste.
+
+In OKLCh, inside its own palette:
+
+| token | role | separation from `--dash-danger` |
+| --- | --- | --- |
+| `--dash-figure` | every KPI number | **0.8°** |
+| `--dash-brand` | buttons, active nav | **2.2°** |
+| `--dash-chart-line` | the trend line | **2.2°** |
+| `--dash-heat-4` | busiest hour | **2.4°** |
+| `--dash-warning` | running | 48.6° |
+| `--dash-success` | completed | 126.6° |
+
+The palette separates its *other* statuses properly. Only the accent collided -
+so on a surface whose job is showing call outcomes, the headline number, the
+active nav item and the chart line were all rendered in the colour of an error.
+The old comment said danger was kept "deeper and cooler than the brand on
+purpose", which is true of its **value**; hue is what the eye sorts by in a
+table, and by hue they were one colour. The same coral also sat 6.3° from
+`--lamp-flare`, against the 14°-from-jade separation CLAUDE.md §10 already cites
+as the mistake to avoid.
+
+A second problem came with it: `--dash-figure` was coral in light and magenta
+(`#ff0082`) in dark - **24.8° apart**, so the KPI figure changed colour rather
+than lightness between themes.
+
+**What changed.** `--dash-brand` and `--dash-figure` are `--primary` (indigo,
+CLAUDE.md §10's one non-lamp colour); hover/active/soft and the heat and chart
+ramps were regenerated as one hue at stepped lightness in OKLCh. Nothing else
+moved - the neutrals and the success/warning/danger triad were right and are
+untouched. Every pair was checked: 12 of 12 clear 4.5:1, including the two that
+constrain the choice (white on the dark fill at 6.29:1, and the dark ink tier at
+8.77:1 on the card, since `#4f46e5` itself is only 2.86:1 there and cannot carry
+a *word*).
+
+**Two traps worth knowing.** `.dash` rebinds `--primary` to `--dash-brand`, so
+writing `--dash-brand: var(--primary)` closes a custom-property cycle - CSS
+resolves both to invalid and every brand surface renders unstyled, with no error
+anywhere. That was introduced and caught during this work, which is why
+`scripts/check-tokens.mjs` exists and runs inside `npm run lint`. It also asserts
+the one-accent rule and a 30° floor against every lamp and status hue.
+
+And `--lamp-ice` was bound to the brand in four scopes (`.dash`, both
+`[data-dash-overlay]` blocks, both toast overlays). While the brand was coral
+that put `ice` 2.2° from `flare`: two different call states, one colour, in the
+surface that shows call state. Ice is the lamp with no assigned meaning since
+dry_run was removed, so it now simply inherits its canonical blue and nothing
+rebinds it.
+
+---
+
+## 26. Chat liveness: typing and presence
+
+Two indicators, one hook (`lib/hooks/use-chat-liveness.ts`), no migration.
+
+Deliberately **not** `useOrgRealtime`, which is `postgres_changes` - it exists to
+notice committed rows, and a keystroke is not a row. Writing typing to a table
+would mean an insert per keypress, an RLS policy and a cleanup job, to store
+something worthless four seconds later. Realtime presence and broadcast carry
+exactly this and touch no table.
+
+- **Typing** broadcasts on a 1.8s throttle with a 4.5s TTL, so a continuous
+  typist never flickers and a crashed tab expires on its own. A swept interval
+  handles expiry rather than a timer per user.
+- **Presence** is keyed by user id, so the same person in two tabs is one entry
+  and closing one tab does not report them gone.
+- Scoped to the **open conversation**, not the organisation: presence for every
+  row in the sidebar would mean one channel per row, and the only presence a
+  reader acts on is the thread in front of them.
+
+Three UI decisions worth keeping:
+
+- The typing row **reserves its height**. The alternative is the thread jumping a
+  line whenever a colleague starts or stops, on the one surface where text is
+  being read and written at once. 20px against a layout shift is a good trade.
+- Beyond two names it **counts** ("4 people are typing") rather than listing a
+  paragraph into a 20px row.
+- The presence dot renders **only while the subscription is live**. "Nobody else
+  here" and "we don't know" are different, and drawing the first while the truth
+  is the second is the confident-and-wrong this codebase avoids
+  (non-negotiable #9). Under reduced motion the dots stop animating and say
+  "live" by being there.
+
+**Known limit, recorded rather than hidden:** a broadcast channel is not covered
+by the `messages` RLS policy. Its name carries the conversation UUID and RLS is
+what stops a non-member learning that UUID, so membership gates *discovery*, not
+the channel. The payloads match that weaker guarantee - a user id and a display
+name the organisation can already see, never message text, never a draft.
+Supabase's Realtime Authorization is what would close it properly and needs its
+own migration (`ISSUES.md` #184).
+
+---
+
 ## 24. Polish pass: hit areas and a tactile press, with the two things the audit
 found nothing wrong with
 

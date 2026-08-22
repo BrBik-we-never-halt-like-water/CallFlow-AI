@@ -1564,8 +1564,8 @@ button[data-menu][data-state='open']:focus-visible {
   --rule-strong: #333a3f;
   --surface-hover: #1c2024;
   --surface-raised: #181c1f;
-  --lamp-ice: #ff7473;
-  --lamp-ice-text: #ff7473;
+  --lamp-ice: #5883b7;
+  --lamp-ice-text: #8db4e5;
   --lamp-brass: #eab45a;
   --lamp-brass-text: #f0c47c;
   --lamp-jade: #65c487;
@@ -1588,8 +1588,8 @@ button[data-menu][data-state='open']:focus-visible {
     --rule-strong: #333a3f;
     --surface-hover: #1c2024;
     --surface-raised: #181c1f;
-    --lamp-ice: #ff7473;
-    --lamp-ice-text: #ff7473;
+    --lamp-ice: #5883b7;
+    --lamp-ice-text: #8db4e5;
     --lamp-brass: #eab45a;
     --lamp-brass-text: #f0c47c;
     --lamp-jade: #65c487;
@@ -2519,23 +2519,47 @@ button[data-menu][data-state='open']:focus-visible {
   --dash-text-dim: #6b6b6b;
   --dash-text-mute: #8a8a8a;
 
-  /* Brand coral. `-ink` is the text tier: #F04A49 is 3.31:1 on white, under
-     the body-text bar, so a coral *word* uses `-ink` (5.02:1) and the pure
-     value is reserved for fills, bars and marks where nothing sits on it. */
-  --dash-brand: #f04a49;
-  --dash-brand-hover: #de403f;
-  --dash-brand-active: #c73837;
-  --dash-brand-soft: #fce9e8;
-  --dash-brand-ink: #c0322f;
+  /* Brand: `--primary`, the product's one non-lamp colour, not a second accent.
+     Referenced rather than restated so light and dark both come from the single
+     definition at `:root` - `.dash` is nested inside it, so `var(--primary)`
+     already resolves per theme.
+
+     This was a coral (`#f04a49`) with its own tiers, and the reason it changed
+     is measurable rather than a matter of taste. In OKLCh that coral sat **2.2°
+     from `--dash-danger`**, and `--dash-figure` sat **0.8°** from it - so every
+     KPI number, the active nav item, the chart line and the busiest heat cell
+     were rendered in the error colour. The palette separates its other statuses
+     properly (warning 48.6° away, success 126.6°); only the accent collided.
+     The old comment noted danger was kept "deeper and cooler than the brand on
+     purpose", which is true of its *value* - but hue is what the eye sorts by in
+     a table, and by hue they were one colour.
+
+     Indigo is also 117° from `--lamp-flare`, which is the separation CLAUDE.md
+     §10 asks any non-lamp colour to hold.
+
+     Written as a literal, not `var(--primary)`: `.dash` below rebinds
+     `--primary` *to* `--dash-brand`, so referencing it here would close a
+     custom-property cycle and CSS resolves the whole chain to invalid - every
+     brand surface would fall back to unstyled. The value is `--primary`'s own
+     light value, restated; `scripts/check-tokens.mjs` fails the build if the two
+     drift apart or if the cycle is ever reintroduced. */
+  --dash-brand: #3b2fd9;
+  --dash-brand-hover: #3327c2;
+  --dash-brand-active: #2b20a8;
+  --dash-brand-soft: #eceafd;
+  /* Indigo needs no separate text tier the way the coral did: `--primary` is
+     8.09:1 on white and 6.84:1 on `-soft`, so the same value serves as fill and
+     as word. Kept as its own token because callers reference it. */
+  --dash-brand-ink: #3b2fd9;
   --dash-brand-on: #ffffff;
   /* The big metric figures (credits, the four KPI counts). Its own token
      because `--dash-brand-ink` also carries the sign-out row and the menu's
      brand accents, which should not follow this. */
-  --dash-figure: #c0322f;
+  --dash-figure: #3b2fd9;
   /* The label above each figure. Full-strength in light, where an 8px muted
-     grey uppercase reads as a watermark beside a large pink number; the
-     dark override keeps the muted tier, where white would compete with the
-     figure rather than label it. */
+     grey uppercase reads as a watermark beside a large figure; the dark
+     override keeps the muted tier, where white would compete with the figure
+     rather than label it. */
   --dash-figure-label: #181818;
 
   /* Status. Text-only, never a dot. Each `-ink` on its own `-soft`. */
@@ -2555,17 +2579,20 @@ button[data-menu][data-state='open']:focus-visible {
   --dash-neutral-soft: #f1f1ef;
   --dash-neutral-ink: #5c5c5c;
 
-  /* Heatmap ramp, brand-derived, 0 -> very high. */
-  --dash-heat-0: #f1f1ef;
-  --dash-heat-1: #fbd6d5;
-  --dash-heat-2: #f5a2a1;
-  --dash-heat-3: #f36b69;
-  --dash-heat-4: #c93f3e;
+  /* Heatmap ramp, brand-derived, 0 -> very high. Generated as one hue at
+     stepped lightness in OKLCh rather than hand-picked, so "busier" reads as a
+     single scale darkening rather than as five related colours - and so it
+     cannot be mistaken for the status palette the way a red ramp could. */
+  --dash-heat-0: #f2f3f8;
+  --dash-heat-1: #d4dfff;
+  --dash-heat-2: #a6b8ff;
+  --dash-heat-3: #6676f6;
+  --dash-heat-4: #3a2ed6;
 
   /* Chart. Bars carry volume, the line carries trend. */
-  --dash-chart-bar: #f9b2b1;
-  --dash-chart-bar-active: #f04a49;
-  --dash-chart-line: #f04a49;
+  --dash-chart-bar: #becdff;
+  --dash-chart-bar-active: #3b2fd9;
+  --dash-chart-line: #3b2fd9;
   --dash-chart-grid: #ececea;
 
   --dash-r-sm: 7px;
@@ -2632,18 +2659,26 @@ button[data-menu][data-state='open']:focus-visible {
   --dash-text-dim: #a1a7aa;
   --dash-text-mute: #70777b;
 
-  --dash-brand: #f04a49;
-  --dash-brand-hover: #ff5a59;
-  --dash-brand-active: #ff7473;
-  --dash-brand-soft: #321819;
-  /* On charcoal the brand is already 5.4:1, so the text tier lightens
-     rather than darkens - the inverse move from light mode. */
-  --dash-brand-ink: #ff7473;
+  /* `var(--primary)` resolves to `--dark-accent` (#4f46e5) here, which exists
+     precisely because a solid indigo button on charcoal has to clear two bars at
+     once: 6.29:1 for its white label and enough against the page not to sink
+     into it. Same hue as light, different lightness - which is what the light
+     block means by referencing the token rather than restating a hex. */
+  --dash-brand: #4f46e5;
+  --dash-brand-hover: #5f57ef;
+  --dash-brand-active: #6f68f5;
+  --dash-brand-soft: #191f4a;
+  /* On charcoal the text tier lightens rather than darkens - the inverse move
+     from light mode. #4f46e5 itself is only 2.86:1 on `--dash-surface`, so a
+     *word* in the brand colour cannot use the fill value here. */
+  --dash-brand-ink: #a0b1ff;
   --dash-brand-on: #ffffff;
-  /* Magenta rather than the coral used in light: against charcoal the coral
-     goes muddy, and this reads as the brand's colour rather than a dimmer
-     version of it. 6.1:1 on `--dash-surface`, well clear of the text floor. */
-  --dash-figure: #ff0082;
+  /* The same indigo as `-ink`, not a hue of its own. This was magenta
+     (`#ff0082`) while the brand was coral, on the reasoning that coral goes
+     muddy on charcoal - true, but it left the KPI figure **24.8° from its own
+     light-mode value**, so the headline number changed colour rather than
+     lightness between themes. 8.77:1 on `--dash-surface`. */
+  --dash-figure: #a0b1ff;
   --dash-figure-label: #70777b;
 
   --dash-success: #65c487;
@@ -2661,15 +2696,15 @@ button[data-menu][data-state='open']:focus-visible {
   --dash-neutral-soft: #1c2024;
   --dash-neutral-ink: #a1a7aa;
 
-  --dash-heat-0: #20252a;
-  --dash-heat-1: #5c2430;
-  --dash-heat-2: #93283f;
-  --dash-heat-3: #cc2a58;
-  --dash-heat-4: #ff0082;
+  --dash-heat-0: #1e1f23;
+  --dash-heat-1: #2a3266;
+  --dash-heat-2: #3e48a7;
+  --dash-heat-3: #5b69e8;
+  --dash-heat-4: #879aff;
 
-  --dash-chart-bar: #4b2526;
-  --dash-chart-bar-active: #f04a49;
-  --dash-chart-line: #f04a49;
+  --dash-chart-bar: #283063;
+  --dash-chart-bar-active: #5a67ee;
+  --dash-chart-line: #5a67ee;
   --dash-chart-grid: #252a2e;
 
   /* Dark surfaces separate by contrast, not depth. */
@@ -3064,8 +3099,12 @@ button[data-menu][data-state='open']:focus-visible {
   --lamp-brass-text: var(--dash-warning-ink);
   --lamp-flare: var(--dash-danger);
   --lamp-flare-text: var(--dash-danger-ink);
-  --lamp-ice: var(--dash-brand);
-  --lamp-ice-text: var(--dash-brand-ink);
+  /* `ice` is deliberately NOT rebound. It is the one lamp with no assigned
+     meaning since dry_run was removed (CLAUDE.md §10), and it used to point at
+     `--dash-brand` here - which, while the brand was coral, put ice 2.2° from
+     `--lamp-flare`. Two different call states, one colour, in the surface that
+     shows call state. It inherits its canonical blue from `:root` now; nothing
+     renders it, and if something ever does it will not read as an escalation. */
   --lamp-off: var(--dash-border-strong);
   --lamp-off-text: var(--dash-text-mute);
 }
@@ -3132,8 +3171,8 @@ button[data-menu][data-state='open']:focus-visible {
   --rule-strong: #d8d8d5;
   --surface-hover: #f4f4f3;
   --surface-raised: #ffffff;
-  --lamp-ice: #f04a49;
-  --lamp-ice-text: #c0322f;
+  --lamp-ice: #4b82c4;
+  --lamp-ice-text: #2b5688;
   --lamp-brass: #e2a33b;
   --lamp-brass-text: #8a5d09;
   --lamp-jade: #4fae73;
@@ -3209,11 +3248,11 @@ button[data-menu][data-state='open']:focus-visible {
   --surface-raised: #ffffff;
   --surface-hover: #f4f4f3;
   --surface-sunken: #faf9f8;
-  --primary: #f04a49;
-  --primary-hover: #de403f;
-  --primary-active: #c73837;
+  --primary: #3b2fd9;
+  --primary-hover: #3327c2;
+  --primary-active: #2b20a8;
   --primary-on: #ffffff;
-  --primary-ink: #c0322f;
+  --primary-ink: #3b2fd9;
   --glass-surface: #ffffff;
   --glass-border: #e7e7e5;
   --glass-blur: none;
@@ -3223,8 +3262,8 @@ button[data-menu][data-state='open']:focus-visible {
   --lamp-brass-text: #8a5d09;
   --lamp-flare: #c2352f;
   --lamp-flare-text: #a32a25;
-  --lamp-ice: #f04a49;
-  --lamp-ice-text: #c0322f;
+  --lamp-ice: #4b82c4;
+  --lamp-ice-text: #2b5688;
   --lamp-off: #d8d8d5;
   --lamp-off-text: #8a8a8a;
 }
@@ -3241,11 +3280,11 @@ button[data-menu][data-state='open']:focus-visible {
   --surface-raised: #181c1f;
   --surface-hover: #1c2024;
   --surface-sunken: #101214;
-  --primary: #f04a49;
-  --primary-hover: #ff5a59;
-  --primary-active: #ff7473;
+  --primary: #4f46e5;
+  --primary-hover: #5f57ef;
+  --primary-active: #6f68f5;
   --primary-on: #ffffff;
-  --primary-ink: #ff7473;
+  --primary-ink: #a0b1ff;
   --glass-surface: #181c1f;
   --glass-border: #333a3f;
   --lamp-jade: #65c487;
@@ -3254,8 +3293,8 @@ button[data-menu][data-state='open']:focus-visible {
   --lamp-brass-text: #f0c47c;
   --lamp-flare: #f05a5a;
   --lamp-flare-text: #ff8785;
-  --lamp-ice: #f04a49;
-  --lamp-ice-text: #ff7473;
+  --lamp-ice: #5883b7;
+  --lamp-ice-text: #8db4e5;
   --lamp-off: #333a3f;
   --lamp-off-text: #70777b;
 }
@@ -3273,7 +3312,7 @@ button[data-menu][data-state='open']:focus-visible {
     --surface-raised: #181c1f;
     --surface-hover: #1c2024;
     --surface-sunken: #101214;
-    --primary-ink: #ff7473;
+    --primary-ink: #a0b1ff;
     --glass-surface: #181c1f;
     --glass-border: #333a3f;
   }
@@ -3303,4 +3342,79 @@ button[data-menu][data-state='open']:focus-visible {
 }
 .dash [role='tab'][data-state='active']::after {
   background: var(--dash-brand) !important;
+}
+
+/* --- Chat liveness ---------------------------------------------------------
+   Two indicators, both driven by `lib/hooks/use-chat-liveness.ts`: three dots
+   for "someone is mid-sentence", and a filled dot for "someone is in here".
+
+   Sized and coloured from the dash tokens rather than hardcoded, so they follow
+   the surface they sit on in both themes. */
+
+.typing-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.typing-dots i {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentColor;
+  /* Staggered so the three read as one travelling pulse rather than three
+     things blinking together. 1.2s is slow enough not to nag beside text
+     someone is trying to read. */
+  animation: typing-pulse 1.2s ease-in-out infinite;
+}
+
+.typing-dots i:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.typing-dots i:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes typing-pulse {
+  0%,
+  60%,
+  100% {
+    opacity: 0.3;
+    transform: translateY(0);
+  }
+  30% {
+    opacity: 1;
+    transform: translateY(-2px);
+  }
+}
+
+/* A presence dot: filled when someone else is in the conversation, hollow when
+   the subscription is live and they are not. Never rendered at all while the
+   subscription is down - "nobody here" and "we don't know" are different, and
+   only one of them is honest to draw. */
+.presence-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex: none;
+  background: var(--dash-success);
+  /* A ring in the surface colour, so the dot reads as sitting *on* the avatar
+     or label rather than punched into it. */
+  box-shadow: 0 0 0 2px var(--dash-surface);
+}
+
+.presence-dot[data-state='away'] {
+  background: transparent;
+  border: 1px solid var(--dash-border-strong);
+  box-shadow: none;
+}
+
+/* The pulse says "live", so under reduced motion it says it by being there
+   rather than by moving. */
+@media (prefers-reduced-motion: reduce) {
+  .typing-dots i {
+    animation: none;
+    opacity: 0.75;
+  }
 }
