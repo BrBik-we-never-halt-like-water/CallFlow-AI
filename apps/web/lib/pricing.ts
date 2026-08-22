@@ -16,6 +16,12 @@
  * `monthlyEquivalent()` were all removed for that reason. The annual discount is
  * whatever the gateway's annual product costs.
  *
+ * Still consumed today:
+ *   - `PLANS`        → app/(app)/app/billing/page.tsx
+ *   - `ROI_DEFAULTS` → components/marketing/roi-calculator.tsx (solution pages;
+ *                      it models the *buyer's* own human-call cost, never ours,
+ *                      which is why it survives with pricing undecided)
+ *
  * LIMITS ARE NOT IN THIS FILE EITHER. `FEATURE_MATRIX` states them as copy for
  * a buyer to read, but `apps/api/app/domain/plans.py` and the seeded
  * `plan_entitlements` table are what the product enforces. If they disagree, the
@@ -119,9 +125,10 @@ export const PLANS: Plan[] = [
     tagline: "One person running outbound alongside their day job.",
     features: [
       "Everything in Free",
-      "Custom campaigns and extraction fields",
+      "Live calling with your own caller ID",
+      "Custom agents and extraction fields",
       "CSV export",
-      "Suppression list across every campaign",
+      "Suppression list across every run",
       "3 agents, 3 seats",
     ],
     cta: "Choose Starter",
@@ -259,11 +266,7 @@ export const FEATURE_MATRIX: MatrixCategory[] = [
     name: "Safety and compliance",
     rows: [
       {
-        label: "Allowlist, per-run ceiling, rate limit",
-        values: { free: true, starter: true, growth: true, enterprise: true },
-      },
-      {
-        label: "Suppression list across every campaign",
+        label: "Suppression list across every run",
         values: { free: true, starter: true, growth: true, enterprise: true },
       },
       {
@@ -391,6 +394,10 @@ export const PRICING_FAQ: { q: string; a: string }[] = [
   {
     q: "Who pays for the phone calls and the AI?",
     a: "The phone calls are yours: you connect your own carrier account and it bills you directly, at any plan including Free. For the AI you have a choice. Bring your own speech and language keys and those vendors bill you directly — you pay us only our per-minute platform fee, which is the cheapest way to run. Use ours instead and we charge a published per-minute rate for each part we supply, so the convenience has a price you can see before you pick a model rather than after.",
+  },
+  {
+    q: "Can I bring my own number?",
+    a: "Yes, from Starter up. You verify a caller ID you already own and runs dial from it, so the number your contacts see is the one they recognise. Enterprise can bring an entire number pool and carrier.",
   },
   {
     q: "Can I use it on the free plan without a card?",

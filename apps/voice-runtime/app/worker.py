@@ -9,9 +9,9 @@ rendered goal, which providers to run on, and the identifiers the completion
 callback needs. It reads no database and holds no organisation's credentials of
 its own.
 
-Kept deliberately thin. The two pieces with real logic - choosing plugins
-(`pipeline.py`) and delivering the result (`reporter.py`) - are separate and
-tested on their own.
+Kept deliberately thin. The three pieces with real logic - choosing plugins
+(`pipeline.py`), gathering fields (`collection.py`), and delivering the result
+(`reporter.py`) - are separate and tested on their own.
 
 What remains is the LiveKit lifecycle. `wait_for_call_end()` is written against
 a duck-typed context rather than `JobContext` precisely so it *can* be tested
@@ -30,6 +30,7 @@ import time
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+from app.collection import Collector, fields_from_metadata, recover_missing
 from app.config import config
 from app.pipeline import PLUGIN_MODULES, AgentSpec, build_pipeline
 from app.reporter import ReportFailed, report_completion
@@ -45,7 +46,7 @@ _FAILED = "FAILED"
 
 # The agent's own instructions already say how to open; this only tells it that
 # now is the moment. Spelling the greeting out here would override whatever the
-# campaign's goal asked for.
+# agent's prompt asked for.
 _OPENING = "The contact has just answered. Open the call as your instructions describe."
 
 
@@ -53,6 +54,11 @@ _OPENING = "The contact has just answered. Open the call as your instructions de
 #: without it nothing knows when the contact stopped talking, so the agent never
 #: takes a turn. Not in `PLUGIN_MODULES` because no provider selects it.
 _VAD_MODULE = "silero"
+
+#: How often a live call is checked for the agent having asked to hang up.
+#: Short enough that ending a call feels immediate, long enough that a
+#: half-hour call is not thousands of wakeups.
+_HANGUP_POLL_SECONDS = 1.0
 
 
 def register_plugins() -> list[str]:
@@ -140,13 +146,27 @@ def transcript_from_history(history: Any) -> str:
 
 
 def completion_payload(
-    metadata: dict[str, Any], *, transcript: str, duration_seconds: int, error: str | None = None
+    metadata: dict[str, Any],
+    *,
+    transcript: str,
+    duration_seconds: int,
+    error: str | None = None,
+    collected: dict[str, Any] | None = None,
+    provider_call_id: str | None = None,
 ) -> dict[str, Any]:
     """The body `/internal/v1/runs/{run_id}/complete` expects.
 
     `contact_name`/`phone_masked` are echoed straight back from metadata
     because the API keys the outcome row on them - inventing either here would
     create a second row rather than resolving the in-flight one.
+
+    `collected` is the organisation's own business fields and goes in its own
+    key, never into `extracted`: the API reads triage's inputs out of
+    `extracted`, so a field an organisation happened to call `do_not_call`
+    would otherwise decide the disposition. `extracted` stays empty until
+    something actually infers those signals from the conversation - sending
+    nothing keeps triage falling through to the status buckets rather than
+    acting on invented values.
     """
     if error is not None:
         status = _FAILED
@@ -162,11 +182,9 @@ def completion_payload(
         "transcript": transcript or None,
         "duration_seconds": duration_seconds,
         "error": error,
-        # Structured extraction against the campaign's own result_schema is
-        # Part 2's (RUNBOOK_ARBAAZ_PART_2.md P2-T2). Sending an empty object
-        # rather than a guess keeps triage honest: it falls through to the
-        # status-based buckets instead of acting on invented fields.
         "extracted": {},
+        "collected": collected or {},
+        "provider_call_id": provider_call_id,
     }
 
 
@@ -176,6 +194,7 @@ async def wait_for_call_end(
     answer_timeout: float,
     max_seconds: float,
     on_answered: Callable[[], Awaitable[None]] | None = None,
+    should_end: Callable[[], bool] | None = None,
 ) -> bool:
     """Block while the contact is on the line. Returns whether anyone joined.
 
@@ -192,6 +211,11 @@ async def wait_for_call_end(
     That is where the agent's opening line belongs: speaking any earlier plays
     it into an empty room, and the person who then says "hello?" is answered by
     silence.
+
+    `should_end` is polled while the call is up, and returning True closes it
+    from this side. That is how "please stop calling me" hangs up on the spot:
+    the tool sets a flag and this returns, rather than the agent waiting for the
+    contact to disconnect a call they already asked to end.
     """
     try:
         await asyncio.wait_for(ctx.wait_for_participant(), timeout=answer_timeout)
@@ -220,11 +244,79 @@ async def wait_for_call_end(
     if not getattr(room, "remote_participants", None):
         return True
 
-    try:
-        await asyncio.wait_for(ended.wait(), timeout=max_seconds)
-    except TimeoutError:
-        log.warning("call ran past the %ss ceiling - closing it from this side", max_seconds)
+    if should_end is None:
+        try:
+            await asyncio.wait_for(ended.wait(), timeout=max_seconds)
+        except TimeoutError:
+            log.warning("call ran past the %ss ceiling - closing it from this side", max_seconds)
+        return True
+
+    # Polled rather than awaited on an event, because the flag is set from
+    # inside a tool call on the session's own task - handing that task an
+    # asyncio primitive to signal is more machinery than a one-second check.
+    deadline = max_seconds
+    while deadline > 0:
+        if should_end():
+            log.info("the agent asked to end the call - closing it from this side")
+            return True
+        try:
+            await asyncio.wait_for(ended.wait(), timeout=min(_HANGUP_POLL_SECONDS, deadline))
+            return True
+        except TimeoutError:
+            deadline -= _HANGUP_POLL_SECONDS
+
+    log.warning("call ran past the %ss ceiling - closing it from this side", max_seconds)
     return True
+
+
+def build_tools(collector: Collector) -> list[Any]:
+    """The two things an agent can *do* during a call, as LLM tools.
+
+    Built per call rather than declared at module scope because both close over
+    this call's `Collector`. `record_field` is described in terms of the actual
+    field names so the model does not have to infer the vocabulary from the
+    prompt, and `end_call` exists because "please stop calling me" has to end
+    the call on the spot rather than after the agent finishes its sentence -
+    that is the difference between a system that respects a refusal and one that
+    talks over it.
+    """
+    from livekit.agents import function_tool
+
+    keys = collector.keys
+
+    @function_tool
+    async def record_field(key: str, value: str) -> str:
+        """Record one answer the contact has given.
+
+        Args:
+            key: Which field this answers. One of: {keys}.
+            value: What the contact said, in their own terms.
+        """
+        return collector.record(key, value)
+
+    # The docstring is the tool schema the model sees, so the real field names
+    # have to be substituted in rather than left as a placeholder.
+    record_field.__doc__ = (record_field.__doc__ or "").format(
+        keys=", ".join(keys) or "none - do not call this tool"
+    )
+
+    @function_tool
+    async def end_call(reason: str) -> str:
+        """End the call now. Use this the moment the contact asks you to stop,
+        asks not to be called again, or says goodbye.
+
+        Args:
+            reason: Why the call is ending, in one short phrase.
+        """
+        collector.request_hangup(reason)
+        return "Ending the call now."
+
+    tools: list[Any] = [end_call]
+    if keys:
+        # An agent with no fields gets no recording tool at all, rather than one
+        # it can only ever misuse.
+        tools.insert(0, record_field)
+    return tools
 
 
 async def run_call(ctx: Any) -> None:
@@ -242,8 +334,16 @@ async def run_call(ctx: Any) -> None:
         log.error("job has no run_id - nothing could be reported, refusing the call")
         return
 
-    goal = metadata.get("goal") or "Have a brief, polite conversation and end the call."
+    # `prompt` is what the dialer sends (ADR-8); `goal` is what campaigns sent
+    # and is still read so a job dispatched by an older API build is held rather
+    # than answered with the fallback line.
+    prompt = (
+        metadata.get("prompt")
+        or metadata.get("goal")
+        or "Have a brief, polite conversation and end the call."
+    )
     spec = AgentSpec.from_metadata(metadata)
+    collector = Collector(fields=fields_from_metadata(metadata))
 
     transcript = ""
     error: str | None = None
@@ -265,7 +365,10 @@ async def run_call(ctx: Any) -> None:
             # know when the contact stopped talking, so it never takes a turn.
             vad=_vad(ctx),
         )
-        await session.start(agent=Agent(instructions=goal), room=ctx.room)
+        await session.start(
+            agent=Agent(instructions=prompt, tools=build_tools(collector)),
+            room=ctx.room,
+        )
 
         began_at = time.monotonic()
 
@@ -281,9 +384,12 @@ async def run_call(ctx: Any) -> None:
             answer_timeout=config.answer_timeout_seconds,
             max_seconds=float(metadata.get("max_call_duration_seconds") or config.max_call_seconds),
             on_answered=greet,
+            should_end=lambda: collector.hangup_reason is not None,
         )
         if answered:
             duration_seconds = int(time.monotonic() - began_at)
+        if collector.hangup_reason:
+            log.info("run %s: agent ended the call - %s", run_id, collector.hangup_reason)
     except Exception as exc:
         # The reason is logged in full but only the exception *type* is
         # reported: a vendor message can carry an API key or the dialled
@@ -299,11 +405,18 @@ async def run_call(ctx: Any) -> None:
             except Exception:
                 log.exception("run %s: closing the session failed", run_id)
 
+        # Recorded values win over recovered ones: the first is what the agent
+        # heard, the second is `collection.py`'s reading of the transcript.
+        collected = {**recover_missing(collector.fields, collector.values, transcript),
+                     **collector.values}
+
         payload = completion_payload(
             metadata,
             transcript=transcript,
             duration_seconds=duration_seconds,
             error=error,
+            collected=collected,
+            provider_call_id=str(getattr(ctx.job, "id", "") or "") or None,
         )
         try:
             await report_completion(str(run_id), payload)

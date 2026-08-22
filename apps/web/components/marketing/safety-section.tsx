@@ -53,7 +53,7 @@ const GUARDS_EXPLAINED: { icon: Icon; name: string; behaviour: string; detail: s
     icon: ProhibitIcon,
     name: "Suppression list",
     behaviour: "Permanent, global",
-    detail: "Anyone who opts out is added automatically and never dialled again, by any campaign.",
+    detail: "Anyone who opts out is added automatically and never dialled again, by any agent or run.",
   },
 ];
 
@@ -77,7 +77,7 @@ const WHEN_A_GUARD_TRIPS: { trigger: string; message: string }[] = [
   },
   {
     trigger: "A number is on the suppression list",
-    message: "Skipped — this person opted out. They are never dialled again, by any campaign.",
+    message: "Skipped — this person opted out. They are never dialled again, by any run.",
   },
 ];
 

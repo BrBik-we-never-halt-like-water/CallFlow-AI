@@ -10,14 +10,14 @@ import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { Tooltip } from '@/components/ui/tooltip';
 import { cn } from '@/lib/cn';
-import type { CampaignField, FieldType } from '@/lib/api';
+import type { CollectField, FieldType } from '@/lib/api';
 
 /**
  * What the agent has to establish while the call is happening.
  *
- * The same field shape campaigns already use for `extra_fields`, on purpose:
- * both end as structured call results, and a second format would mean a second
- * validator to keep in step. The API rejects unknown types and duplicate keys.
+ * One field shape for everything that ends as a structured call result, on
+ * purpose: a second format would mean a second validator to keep in step. The
+ * API rejects unknown types and duplicate keys.
  */
 
 const TYPES: { value: FieldType; label: string }[] = [
@@ -42,11 +42,11 @@ export function CollectFieldsEditor({
   onChange,
   disabled,
 }: {
-  fields: CampaignField[];
-  onChange: (next: CampaignField[]) => void;
+  fields: CollectField[];
+  onChange: (next: CollectField[]) => void;
   disabled?: boolean;
 }) {
-  function update(index: number, patch: Partial<CampaignField>) {
+  function update(index: number, patch: Partial<CollectField>) {
     onChange(fields.map((f, i) => (i === index ? { ...f, ...patch } : f)));
   }
 
@@ -58,7 +58,7 @@ export function CollectFieldsEditor({
           it is worth reading once, and after that it is a paragraph between
           the builder and the fields they came here to add. */}
       <div className="flex items-center gap-1.5">
-        <h2 className="font-display text-h4 leading-none text-text">
+        <h2 className="text-[0.6875rem] font-semibold uppercase tracking-[0.05em] leading-none" style={{ color: 'var(--dash-text)' }}>
           Add fields
         </h2>
         <Tooltip content="What the agent asks the person for during the call. Each one comes back as a field on the result, so a run can be read as data rather than as transcripts.">

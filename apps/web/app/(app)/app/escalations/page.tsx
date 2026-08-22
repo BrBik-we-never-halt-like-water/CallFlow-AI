@@ -6,6 +6,7 @@ import { EscalationCard } from '@/components/app/escalation-card';
 import { ShareRequestDialog } from '@/components/app/share-request-dialog';
 import { TranscriptView } from '@/components/app/transcript-view';
 import { Button } from '@/components/ui/button';
+import { PageHeader } from '@/components/app/page-header';
 import { DialogRoot, Sheet } from '@/components/ui/dialog';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Panel } from '@/components/ui/panel';
@@ -14,7 +15,6 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/components/ui/toast';
 import {
   api,
-  type Campaign,
   type Escalation,
   type EscalationDirectoryEntry,
   type Member,
@@ -48,28 +48,27 @@ export default function EscalationsPage() {
     session.profile.permissions.includes('sharing:request') &&
     session.profile.active.role === 'operator';
   const [sortOrder, setSortOrder] = useState<SortOrder>('oldest');
-  const [campaignFilter, setCampaignFilter] = useState('all');
+  const [agentFilter, setAgentFilter] = useState('all');
   const [reasonFilter, setReasonFilter] = useState('all');
   const [selected, setSelected] = useState<Escalation | null>(null);
   const [members, setMembers] = useState<Member[]>([]);
-  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [visibleCountKey, setVisibleCountKey] = useState(
-    `${campaignFilter}|${reasonFilter}|${sortOrder}`,
+    `${agentFilter}|${reasonFilter}|${sortOrder}`,
   );
   const sentinelRef = useRef<HTMLDivElement | null>(null);
 
-  const hasActiveFilters = campaignFilter !== 'all' || reasonFilter !== 'all';
+  const hasActiveFilters = agentFilter !== 'all' || reasonFilter !== 'all';
 
   function clearFilters() {
-    setCampaignFilter('all');
+    setAgentFilter('all');
     setReasonFilter('all');
   }
 
   // Filters/sort changing means the page resets to the top - adjusting state
   // during render (not an effect) is the React-blessed way to do this, see
   // CLAUDE.md's note on preferring derived state over syncing in an effect.
-  const filterKey = `${campaignFilter}|${reasonFilter}|${sortOrder}`;
+  const filterKey = `${agentFilter}|${reasonFilter}|${sortOrder}`;
   if (filterKey !== visibleCountKey) {
     setVisibleCountKey(filterKey);
     setVisibleCount(PAGE_SIZE);
@@ -85,16 +84,6 @@ export default function EscalationsPage() {
       .then((team) => setMembers(team.members))
       .catch(() => setMembers([]));
   }, [canAssign]);
-
-  // For the campaign filter and each card's campaign-name tag - not part of
-  // `useAppStore()`, which only ever hydrated recent runs' own campaigns,
-  // not the org's full list.
-  useOrgScopedEffect(() => {
-    api
-      .campaigns()
-      .then(setCampaigns)
-      .catch(() => setCampaigns([]));
-  }, []);
 
   // A resolved escalation stays a real row now (ISSUES.md #7) rather than
   // vanishing from the list the moment it's actioned - this worklist still
@@ -115,14 +104,24 @@ export default function EscalationsPage() {
 
   const shown = useMemo(() => {
     let list = openEscalations;
-    if (campaignFilter !== 'all') {
-      list = list.filter((item) => item.campaign_id === campaignFilter);
+    if (agentFilter !== 'all') {
+      list = list.filter((item) => (item.agent_name ?? '') === agentFilter);
     }
     if (reasonFilter !== 'all') {
       list = list.filter((item) => item.disposition_reason === reasonFilter);
     }
     return sortOrder === 'oldest' ? list : [...list].reverse();
-  }, [openEscalations, campaignFilter, reasonFilter, sortOrder]);
+  }, [openEscalations, agentFilter, reasonFilter, sortOrder]);
+
+  // Derived from the rows on screen rather than a second fetch of the org's
+  // agents: the name is already on every escalation, and a filter can only
+  // usefully offer values that actually appear in the list.
+  const agentOptions = useMemo(
+    () =>
+      [...new Set(openEscalations.map((e) => e.agent_name).filter(Boolean))]
+        .sort() as string[],
+    [openEscalations],
+  );
 
   const visible = shown.slice(0, visibleCount);
   const hasMore = shown.length > visible.length;
@@ -145,21 +144,7 @@ export default function EscalationsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div className="flex flex-col gap-1">
-          <p className="text-small font-bold text-text-mute">Needs a person</p>
-          <h1 className="font-display text-h2 text-text">
-            {openEscalations.length === 0
-              ? 'Nothing needs you'
-              : `${openEscalations.length} waiting`}
-          </h1>
-          <p className="measure text-small text-text-dim">
-            {openEscalations.length > 0
-              ? 'Oldest first - the longest wait is the most expensive one.'
-              : 'Escalations land here when someone sounds frustrated, asks to opt out, or asks for a person.'}
-          </p>
-        </div>
-      </div>
+      <PageHeader title="Needs a person" figure={openEscalations.length} />
 
       <ConnectionBanner phase={phase} />
 
@@ -180,16 +165,16 @@ export default function EscalationsPage() {
 
           <div className="w-52">
             <p className="mb-1.5 text-small font-bold text-text-mute">
-              Campaign
+              Agent
             </p>
             <Select
-              value={campaignFilter}
-              onValueChange={setCampaignFilter}
+              value={agentFilter}
+              onValueChange={setAgentFilter}
               options={[
-                { value: 'all', label: 'All campaigns' },
-                ...campaigns.map((c) => ({ value: c.id, label: c.name })),
+                { value: 'all', label: 'All agents' },
+                ...agentOptions.map((name) => ({ value: name, label: name })),
               ]}
-              ariaLabel="Filter by campaign"
+              ariaLabel="Filter by agent"
             />
           </div>
 
@@ -217,7 +202,7 @@ export default function EscalationsPage() {
             <Button
               variant="ghost"
               onClick={() => {
-                setCampaignFilter('all');
+                setAgentFilter('all');
                 setReasonFilter('all');
               }}
             >
@@ -267,8 +252,7 @@ export default function EscalationsPage() {
                 <EscalationCard
                   escalation={escalation}
                   members={members}
-                  campaigns={campaigns}
-                  onOpen={() => setSelected(escalation)}
+                                    onOpen={() => setSelected(escalation)}
                 />
               </li>
             ))}
@@ -306,7 +290,7 @@ export default function EscalationsPage() {
 }
 
 /**
- * Open escalations elsewhere in the org - contact + campaign + current
+ * Open escalations elsewhere in the org - contact + agent + current
  * owner only, never the transcript or reasoning chain (role-based UI
  * roadmap, Phase 4). Only rendered for operators with `sharing:request`.
  */
@@ -371,7 +355,7 @@ function TeamEscalationsDirectory({ ownedIds }: { ownedIds: Set<string> }) {
                     {entry.contact_name}
                   </span>
                   <span className="text-small text-text-dim">
-                    {entry.campaign_name}
+                    {entry.agent_name}
                     {entry.owner_name ? ` · ${entry.owner_name}` : ''}
                   </span>
                 </div>

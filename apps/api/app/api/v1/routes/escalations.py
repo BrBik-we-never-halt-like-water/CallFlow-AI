@@ -32,7 +32,8 @@ class EscalationOut(BaseModel):
 
     id: str
     run_id: str
-    campaign_id: str
+    voice_agent_id: str | None = None
+    agent_name: str | None = None
     escalation_status: str
     contact_name: str
     phone_masked: str
@@ -47,6 +48,16 @@ class EscalationOut(BaseModel):
     duration_seconds: float | None
     error: str | None
     extracted: dict[str, Any]
+    #: What the agent actually got, and what it did not. The repository has
+    #: always selected these four; the response model omitted them, so the
+    #: worklist showed a transcript and no answers - the person picking the
+    #: escalation up could not see which fields were still missing or what to
+    #: ask on the callback, which is most of why this queue exists
+    #: (`ISSUES.md` #172).
+    collected: dict[str, Any] = {}
+    missing_required_fields: list[str] = []
+    handoff_questions: list[str] = []
+    from_number_masked: str | None = None
     created_at: datetime
     assigned_to: str | None
     assigned_to_name: str | None
@@ -64,7 +75,9 @@ class AssignIn(BaseModel):
 class EscalationDirectoryEntryOut(BaseModel):
     id: str
     contact_name: str
-    campaign_name: str
+    #: Null is not possible - the SQL function coalesces a removed agent to
+    #: 'Deleted agent' so the worklist still lists the escalation.
+    agent_name: str
     owner_user_id: str | None
     owner_name: str | None
 
@@ -73,7 +86,8 @@ def _row_to_out(row) -> EscalationOut:
     return EscalationOut(
         id=str(row["id"]),
         run_id=row["run_id"],
-        campaign_id=row["campaign_id"],
+        voice_agent_id=str(row["voice_agent_id"]) if row["voice_agent_id"] else None,
+        agent_name=row["agent_name"],
         escalation_status=row["escalation_status"],
         contact_name=row["contact_name"],
         phone_masked=row["phone_masked"],
@@ -88,6 +102,10 @@ def _row_to_out(row) -> EscalationOut:
         duration_seconds=row["duration_seconds"],
         error=row["error"],
         extracted=row["extracted"] or {},
+        collected=row["collected"] or {},
+        missing_required_fields=list(row["missing_required_fields"] or []),
+        handoff_questions=list(row["handoff_questions"] or []),
+        from_number_masked=row["from_number_masked"],
         created_at=row["created_at"],
         assigned_to=str(row["assigned_to"]) if row["assigned_to"] else None,
         assigned_to_name=row["assigned_to_name"],
@@ -112,14 +130,13 @@ async def list_escalations(
 async def escalation_directory(
     user: Annotated[CurrentUser, Depends(RequirePermission(Permission.SHARING_REQUEST))],
 ) -> list[EscalationDirectoryEntryOut]:
-    """Contact name + campaign + current owner, for every **open** escalation
+    """Contact name + agent + current owner, for every **open** escalation
     org-wide - no transcript, no disposition detail. Lets an operator see
-    what else is waiting so they can offer to help (Phase 4), without the
-    content their own `GET /api/v1/escalations` correctly keeps hidden.
-    Gated on `SHARING_REQUEST` (not just any signed-in user, unlike the
-    campaign directory) - deliberately, since this one surfaces which
-    customers are currently frustrated org-wide, a step more sensitive than
-    a campaign's mere existence.
+    what else is waiting so they can offer to help, without the content their
+    own `GET /api/v1/escalations` correctly keeps hidden.
+
+    Gated on `SHARING_REQUEST` rather than on merely being signed in, because
+    this surfaces which customers are currently frustrated org-wide.
     """
     async with database.as_user(user.auth_user_id) as conn:
         rows = await sharing_repo.list_escalation_directory(conn, user.org_id)
@@ -127,7 +144,7 @@ async def escalation_directory(
         EscalationDirectoryEntryOut(
             id=str(r["id"]),
             contact_name=r["contact_name"],
-            campaign_name=r["campaign_name"],
+            agent_name=r["agent_name"],
             owner_user_id=str(r["owner_user_id"]) if r["owner_user_id"] else None,
             owner_name=r["owner_name"],
         )

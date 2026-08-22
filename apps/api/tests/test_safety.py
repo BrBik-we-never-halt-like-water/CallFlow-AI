@@ -1,17 +1,21 @@
-"""Safety guardrails must fail closed."""
+"""Number handling, and the one gate that still stands before a dial.
 
-import dataclasses
+The cost guards this file used to cover - the allowlist, the per-run ceiling,
+the rate limiter, the daily budget, per-teammate credits - were removed at the
+product owner's direction while a replacement security layer is designed, and
+their tests went with them.
+
+**The suppression list was kept, and is the reason `check_dial_allowed` still
+exists.** It had no test here before; it does now, because it is the only thing
+left between a started run and a person who asked never to be called again.
+`is_e164`/`mask` remain covered: masking is a standing guarantee (CLAUDE.md #4),
+and E.164 validation is still real input validation on uploads even though it no
+longer refuses a dial.
+"""
 
 import pytest
 
-from app.domain import safety
-from app.domain.safety import (
-    assert_e164,
-    check_dial_allowed,
-    is_e164,
-    mask,
-    resolve_safety_settings,
-)
+from app.domain.safety import assert_e164, check_dial_allowed, is_e164, mask
 
 
 @pytest.mark.parametrize(
@@ -60,91 +64,37 @@ def test_mask_always_hides_at_least_half(phone: str) -> None:
     assert masked.count("*") >= len(phone) / 2
 
 
-def test_gate_rejects_invalid_number() -> None:
-    result = check_dial_allowed("5555550100", 0)
+def test_the_gate_refuses_someone_who_opted_out() -> None:
+    """The whole reason this function survived the removal of everything else."""
+    result = check_dial_allowed("+15555550100", is_suppressed=True)
+
     assert result.allowed is False
+    assert "opted out" in result.reason
 
 
-def test_gate_rejects_past_ceiling() -> None:
-    result = check_dial_allowed("+15555550100", 999)
-    assert result.allowed is False
-    assert "ceiling" in result.reason
+def test_the_refusal_reason_never_contains_the_full_number() -> None:
+    """It is written to a call record and read back to a person, so it goes
+    through the shared mask like every other user-facing number (CLAUDE.md #4)."""
+    result = check_dial_allowed("+15555550100", is_suppressed=True)
+
+    assert "5555550100" not in result.reason
+    assert "*" in result.reason
 
 
-def test_gate_allows_valid_number_under_ceiling() -> None:
-    assert check_dial_allowed("+15555550100", 0).allowed is True
+def test_the_gate_allows_a_number_nobody_has_opted_out_of() -> None:
+    assert check_dial_allowed("+15555550100").allowed is True
 
 
-def test_gate_respects_allowlist(monkeypatch: pytest.MonkeyPatch) -> None:
-    # Config is frozen, so swap in a replaced copy rather than mutating it.
-    monkeypatch.setattr(
-        safety, "config", dataclasses.replace(safety.config, allowlist=["+15555550199"])
-    )
-    assert safety.check_dial_allowed("+15555550100", 0).allowed is False
-    assert safety.check_dial_allowed("+15555550199", 0).allowed is True
+def test_the_gate_no_longer_refuses_on_formatting() -> None:
+    """E.164 validation was removed from the dial path deliberately. It is still
+    real input validation on uploads (`domain/spreadsheet.py`) - it is simply no
+    longer this function's job, and a test asserting the old behaviour would
+    fail the next person who reads it as a spec."""
+    assert check_dial_allowed("5555550100").allowed is True
 
 
-def test_gate_ignores_usage_credit_when_the_plan_is_uncapped() -> None:
-    result = check_dial_allowed("+15555550100", 0, usage_credit_paise=None)
-    assert result.allowed is True
-
-
-def test_gate_rejects_when_usage_credit_is_exhausted() -> None:
-    result = check_dial_allowed("+15555550100", 0, usage_credit_paise=0)
-    assert result.allowed is False
-    assert "credit" in result.reason
-
-
-def test_gate_allows_when_usage_credit_remains() -> None:
-    assert check_dial_allowed("+15555550100", 0, usage_credit_paise=1).allowed is True
-
-
-def test_resolve_safety_settings_falls_back_when_org_never_configured() -> None:
-    """`None` (no `org_safety_settings` row at all) means "use the deployment
-    default" - the one case this function is actually meant to fall back on."""
-    effective = resolve_safety_settings(
-        allowlist=None,
-        max_calls_per_run=None,
-        calls_per_window=None,
-        window_minutes=None,
-        daily_budget=None,
-    )
-    assert effective.allowlist == frozenset(safety.config.allowlist)
-    assert effective.max_calls_per_run == safety.config.max_calls_per_run
-    assert effective.daily_budget == safety.config.daily_call_budget
-
-
-def test_resolve_safety_settings_an_explicitly_cleared_allowlist_stays_cleared(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """An org that clears its own allowlist means "no restriction" - it must
-    not silently fall back to the deployment's `CALLFLOW_ALLOWLIST`. Regression
-    for a bug where `[] if allowlist else config.allowlist` treated an
-    explicitly emptied override the same as "never configured"."""
-    monkeypatch.setattr(
-        safety, "config", dataclasses.replace(safety.config, allowlist=["+15555550199"])
-    )
-    effective = resolve_safety_settings(
-        allowlist=[],
-        max_calls_per_run=None,
-        calls_per_window=None,
-        window_minutes=None,
-        daily_budget=None,
-    )
-    assert effective.allowlist == frozenset()
-
-
-def test_resolve_safety_settings_org_override_wins_over_deployment_default(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(
-        safety, "config", dataclasses.replace(safety.config, max_calls_per_run=3)
-    )
-    effective = resolve_safety_settings(
-        allowlist=None,
-        max_calls_per_run=10,
-        calls_per_window=None,
-        window_minutes=None,
-        daily_budget=None,
-    )
-    assert effective.max_calls_per_run == 10
+def test_the_gate_fails_closed_on_an_unresolvable_suppression_verdict() -> None:
+    """A caller that cannot reach the suppression list must pass True, not omit
+    the argument. Pins the contract: True always refuses, whatever the number."""
+    assert check_dial_allowed("+15555550100", is_suppressed=True).allowed is False
+    assert check_dial_allowed("5555550100", is_suppressed=True).allowed is False

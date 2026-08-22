@@ -39,11 +39,19 @@ export function Dialog({
   children?: React.ReactNode;
   footer?: React.ReactNode;
   className?: string;
-  size?: 'sm' | 'md' | 'lg';
+  /** `full` is the record-inspection size: a near-full-viewport panel for
+   *  content that has to be read alongside itself - a transcript next to the
+   *  fields extracted from it. */
+  size?: 'sm' | 'md' | 'lg' | 'full';
   /** False for a mandatory step: no close button, no Esc, no click-outside. */
   dismissible?: boolean;
 }) {
-  const width = { sm: 'max-w-sm', md: 'max-w-lg', lg: 'max-w-2xl' }[size];
+  const width = {
+    sm: 'max-w-sm',
+    md: 'max-w-lg',
+    lg: 'max-w-2xl',
+    full: 'max-w-none',
+  }[size];
   const container = usePortalContainer();
 
   return (
@@ -53,16 +61,20 @@ export function Dialog({
         onEscapeKeyDown={(e) => !dismissible && e.preventDefault()}
         onPointerDownOutside={(e) => !dismissible && e.preventDefault()}
         onInteractOutside={(e) => !dismissible && e.preventDefault()}
+        data-dash-overlay=""
         className={cn(
-          'dark-overlay fixed left-1/2 top-1/2 z-50 w-[calc(100vw-32px)] -translate-x-1/2 -translate-y-1/2',
-          'max-h-[calc(100dvh-64px)] overflow-y-auto rounded-md border border-rule-strong bg-surface-raised shadow-overlay',
+          'dark-overlay fixed left-1/2 top-1/2 z-50 -translate-x-1/2 -translate-y-1/2',
+          'overflow-y-auto rounded-md border border-rule-strong bg-surface-raised shadow-overlay',
+          size === 'full'
+            ? 'h-[90dvh] w-[80vw] max-w-[80vw]'
+            : 'w-[calc(100vw-32px)] max-h-[calc(100dvh-64px)]',
           width,
           className,
         )}
       >
         <div className="flex items-start justify-between gap-4 border-b border-rule p-5">
           <div className="flex flex-col gap-1.5">
-            <RadixDialog.Title className="font-display text-h3 text-text">
+            <RadixDialog.Title className="text-[0.8125rem] font-semibold text-text">
               {title}
             </RadixDialog.Title>
             {description ? (
@@ -120,6 +132,7 @@ export function Sheet({
     <RadixDialog.Portal container={container}>
       <Overlay />
       <RadixDialog.Content
+        data-dash-overlay=""
         className={cn(
           'dark-overlay fixed inset-0 z-50 flex flex-col bg-surface-raised shadow-overlay',
           'md:inset-y-0 md:left-auto md:right-0 md:w-[min(720px,92vw)] md:border-l md:border-rule-strong',

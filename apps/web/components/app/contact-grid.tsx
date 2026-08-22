@@ -12,6 +12,7 @@ import { Panel } from '@/components/ui/panel';
 import { Tag } from '@/components/ui/badge';
 import { useToast } from '@/components/ui/toast';
 import { normalisePhone } from '@/lib/format/phone';
+import { api } from '@/lib/api';
 import {
   parseSheet,
   SAMPLE_CSV,
@@ -41,6 +42,7 @@ export function ContactGrid({
   const toast = useToast();
   const fileInput = useRef<HTMLInputElement | null>(null);
   const [dragging, setDragging] = useState(false);
+  const [reading, setReading] = useState(false);
 
   const invalid = rows.filter((r) => !r.valid);
   const valid = rows.filter((r) => r.valid);
@@ -86,9 +88,30 @@ export function ContactGrid({
     onChange(next);
   }
 
+  /**
+   * A dropped or chosen file, by kind.
+   *
+   * CSV is a string split and is parsed here. An .xlsx is a zip of XML with
+   * shared strings and typed cells - a phone number typed as digits is stored
+   * as a float - so it goes to the server, which has a real reader for it.
+   */
   async function onFiles(files: FileList | null) {
     const file = files?.[0];
     if (!file) return;
+
+    if (/\.xls[xm]$/i.test(file.name)) {
+      await ingestWorkbook(file);
+      return;
+    }
+    if (/\.xls$/i.test(file.name)) {
+      toast({
+        tone: 'warning',
+        title: 'That is the older Excel format',
+        body: 'Save it as .xlsx or export it as CSV, then try again.',
+      });
+      return;
+    }
+
     try {
       ingest(await file.text(), { append: rows.length > 0 });
     } catch {
@@ -97,6 +120,63 @@ export function ContactGrid({
         title: "That file couldn't be read",
         body: 'Export it again as CSV and try once more.',
       });
+    }
+  }
+
+  async function ingestWorkbook(file: File) {
+    setReading(true);
+    try {
+      const parsed = await api.parseSheet(file);
+      if (parsed.rows.length === 0) {
+        toast({
+          tone: 'warning',
+          title: 'Nothing to import',
+          body: 'That sheet has a header row but no contacts under it.',
+        });
+        return;
+      }
+
+      // Mapped back onto the same row shape a pasted CSV produces, so
+      // everything downstream - the grid, the counts, `toContactInputs` - has
+      // one row type to deal with rather than two.
+      const imported: ParsedRow[] = parsed.rows.map((row) => ({
+        row: row.row,
+        name: row.name,
+        phone: row.contact?.phone ?? '',
+        note: row.note,
+        context: row.context,
+        // Re-validated locally rather than trusting the server's wording: this
+        // is what decides which *cell* the grid outlines, and matching on the
+        // text of a message would break the moment that message is reworded.
+        // The two validators apply the same rules (`lib/contacts.ts` and
+        // `domain/spreadsheet.py`), so the verdict agrees either way.
+        ...validateRow(row.name, row.contact?.phone ?? ''),
+      }));
+
+      const next =
+        rows.length > 0 ? [...rows, ...imported] : imported;
+      onChange(renumber(next));
+
+      const bad = imported.filter((r) => !r.valid).length;
+      toast({
+        tone: bad > 0 ? 'warning' : 'success',
+        title: `${imported.length} ${imported.length === 1 ? 'row' : 'rows'} imported`,
+        body:
+          bad > 0
+            ? `${bad} ${bad === 1 ? 'row needs' : 'rows need'} fixing before the run can start.`
+            : undefined,
+      });
+    } catch (error) {
+      toast({
+        tone: 'error',
+        title: "That sheet couldn't be read",
+        body:
+          error instanceof Error
+            ? error.message
+            : 'Save it as .xlsx or export it as CSV, then try again.',
+      });
+    } finally {
+      setReading(false);
     }
   }
 
@@ -122,10 +202,12 @@ export function ContactGrid({
       >
         <div className="flex flex-col gap-1">
           <p className="text-small text-text">
-            Drop a CSV here, or paste from a spreadsheet
+            Drop a CSV or Excel file here, or paste from a spreadsheet
           </p>
           <p className="text-small text-text-mute">
-            Columns: name, phone, note. A header row is optional.
+            Columns: name, phone, note. Any other column becomes that
+            contact&apos;s own context. A header row is optional for CSV and
+            required for Excel.
           </p>
         </div>
 
@@ -133,17 +215,18 @@ export function ContactGrid({
           <input
             ref={fileInput}
             type="file"
-            accept=".csv,.tsv,text/csv,text/plain"
+            accept=".csv,.tsv,.xlsx,.xlsm,text/csv,text/plain,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             className="sr-only"
             onChange={(e) => void onFiles(e.target.files)}
           />
           <Button
             variant="secondary"
             size="sm"
+            loading={reading}
             onClick={() => fileInput.current?.click()}
           >
             <UploadSimpleIcon aria-hidden className="size-4" />
-            Import CSV
+            Import a file
           </Button>
           <Button
             variant="ghost"
@@ -196,6 +279,7 @@ export function ContactGrid({
                   name: '',
                   phone: '',
                   note: '',
+                  context: {},
                   valid: false,
                   error: 'Add a name for this row.',
                   errorField: 'name',
@@ -348,6 +432,7 @@ export function ContactGrid({
                       name: '',
                       phone: '',
                       note: '',
+                      context: {},
                       valid: false,
                       error: 'Add a name for this row.',
                       errorField: 'name',

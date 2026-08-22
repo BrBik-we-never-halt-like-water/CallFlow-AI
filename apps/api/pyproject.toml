@@ -23,6 +23,8 @@ dependencies = [
     # plain `dodopayments` produced an API that rejected every genuine webhook as
     # unverified - a dependency problem wearing an authentication problem's clothes.
     "dodopayments[webhooks]>=1.112.0",
+    "openpyxl>=3.1.0",
+    "python-multipart>=0.0.9",
 ]
 
 [project.optional-dependencies]

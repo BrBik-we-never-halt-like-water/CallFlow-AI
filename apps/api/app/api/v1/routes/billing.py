@@ -22,14 +22,11 @@ from pydantic import BaseModel, Field
 from app.auth.dependencies import CurrentUser, RequirePermission, current_user
 from app.auth.permissions import Permission
 from app.core.config import config
-from app.core.rate_limit import limiter
 from app.database import database
 from app.database.repositories import credits as credits_repo
-from app.database.repositories import safety_settings as safety_repo
 from app.database.repositories import subscriptions as subs_repo
 from app.database.repositories import usage_rates as rates_repo
 from app.domain.plans import Entitlements, PlanId, ladder
-from app.domain.safety import resolve_safety_settings
 
 # The pseudo-plan a credit pack is looked up under. Not a `PlanId`: a top-up is
 # not a plan and must never appear in the ladder, or it would show up as a
@@ -65,9 +62,12 @@ class EntitlementsOut(BaseModel):
     max_organisations: int | None
     max_ai_integrations: int | None
     daily_call_budget: int | None
-    """A runaway bound, identical on every plan - not a plan feature. Usage credit
-    is the economic limit and binds first by a wide margin, so this is shown under
-    Settings -> Safety rather than on a plan card."""
+    """Informational only - not currently enforced anywhere. Used to be a runaway
+    bound checked in `check_dial_allowed()`; that guard (along with the allowlist,
+    the per-run ceiling, and the rate limiter) was removed at the product owner's
+    direction pending a replacement security layer (`ISSUES.md` #178,
+    `domain/safety.py`). Still settable per organisation from the platform-admin
+    entitlement override (`routes/platform.py`), which is why it survives here."""
     monthly_credit_paise: int | None
     llm_spend_limit_usd: float
 
@@ -77,7 +77,6 @@ class UsageOut(BaseModel):
     seats: int
     organisations: int
     ai_integrations: int
-    calls_today: int
 
 
 class PlanPriceOut(BaseModel):
@@ -165,11 +164,6 @@ class BillingOverviewOut(BaseModel):
     subscription: SubscriptionOut | None
     entitlements: EntitlementsOut
     usage: UsageOut
-    effective_daily_call_budget: int
-    """What runs actually stop at today - `min()` of the plan allowance, the
-    organisation's own Settings -> Safety value, and the deployment default. The
-    meter shows this; `entitlements.daily_call_budget` is what the *plan* permits,
-    which can be higher."""
     has_custom_limits: bool
     credit: CreditOut
     payments: list[PaymentOut]
@@ -219,41 +213,6 @@ def _entitlements_out(entitlements: Entitlements) -> EntitlementsOut:
         monthly_credit_paise=entitlements.monthly_credit_paise,
         llm_spend_limit_usd=float(entitlements.llm_spend_limit_usd),
     )
-
-
-async def _daily_calls(
-    conn: Any, org_id: UUID, plan_daily_budget: int | None
-) -> tuple[int, int]:
-    """`(used today, the ceiling it was counted against)`.
-
-    Both, deliberately. The plan's *allowance* and the *effective* ceiling are two
-    different true numbers: a deployment default or an organisation's own Settings
-    -> Safety value can be lower than the plan permits, and `min()` wins. Returning
-    only the plan number is how Billing ends up promising 20 calls while runs stop
-    at 5 - display and enforcement disagreeing, which is the exact failure
-    `resolve_safety_settings` exists to prevent.
-
-    Reads the same in-process limiter every run passes through. That counter resets
-    on restart and does not cross replicas - a documented limitation (`SYSTEM.md`
-    §7), and the reason this is labelled "today" rather than shown as a billing
-    figure.
-    """
-    row = await safety_repo.get_for_org(conn, org_id)
-    effective = resolve_safety_settings(
-        allowlist=row["allowlist"] if row else None,
-        max_calls_per_run=row["max_calls_per_run"] if row else None,
-        calls_per_window=row["calls_per_window"] if row else None,
-        window_minutes=row["window_minutes"] if row else None,
-        daily_budget=row["daily_budget"] if row else None,
-        plan_daily_budget=plan_daily_budget,
-    )
-    snapshot = limiter.snapshot(
-        str(org_id),
-        rate_limit_calls=effective.calls_per_window,
-        rate_limit_window_seconds=effective.window_minutes * 60,
-        daily_call_budget=effective.daily_budget,
-    )
-    return int(snapshot.get("used_today", 0)), effective.daily_budget
 
 
 async def _live_prices() -> dict[tuple[str, BillingPeriod], Any]:
@@ -361,10 +320,7 @@ async def get_overview(
 ) -> BillingOverviewOut:
     async with database.as_user(user.auth_user_id) as conn:
         effective = await billing.resolve_plan(conn, user.org_id, user.org_plan_id)
-        calls_today, effective_daily = await _daily_calls(
-            conn, user.org_id, effective.entitlements.daily_call_budget
-        )
-        usage = await billing.usage_for(conn, user.org_id, calls_today=calls_today)
+        usage = await billing.usage_for(conn, user.org_id)
         payments = await subs_repo.list_payments(conn, user.org_id)
         # The organisation's *current* rate, which today is the platform fee for
         # everyone: no leg runs on a CallFlow key because CallFlow holds none, so
@@ -418,9 +374,7 @@ async def get_overview(
             seats=usage.seats,
             organisations=usage.organisations,
             ai_integrations=usage.ai_integrations,
-            calls_today=usage.calls_today,
         ),
-        effective_daily_call_budget=effective_daily,
         has_custom_limits=effective.has_custom_limits,
         payments=[
             PaymentOut(

@@ -1555,26 +1555,23 @@ button[data-menu][data-state='open']:focus-visible {
    simply no longer apply in light, where the plain `bg-surface-raised` the
    component already carries shows through instead. */
 :root[data-theme='dark'] .toast-dark-overlay {
-  background: radial-gradient(
-    170% 150% at 50% -10%,
-    color-mix(in oklab, #9333ea 26%, #050505),
-    #050505 90%
-  );
-  border-color: color-mix(in oklab, #ffffff 18%, transparent);
-  --text: #f1f5f9;
-  --text-dim: #cbd5e1;
-  --text-mute: #94a3b8;
-  --rule: color-mix(in oklab, #ffffff 10%, transparent);
-  --rule-strong: color-mix(in oklab, #ffffff 18%, transparent);
-  --surface-hover: color-mix(in oklab, #ffffff 8%, transparent);
-  --lamp-ice: #5883b7;
-  --lamp-brass: #a47f47;
-  --lamp-jade: #4b9073;
-  --lamp-flare: #c15f4d;
-  --lamp-ice-text: #8db4e5;
-  --lamp-brass-text: #ccab7c;
-  --lamp-jade-text: #88bfa6;
-  --lamp-flare-text: #e49282;
+  background: #181c1f;
+  border-color: #333a3f;
+  --text: #f4f5f5;
+  --text-dim: #a1a7aa;
+  --text-mute: #70777b;
+  --rule: #252a2e;
+  --rule-strong: #333a3f;
+  --surface-hover: #1c2024;
+  --surface-raised: #181c1f;
+  --lamp-ice: #ff7473;
+  --lamp-ice-text: #ff7473;
+  --lamp-brass: #eab45a;
+  --lamp-brass-text: #f0c47c;
+  --lamp-jade: #65c487;
+  --lamp-jade-text: #7fd39d;
+  --lamp-flare: #f05a5a;
+  --lamp-flare-text: #ff8785;
 }
 
 /* The third theme state: no `data-theme` at all means "follow the system", so
@@ -1582,20 +1579,23 @@ button[data-menu][data-state='open']:focus-visible {
    the selector differs - the declarations are the block above. */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) .toast-dark-overlay {
-    background: radial-gradient(
-      170% 150% at 50% -10%,
-      color-mix(in oklab, #9333ea 26%, #050505),
-      #050505 90%
-    );
-    border-color: color-mix(in oklab, #ffffff 18%, transparent);
-    --text: #f1f5f9;
-    --text-dim: #cbd5e1;
-    --text-mute: #94a3b8;
-    --rule: color-mix(in oklab, #ffffff 10%, transparent);
-    --rule-strong: color-mix(in oklab, #ffffff 18%, transparent);
-    --surface-hover: color-mix(in oklab, #ffffff 8%, transparent);
-    --lamp-jade-text: #88bfa6;
-    --lamp-flare-text: #e49282;
+    background: #181c1f;
+    border-color: #333a3f;
+    --text: #f4f5f5;
+    --text-dim: #a1a7aa;
+    --text-mute: #70777b;
+    --rule: #252a2e;
+    --rule-strong: #333a3f;
+    --surface-hover: #1c2024;
+    --surface-raised: #181c1f;
+    --lamp-ice: #ff7473;
+    --lamp-ice-text: #ff7473;
+    --lamp-brass: #eab45a;
+    --lamp-brass-text: #f0c47c;
+    --lamp-jade: #65c487;
+    --lamp-jade-text: #7fd39d;
+    --lamp-flare: #f05a5a;
+    --lamp-flare-text: #ff8785;
   }
 }
 
@@ -2474,4 +2474,833 @@ button[data-menu][data-state='open']:focus-visible {
   .deck-section::after {
     opacity: 0;
   }
+}
+
+/* ==========================================================================
+   DASHBOARD - the coral operations surface.
+
+   A self-contained palette scoped to `.dash`, added rather than folded into
+   the tokens above so marketing and auth keep the surfaces they were designed
+   against. Everything the dashboard renders reads from these names, so the
+   whole surface re-themes from this block alone.
+
+   The brand is coral (`--dash-brand`). Non-negotiable #10 in CLAUDE.md is
+   rewritten to match: colour-with-meaning is now carried by *status text*,
+   not by a dot. There are no lamp dots on this surface at all - a status is
+   its own word, set in its own colour, which is legible at a glance and to a
+   screen reader without a legend.
+
+   The one hazard that survives the rule change: brand coral and a red danger
+   status are the same hue family, so a "Failed" pill next to a coral button
+   would read as chrome. `--dash-danger` is therefore pulled deeper and less
+   orange than the brand (hue ~10 vs ~4, lightness well below it) so the two
+   never resolve to the same mark. That separation is the reason danger is
+   not simply `--dash-brand`.
+
+   Ratios are computed against the surface each token actually sits on, not
+   eyeballed. Status *text* colours clear 4.5:1 on their own soft background;
+   the brand clears 4.5:1 as text on white only in its `-ink` form, which is
+   why a coral label never uses `--dash-brand` directly.
+   ========================================================================== */
+
+.dash {
+  color-scheme: light;
+
+  --dash-bg: #f4f4f3;
+  --dash-sidebar: #fafaf9;
+  --dash-surface: #ffffff;
+  --dash-elevated: #ffffff;
+  --dash-hover: #f4f4f3;
+  --dash-sunken: #faf9f8;
+  --dash-border: #e7e7e5;
+  --dash-border-strong: #d8d8d5;
+
+  --dash-text: #181818;
+  --dash-text-dim: #6b6b6b;
+  --dash-text-mute: #8a8a8a;
+
+  /* Brand coral. `-ink` is the text tier: #F04A49 is 3.31:1 on white, under
+     the body-text bar, so a coral *word* uses `-ink` (5.02:1) and the pure
+     value is reserved for fills, bars and marks where nothing sits on it. */
+  --dash-brand: #f04a49;
+  --dash-brand-hover: #de403f;
+  --dash-brand-active: #c73837;
+  --dash-brand-soft: #fce9e8;
+  --dash-brand-ink: #c0322f;
+  --dash-brand-on: #ffffff;
+  /* The big metric figures (credits, the four KPI counts). Its own token
+     because `--dash-brand-ink` also carries the sign-out row and the menu's
+     brand accents, which should not follow this. */
+  --dash-figure: #c0322f;
+  /* The label above each figure. Full-strength in light, where an 8px muted
+     grey uppercase reads as a watermark beside a large pink number; the
+     dark override keeps the muted tier, where white would compete with the
+     figure rather than label it. */
+  --dash-figure-label: #181818;
+
+  /* Status. Text-only, never a dot. Each `-ink` on its own `-soft`. */
+  --dash-success: #4fae73;
+  --dash-success-soft: #e9f7ee;
+  --dash-success-ink: #1f7a48;
+
+  --dash-warning: #e2a33b;
+  --dash-warning-soft: #fdf3e0;
+  --dash-warning-ink: #8a5d09;
+
+  /* Deeper and cooler than the brand on purpose - see the block comment. */
+  --dash-danger: #c2352f;
+  --dash-danger-soft: #fbe8e7;
+  --dash-danger-ink: #a32a25;
+
+  --dash-neutral-soft: #f1f1ef;
+  --dash-neutral-ink: #5c5c5c;
+
+  /* Heatmap ramp, brand-derived, 0 -> very high. */
+  --dash-heat-0: #f1f1ef;
+  --dash-heat-1: #fbd6d5;
+  --dash-heat-2: #f5a2a1;
+  --dash-heat-3: #f36b69;
+  --dash-heat-4: #c93f3e;
+
+  /* Chart. Bars carry volume, the line carries trend. */
+  --dash-chart-bar: #f9b2b1;
+  --dash-chart-bar-active: #f04a49;
+  --dash-chart-line: #f04a49;
+  --dash-chart-grid: #ececea;
+
+  --dash-r-sm: 7px;
+  --dash-r-md: 10px;
+  --dash-r-lg: 12px;
+
+  --dash-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.03), 0 4px 16px rgba(0, 0, 0, 0.03);
+
+  /* Glass. Cards are a translucent fill over a backdrop blur rather than a
+     solid paint, so a panel reads as frosted glass floating on the canvas.
+     Built by `color-mix`ing the existing surface with `transparent`, which
+     changes alpha only - never hue - so the palette above stays the single
+     source of colour. The border lifts slightly so a hairline still reads
+     against a see-through fill instead of dissolving into it. */
+  --dash-glass: color-mix(in oklab, var(--dash-surface) 72%, transparent);
+  --dash-glass-border: color-mix(in oklab, var(--dash-border-strong) 55%, transparent);
+  --dash-blur: blur(20px) saturate(160%);
+
+  /* The grid's own top and bottom padding. Subtracted from 100dvh to give
+     the grid a definite height, which is what lets its `fr` rows resolve
+     instead of sizing to content. The dashboard has no page header of its
+     own - the sidebar carries the account row - so this is the grid's own
+     padding: 10px top, none at the bottom.
+
+     Keep this exactly equal to that padding. Too high and a strip of dead
+     canvas appears under the last panel; too low and the last row clips off
+     the bottom of the screen. Both were shipped while tuning this by eye -
+     if the padding in dashboard.tsx changes, change this with it. */
+  --dash-chrome: 10px;
+
+  /* Narrower than the product-wide 240px: this sidebar's rows are 13px with
+     a 16px icon, so 240 left a wide empty gutter down the right of every
+     label. Overridden here rather than in `:root` so marketing, auth, and
+     the other /app routes keep the width they were designed against. */
+  --w-app-sidebar: 208px;
+
+  background: var(--dash-bg);
+  color: var(--dash-text);
+}
+
+/* Dark is a layered charcoal system, not an inversion: four distinct
+   elevations (app -> sidebar -> card -> elevated) so panels separate by
+   surface contrast rather than by shadow, which is what stops a dark
+   dashboard reading as one flat black sheet. The brand holds its light
+   value so the identity doesn't shift between themes; only its soft
+   backing and text tier are re-derived for a dark backing. */
+/* `data-theme` is set on <html> by the pre-paint script and `applyTheme`,
+   always to a concrete value ('light' or 'dark') - never absent, so this is
+   a descendant selector rather than one on `.dash` itself. */
+[data-theme='dark'] .dash {
+  color-scheme: dark;
+
+  --dash-bg: #0b0d0e;
+  --dash-sidebar: #101214;
+  --dash-surface: #141719;
+  --dash-elevated: #181c1f;
+  --dash-hover: #1c2024;
+  --dash-sunken: #101214;
+  --dash-border: #252a2e;
+  --dash-border-strong: #333a3f;
+
+  --dash-text: #f4f5f5;
+  --dash-text-dim: #a1a7aa;
+  --dash-text-mute: #70777b;
+
+  --dash-brand: #f04a49;
+  --dash-brand-hover: #ff5a59;
+  --dash-brand-active: #ff7473;
+  --dash-brand-soft: #321819;
+  /* On charcoal the brand is already 5.4:1, so the text tier lightens
+     rather than darkens - the inverse move from light mode. */
+  --dash-brand-ink: #ff7473;
+  --dash-brand-on: #ffffff;
+  /* Magenta rather than the coral used in light: against charcoal the coral
+     goes muddy, and this reads as the brand's colour rather than a dimmer
+     version of it. 6.1:1 on `--dash-surface`, well clear of the text floor. */
+  --dash-figure: #ff0082;
+  --dash-figure-label: #70777b;
+
+  --dash-success: #65c487;
+  --dash-success-soft: #14261c;
+  --dash-success-ink: #7fd39d;
+
+  --dash-warning: #eab45a;
+  --dash-warning-soft: #2a2113;
+  --dash-warning-ink: #f0c47c;
+
+  --dash-danger: #f05a5a;
+  --dash-danger-soft: #2e1616;
+  --dash-danger-ink: #ff8785;
+
+  --dash-neutral-soft: #1c2024;
+  --dash-neutral-ink: #a1a7aa;
+
+  --dash-heat-0: #20252a;
+  --dash-heat-1: #5c2430;
+  --dash-heat-2: #93283f;
+  --dash-heat-3: #cc2a58;
+  --dash-heat-4: #ff0082;
+
+  --dash-chart-bar: #4b2526;
+  --dash-chart-bar-active: #f04a49;
+  --dash-chart-line: #f04a49;
+  --dash-chart-grid: #252a2e;
+
+  /* Dark surfaces separate by contrast, not depth. */
+  --dash-shadow: none;
+
+  /* Denser than light: at 72% over a near-black canvas the four elevations
+     collapse into one flat sheet, which is the whole thing the layered dark
+     palette exists to avoid. */
+  --dash-glass: color-mix(in oklab, var(--dash-surface) 86%, transparent);
+  --dash-glass-border: color-mix(in oklab, var(--dash-border-strong) 70%, transparent);
+}
+
+/* Hidden scrollbars. Every data panel scrolls internally; none of them shows
+   a bar. Keyboard access is unaffected - the element keeps `tabindex` and
+   `overflow`, so arrow keys and Page Up/Down still move it. */
+.dash-scroll {
+  overflow-y: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  overscroll-behavior: contain;
+}
+.dash-scroll::-webkit-scrollbar {
+  display: none;
+}
+.dash-scroll-x {
+  overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  overscroll-behavior-x: contain;
+}
+.dash-scroll-x::-webkit-scrollbar {
+  display: none;
+}
+
+/* Smooth scrolling on the panels only, and never for someone who asked for
+   less motion. */
+@media (prefers-reduced-motion: no-preference) {
+  .dash-scroll,
+  .dash-scroll-x {
+    scroll-behavior: smooth;
+  }
+}
+
+/* Opaque. The waveform is drawn *inside* the cards that carry it, each
+   sampling its own slice of one grid-wide wave, so nothing needs to show
+   through the card - and the gaps between cards stay clean. */
+.dash-card {
+  background: var(--dash-surface);
+  border: 1px solid var(--dash-border);
+  border-radius: var(--dash-r-lg);
+  box-shadow: var(--dash-shadow);
+}
+
+/* The wave's coordinate space. Every card measures its own position against
+   this box, so all of them sample one shared waveform rather than each
+   drawing a self-contained copy. */
+.dash-grid {
+  position: relative;
+}
+
+/* A sticky table header sits over scrolling rows, so it cannot be
+   translucent - the rows would show through it. It takes the card's opaque
+   base instead, which is the one place the glass fill is deliberately
+   dropped. */
+.dash-card thead tr {
+  background: var(--dash-surface);
+}
+
+/* Tabular figures everywhere a number can change - counts, metrics, table
+   cells - so a value updating never shifts the column it sits in. */
+.dash-num {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+/* The shared dropdown inside the dashboard.
+
+   Two things fought this. `DropdownMenuContent` is portalled to the body, so
+   it lands outside `.dash` and cannot inherit the dashboard palette; and its
+   own class list carries `.dark-overlay` plus Tailwind's `rounded-md` and
+   `bg-surface-raised`, all of which outrank a plain single-class override.
+   Hence `.dash-menu.dash-menu` - two classes, so it wins on specificity
+   without `!important` - and hence re-declaring the palette here rather than
+   relying on inheritance.
+
+   The token values are duplicated from `.dash` (light) and its dark override
+   because a portalled node has neither as an ancestor. `prefers-color-scheme`
+   is the fallback for a viewer on "system"; the explicit `[data-theme]` rules
+   below win over it in both directions, the same three-state pattern the rest
+   of the product uses. */
+.dash-menu.dash-menu {
+  background: rgba(255, 255, 255, 0.55);
+  border: 1px solid rgba(216, 216, 213, 0.6);
+  border-radius: 12px;
+  padding: 4px;
+  /* The blur lives on a `::before` layer, not on this element.
+     Radix's popper wrapper carries `transform: translate(...)` to position
+     the menu, and a transformed ancestor becomes the containing block for
+     its descendants' `backdrop-filter` - so a filter declared here sampled
+     the (empty) transformed subtree instead of the page behind it, and
+     rendered as nothing at all. `position: fixed` on the pseudo-element
+     escapes that containing block and samples the real backdrop. */
+  position: relative;
+  isolation: isolate;
+  /* Radix's content class carries `overflow-hidden`, which would clip a long
+     option list instead of letting it scroll inside the height cap. */
+  overflow-y: auto;
+  /* `.dark-overlay` (on the same element) points --text at the dark palette,
+     and `DropdownMenuItem` renders `text-text`. Redefining the tokens here
+     fixes every descendant at once instead of overriding each utility. */
+  --text: #181818;
+  --text-dim: #6b6b6b;
+  --text-mute: #8a8a8a;
+  --surface-hover: #f4f4f3;
+  --dash-danger: #e05a52;
+  --dash-danger-ink: #a32a25;
+  --dash-danger-soft: #fbe8e7;
+  color: #181818;
+  box-shadow:
+    0 8px 32px rgba(16, 24, 40, 0.12),
+    0 1px 2px rgba(16, 24, 40, 0.06);
+}
+.dash-menu.dash-menu [data-highlighted] {
+  background: #f4f4f3;
+  border-radius: 8px;
+  color: #181818;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .dash-menu.dash-menu {
+    background: rgba(24, 28, 31, 0.6);
+    border-color: rgba(51, 58, 63, 0.7);
+    --text: #f4f5f5;
+    --text-dim: #a1a7aa;
+    --text-mute: #70777b;
+    --surface-hover: #1c2024;
+  --dash-danger: #f05a5a;
+  --dash-danger-ink: #ff8785;
+  --dash-danger-soft: #2e1616;
+    color: #f4f5f5;
+    --dash-danger: #f05a5a;
+  --dash-danger-ink: #ff8785;
+  --dash-danger-soft: #2e1616;
+}
+  :root:not([data-theme='light']) .dash-menu.dash-menu [data-highlighted] {
+    background: #1c2024;
+    color: #f4f5f5;
+  }
+}
+
+[data-theme='dark'] .dash-menu.dash-menu {
+  background: rgba(24, 28, 31, 0.6);
+  border-color: rgba(51, 58, 63, 0.7);
+  --text: #f4f5f5;
+  --text-dim: #a1a7aa;
+  --text-mute: #70777b;
+  --surface-hover: #1c2024;
+  --dash-danger: #f05a5a;
+  --dash-danger-ink: #ff8785;
+  --dash-danger-soft: #2e1616;
+  color: #f4f5f5;
+  --dash-danger: #f05a5a;
+  --dash-danger-ink: #ff8785;
+  --dash-danger-soft: #2e1616;
+}
+[data-theme='dark'] .dash-menu.dash-menu [data-highlighted] {
+  background: #1c2024;
+  color: #f4f5f5;
+}
+
+[data-theme='light'] .dash-menu.dash-menu {
+  background: rgba(255, 255, 255, 0.55);
+  border-color: rgba(216, 216, 213, 0.6);
+  --text: #181818;
+  --text-dim: #6b6b6b;
+  --text-mute: #8a8a8a;
+  --surface-hover: #f4f4f3;
+  --dash-danger: #e05a52;
+  --dash-danger-ink: #a32a25;
+  --dash-danger-soft: #fbe8e7;
+  color: #181818;
+  --dash-danger: #e05a52;
+  --dash-danger-ink: #a32a25;
+  --dash-danger-soft: #fbe8e7;
+}
+[data-theme='light'] .dash-menu.dash-menu [data-highlighted] {
+  background: #f4f4f3;
+  color: #181818;
+}
+
+/* Focus. `outline` is always drawn as a rectangle - `border-radius: inherit`
+   does not round it, which is what put a hard red box around the rounded
+   pill. A `box-shadow` ring follows the element's own radius instead, and is
+   tinted rather than the full brand coral so it reads as a focus state and
+   not as an error.
+
+   Keyboard only (`:focus-visible`), so clicking a control never draws it. */
+.dash :focus-visible,
+.dash-menu :focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--dash-brand) 28%, transparent);
+}
+
+/* No backdrop-filter (older Safari, some Firefox configurations, or a
+   browser with it disabled): a translucent fill with nothing blurring behind
+   it just looks washed out and drops contrast. Fall back to the opaque
+   surface, which is what the palette was contrast-checked against anyway. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .dash-menu.dash-menu {
+    background: var(--dash-surface);
+  }
+}
+
+/* Compact rows. The shared `DropdownMenuItem` is sized for a full app menu -
+   14px text on 12px padding - which in a panel-header dropdown is most of
+   the box. These are short labels ("Mine", "All", a first name), so the row
+   shrinks to match the pill that opened it. */
+.dash-menu.dash-menu [role='menuitem'],
+.dash-menu.dash-menu [role='menuitem'] > a {
+  /* `gap: 0` was right when these menus were label-only (the scope
+     selectors). The account menu carries an icon per row, and zero gap put
+     the glyph against its label. */
+  gap: 0.5rem;
+  padding: 4px 8px;
+  font-size: 0.75rem;
+}
+
+/* Every leading glyph reserves the same width, so the labels start on one
+   axis whether the row's icon is a direct child (Sign out), wrapped in a
+   `<Link>` (Invite teammate), or followed by a submenu caret
+   (Organisation). Without this the three rows each measured their own icon
+   and the column came out ragged. */
+.dash-menu.dash-menu [role='menuitem'] > svg:first-child,
+.dash-menu.dash-menu [role='menuitem'] > a > svg:first-child {
+  width: 0.875rem;
+  height: 0.875rem;
+  flex: none;
+}
+
+/* The frosted layer, on its own element rather than on the menu.
+   Radix's popper wrapper carries `transform: translate(...)` to position the
+   menu, and a transformed ancestor becomes the containing block for its
+   descendants' `backdrop-filter` - so a filter declared on the menu itself
+   sampled that (empty) subtree instead of the page and rendered as nothing.
+   The layer also carries the fill: a pseudo-element with only a filter and
+   no paint of its own is dropped by the CSS optimiser. */
+.dash-menu.dash-menu::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: inherit;
+  -webkit-backdrop-filter: blur(28px) saturate(180%);
+  backdrop-filter: blur(28px) saturate(180%);
+  pointer-events: none;
+}
+.dash-menu.dash-menu > * {
+  position: relative;
+  z-index: 1;
+}
+
+
+/* Sign out. The shared menu's `data-highlighted` sets a neutral hover
+   background and inherits `--text`, which overrode the destructive red and
+   turned the row near-black exactly when the user was about to click it.
+
+   At rest the label is the lighter `--dash-danger`; hovering deepens it to
+   `--dash-danger-ink` over a soft red wash, so the one irreversible action
+   in the menu gets *more* emphatic under the cursor, not less. */
+.dash-menu.dash-menu [role='menuitem'].text-lamp-flare-text {
+  color: var(--dash-danger);
+}
+.dash-menu.dash-menu [role='menuitem'].text-lamp-flare-text[data-highlighted] {
+  background: var(--dash-danger-soft);
+  color: var(--dash-danger-ink);
+}
+
+/* Hosts a `DottedWave`: clips it to the card's radius and gives the content
+   something to stack above. No colour of its own - the coral wash is
+   `.dash-branded` below, which the KPI cards deliberately do not take. */
+.dash-wave-host {
+  position: relative;
+  overflow: hidden;
+}
+
+.dash-wave-host > *:not(canvas) {
+  z-index: 1;
+}
+
+/* Static children need a position for `z-index` to apply at all; an
+   absolutely positioned child already has one, and overwriting it with
+   `relative` would drop it back into flow. */
+.dash-wave-host > *:not(canvas):not(.absolute) {
+  position: relative;
+}
+
+.dash-wave-host > canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 0;
+  pointer-events: none;
+}
+
+/* The two branded cards: credits and the sidebar's plan card. A pale coral
+   wash rather than the plain surface, so the pair that speak about the
+   account read as one family against the neutral operational panels around
+   them. */
+.dash-branded {
+  background:
+    linear-gradient(
+      160deg,
+      color-mix(in oklab, var(--dash-brand) 9%, var(--dash-surface)) 0%,
+      var(--dash-surface) 68%
+    );
+}
+
+/* Dark needs a lighter touch: a 9% coral tint that reads as a pale wash on
+   white becomes a muddy brown over charcoal, so the mix drops and leans on
+   the elevated surface instead. */
+[data-theme='dark'] .dash-branded {
+  background:
+    linear-gradient(
+      160deg,
+      color-mix(in oklab, var(--dash-brand) 14%, var(--dash-elevated)) 0%,
+      var(--dash-surface) 72%
+    );
+}
+
+
+/* ==========================================================================
+   THE BRIDGE - the whole management surface on the dashboard's palette.
+
+   `.dash` began as the dashboard's own token block. Every other `/app` page
+   was still rendering the older indigo/glass system, so the product had two
+   visual languages either side of a nav click. Rather than restyle nineteen
+   pages by hand - which would mean nineteen chances to drift - this remaps
+   the *generic* tokens (`--surface`, `--text`, `--primary`, `--rule`) to
+   their dash equivalents inside `.dash`. Every existing component reads
+   those names, so `Panel`, `Button`, `Field`, `Input`, `Select`, `Dialog`,
+   `Toast` and the rest convert wholesale and stay converted.
+
+   This is deliberately a remap, not a rewrite: nothing below changes what a
+   component *is*, only which palette it resolves against. A page that has
+   never been touched still comes out on-system.
+   ========================================================================== */
+
+.dash {
+  /* Surfaces */
+  --surface: var(--dash-bg);
+  --surface-raised: var(--dash-surface);
+  --surface-sunken: var(--dash-sunken);
+  --surface-hover: var(--dash-hover);
+
+  /* Text */
+  --text: var(--dash-text);
+  --text-dim: var(--dash-text-dim);
+  --text-mute: var(--dash-text-mute);
+
+  /* Rules */
+  --rule: var(--dash-border);
+  --rule-strong: var(--dash-border-strong);
+
+  /* Action. The indigo primary is retired on this surface - coral is the
+     brand, and two brand colours either side of a nav click is the exact
+     inconsistency this block exists to remove. */
+  --primary: var(--dash-brand);
+  --primary-hover: var(--dash-brand-hover);
+  --primary-active: var(--dash-brand-active);
+  --primary-on: var(--dash-brand-on);
+  --primary-ink: var(--dash-brand-ink);
+  --primary-wash: var(--dash-brand-soft);
+  --accent: var(--dash-brand);
+  --accent-text: var(--dash-brand-ink);
+  --accent-wash: var(--dash-brand-soft);
+
+  /* Glass. The dashboard's cards are flat and opaque with a hairline; the
+     older surface was frosted. Collapsing the glass tokens to the flat
+     surface converts `Panel`'s material without touching `Panel` itself. */
+  --glass-surface: var(--dash-surface);
+  --glass-border: var(--dash-border);
+  --glass-blur: none;
+
+  /* Status. The lamp family is what `Toast`, `Button variant="danger"` and
+     the form error states read. Pointing it at the dash status colours is
+     what makes those surfaces agree with `StatusPill` - the same call state
+     should not be two different reds depending on which component drew it. */
+  --lamp-jade: var(--dash-success);
+  --lamp-jade-text: var(--dash-success-ink);
+  --lamp-brass: var(--dash-warning);
+  --lamp-brass-text: var(--dash-warning-ink);
+  --lamp-flare: var(--dash-danger);
+  --lamp-flare-text: var(--dash-danger-ink);
+  --lamp-ice: var(--dash-brand);
+  --lamp-ice-text: var(--dash-brand-ink);
+  --lamp-off: var(--dash-border-strong);
+  --lamp-off-text: var(--dash-text-mute);
+}
+
+/* The page canvas. `.app-canvas` paints an indigo-washed radial gradient
+   that belongs to the old palette; on this surface the canvas is flat. */
+.dash .app-canvas,
+.dash.app-canvas {
+  background: var(--dash-bg);
+}
+
+/* Panels lose the frost. `.panel-glass` sets `backdrop-filter` directly, so
+   collapsing `--glass-blur` above is not enough on its own. */
+.dash .panel-glass,
+.dash .panel-glass-sunken,
+.dash .panel-glass-flat {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: var(--dash-shadow);
+}
+.dash .panel-glass-sunken {
+  background: var(--dash-sunken);
+}
+
+/* Buttons take the flat coral rather than a translucent indigo. */
+.dash .btn-glass-primary {
+  background: var(--dash-brand);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+.dash .btn-glass-primary:hover {
+  background: var(--dash-brand-hover);
+}
+.dash .btn-glass-primary:active {
+  background: var(--dash-brand-active);
+}
+.dash .btn-glass-secondary {
+  background: var(--dash-surface);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+.dash .btn-glass-secondary:hover {
+  background: var(--dash-hover);
+}
+
+/* The primary button's pulse ring was indigo. */
+.dash .btn-pulse::after {
+  background: var(--dash-brand);
+}
+
+/* Toast, light. Portalled to the body, so - exactly like `.dash-menu` - it
+   sits outside `.dash` and inherits none of the palette. The values are
+   therefore restated here rather than referenced, and the two blocks above
+   do the same for dark. The purple radial gradient this replaces predated
+   the coral palette and was the last surface still carrying it. */
+:root[data-theme='light'] .toast-dark-overlay,
+:root:not([data-theme='dark']) .toast-dark-overlay {
+  background: #ffffff;
+  border-color: #e7e7e5;
+  --text: #181818;
+  --text-dim: #6b6b6b;
+  --text-mute: #8a8a8a;
+  --rule: #e7e7e5;
+  --rule-strong: #d8d8d5;
+  --surface-hover: #f4f4f3;
+  --surface-raised: #ffffff;
+  --lamp-ice: #f04a49;
+  --lamp-ice-text: #c0322f;
+  --lamp-brass: #e2a33b;
+  --lamp-brass-text: #8a5d09;
+  --lamp-jade: #4fae73;
+  --lamp-jade-text: #1f7a48;
+  --lamp-flare: #c2352f;
+  --lamp-flare-text: #a32a25;
+}
+
+/* ==========================================================================
+   INTERACTION POLISH - the management surface's feel, in one place.
+   ========================================================================== */
+
+/* Buttons press. A 1px sink on :active is the difference between a control
+   that feels physical and one that feels painted; scale is deliberately not
+   used because it makes neighbouring text shimmer. */
+.dash button:not(:disabled):active,
+.dash a[class*='btn']:active {
+  transform: translateY(1px);
+}
+
+/* Cards that are links lift their border on hover rather than moving - a
+   translate under the cursor shifts every neighbour's apparent baseline. */
+.dash .panel-glass-interactive:hover {
+  border-color: var(--dash-border-strong);
+}
+
+/* Row hovers: one quiet wash everywhere, never a per-page invention. */
+.dash tbody tr {
+  transition: background-color 120ms ease-out;
+}
+.dash tbody tr:hover {
+  background: var(--dash-hover);
+}
+
+/* Inputs focus in brand, matching the pill selects. */
+.dash input:focus-visible,
+.dash textarea:focus-visible,
+.dash select:focus-visible {
+  outline: none;
+  border-color: var(--dash-brand);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--dash-brand) 22%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dash button:not(:disabled):active,
+  .dash a[class*='btn']:active {
+    transform: none;
+  }
+  .dash tbody tr {
+    transition: none;
+  }
+}
+
+/* Dialogs and sheets. `.dark-overlay` (above) re-scopes the palette to the
+   `--dark-*` family for any portalled Radix content, which is why a modal
+   came up near-black on a light page: it is portalled outside `.dash` and so
+   never sees the theme at all. Same fix as `.dash-menu` and the toast - the
+   values are restated here per theme rather than inherited, because there is
+   no ancestor to inherit them from.
+
+   Scoped to `[data-dash-overlay]` (set by `Dialog`/`Sheet`) rather than
+   `.dark-overlay` itself, so marketing and auth - which never render inside
+   `.dash` - keep the surface they were designed against. */
+[data-dash-overlay] {
+  background: #ffffff;
+  border-color: #e7e7e5;
+  --text: #181818;
+  --text-dim: #6b6b6b;
+  --text-mute: #8a8a8a;
+  --rule: #e7e7e5;
+  --rule-strong: #d8d8d5;
+  --surface: #f4f4f3;
+  --surface-raised: #ffffff;
+  --surface-hover: #f4f4f3;
+  --surface-sunken: #faf9f8;
+  --primary: #f04a49;
+  --primary-hover: #de403f;
+  --primary-active: #c73837;
+  --primary-on: #ffffff;
+  --primary-ink: #c0322f;
+  --glass-surface: #ffffff;
+  --glass-border: #e7e7e5;
+  --glass-blur: none;
+  --lamp-jade: #4fae73;
+  --lamp-jade-text: #1f7a48;
+  --lamp-brass: #e2a33b;
+  --lamp-brass-text: #8a5d09;
+  --lamp-flare: #c2352f;
+  --lamp-flare-text: #a32a25;
+  --lamp-ice: #f04a49;
+  --lamp-ice-text: #c0322f;
+  --lamp-off: #d8d8d5;
+  --lamp-off-text: #8a8a8a;
+}
+
+[data-theme='dark'] [data-dash-overlay] {
+  background: #181c1f;
+  border-color: #333a3f;
+  --text: #f4f5f5;
+  --text-dim: #a1a7aa;
+  --text-mute: #70777b;
+  --rule: #252a2e;
+  --rule-strong: #333a3f;
+  --surface: #0b0d0e;
+  --surface-raised: #181c1f;
+  --surface-hover: #1c2024;
+  --surface-sunken: #101214;
+  --primary: #f04a49;
+  --primary-hover: #ff5a59;
+  --primary-active: #ff7473;
+  --primary-on: #ffffff;
+  --primary-ink: #ff7473;
+  --glass-surface: #181c1f;
+  --glass-border: #333a3f;
+  --lamp-jade: #65c487;
+  --lamp-jade-text: #7fd39d;
+  --lamp-brass: #eab45a;
+  --lamp-brass-text: #f0c47c;
+  --lamp-flare: #f05a5a;
+  --lamp-flare-text: #ff8785;
+  --lamp-ice: #f04a49;
+  --lamp-ice-text: #ff7473;
+  --lamp-off: #333a3f;
+  --lamp-off-text: #70777b;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) [data-dash-overlay] {
+    background: #181c1f;
+    border-color: #333a3f;
+    --text: #f4f5f5;
+    --text-dim: #a1a7aa;
+    --text-mute: #70777b;
+    --rule: #252a2e;
+    --rule-strong: #333a3f;
+    --surface: #0b0d0e;
+    --surface-raised: #181c1f;
+    --surface-hover: #1c2024;
+    --surface-sunken: #101214;
+    --primary-ink: #ff7473;
+    --glass-surface: #181c1f;
+    --glass-border: #333a3f;
+  }
+}
+
+/* Inputs on the management surface sit at the data scale, not the body
+   scale. `Input` sets `text-body` (17px) for a marketing form; in a 248px
+   sidebar column that truncated "Search a teammate to message..." to
+   "Search a teammate" and made every field look oversized beside 11px
+   labels. */
+.dash input,
+.dash textarea,
+.dash select {
+  font-size: 0.8125rem;
+}
+.dash input::placeholder,
+.dash textarea::placeholder {
+  font-size: 0.75rem;
+}
+
+/* Tabs on the management surface. The shared component marks the active tab
+   with `bg-surface-inverse` - near-black, which was the old monochrome
+   palette's accent and is the one colour here that reads as off-system. The
+   rule and its label take the brand instead. */
+.dash [role='tab'][data-state='active'] {
+  color: var(--dash-brand-ink);
+}
+.dash [role='tab'][data-state='active']::after {
+  background: var(--dash-brand) !important;
 }

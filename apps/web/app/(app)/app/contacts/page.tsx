@@ -4,9 +4,11 @@ import { AddressBookIcon, ProhibitIcon } from "@phosphor-icons/react/dist/ssr";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { ConnectionBanner } from "@/components/app/connection-banner";
+import { TranscriptView } from "@/components/app/transcript-view";
 import { MaskedPhone } from "@/components/app/masked-phone";
 import { LampBadge, Tag } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/app/page-header";
 import { Dialog, DialogRoot } from "@/components/ui/dialog";
 import { TabPanel, Tabs } from "@/components/ui/disclosure";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -23,12 +25,15 @@ import { useAppStore } from "@/lib/app-store";
 import { useOrgScopedEffect } from "@/lib/hooks/use-org-scoped-effect";
 import { useSession } from "@/lib/hooks/use-session";
 
-interface ContactRecord {
-  name: string;
-  phoneMasked: string;
-  calls: Outcome[];
-  lastCalled: string;
-}
+/**
+ * One row per call, not per person.
+ *
+ * The page used to fold every call to a number into a single contact, which
+ * answered "who have we called" but not "what came back" - and the second is
+ * the question someone actually has after a run. Each record opens the full
+ * call: transcript, the fields collected, what is still missing, and why triage
+ * sent it where it did.
+ */
 
 export default function ContactsPage() {
   const toast = useToast();
@@ -38,6 +43,7 @@ export default function ContactsPage() {
   const [query, setQuery] = useState("");
   const [addOpen, setAddOpen] = useState(false);
   const [suppressed, setSuppressed] = useState<Suppression[] | null>(null);
+  const [openRecord, setOpenRecord] = useState<Outcome | null>(null);
 
   const profile = session.status === "signed-in" ? session.profile : null;
   const canAdd = profile?.permissions.includes("suppressions:add") ?? false;
@@ -55,51 +61,34 @@ export default function ContactsPage() {
     loadSuppressions();
   });
 
-  /**
-   * Contacts are derived from calls, because that is the only contact data the service
-   * keeps. A standalone contact book needs a store the API does not have yet.
-   */
-  const contacts = useMemo<ContactRecord[]>(() => {
-    const map = new Map<string, ContactRecord>();
-    for (const outcome of outcomes) {
-      const key = `${outcome.contact_name}|${outcome.phone_masked}`;
-      const existing = map.get(key);
-      if (existing) {
-        existing.calls.push(outcome);
-        if (outcome.created_at > existing.lastCalled) existing.lastCalled = outcome.created_at;
-      } else {
-        map.set(key, {
-          name: outcome.contact_name,
-          phoneMasked: outcome.phone_masked,
-          calls: [outcome],
-          lastCalled: outcome.created_at,
-        });
-      }
-    }
-    return [...map.values()].sort((a, b) => b.lastCalled.localeCompare(a.lastCalled));
-  }, [outcomes]);
+  // Newest first. Records come from calls because that is the only contact
+  // data the service keeps - a standalone contact book needs a store the API
+  // does not have yet.
+  const records = useMemo(
+    () => [...outcomes].sort((a, b) => b.created_at.localeCompare(a.created_at)),
+    [outcomes],
+  );
 
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    if (!needle) return contacts;
-    return contacts.filter(
-      (contact) =>
-        contact.name.toLowerCase().includes(needle) ||
-        contact.phoneMasked.toLowerCase().includes(needle),
+    if (!needle) return records;
+    return records.filter((record) =>
+      [
+        record.contact_name,
+        record.phone_masked,
+        record.disposition,
+        record.summary ?? "",
+        ...record.missing_required_fields,
+      ]
+        .join(" ")
+        .toLowerCase()
+        .includes(needle),
     );
-  }, [contacts, query]);
+  }, [records, query]);
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="flex flex-col gap-1">
-          <p className="text-small font-bold text-text-mute">Contacts</p>
-          <h1 className="font-display text-h2 text-text">Who you&apos;ve called</h1>
-          <p className="measure text-small text-text-dim">
-            Everyone your campaigns have dialled, and the numbers you&apos;ve told us never
-            to call again.
-          </p>
-        </div>
+      <PageHeader title="Records">
         <div className="flex gap-2">
           {canAdd ? (
             <Button variant="secondary" onClick={() => setAddOpen(true)}>
@@ -112,7 +101,7 @@ export default function ContactsPage() {
             </Button>
           ) : null}
         </div>
-      </div>
+      </PageHeader>
 
       <ConnectionBanner phase={phase} />
 
@@ -120,32 +109,32 @@ export default function ContactsPage() {
         value={tab}
         onValueChange={setTab}
         tabs={[
-          { value: "all", label: "All contacts", count: contacts.length },
+          { value: "all", label: "All records", count: records.length },
           { value: "suppressed", label: "Suppression list", count: suppressed?.length ?? 0 },
         ]}
       >
         {/* ---- All contacts --------------------------------------------- */}
         <TabPanel value="all" className="flex flex-col gap-4 pt-6">
-          {contacts.length > 0 ? (
+          {records.length > 0 ? (
             <div className="max-w-sm">
               <SearchInput
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 onClear={() => setQuery("")}
-                placeholder="Search by name or number"
-                aria-label="Search contacts"
+                placeholder="Search by name, number, or outcome"
+                aria-label="Search records"
               />
             </div>
           ) : null}
 
-          {loadingRuns && contacts.length === 0 ? null : filtered.length === 0 ? (
+          {loadingRuns && records.length === 0 ? null : filtered.length === 0 ? (
             <Panel>
               <EmptyState
                 icon={AddressBookIcon}
-                title={query ? `No matches for “${query}”` : "No contacts yet"}
+                title={query ? `No matches for “${query}”` : "No records yet"}
                 body={
                   query
-                    ? "Try a name, a phone number, or a campaign."
+                    ? "Try a name, a phone number, or an outcome."
                     : "Paste a list or drop a CSV. Numbers are validated before anything is dialled."
                 }
                 action={
@@ -163,33 +152,13 @@ export default function ContactsPage() {
             </Panel>
           ) : (
             <ul className="flex flex-col gap-2">
-              {filtered.map((contact) => {
-                const latest = contact.calls[0];
-                const lamp = lampForOutcome(latest);
-                return (
-                  <li key={`${contact.name}-${contact.phoneMasked}`}>
-                    <Panel className="flex flex-wrap items-center gap-3 p-3">
-                      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                        <span className="truncate text-small font-medium text-text">
-                          {contact.name}
-                        </span>
-                        <MaskedPhone phone={contact.phoneMasked} />
-                      </div>
-
-                      <LampBadge state={lamp.state} pulse={lamp.pulse}>
-                        {lamp.label}
-                      </LampBadge>
-
-                      <span className="font-mono text-data tabular-nums text-text-mute">
-                        {contact.calls.length} {contact.calls.length === 1 ? "call" : "calls"}
-                      </span>
-                      <span className="font-mono text-data text-text-mute">
-                        {formatAge(contact.lastCalled)}
-                      </span>
-                    </Panel>
-                  </li>
-                );
-              })}
+              {filtered.map((record, index) => (
+                <RecordRow
+                  key={`${record.run_id}-${record.phone_masked}-${record.created_at}-${index}`}
+                  record={record}
+                  onOpen={() => setOpenRecord(record)}
+                />
+              ))}
             </ul>
           )}
         </TabPanel>
@@ -200,7 +169,7 @@ export default function ContactsPage() {
             <p className="text-small font-bold text-text-mute">How this works</p>
             <p className="measure text-small text-text-dim">
               Anyone who asks not to be called again is added here and is never dialled by
-              any campaign, ever. This is global across your whole organisation, it cannot
+              any agent, ever. This is global across your whole organisation, it cannot
               be overridden from a run, and re-importing a CSV containing a suppressed
               number does not bring it back. Only an owner can remove a number.
             </p>
@@ -241,6 +210,28 @@ export default function ContactsPage() {
         </TabPanel>
       </Tabs>
 
+      <DialogRoot
+        open={openRecord !== null}
+        onOpenChange={(open) => {
+          if (!open) setOpenRecord(null);
+        }}
+      >
+        {openRecord ? (
+          <Dialog
+            size="full"
+            title={openRecord.contact_name}
+            description={`${formatTimestamp(openRecord.created_at)} · ${humaniseDisposition(openRecord.disposition)}`}
+            className="flex flex-col p-0"
+          >
+            {/* The panel's height is fixed, so the record scrolls inside it
+                rather than the dialog growing past the viewport. */}
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              <TranscriptView outcome={openRecord} />
+            </div>
+          </Dialog>
+        ) : null}
+      </DialogRoot>
+
       <SuppressDialog
         open={addOpen}
         onOpenChange={setAddOpen}
@@ -250,6 +241,69 @@ export default function ContactsPage() {
         }}
       />
     </div>
+  );
+}
+
+/** A record's disposition as a sentence rather than an enum. */
+function humaniseDisposition(disposition: string): string {
+  const words = disposition.replace(/_/g, " ");
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+/**
+ * One call, as a row.
+ *
+ * A whole-row button rather than a "View" link: the target is the record, and
+ * anything smaller means aiming at a word on a list someone is scanning.
+ */
+function RecordRow({
+  record,
+  onOpen,
+}: {
+  record: Outcome;
+  onOpen: () => void;
+}) {
+  const lamp = lampForOutcome(record);
+  const missing = record.missing_required_fields ?? [];
+  const collected = Object.keys(record.collected ?? {}).length;
+
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={onOpen}
+        className="w-full cursor-pointer text-left"
+      >
+        <Panel className="flex flex-wrap items-center gap-3 p-3 transition-colors duration-(--dur-fast) hover:bg-surface-hover">
+          <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+            <span className="truncate text-small font-medium text-text">
+              {record.contact_name}
+            </span>
+            <MaskedPhone phone={record.phone_masked} />
+          </div>
+
+          <LampBadge state={lamp.state} pulse={lamp.pulse}>
+            {lamp.label}
+          </LampBadge>
+
+          {/* The count someone is looking for is what is *missing*, so it wins
+              the slot when there is anything in it. */}
+          {missing.length > 0 ? (
+            <span className="font-mono text-data tabular-nums text-lamp-flare-text">
+              {missing.length} unanswered
+            </span>
+          ) : collected > 0 ? (
+            <span className="font-mono text-data tabular-nums text-text-mute">
+              {collected} {collected === 1 ? "field" : "fields"}
+            </span>
+          ) : null}
+
+          <span className="font-mono text-data text-text-mute">
+            {formatAge(record.created_at)}
+          </span>
+        </Panel>
+      </button>
+    </li>
   );
 }
 

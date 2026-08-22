@@ -332,7 +332,7 @@ class VoiceAgent(Base):
     credentials to authenticate each with, and which number to dial from.
 
     Read access is org-wide, not per-creator - an agent is infrastructure a
-    whole team dials against, not personal work product like a campaign.
+    whole team dials against, not one person's private work product.
 
     One number per agent for V1 - an org with several agents connects a number
     per agent rather than sharing a pool. Every provider/credential column is

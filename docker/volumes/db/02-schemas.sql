@@ -1,12 +1,11 @@
--- Schemas the services own, created before they start.
+-- The schemas the image does not create, before the services that need them.
 --
--- GoTrue and Storage each migrate their own tables on boot, but neither creates
--- the schema it migrates into, and Realtime needs `_realtime` to exist before
--- its first connection. Creating them here rather than letting each service
--- fail once and retry keeps the first `docker compose up` free of red herrings.
+-- Realtime needs `_realtime` to exist before its first connection and creates
+-- neither of its schemas itself. `auth` and `storage` are deliberately absent:
+-- the image's own init builds both, along with their owning roles, and this
+-- file runs before it - `authorization supabase_auth_admin` here would fail on
+-- a role that does not exist yet and abort the whole init.
 
-create schema if not exists auth authorization supabase_auth_admin;
-create schema if not exists storage authorization supabase_storage_admin;
 create schema if not exists _realtime authorization supabase_admin;
 create schema if not exists extensions;
 
@@ -20,12 +19,6 @@ create schema if not exists extensions;
 -- healthy. Upstream Supabase creates this in its own `realtime.sql` init
 -- script, which this stack does not use (`ISSUES.md` #120).
 create schema if not exists realtime authorization supabase_admin;
-
-grant usage on schema auth to anon, authenticated, service_role, postgres;
-grant usage on schema storage to anon, authenticated, service_role, postgres;
-
-alter role supabase_auth_admin set search_path = auth;
-alter role supabase_storage_admin set search_path = storage;
 
 create extension if not exists pgcrypto with schema extensions;
 create extension if not exists citext;
@@ -63,9 +56,3 @@ $$;
 --
 -- It exists by the time Alembic runs, which is all the migrations need.
 
--- Storage's own migrator issues `create schema if not exists storage`, and
--- Postgres checks CREATE on the *database* before it evaluates IF NOT EXISTS -
--- so owning the schema is not enough and it fails with "permission denied for
--- database postgres". GoTrue never hits this because it migrates into a schema
--- it already owns without re-creating it.
-grant create on database postgres to supabase_storage_admin;

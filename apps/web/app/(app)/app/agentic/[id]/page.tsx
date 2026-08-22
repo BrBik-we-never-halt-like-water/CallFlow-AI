@@ -9,11 +9,12 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/components/ui/toast';
 import { api, type VoiceAgent } from '@/lib/api';
 import { useOrgScopedEffect } from '@/lib/hooks/use-org-scoped-effect';
+import { PageHeader } from '@/components/app/page-header';
 
 /**
- * No voice-agent equivalent of `useAppStore` exists yet, unlike the
- * campaigns edit page - this fetches the list itself and finds the match
- * client-side rather than building one just for this page.
+ * No voice-agent equivalent of `useAppStore` exists yet - this fetches the
+ * list itself and finds the match client-side rather than building a store
+ * just for this page.
  */
 export default function EditAgentPage() {
   const params = useParams<{ id: string }>();
@@ -60,10 +61,7 @@ export default function EditAgentPage() {
 
   return (
     <div className="flex flex-col gap-8">
-      <div className="flex flex-col gap-1.5">
-        <h1 className="font-display text-h2 text-text">{agent.name}</h1>
-        <p className="font-mono text-data text-text-mute">{agent.id}</p>
-      </div>
+      <PageHeader title="Agent" figure={agent.name} />
 
       <AgentEditor existing={agent} />
     </div>

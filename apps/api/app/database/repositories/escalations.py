@@ -41,8 +41,9 @@ async def create_for_outcome(
 
 async def list_for_org(conn: asyncpg.Connection, org_id: UUID) -> list[asyncpg.Record]:
     """Every escalation RLS lets this connection see, newest first, joined to
-    the call outcome for display (contact, transcript, the reasoning chain)
-    and to the run for the campaign it belongs to."""
+    the call outcome for display (contact, transcript, the reasoning chain, and
+    what the call did or did not collect) and to the run for the agent that
+    held the conversation."""
     return await conn.fetch(
         """
         select e.id, e.org_id, e.run_id, e.call_outcome_id,
@@ -54,10 +55,17 @@ async def list_for_org(conn: asyncpg.Connection, org_id: UUID) -> list[asyncpg.R
                c.disposition, c.disposition_reason, c.sentiment, c.sentiment_reason,
                c.transcript, c.summary, c.duration_seconds, c.error, c.extracted,
                c.created_at,
-               r.campaign_id, r.started_by as run_started_by
+               -- What the call did and did not get. `handoff_questions` is the
+               -- point of this queue: a person picking an item up needs to know
+               -- what is still outstanding, not just that something was.
+               c.collected, c.missing_required_fields, c.handoff_questions,
+               c.from_number_masked,
+               r.voice_agent_id, va.name as agent_name,
+               r.started_by as run_started_by
         from public.escalations e
         join public.call_outcomes c on c.id = e.call_outcome_id
         join public.runs r on r.id = e.run_id
+        left join public.voice_agents va on va.id = r.voice_agent_id
         left join public.users au on au.id = e.assigned_to
         left join public.users ab on ab.id = e.assigned_by
         left join public.users rb on rb.id = e.resolved_by

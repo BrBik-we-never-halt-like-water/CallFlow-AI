@@ -87,8 +87,8 @@ function ProviderChip({
  * Edit is always offered - the editor re-checks `agents:write` itself, so
  * hiding it here would only be UX, not a real gate (same "client-side hiding
  * is not the gate" reasoning as the page's own `agents:read` check). Delete
- * owns its own confirm step, since - unlike `CampaignCard` - nothing above it
- * in the tree keeps a "pending delete" dialog of its own.
+ * owns its own confirm step, since nothing above it in the tree keeps a
+ * "pending delete" dialog of its own.
  */
 export function AgentCard({
   agent,
@@ -193,7 +193,7 @@ export function AgentCard({
         >
         <div className="flex items-start justify-between gap-3">
           <div className="flex min-w-0 flex-col gap-1">
-            <h3 className="min-w-0 truncate font-display text-h4 text-text">
+            <h3 className="min-w-0 truncate text-[0.875rem] font-semibold text-text">
               <Link
                 href={`/app/agentic/${agent.id}`}
                 className="outline-none after:absolute after:inset-0 after:rounded-[inherit] focus-visible:after:ring-2 focus-visible:after:ring-primary"

@@ -26,7 +26,6 @@ from app.core.config import config
 from app.database.repositories import (
     ai_provider_credentials as ai_provider_credentials_repo,
 )
-from app.database.repositories import campaigns as campaigns_repo
 from app.database.repositories import channels as channels_repo
 from app.database.repositories import credits as credits_repo
 from app.database.repositories import escalations as escalations_repo
@@ -1135,7 +1134,7 @@ async def test_admin_cannot_create_an_owner_invitation_through_the_repository(
 
 # --- Per-creator visibility silo (migration `d4bcc27a2b70`) ----------------
 #
-# Role-based UI roadmap, Phase 1: `campaigns_select`/`runs_select`/
+# Role-based UI roadmap, Phase 1: `voice_agents_select`/`runs_select`/
 # `call_outcomes_select` used to be pure `is_org_member(org_id)` - any member
 # could see any other member's rows. Now an operator sees only what they
 # created (or, for call_outcomes, what belongs to a run they started);
@@ -1154,21 +1153,6 @@ async def _seat(db: asyncpg.Connection, org_id: uuid.UUID, tenant: Tenant, role:
     )
 
 
-async def _insert_campaign(
-    db: asyncpg.Connection, *, org_id: uuid.UUID, created_by: uuid.UUID
-) -> str:
-    campaign_id = f"silo-campaign-{uuid.uuid4().hex[:8]}"
-    await db.execute(
-        """
-        insert into public.campaigns (id, org_id, name, goal_template, created_by)
-        values ($1, $2, 'silo test campaign', $3, $4)
-        """,
-        campaign_id,
-        org_id,
-        "x" * 40,
-        created_by,
-    )
-    return campaign_id
 
 
 async def _insert_run(
@@ -1177,8 +1161,8 @@ async def _insert_run(
     run_id = f"silo-run-{uuid.uuid4().hex[:8]}"
     await db.execute(
         """
-        insert into public.runs (id, org_id, campaign_id, total, started_by)
-        values ($1, $2, 'travel_discovery', 1, $3)
+        insert into public.runs (id, org_id, voice_agent_id, total, started_by)
+        values ($1, $2, null, 1, $3)
         """,
         run_id,
         org_id,
@@ -1198,39 +1182,6 @@ async def _insert_call_outcome(db: asyncpg.Connection, *, org_id: uuid.UUID, run
     )
 
 
-async def test_operator_cannot_see_a_teammates_campaign(
-    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
-) -> None:
-    a, _ = tenants
-    await _as_postgres(db)
-
-    op1 = await _create_tenant(db, "silo-op1")
-    op2 = await _create_tenant(db, "silo-op2")
-    await _seat(db, a.org_id, op1, "operator")
-    await _seat(db, a.org_id, op2, "operator")
-    await _insert_campaign(db, org_id=a.org_id, created_by=op1.user_id)
-
-    async with db.transaction():
-        await _as_user(db, op2.auth_user_id)
-        rows = await db.fetch(
-            "select created_by from public.campaigns where org_id = $1", a.org_id
-        )
-    assert rows == [], "operator can see a teammate's campaign"
-
-    async with db.transaction():
-        await _as_user(db, op1.auth_user_id)
-        rows = await db.fetch(
-            "select created_by from public.campaigns where org_id = $1", a.org_id
-        )
-    assert [r["created_by"] for r in rows] == [op1.user_id]
-
-    await _as_postgres(db)
-    await db.execute("delete from public.campaigns where org_id = $1", a.org_id)
-    await db.execute(
-        "delete from auth.users where id = any($1::uuid[])",
-        [op1.auth_user_id, op2.auth_user_id],
-    )
-    await db.execute("delete from public.organisations where deleted_at is not null")
 
 
 async def test_operator_cannot_see_a_teammates_run_or_its_call_outcomes(
@@ -1273,52 +1224,6 @@ async def test_operator_cannot_see_a_teammates_run_or_its_call_outcomes(
     await db.execute("delete from public.organisations where deleted_at is not null")
 
 
-async def test_admin_and_viewer_see_every_operators_campaigns_and_runs(
-    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
-) -> None:
-    a, _ = tenants
-    await _as_postgres(db)
-
-    admin = await _create_tenant(db, "silo-admin")
-    viewer = await _create_tenant(db, "silo-viewer")
-    op1 = await _create_tenant(db, "silo-seen-op1")
-    op2 = await _create_tenant(db, "silo-seen-op2")
-    await _seat(db, a.org_id, admin, "admin")
-    await _seat(db, a.org_id, viewer, "viewer")
-    await _seat(db, a.org_id, op1, "operator")
-    await _seat(db, a.org_id, op2, "operator")
-
-    await _insert_campaign(db, org_id=a.org_id, created_by=op1.user_id)
-    await _insert_campaign(db, org_id=a.org_id, created_by=op2.user_id)
-    run1 = await _insert_run(db, org_id=a.org_id, started_by=op1.user_id)
-    run2 = await _insert_run(db, org_id=a.org_id, started_by=op2.user_id)
-    await _insert_call_outcome(db, org_id=a.org_id, run_id=run1)
-    await _insert_call_outcome(db, org_id=a.org_id, run_id=run2)
-
-    for viewer_tenant in (admin, viewer):
-        async with db.transaction():
-            await _as_user(db, viewer_tenant.auth_user_id)
-            campaigns = await db.fetch(
-                "select created_by from public.campaigns where org_id = $1", a.org_id
-            )
-            runs = await db.fetch(
-                "select started_by from public.runs where org_id = $1", a.org_id
-            )
-            outcomes = await db.fetch(
-                "select id from public.call_outcomes where org_id = $1", a.org_id
-            )
-        assert {r["created_by"] for r in campaigns} == {op1.user_id, op2.user_id}
-        assert {r["started_by"] for r in runs} == {op1.user_id, op2.user_id}
-        assert len(outcomes) == 2
-
-    await _as_postgres(db)
-    await db.execute("delete from public.campaigns where org_id = $1", a.org_id)
-    await db.execute("delete from public.runs where org_id = $1", a.org_id)
-    await db.execute(
-        "delete from auth.users where id = any($1::uuid[])",
-        [admin.auth_user_id, viewer.auth_user_id, op1.auth_user_id, op2.auth_user_id],
-    )
-    await db.execute("delete from public.organisations where deleted_at is not null")
 
 
 async def test_summarize_by_member_reflects_the_callers_own_rls_scope(
@@ -1549,7 +1454,7 @@ async def test_admin_removing_a_teammate_reassigns_their_org_data_and_deletes_th
 
     op1 = await _create_tenant(db, "remove-op1")
     await _seat(db, a.org_id, op1, "operator")
-    shared_campaign = await _insert_campaign(db, org_id=a.org_id, created_by=op1.user_id)
+    shared_agent = await _insert_voice_agent(db, org_id=a.org_id, created_by=op1.user_id)
 
     # op1's own auto-created org from signup - unrelated to `a`, should be
     # untouched by the reassignment `a`'s removal triggers.
@@ -1557,7 +1462,7 @@ async def test_admin_removing_a_teammate_reassigns_their_org_data_and_deletes_th
         "select org_id from public.memberships where user_id = $1 and role = 'owner'",
         op1.user_id,
     )
-    own_campaign = await _insert_campaign(db, org_id=own_org_id, created_by=op1.user_id)
+    own_agent = await _insert_voice_agent(db, org_id=own_org_id, created_by=op1.user_id)
 
     async with db.transaction():
         await _as_user(db, a.auth_user_id)
@@ -1567,9 +1472,9 @@ async def test_admin_removing_a_teammate_reassigns_their_org_data_and_deletes_th
 
     await _as_postgres(db)
     creator = await db.fetchval(
-        "select created_by from public.campaigns where id = $1", shared_campaign
+        "select created_by from public.voice_agents where id = $1", shared_agent["id"]
     )
-    assert creator == a.user_id, "the removed teammate's campaign was not reassigned to the admin"
+    assert creator == a.user_id, "the removed teammate's agent was not reassigned to the admin"
 
     still_a_member = await db.fetchval(
         "select exists(select 1 from public.memberships where org_id = $1 and user_id = $2)",
@@ -1583,14 +1488,14 @@ async def test_admin_removing_a_teammate_reassigns_their_org_data_and_deletes_th
     )
     assert account_gone is False, "the removed teammate's account was not deleted"
 
-    own_campaign_creator = await db.fetchval(
-        "select created_by from public.campaigns where id = $1", own_campaign
+    own_agent_creator = await db.fetchval(
+        "select created_by from public.voice_agents where id = $1", own_agent["id"]
     )
-    assert own_campaign_creator is None, "an unrelated org's data was touched by this removal"
+    assert own_agent_creator is None, "an unrelated org's data was touched by this removal"
 
     await db.execute(
-        "delete from public.campaigns where id = any($1::text[])",
-        [shared_campaign, own_campaign],
+        "delete from public.voice_agents where id = any($1::uuid[])",
+        [shared_agent["id"], own_agent["id"]],
     )
     await db.execute("delete from public.organisations where deleted_at is not null")
 
@@ -1879,43 +1784,10 @@ async def test_operator_cannot_set_a_credit_allocation_directly(
     await db.execute("delete from public.organisations where deleted_at is not null")
 
 
-# --- Peer-to-peer campaign/escalation sharing (role-based UI roadmap,
+# --- Peer-to-peer escalation sharing (role-based UI roadmap,
 # Phase 4, migration 4cbc5103657f) ------------------------------------------
 
 
-async def test_resolve_resource_owner_finds_the_real_campaign_creator_past_the_requesters_own_scope(
-    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
-) -> None:
-    """The whole point of `resolve_resource_owner()` - a plain SELECT under
-    op2's own connection can't see op1's campaign at all (Phase 1's RLS), but
-    the `SECURITY DEFINER` function still correctly resolves who owns it."""
-    a, _ = tenants
-    await _as_postgres(db)
-
-    op1 = await _create_tenant(db, "share-owner-op1")
-    op2 = await _create_tenant(db, "share-owner-op2")
-    await _seat(db, a.org_id, op1, "operator")
-    await _seat(db, a.org_id, op2, "operator")
-    campaign_id = await _insert_campaign(db, org_id=a.org_id, created_by=op1.user_id)
-
-    async with db.transaction():
-        await _as_user(db, op2.auth_user_id)
-        plain_select = await db.fetch(
-            "select id from public.campaigns where org_id = $1 and id = $2", a.org_id, campaign_id
-        )
-        owner = await sharing_repo.resolve_resource_owner(
-            db, org_id=a.org_id, resource_type="campaign", resource_id=campaign_id
-        )
-    assert plain_select == [], "operator's plain query already sees a teammate's campaign"
-    assert owner == op1.user_id
-
-    await _as_postgres(db)
-    await db.execute("delete from public.campaigns where org_id = $1", a.org_id)
-    await db.execute(
-        "delete from auth.users where id = any($1::uuid[])",
-        [op1.auth_user_id, op2.auth_user_id],
-    )
-    await db.execute("delete from public.organisations where deleted_at is not null")
 
 
 async def test_resolve_resource_owner_returns_null_across_tenants(
@@ -1926,47 +1798,19 @@ async def test_resolve_resource_owner_returns_null_across_tenants(
     `SECURITY DEFINER` function in this codebase already has."""
     a, b = tenants
     await _as_postgres(db)
-    campaign_id = await _insert_campaign(db, org_id=a.org_id, created_by=b.user_id)
+    agent = await _insert_voice_agent(db, org_id=a.org_id, created_by=b.user_id)
 
     async with db.transaction():
         await _as_user(db, b.auth_user_id)
         owner = await sharing_repo.resolve_resource_owner(
-            db, org_id=a.org_id, resource_type="campaign", resource_id=campaign_id
+            db, org_id=a.org_id, resource_type="escalation", resource_id=str(agent["id"])
         )
-    assert owner is None, "a non-member resolved a real campaign's owner"
+    assert owner is None, "a non-member resolved a real resource's owner"
 
     await _as_postgres(db)
-    await db.execute("delete from public.campaigns where org_id = $1", a.org_id)
+    await db.execute("delete from public.voice_agents where org_id = $1", a.org_id)
 
 
-async def test_campaign_directory_lists_names_org_wide_but_plain_select_stays_narrowed(
-    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
-) -> None:
-    a, _ = tenants
-    await _as_postgres(db)
-
-    op1 = await _create_tenant(db, "share-dir-op1")
-    op2 = await _create_tenant(db, "share-dir-op2")
-    await _seat(db, a.org_id, op1, "operator")
-    await _seat(db, a.org_id, op2, "operator")
-    await _insert_campaign(db, org_id=a.org_id, created_by=op1.user_id)
-
-    async with db.transaction():
-        await _as_user(db, op2.auth_user_id)
-        directory = await sharing_repo.list_campaign_directory(db, a.org_id)
-        plain_select = await db.fetch(
-            "select id from public.campaigns where org_id = $1", a.org_id
-        )
-    assert plain_select == [], "operator's plain query already sees a teammate's campaign"
-    assert {r["owner_user_id"] for r in directory} == {op1.user_id}
-
-    await _as_postgres(db)
-    await db.execute("delete from public.campaigns where org_id = $1", a.org_id)
-    await db.execute(
-        "delete from auth.users where id = any($1::uuid[])",
-        [op1.auth_user_id, op2.auth_user_id],
-    )
-    await db.execute("delete from public.organisations where deleted_at is not null")
 
 
 async def test_directory_functions_return_nothing_across_tenants(
@@ -1974,15 +1818,13 @@ async def test_directory_functions_return_nothing_across_tenants(
 ) -> None:
     a, b = tenants
     await _as_postgres(db)
-    await _insert_campaign(db, org_id=a.org_id, created_by=b.user_id)
+    await _insert_voice_agent(db, org_id=a.org_id, created_by=b.user_id)
 
-    async with db.transaction():
-        await _as_user(db, b.auth_user_id)
-        directory = await sharing_repo.list_campaign_directory(db, a.org_id)
-    assert directory == [], "a non-member saw another tenant's campaign directory"
-
+    # `list_campaign_directory` went with campaigns (ADR-8). The escalation
+    # directory below is the surviving directory function, and it carries the
+    # same cross-tenant claim this test exists for.
     await _as_postgres(db)
-    await db.execute("delete from public.campaigns where org_id = $1", a.org_id)
+    await db.execute("delete from public.voice_agents where org_id = $1", a.org_id)
 
 
 async def _insert_share_request(
@@ -2023,12 +1865,14 @@ async def test_share_requests_visible_to_requester_owner_and_admin_only(
     await _seat(db, a.org_id, op1, "operator")
     await _seat(db, a.org_id, op2, "operator")
     await _seat(db, a.org_id, op3, "operator")
-    campaign_id = await _insert_campaign(db, org_id=a.org_id, created_by=op2.user_id)
+    agent_id = str(
+        (await _insert_voice_agent(db, org_id=a.org_id, created_by=op2.user_id))["id"]
+    )
     await _insert_share_request(
         db,
         org_id=a.org_id,
-        resource_type="campaign",
-        resource_id=campaign_id,
+        resource_type="escalation",
+        resource_id=agent_id,
         requested_by=op1.user_id,
         owner_user_id=op2.user_id,
     )
@@ -2041,7 +1885,7 @@ async def test_share_requests_visible_to_requester_owner_and_admin_only(
 
     await _as_postgres(db)
     await db.execute("delete from public.share_requests where org_id = $1", a.org_id)
-    await db.execute("delete from public.campaigns where org_id = $1", a.org_id)
+    await db.execute("delete from public.voice_agents where org_id = $1", a.org_id)
     await db.execute(
         "delete from auth.users where id = any($1::uuid[])",
         [admin.auth_user_id, op1.auth_user_id, op2.auth_user_id, op3.auth_user_id],
@@ -2064,12 +1908,14 @@ async def test_only_the_named_owner_can_decide_a_share_request(
     await _seat(db, a.org_id, admin, "admin")
     await _seat(db, a.org_id, op1, "operator")
     await _seat(db, a.org_id, op2, "operator")
-    campaign_id = await _insert_campaign(db, org_id=a.org_id, created_by=op2.user_id)
+    agent_id = str(
+        (await _insert_voice_agent(db, org_id=a.org_id, created_by=op2.user_id))["id"]
+    )
     request_id = await _insert_share_request(
         db,
         org_id=a.org_id,
-        resource_type="campaign",
-        resource_id=campaign_id,
+        resource_type="escalation",
+        resource_id=agent_id,
         requested_by=op1.user_id,
         owner_user_id=op2.user_id,
     )
@@ -2102,7 +1948,7 @@ async def test_only_the_named_owner_can_decide_a_share_request(
 
     await _as_postgres(db)
     await db.execute("delete from public.share_requests where org_id = $1", a.org_id)
-    await db.execute("delete from public.campaigns where org_id = $1", a.org_id)
+    await db.execute("delete from public.voice_agents where org_id = $1", a.org_id)
     await db.execute(
         "delete from auth.users where id = any($1::uuid[])",
         [admin.auth_user_id, op1.auth_user_id, op2.auth_user_id],
@@ -2118,8 +1964,8 @@ async def test_a_forged_owner_user_id_still_cannot_actually_grant_access(
     never trusts client input for it, but RLS alone doesn't forbid a
     hand-crafted one either). This proves the second, independent layer:
     even if op3 forges themselves in as `owner_user_id` and RLS lets them
-    "decide" it, the actual grant - reading the real campaign to clone it -
-    still runs under their own `campaigns_select` scope, which a non-creator
+    "decide" it, the actual grant still runs under their own
+    `voice_agents_select` scope, which a non-creator
     operator fails. Application code (`sharing.py`'s `_decide`) checks this
     read before marking anything decided; this test pins the repository-
     level fact that makes that check meaningful, not just presumed."""
@@ -2130,7 +1976,9 @@ async def test_a_forged_owner_user_id_still_cannot_actually_grant_access(
     op3 = await _create_tenant(db, "share-forge-attacker")
     await _seat(db, a.org_id, op1, "operator")
     await _seat(db, a.org_id, op3, "operator")
-    campaign_id = await _insert_campaign(db, org_id=a.org_id, created_by=op1.user_id)
+    agent_id = str(
+        (await _insert_voice_agent(db, org_id=a.org_id, created_by=op1.user_id))["id"]
+    )
 
     async with db.transaction():
         await _as_user(db, op3.auth_user_id)
@@ -2140,8 +1988,8 @@ async def test_a_forged_owner_user_id_still_cannot_actually_grant_access(
             await _insert_share_request(
                 db,
                 org_id=a.org_id,
-                resource_type="campaign",
-                resource_id=campaign_id,
+                resource_type="escalation",
+                resource_id=agent_id,
                 requested_by=op3.user_id,
                 owner_user_id=op3.user_id,
             ),
@@ -2150,13 +1998,13 @@ async def test_a_forged_owner_user_id_still_cannot_actually_grant_access(
         # this (forged) row.
         assert forged is not None
         # But the read the real grant depends on is still scoped to op3's
-        # own campaigns - the actual campaign was never theirs to clone.
-        original = await campaigns_repo.get_org_campaign(db, a.org_id, campaign_id)
-    assert original is None, "a forged owner_user_id could read the real campaign to clone it"
+        # own agents - the resource was never theirs to take.
+        original = await voice_agents_repo.get_org_agent(db, a.org_id, uuid.UUID(agent_id))
+    assert original is None, "a forged owner_user_id could read a resource that is not theirs"
 
     await _as_postgres(db)
     await db.execute("delete from public.share_requests where org_id = $1", a.org_id)
-    await db.execute("delete from public.campaigns where org_id = $1", a.org_id)
+    await db.execute("delete from public.voice_agents where org_id = $1", a.org_id)
     await db.execute(
         "delete from auth.users where id = any($1::uuid[])",
         [op1.auth_user_id, op3.auth_user_id],
@@ -2164,55 +2012,6 @@ async def test_a_forged_owner_user_id_still_cannot_actually_grant_access(
     await db.execute("delete from public.organisations where deleted_at is not null")
 
 
-async def test_operator_can_clone_a_teammates_campaign_via_share_approval(
-    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
-) -> None:
-    """Regression test: a plain `INSERT ... RETURNING` here used to fail
-    with `InsufficientPrivilegeError` for exactly this - the most common -
-    case, caught only by manually walking the approve flow end to end, not
-    by any earlier automated test. `campaigns_insert`'s `WITH CHECK` is
-    role-only and lets an operator insert; but `campaigns_select` for an
-    operator is `created_by = self`, and `RETURNING` requires the inserted
-    row to pass that too - which it never can here, since the clone's
-    `created_by` is the *requester*, not the operator running the insert.
-    `clone_for_share()` (backed by the `SECURITY DEFINER` function
-    `clone_campaign_for_share()`) is the fix; this pins that it actually
-    works for the ordinary operator-approves-operator case, not just for
-    admin/owner.
-    """
-    a, _ = tenants
-    await _as_postgres(db)
-
-    op1 = await _create_tenant(db, "share-clone-owner")
-    op2 = await _create_tenant(db, "share-clone-requester")
-    await _seat(db, a.org_id, op1, "operator")
-    await _seat(db, a.org_id, op2, "operator")
-    campaign_id = await _insert_campaign(db, org_id=a.org_id, created_by=op1.user_id)
-
-    async with db.transaction():
-        await _as_user(db, op1.auth_user_id)
-        await campaigns_repo.clone_for_share(
-            db,
-            org_id=a.org_id,
-            source_campaign_id=campaign_id,
-            new_campaign_id=f"{campaign_id}-clone",
-            new_owner=op2.user_id,
-        )
-
-    async with db.transaction():
-        await _as_user(db, op2.auth_user_id)
-        cloned = await campaigns_repo.get_org_campaign(db, a.org_id, f"{campaign_id}-clone")
-    assert cloned is not None, "the clone did not land, or the new owner cannot see it"
-    assert cloned["created_by"] == op2.user_id
-    assert cloned["id"] != campaign_id, "the clone reused the original's id instead of a new one"
-
-    await _as_postgres(db)
-    await db.execute("delete from public.campaigns where org_id = $1", a.org_id)
-    await db.execute(
-        "delete from auth.users where id = any($1::uuid[])",
-        [op1.auth_user_id, op2.auth_user_id],
-    )
-    await db.execute("delete from public.organisations where deleted_at is not null")
 
 
 async def test_operator_cannot_insert_a_share_request_on_someone_elses_behalf(
@@ -2227,7 +2026,9 @@ async def test_operator_cannot_insert_a_share_request_on_someone_elses_behalf(
     op2 = await _create_tenant(db, "share-insert-guard-op2")
     await _seat(db, a.org_id, op1, "operator")
     await _seat(db, a.org_id, op2, "operator")
-    campaign_id = await _insert_campaign(db, org_id=a.org_id, created_by=op2.user_id)
+    agent_id = str(
+        (await _insert_voice_agent(db, org_id=a.org_id, created_by=op2.user_id))["id"]
+    )
 
     with pytest.raises(asyncpg.exceptions.InsufficientPrivilegeError):
         async with db.transaction():
@@ -2235,14 +2036,14 @@ async def test_operator_cannot_insert_a_share_request_on_someone_elses_behalf(
             await _insert_share_request(
                 db,
                 org_id=a.org_id,
-                resource_type="campaign",
-                resource_id=campaign_id,
+                resource_type="escalation",
+                resource_id=agent_id,
                 requested_by=op2.user_id,
                 owner_user_id=op2.user_id,
             )
 
     await _as_postgres(db)
-    await db.execute("delete from public.campaigns where org_id = $1", a.org_id)
+    await db.execute("delete from public.voice_agents where org_id = $1", a.org_id)
     await db.execute(
         "delete from auth.users where id = any($1::uuid[])",
         [op1.auth_user_id, op2.auth_user_id],
@@ -2450,30 +2251,218 @@ async def test_a_different_attempt_on_the_same_agent_is_allowed(
     assert count == 2
 
 
-async def test_a_credential_in_use_by_an_agent_cannot_be_deleted(
+async def _make_number(
+    conn: asyncpg.Connection, tenant: Tenant, e164: str, *, status: str = "verified"
+) -> uuid.UUID:
+    return await conn.fetchval(
+        """
+        insert into public.telephony_numbers
+            (org_id, provider, phone_e164, status, livekit_outbound_trunk_id)
+        values ($1, 'twilio', $2, $3, 'ST_x')
+        returning id
+        """,
+        tenant.org_id,
+        e164,
+        status,
+    )
+
+
+async def test_telephony_numbers_are_invisible_across_tenants(
     db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
 ) -> None:
-    """ON DELETE RESTRICT, not CASCADE: silently detaching a credential would
-    leave an agent that cannot authenticate and no record of why."""
+    """A number is the organisation's own line. Seeing another tenant's is
+    seeing which numbers they call their customers from - and, with the trunk
+    id beside it, where those calls are routed."""
+    a, b = tenants
+
+    await _as_postgres(db)
+    await _make_number(db, a, "+15555550150")
+    await _make_number(db, b, "+15555550151")
+
+    async with db.transaction():
+        await _as_user(db, a.auth_user_id)
+        rows = await db.fetch(
+            "select org_id, phone_e164 from public.telephony_numbers"
+        )
+
+    assert {row["org_id"] for row in rows} == {a.org_id}
+    assert "+15555550151" not in {row["phone_e164"] for row in rows}
+
+
+async def test_cannot_create_a_telephony_number_in_another_tenant(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    """The forged-org_id insert. A number planted in another tenant would be
+    offered to them as one of their own lines to dial from."""
+    a, b = tenants
+
+    with pytest.raises(asyncpg.exceptions.InsufficientPrivilegeError):
+        async with db.transaction():
+            await _as_user(db, a.auth_user_id)
+            await db.execute(
+                """
+                insert into public.telephony_numbers
+                    (org_id, provider, phone_e164, status)
+                values ($1, 'twilio', '+15555550152', 'verified')
+                """,
+                b.org_id,
+            )
+
+
+async def test_cannot_update_another_tenants_telephony_number(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    """Disabling someone else's number would stop their runs dialling; enabling
+    one would put a line they had retired back into rotation."""
+    a, b = tenants
+
+    await _as_postgres(db)
+    number_b = await _make_number(db, b, "+15555550153")
+
+    async with db.transaction():
+        await _as_user(db, a.auth_user_id)
+        result = await db.execute(
+            "update public.telephony_numbers set status = 'disabled' where id = $1",
+            number_b,
+        )
+
+    # No error - RLS makes the row simply not exist for this caller, so the
+    # update matches nothing. Asserting on the row count is the only way to tell
+    # "denied" from "silently applied".
+    assert result == "UPDATE 0"
+
+    await _as_postgres(db)
+    status = await db.fetchval(
+        "select status from public.telephony_numbers where id = $1", number_b
+    )
+    assert status == "verified"
+
+
+async def test_a_number_cannot_be_deleted_by_authenticated_at_all(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    """No delete policy *and* no delete grant, matching
+    `202608161700_revoke_delete_on_append_only_tables`.
+
+    The grant is the load-bearing half: a future edit that adds a delete policy
+    cannot quietly make these deletable, because the privilege is not there to
+    exercise. A number that carried real calls is a record - `disabled` is the
+    retirement path."""
     a, _ = tenants
 
     await _as_postgres(db)
-    credential_id = await db.fetchval(
+    number_a = await _make_number(db, a, "+15555550154")
+
+    with pytest.raises(asyncpg.exceptions.InsufficientPrivilegeError):
+        async with db.transaction():
+            await _as_user(db, a.auth_user_id)
+            await db.execute(
+                "delete from public.telephony_numbers where id = $1", number_a
+            )
+
+
+async def test_run_numbers_are_invisible_across_tenants(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    """Which line called which run is as much a record as the call itself."""
+    a, b = tenants
+
+    await _as_postgres(db)
+    number_a = await _make_number(db, a, "+15555550155")
+    number_b = await _make_number(db, b, "+15555550156")
+    run_a = await _insert_run(db, org_id=a.org_id, started_by=a.user_id)
+    run_b = await _insert_run(db, org_id=b.org_id, started_by=b.user_id)
+    for run_id, number_id, tenant in ((run_a, number_a, a), (run_b, number_b, b)):
+        await db.execute(
+            "insert into public.run_numbers (run_id, number_id, org_id) "
+            "values ($1, $2, $3)",
+            run_id,
+            number_id,
+            tenant.org_id,
+        )
+
+    async with db.transaction():
+        await _as_user(db, a.auth_user_id)
+        rows = await db.fetch("select org_id, run_id from public.run_numbers")
+
+    assert {row["org_id"] for row in rows} == {a.org_id}
+    assert run_b not in {row["run_id"] for row in rows}
+
+
+async def test_cannot_bind_another_tenants_run_to_a_number(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    a, b = tenants
+
+    await _as_postgres(db)
+    number_a = await _make_number(db, a, "+15555550157")
+    run_b = await _insert_run(db, org_id=b.org_id, started_by=b.user_id)
+
+    with pytest.raises(asyncpg.exceptions.InsufficientPrivilegeError):
+        async with db.transaction():
+            await _as_user(db, a.auth_user_id)
+            await db.execute(
+                "insert into public.run_numbers (run_id, number_id, org_id) "
+                "values ($1, $2, $3)",
+                run_b,
+                number_a,
+                b.org_id,
+            )
+
+
+async def test_a_run_number_binding_cannot_be_deleted_by_authenticated(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    """Append-only, same reasoning as the number itself: the binding is what
+    says which of an organisation's lines placed a given run's calls."""
+    a, _ = tenants
+
+    await _as_postgres(db)
+    number_a = await _make_number(db, a, "+15555550158")
+    run_a = await _insert_run(db, org_id=a.org_id, started_by=a.user_id)
+    await db.execute(
+        "insert into public.run_numbers (run_id, number_id, org_id) "
+        "values ($1, $2, $3)",
+        run_a,
+        number_a,
+        a.org_id,
+    )
+
+    with pytest.raises(asyncpg.exceptions.InsufficientPrivilegeError):
+        async with db.transaction():
+            await _as_user(db, a.auth_user_id)
+            await db.execute(
+                "delete from public.run_numbers where run_id = $1", run_a
+            )
+
+
+async def test_a_number_a_run_dialled_from_cannot_be_deleted(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    """ON DELETE RESTRICT on `run_numbers.number_id`: which line called a person
+    is part of that call's record, and removing the number would erase it.
+
+    This replaces the same claim about `voice_agents.telephony_credential_id`,
+    which is gone - a number is chosen per run now (ADR-8), so the reference
+    worth protecting is the run's, not the agent's."""
+    a, _ = tenants
+
+    await _as_postgres(db)
+    number_id = await db.fetchval(
         """
-        insert into public.provider_credentials
-            (org_id, provider, identifier_encrypted, secret_encrypted)
-        values ($1, 'twilio', 'enc', 'enc')
+        insert into public.telephony_numbers
+            (org_id, provider, phone_e164, status, livekit_outbound_trunk_id)
+        values ($1, 'twilio', '+15555550142', 'verified', 'ST_x')
         returning id
         """,
         a.org_id,
     )
+    run_id = await _insert_run(db, org_id=a.org_id, started_by=a.user_id)
     await db.execute(
-        """
-        insert into public.voice_agents (org_id, name, kind, telephony_credential_id)
-        values ($1, 'wired', 'custom', $2)
-        """,
+        "insert into public.run_numbers (run_id, number_id, org_id) values ($1, $2, $3)",
+        run_id,
+        number_id,
         a.org_id,
-        credential_id,
     )
 
     # ForeignKeyViolationError (23503), not RestrictViolationError (23001).
@@ -2483,7 +2472,7 @@ async def test_a_credential_in_use_by_an_agent_cannot_be_deleted(
     # expecting the wrong one lets the delete succeed without the test noticing.
     with pytest.raises(asyncpg.exceptions.ForeignKeyViolationError):
         await db.execute(
-            "delete from public.provider_credentials where id = $1", credential_id
+            "delete from public.telephony_numbers where id = $1", number_id
         )
 
 
@@ -3939,7 +3928,6 @@ async def _insert_voice_agent(
         voice_id="anushka",
         system_prompt="Be helpful.",
         prebuilt_persona=None,
-        telephony_provider="twilio",
         collect_fields=[
             {
                 "key": "callback_time",

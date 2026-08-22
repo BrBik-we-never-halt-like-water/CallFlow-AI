@@ -12,6 +12,7 @@ import {
 } from '@/components/app/data-table';
 import { Lamp } from '@/components/brand/lamp';
 import { Button } from '@/components/ui/button';
+import { PageHeader } from '@/components/app/page-header';
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -30,50 +31,16 @@ import { useAppStore } from '@/lib/app-store';
 import { useSession } from '@/lib/hooks/use-session';
 
 /**
- * `.panel-glass`/`.app-chrome` (globals.css) re-scope the generic text/
- * rule/surface/lamp tokens for a dark surface, and - since the coherence pass
- * that consolidated the dark theme's cross-page findings - also
- * `--glass-surface`/`--glass-border`/`--glass-blur`, the composite tokens
- * `.panel-glass` (`Panel`, `DataTable`'s table wrapper) and
- * `.btn-glass-secondary` (`Button`) read directly. That fix does not reach
- * this page's own root, though: it wraps its content in `.app-canvas`
- * (the ambient gradient), not `.panel-glass`/`.app-chrome` - putting
- * either of *those* here instead would paint over the gradient with a flat
- * glass fill, since both classes set their own `background`. So this object
- * still needs to declare the glass three itself, alongside the generic set -
- * and it cannot lean on the `--surface-raised`/`--rule-strong` overrides
- * below to do it *indirectly*, tempting as that looks (`--glass-surface`/
- * `--glass-border` are `color-mix()`s of exactly those two names): Tailwind's
- * `@theme inline` bakes `--glass-surface`/`--glass-border`'s own declaration
- * at `:root` into a static literal at build time, using `:root`'s own (light)
- * values, so overriding `--surface-raised`/`--rule-strong` further down the
- * tree never actually reaches them - confirmed by computed style, not
- * assumed. Only a direct redeclaration of the three names themselves, as
- * done here, works.
+ * This page no longer pins itself to the dark palette.
+ *
+ * It used to declare a `DARK_SCOPE_VARS` object re-scoping the generic
+ * text/rule/surface/lamp tokens onto the `--dark-*` family, which forced
+ * this one route dark regardless of the user's theme. That was right while
+ * `/app` was mid-pivot and only some surfaces had converted; it is a bug now
+ * that the shell carries `.dash` and the whole management surface follows
+ * the theme. The bridge in globals.css already supplies exactly those
+ * tokens, correctly, in both themes.
  */
-const DARK_SCOPE_VARS: React.CSSProperties = {
-  '--text': 'var(--dark-text)',
-  '--text-dim': 'var(--dark-text-dim)',
-  '--text-mute': 'var(--dark-text-mute)',
-  '--rule': 'var(--dark-rule)',
-  '--rule-strong': 'var(--dark-rule-strong)',
-  '--surface-raised': 'var(--dark-surface)',
-  '--surface-hover': 'var(--dark-surface-hover)',
-  '--surface-sunken': 'var(--dark-surface-sunken)',
-  '--glass-surface': 'var(--dark-glass-surface)',
-  '--glass-border': 'var(--dark-glass-border)',
-  '--glass-blur': 'var(--dark-glass-blur)',
-  '--lamp-off': 'var(--dark-lamp-off)',
-  '--lamp-ice': 'var(--dark-lamp-ice)',
-  '--lamp-brass': 'var(--dark-lamp-brass)',
-  '--lamp-jade': 'var(--dark-lamp-jade)',
-  '--lamp-flare': 'var(--dark-lamp-flare)',
-  '--lamp-off-text': 'var(--dark-lamp-off-text)',
-  '--lamp-ice-text': 'var(--dark-lamp-ice-text)',
-  '--lamp-brass-text': 'var(--dark-lamp-brass-text)',
-  '--lamp-jade-text': 'var(--dark-lamp-jade-text)',
-  '--lamp-flare-text': 'var(--dark-lamp-flare-text)',
-} as React.CSSProperties;
 
 const STATUS_FILTERS = (['running', 'completed', 'failed'] as RunStatus[]).map(
   (value) => ({ value, label: lampForRunStatus(value).label }),
@@ -85,7 +52,7 @@ export default function RunsPage() {
   const canStart =
     session.status === 'signed-in' &&
     session.profile.permissions.includes('runs:start');
-  const { runs, campaigns, phase, loadingRuns } = useAppStore();
+  const { runs, phase, loadingRuns } = useAppStore();
   const [sort, setSort] = useState<SortState>({
     id: 'started_at',
     dir: 'desc',
@@ -95,8 +62,11 @@ export default function RunsPage() {
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<Set<RunStatus>>(new Set());
 
-  const campaignName = (id: string) =>
-    campaigns.find((c) => c.id === id)?.name ?? id;
+  // The name is resolved server-side and carried on the row: the client no
+  // longer holds an agent list, and fetching one just to render a label would
+  // be a step backwards.
+  const agentName = (run: RunSummary) =>
+    run.agent_name ?? run.name ?? 'Deleted agent';
 
   const hasFilters = query.trim().length > 0 || statusFilter.size > 0;
 
@@ -106,9 +76,9 @@ export default function RunsPage() {
   }
 
   /**
-   * Search matches the campaign name or the status label - the filter menu
+   * Search matches the agent name or the status label - the filter menu
    * covers the same status facet more precisely, so the free-text box stays
-   * useful for "which campaign" without needing to also open a menu.
+   * useful for "which agent" without needing to also open a menu.
    */
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -117,12 +87,11 @@ export default function RunsPage() {
         return false;
       }
       if (!needle) return true;
-      const name = campaignName(run.campaign_id).toLowerCase();
+      const name = agentName(run).toLowerCase();
       const statusLabel = lampForRunStatus(run.status).label.toLowerCase();
       return name.includes(needle) || statusLabel.includes(needle);
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [runs, query, statusFilter, campaigns]);
+  }, [runs, query, statusFilter]);
 
   /**
    * Sorting and pagination are done here rather than server-side because the runs
@@ -134,12 +103,8 @@ export default function RunsPage() {
     list.sort((a, b) => {
       const dir = sort.dir === 'asc' ? 1 : -1;
       switch (sort.id) {
-        case 'campaign':
-          return (
-            campaignName(a.campaign_id).localeCompare(
-              campaignName(b.campaign_id),
-            ) * dir
-          );
+        case 'agent':
+          return agentName(a).localeCompare(agentName(b)) * dir;
         case 'total':
           return (a.total - b.total) * dir;
         case 'completed':
@@ -151,8 +116,7 @@ export default function RunsPage() {
       }
     });
     return list;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filtered, sort, campaigns]);
+  }, [filtered, sort]);
 
   // Clamped rather than reset in an effect: if a filter shrinks the result set
   // below the current page, the displayed page snaps back on its own, and it
@@ -166,15 +130,15 @@ export default function RunsPage() {
 
   const columns: Column<RunSummary>[] = [
     {
-      id: 'campaign',
-      header: 'Campaign',
+      id: 'agent',
+      header: 'Agent',
       sortable: true,
       cell: (run) => (
         <span className="block truncate text-text">
-          {campaignName(run.campaign_id)}
+          {agentName(run)}
         </span>
       ),
-      value: (run) => campaignName(run.campaign_id),
+      value: (run) => agentName(run),
     },
     {
       id: 'status',
@@ -214,19 +178,8 @@ export default function RunsPage() {
   return (
     <div
       className="app-canvas -mx-4 -my-6 flex min-h-[calc(100dvh-var(--h-app-topbar))] flex-col gap-6 px-4 py-6 sm:-mx-6 sm:px-6"
-      style={DARK_SCOPE_VARS}
     >
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="flex flex-col gap-1">
-          <p className="text-small font-bold text-text-mute">Runs</p>
-          <h1 className="font-display text-h2 text-text">
-            Every run, newest first
-          </h1>
-          <p className="measure text-small text-text-dim">
-            Outcomes update as calls settle.
-          </p>
-        </div>
-
+      <PageHeader title="Runs">
         <div className="flex flex-wrap items-center gap-2">
           <SearchInput
             value={query}
@@ -289,12 +242,12 @@ export default function RunsPage() {
             </Button>
           ) : null}
         </div>
-      </div>
+      </PageHeader>
 
       <ConnectionBanner phase={phase} />
 
       <DataTable
-        caption="Runs, with the campaign, status, and start time."
+        caption="Runs, with the agent, status, and start time."
         columns={columns}
         rows={paged}
         rowKey={(run) => run.id}
@@ -317,7 +270,7 @@ export default function RunsPage() {
             <div className="flex flex-col gap-1.5">
               <div className="flex items-center gap-2">
                 <span className="min-w-0 flex-1 truncate text-small font-medium text-text">
-                  {campaignName(run.campaign_id)}
+                  {agentName(run)}
                 </span>
               </div>
               <div className="flex items-center gap-2 text-text">

@@ -7,7 +7,7 @@ import { cn } from "@/lib/cn";
  *
  * One line saying what is not here, one line saying what the thing is for, and
  * exactly one action. The explanation matters more than it looks: an operator
- * seeing "No campaigns yet" for the first time does not yet know what a campaign
+ * seeing "No agents yet" for the first time does not yet know what an agent
  * is, and this is the only place the product gets to tell them.
  */
 export function EmptyState({

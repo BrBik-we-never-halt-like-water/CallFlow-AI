@@ -5143,9 +5143,957 @@ Both probes ran in transactions and were rolled back. `ruff` clean; backend suit
 
 **Still no regression test**, for the third time in this area: the DB-backed tests cannot run locally (`gen_salt`, `pgcrypto` off the tests' `search_path`) and CI's API job finishes too fast to be running them. A per-creator RLS rule is exactly what a cross-tenant test exists to protect, so the database probe above is the verification of record. **Fixing that test environment should come before the next change here.**
 
-## Iteration 45 - 2026-08-18 · a UI polish pass, scoped by an audit rather than by taste
+## Iteration 45 - 2026-08-18 · a run could never place a call, and two concepts described one thing
 
-### #133 - nine icon-only controls had hit areas below 44x44, and no control moved when pressed
+### #133 - the dial path was fully built and never connected
+
+**S1 · FIXED · api · `app/api/v1/routes/runs.py`, `app/services/run_dialer.py`**
+
+`CampaignRunner` accepted `trunk_id` and `voice_agent`, and its own docstrings
+said both were "resolved by the caller from the campaign's voice agent". Nothing
+resolved them. Grepping the whole of `apps/api` found those kwargs passed in
+tests and nowhere else, so every contact hit the guards at `campaign_runner.py`
+lines 297 and 316 and was refused with "no connected number" / "no speech or
+language providers set" before the phone rang.
+
+**Impact.** Total: no organisation could place a call through the product, and the
+failure read as a configuration problem the operator was expected to fix rather
+than a missing wire. `telephony_provisioning` had been producing verified LiveKit
+outbound trunks the whole time and nothing ever read one back out.
+
+**Fix.** `services/run_dispatch.py` resolves an agent plus the numbers a run
+picked into the trunks and decrypted keys the dialer already knew how to use,
+failing closed with a message naming what to connect. The dialer itself needed no
+new dialling machinery - only a pool where a single trunk used to be.
+
+**Depends on / Blocks:** unblocks every call the product places.
+
+### #134 - a run's numbers had nowhere to live
+
+**S2 · FIXED · db · `alembic/versions/202608180900_agent_driven_runs_replace_campaigns.py`**
+
+`provider_credentials` is uniquely keyed `(org_id, provider)` with a single
+`phone_number` column, so an organisation with five Twilio numbers had nowhere to
+put four of them. `telephony_provisioning.voice_agent_id` was `NOT NULL`, making
+provisioning per-agent - the opposite of "any agent through any carrier".
+
+**Impact.** "Pick one, several, or all of our numbers" was unrepresentable, and an
+agent was bound to one number at build time.
+
+**Fix.** ADR-8. `telephony_numbers` is the aggregate, `run_numbers` binds a run to
+its lines, and provisioning targets a number. The first draft of the plan stored
+the numbers as `runs.from_numbers jsonb`, which was wrong: a number's trunk id and
+status are per-number state with their own lifecycle, and denormalising them into
+each run means a number verified *after* a run started stays recorded unverified.
+
+### #135 - `required` on a collect field was written and never read
+
+**S2 · FIXED · api · `app/domain/collection.py`, `app/domain/triage.py`**
+
+A field could be marked required, and that value was used exactly once - to build
+the schema the model was asked to satisfy. Nothing re-checked the answer against
+it, so a call could come back with none of the required fields and still be
+recorded `auto_closed` because the status said `completed`.
+
+**Impact.** Silent data loss: the product claimed a call was clean while the thing
+it was sent to find out was missing, and nobody was told.
+
+**Fix.** ADR-5's design, followed rather than reinvented - including the placement
+its own review corrected. The new triage rule is gated on `status == "completed"`,
+so a busy or no-answer call keeps its more actionable "worth retrying" signal
+instead of being escalated for fields it never had a chance to collect. The
+implementation plan had this rule ranked above `task_completed`, which is the bug
+ADR-5 was written to prevent.
+
+`is_present()` treats `False` and `0` as answers: a yes/no field answered "no" was
+collected, and a bare falsiness check would send a person to ask something the
+contact had already answered.
+
+### #136 - a hostile spreadsheet column stopped colliding, so it stopped being blocked
+
+**S2 · FIXED · api · `app/services/run_dialer.py`, `app/domain/prompt_assembly.py`**
+
+`contact.context` was spread first into the dispatch metadata so a CSV column
+named `goal` lost to CallFlow's own `goal` key - a defence that worked by
+collision. Renaming that key to `prompt` removed the collision, and a hostile
+`goal` column began riding along untouched. Inert today; live again the moment a
+future reader adds a `goal` key back.
+
+**Impact.** None yet, which is the point - it was a defence that had quietly
+stopped defending, and nothing would have failed to say so.
+
+**Fix.** Reserved keys are stripped from the metadata *and* the prompt, against
+one shared list (`prompt_assembly.RESERVED_CONTEXT_KEYS`) so the two cannot
+drift. Dropped column *names* are logged, never their values - a discarded column
+may hold exactly the PII that must not reach a log line. Pinned by
+`test_dispatch_contract.py`, and verified by mutation.
+
+### #137 - four bugs the migration rehearsal caught before dev saw them
+
+**S2 · FIXED · db · same revision**
+
+Running the migration inside a rolled-back transaction against the real schema
+found four faults, two of which would have failed silently:
+
+1. `create or replace` cannot change a function's return type, and two of these
+   change theirs - including `lookup_run_owner_for_webhook`, on the completion
+   hot path. The migration would have aborted mid-flight.
+2. The new functions read `runs.voice_agent_id` but name `public.campaigns`, so
+   there is exactly one window they can be created in. The first version had them
+   first and failed on a column that did not exist yet.
+3. The member-removal rewrite silently left `update public.campaigns` in place. A
+   `search_path`-pinned `SECURITY DEFINER` function, so it fails when someone
+   removes a teammate, not when the migration runs.
+4. Supabase's default ACL on `public` grants DELETE to `authenticated` on every
+   new table, so granting select/insert/update still left both new tables
+   deletable - the same miss `202608161700` already had to correct once.
+
+**Impact.** Prevented. Worth recording because the rehearsal is what found them,
+and three of the four would not have shown up in any test.
+
+**Fix.** Applied. The rehearsal pattern - run the real migration in a transaction
+against the real schema, assert the end state, roll back - is worth repeating for
+anything that touches a `SECURITY DEFINER` function or adds a tenant table.
+
+**Depends on / Blocks:** nothing.
+
+## Iteration 46 - 2026-08-18 · finishing the agent-driven run: collection, upload, and the surfaces that read them
+
+### #138 - every real call was told the appointment was "tomorrow at 4pm"
+
+**S1 · FIXED · web · `apps/web/lib/contacts.ts`**
+
+`toContactInputs()` built each contact's context as a literal:
+
+```ts
+context: {
+  enquiry_note: r.note || 'no note on file',
+  appointment_time: 'tomorrow at 4pm',
+}
+```
+
+Every contact in every run, live ones included. A fixture written for a demo,
+left in the one function that turns uploaded rows into dial payloads. Any agent
+prompt referencing `{context[appointment_time]}` stated a time nobody had agreed
+to, to a real person, on a real phone call - and the spreadsheet columns someone
+actually uploaded were discarded, because only these two keys were ever built.
+
+**Impact.** Real. Not a crash, which is why it survived: the call connected, the
+agent spoke fluently, and the sentence it said was false. This is the worst shape
+a bug can take in this product - confident, plausible, and wrong to a customer.
+
+**Fix.** Every non-reserved column passes through under its own name, and the
+note becomes `detail`, the key `render_call_prompt` reads for "what this call is
+about". Nothing is invented. Pinned by `test_spreadsheet.py`'s note/detail tests
+and by the composer's context-column summary, which shows the builder exactly
+which columns each contact carries before the run starts.
+
+**Depends on / Blocks:** the per-contact context requirement this whole iteration
+exists to serve.
+
+### #139 - the escalation directory 500'd on a column the migration had renamed
+
+**S2 · FIXED · api · `app/api/v1/routes/escalations.py`**
+
+`list_escalation_directory()` was rewritten in `202608180900` to return
+`agent_name` instead of `campaign_name`. The route still read
+`r["campaign_name"]`, so `GET /api/v1/escalations/directory` raised `KeyError`
+for every caller - the "Team escalations" panel on the Needs a person page,
+which is how an operator offers to help with someone else's frustrated customer.
+
+Notably the *frontend* was already correct: `EscalationDirectoryEntry` declared
+`agent_name`. Only the route sat between two halves that agreed with each other.
+
+**Impact.** Real, and invisible to the test suite - the endpoint has no coverage,
+and a `KeyError` on an asyncpg `Record` is a runtime failure, not an import one.
+
+**Fix.** The route reads `agent_name`. Found the same way #134-#136 were: by
+checking every SQL function's declared return type against the code that reads
+it, directly against the live schema rather than against the migration file.
+
+**Depends on / Blocks:** nothing.
+
+### #140 - a valid sheet row was told to add the phone number it already had
+
+**S3 · FIXED · api · `app/domain/spreadsheet.py`**
+
+`validate()` decided between "Add a phone number for this row." and "Not a valid
+E.164 number" by looking at the *normalised* number. A cell holding `not a
+number` normalises to the empty string exactly as an empty cell does, so a row
+where someone had typed something wrong was told to fill in a field they had
+already filled in.
+
+Caught by a test written before the code was, which is why it is recorded here
+rather than shipping: the message was wrong in the direction that wastes the most
+of someone's time, on a row they are looking straight at.
+
+**Impact.** Prevented. The frontend CSV parser never had this bug - it checks the
+raw cell - so the two validators would have disagreed about the same row, which
+is its own class of problem (a row the browser accepts and the server rejects, or
+here, describes differently).
+
+**Fix.** `validate()` takes the raw cell alongside the normalised number and
+distinguishes the two cases. The two parsers now produce the same verdict and the
+same sentence for the same row.
+
+**Depends on / Blocks:** nothing.
+
+### #141 - a multipart upload cannot be sent with a Content-Type the client sets
+
+**S2 · FIXED · web · `apps/web/lib/api.ts`**
+
+`req()` set `'Content-Type': 'application/json'` on every request unconditionally.
+A `FormData` body needs the browser to set its own header, because the multipart
+boundary is generated per request and is part of the value - naming the type
+without one produces a body the server cannot parse, and the failure surfaces as
+a validation error about a missing field rather than as anything about encoding.
+
+**Impact.** Prevented. The `.xlsx` upload would have failed on its first use with
+a message pointing at the wrong thing entirely.
+
+**Fix.** The JSON header is omitted when the body is `FormData`. One place, in
+the single function every API call goes through, so a future upload cannot
+reintroduce it.
+
+**Depends on / Blocks:** #142.
+
+### #142 - "please stop calling me" did not stop the call
+
+**S1 · FIXED · voice-runtime · `app/worker.py`, `app/collection.py`**
+
+The runtime had no tool-calling at all. The agent could say a warm goodbye and
+then keep listening, because nothing gave it a way to *act* - `wait_for_call_end`
+returned only when the contact disconnected or the ceiling ran out. A person who
+asked to be let go stayed on a call they had already ended, until they hung up
+themselves.
+
+Three things were missing together, which is why this reads as one entry: no
+`end_call` tool, no `record_field` tool, and no way for either to reach the loop
+holding the call open.
+
+**Impact.** Real, and the requirement most directly about respecting someone.
+Also the reason `collected` was always empty: the worker did not send that key
+at all, so the API defaulted it to `{}` regardless of how well the conversation
+went, and every call with required fields escalated to a person even when the
+agent had heard every answer.
+
+**Fix.** `collection.py` holds the pure half - the field list off metadata, type
+coercion, and the `Collector` that records answers and carries a hangup reason.
+`worker.py`'s `build_tools()` wraps it as two LLM tools, and `wait_for_call_end`
+polls a `should_end` predicate once a second while the call is up, so ending is
+immediate rather than deferred to the next turn. Verified by mutation: removing
+the poll makes the hangup test hang and fail rather than pass.
+
+An `end_call` reason is first-wins - the thing that made the agent hang up is the
+first thing it decided, and a second call while the room is closing would
+otherwise rewrite it.
+
+**Depends on / Blocks:** #143.
+
+### #143 - a field the agent invented would have landed on a customer's record
+
+**S2 · FIXED · voice-runtime · `app/collection.py`**
+
+`record_field` accepts a key and a value from the model. Storing whatever arrived
+would mean a hallucinated field name - or a real one the organisation never asked
+for - persisted onto a call record as though it had been collected deliberately.
+
+**Impact.** Prevented. Recorded because the permissive version is the obvious one
+to write, and the failure would look like data rather than like a bug.
+
+**Fix.** An undeclared key is refused and the agent is told so in the tool's
+reply, which is also the more useful behaviour mid-call: the model corrects itself
+and asks for what was actually declared. Pinned in both suites -
+`test_collection.py` for the rule, and `test_dispatch_contract.py` for the
+contract, so the API's declared fields and the worker's accepted keys cannot
+drift apart.
+
+**Depends on / Blocks:** nothing.
+
+### #144 - transcript recovery must never overwrite what the agent heard
+
+**S3 · FIXED · voice-runtime · `app/collection.py`, `app/worker.py`**
+
+A model that holds a perfect conversation and forgets to call `record_field`
+produces an empty result and escalates a call that did not need a person. So
+`recover_missing()` reads absent fields back out of the transcript - which
+immediately raises the opposite risk: a guess that *looks* like an answer means
+the person who should have been asked never is.
+
+**Impact.** Prevented, by two deliberate choices rather than one. The merge order
+puts recorded values last (`{**recovered, **recorded}`), so an answer always beats
+a guess. And the scan is narrow on purpose: it matches the field's own name
+followed by a value on a **contact** turn, so the agent's own question ("so your
+budget is what exactly?") is not read back as the reply. No inference pass - a
+second LLM call to interpret the conversation is a real option, and it is not
+this.
+
+**Fix.** As described, plus a scan ceiling: a transcript past 40,000 characters is
+truncated rather than regex-scanned whole, and the field is then reported missing.
+That is the safe direction - a person gets asked.
+
+**Depends on / Blocks:** nothing.
+
+### #145 - three docs pages described behaviour that was never built
+
+**S2 · FIXED · web · `app/(marketing)/docs/`**
+
+Found while updating the docs site off campaigns, and unrelated to that change:
+
+1. `writing-a-good-goal` documented a `call_not_ready` state and a 40-character
+   minimum on a goal. `grep -rn call_not_ready apps/` hits the docs page and
+   nothing else; `agent-editor.tsx`'s validation checks a name of two characters
+   and a chosen model, and has no prompt-length check of any kind.
+2. The same page told the reader to "preview it on a real name before you run".
+   There is no prompt preview anywhere in the frontend, and the rebuilt run
+   composer has no preview pane.
+3. `getting-started` told people to start from a built-in goal template.
+   `agent-presets.tsx` offers model and cost tiers, not goal templates.
+
+**Impact.** Real, in the way CLAUDE.md non-negotiable #9 is about: someone
+follows the documented step, cannot find the control, and concludes the product
+is broken rather than the sentence. Also the api-reference page still documented
+four `/api/v1/campaigns` endpoints and a `/campaigns/preview` that returned 404.
+
+**Fix.** All three claims removed and replaced with what the page can honestly
+say. Every endpoint in api-reference re-verified against the route files rather
+than against SYSTEM.md, which was itself stale.
+
+**Depends on / Blocks:** nothing.
+
+### #146 - dead permissions outlived the feature they guarded
+
+**S4 · FIXED · api · `app/auth/permissions.py`**
+
+`CAMPAIGNS_READ`, `CAMPAIGNS_WRITE` and `CAMPAIGNS_DELETE` remained in the
+permission enum and in the viewer/operator role sets after every endpoint they
+guarded was deleted. Nothing read them - not a route, not a test, not the
+frontend, which receives the permission list in its profile payload.
+
+**Impact.** Cosmetic today. Recorded because the permission matrix is meant to be
+readable as the authoritative answer to "who can do what", and entries for
+features that do not exist make it answer a question nobody asked.
+
+**Fix.** Removed, along with the `RequirePermission` docstring example that used
+one.
+
+**Depends on / Blocks:** nothing.
+
+### #147 - the share-request list labelled an escalation "Campaign"
+
+**S3 · FIXED · web · `app/(app)/app/organisation/page.tsx`**
+
+```tsx
+{request.resource_type === 'escalation' ? 'Campaign' : 'Escalation'}
+```
+
+The two branches were the wrong way round, so every request in the "Sent by you"
+list was labelled with the name of the *other* resource type. Escalation is the
+only shareable resource since ADR-8, so the ternary had no second branch to be
+right about either.
+
+**Impact.** Real, and the kind that survives review: the list rendered, the words
+were product vocabulary, and the label was simply wrong about what you had asked
+for.
+
+**Fix.** The label is `Escalation`, with no branch.
+
+**Depends on / Blocks:** nothing.
+
+### #148 - three pricing claims describe features that do not exist
+
+**S2 · OPEN · web · `apps/web/lib/pricing.ts`**
+
+Found while sweeping campaign vocabulary out of the marketing copy, and
+deliberately **not** renamed - converting these to agent vocabulary would have
+turned a false claim about campaigns into a false claim about agents.
+
+1. `"All starter campaign templates"` (line 80), and the related
+   `free: "Templates only"` grading of custom extraction fields (line 245).
+   There is no goal-template picker in the product. `agent-presets.tsx` offers
+   model and cost tiers - a pipeline choice, not a goal. `verticals.ts`'s
+   `goalTemplate` is read only by the public solutions pages.
+2. `"Scheduled runs and calling windows per campaign"` (line 121). No scheduler
+   exists anywhere in the web app.
+3. `label: "Calling windows per campaign"` (line 231), marked
+   `growth: true, scale: true` - i.e. sold as a paid entitlement. Calling windows
+   are not enforced server-side at all (#20), and `run-settings.ts` says so in
+   its own docstring: they live in `localStorage` because no API field exists.
+
+**Impact.** Real, and commercially the most serious kind: (3) is a billed
+entitlement for a guard that does not run, which is a stronger claim than the
+product-tour copy CLAUDE.md non-negotiable #9 is usually about. Someone could buy
+a tier for calling windows and dial outside them.
+
+**Fix.** Not a copy edit - each line needs either the feature built or the claim
+withdrawn, and that is a product decision. Recorded here rather than quietly
+reworded. Kept open on purpose.
+
+**Depends on / Blocks:** #20 (calling windows unenforced).
+
+## Iteration 24 - 2026-08-19 - the local stack would not start, and no number could ever dial
+
+### #149 - provisioning never wrote back to the number a run dials from
+
+**S1 · FIXED · api · `apps/api/app/services/number_provisioning.py`, `apps/api/app/database/repositories/telephony_numbers.py`**
+
+Two tables record connecting a number, and they answer different questions.
+`telephony_provisioning` is the ledger of one attempt - what it created, in what
+order, what failed - keyed by voice agent. `telephony_numbers` is the number
+itself, and `GET /telephony/numbers` resolves `diallable` from *that* row:
+`is_diallable(status) and bool(livekit_outbound_trunk_id)`.
+
+`connect_number()` wrote its whole lifecycle - `PROVISIONING`, `VERIFIED`, every
+trunk id - to the attempt ledger and **never touched the number row**. It did not
+even import `telephony_numbers`. So a fully provisioned number stayed
+`discovered` with a null trunk, and `numbers_repo.set_status(..., VERIFIED)` had
+no caller anywhere in the product.
+
+**Impact.** No number could ever become diallable, in any organisation, by any
+route. The run composer's `diallable.length === 0` branch was therefore permanent:
+it told the user to "connect a carrier in Integrations", they connected one
+successfully, came back, and read the same sentence again. `discovered -> verified`
+is also an illegal transition (`domain/numbers.py`), so the manual
+`PATCH /telephony/numbers/{id}` could not repair it either - it 409s.
+
+**Fix.** `_mirror_to_number()` carries the attempt's outcome onto the number row
+at each state change, and `by_e164()` resolves the row from the E.164 the
+workflow is given. It never raises: LiveKit and the carrier are really configured
+by then, so a bookkeeping failure must not roll back the ledger of what exists. A
+`disabled` number is explicitly left alone - `disabled -> verified` is legal, so
+the transition table would not have stopped provisioning from quietly putting a
+deliberately-retired line back into service. Five tests in
+`test_number_provisioning.py` cover it; the disabled case caught that gap.
+
+### #150 - the connect-a-number endpoint had no caller, and could not have had one
+
+**S1 · FIXED · web · `apps/web/lib/api.ts`, `apps/web/components/app/carrier-numbers.tsx`, `apps/api/app/api/v1/routes/telephony.py`**
+
+`POST /voice-agents/{id}/connect-number` is the only endpoint that provisions a
+number. Nothing in `apps/web` called it - `api.ts` had no method for it - and
+nothing could have: `ConnectNumberIn` required `phone_number`, but every number
+the API returns is masked (non-negotiable #4), so no screen held the value to
+send. The only screen listing numbers at all was the run composer, which could
+merely link to Integrations; Integrations did not show numbers.
+
+**Impact.** With #149, the second half of why connecting a carrier appeared to do
+nothing. Even after #149 the fix would have been unreachable from the product.
+
+**Fix.** `ConnectNumberIn` now accepts `number_id` and resolves the E.164
+server-side where it is already permitted, rather than unmasking for the client;
+`phone_number` stays for API callers, with a validator requiring one of the two.
+`api.connectNumber` was added, and a `CarrierNumbers` section on Integrations
+lists each number with its state and a "Make diallable" action. It sits directly
+under the readiness line, because that line counts *credentials* and a credential
+is not a diallable line.
+
+### #151 - the run composer sent people to fix something that page could not fix
+
+**S2 · FIXED · web · `apps/web/app/(app)/app/runs/new/page.tsx`**
+
+`calling_available` is a property of the *deployment* - LiveKit keys in the
+server environment - and was checked last, below the carrier and number gates.
+With it false, no carrier connection can produce a diallable number, so the
+composer led with "Connect a carrier in Integrations" for a condition Integrations
+has no power over.
+
+**Fix.** The deployment check runs first and names the missing variables. The
+number branch now distinguishes nothing-synced from synced-but-not-connected, so
+the sentence changes as the user makes progress instead of repeating.
+
+### #152 - credit enforcement left the dial path in an uncommitted refactor
+
+**S1 · OPEN · api · `apps/api/app/services/run_dialer.py`**
+
+`RunDialer.__init__` took `credit_ceiling` at `HEAD` and used it to reserve and
+release credits per dial. The working tree removes it, and no replacement exists:
+`credit_ceiling` appears nowhere in `app/`, and `run_dispatch.py` has no reserve
+logic. The nine `test_orchestrator.py` failures are that removal - the tests still
+pass the argument, and they are currently the only trace of the guarantee.
+
+**Impact.** Against non-negotiable #2 (fail closed): with no ceiling, a bug in a
+run cannot be stopped from draining an organisation's credits. Not introduced by
+this iteration's work and left for the author of the refactor - where credits
+should now be enforced is a design decision, not a mechanical repair.
+
+### #153 - the local stack could not start at all
+
+**S1 · FIXED · infra · `docker/volumes/db/01-roles.sql`, `02-schemas.sql`, `03-post-init.sql`, `docker/docker-compose.yml`**
+
+`npm run local` failed with `container callflow-db is unhealthy`, and the cause
+was three deep. The entrypoint globs `/docker-entrypoint-initdb.d/*` - an ASCII
+sort - so `01`/`02` ran *before* the image's own `migrate.sh`, which runs the
+`init-scripts/` the entrypoint skips as a directory. Those scripts create `anon`,
+`authenticated`, `service_role`, `authenticator`, `supabase_auth_admin` and
+`supabase_storage_admin` unguarded, so `01` creating them aborted `migrate.sh` on
+"role already exists". ON_ERROR_STOP then skipped everything after it: `auth.users`
+was never built, GoTrue crash-looped, and no filename could fix it because every
+digit sorts before `m`.
+
+Two more surfaced behind it. The image seeds a 2017 GoTrue baseline that v2 cannot
+migrate over (`relation "schema_migrations" already exists`), and its
+`00000000000003-post-setup.sql` demotes `postgres` to NOSUPERUSER with only USAGE
+on `public`, so Alembic could not create `alembic_version`.
+
+**Fix.** `01-roles.sql` creates only `postgres` - the one role the image never
+makes with BYPASSRLS, which §4b depends on. Everything needing the image's roles
+moved to `03-post-init.sql`, mounted at `/etc/postgresql.schema.sql`, the hook
+`migrate.sh` runs last: passwords, grants, search_paths, an empty `auth` schema
+handed back to GoTrue, and `postgres`'s privileges restored. Verified end to end -
+signup fires `on_auth_user_created` and lands a real organisation and membership.
+
+### #154 - the internal callback disclosed its schema to anyone who could reach it
+
+**S2 · FIXED · api · `apps/api/app/api/v1/routes/internal.py`**
+
+`_require_internal_key()` was called in the first line of `complete_call`, but
+FastAPI validates the request body *before* the handler runs. So a caller with
+no secret got a 422 naming the field that was wrong - and by iterating, the
+whole `CallCompletion` schema of an internal, unauthenticated-by-design endpoint.
+The 404-for-everything the docstring describes only applied once the body
+already parsed.
+
+**Fix.** `_require_internal_key` is a route dependency, so it resolves before
+validation and an unauthenticated caller gets a bare 404 whatever it sends.
+`_complete()` in the tests now calls the dependency then the handler, in the
+order FastAPI does - calling the handler alone skipped the check entirely, which
+is why the trust-boundary tests passed while the boundary leaked.
+
+### #155 - everything the agent collected was thrown away
+
+**S1 · FIXED · api · `apps/api/app/database/repositories/runs.py`, `apps/api/app/api/v1/routes/runs.py`**
+
+`append_outcome` wrote 20 columns. Four that the worker reports and the schema
+already has were not among them: `collected` (the org's own business fields),
+`missing_required_fields`, `handoff_questions`, and `from_number_masked`.
+
+The whole chain around them was built. The worker computes `collected` and POSTs
+it; `internal.py` derives `missing_required` and `handoff_questions` from it and
+feeds triage, which is how escalations get raised; `entities.py` declares all
+four; `api.ts` types them; `TranscriptView` renders "Called from", "What we
+asked for" and "Ask on the callback" from them. Only the INSERT, the SELECT in
+`list_outcomes`, and the serialisation in `get_run` were missing - so the data
+was computed, used for the escalation decision, and then dropped.
+
+**Impact.** The product's actual output. A run completed, the transcript and
+disposition displayed correctly, and the structured fields the agent was sent to
+establish were invisible on every run. `repositories/escalations.py` already
+selected these columns, so the escalation queue read `{}` and `[]` on every row.
+
+**Fix.** All four are written (with `from_number_masked` coalesced, since the
+dialler knows the line and the worker does not - the terminal write must not
+blank it), selected, and serialised. Four tests assert on the **stored row**
+rather than on the triage decision, which is the gap that let this ship: a test
+passed `collected` in and asserted only that no escalation was raised.
+
+### #156 - a run whose dispatcher died stayed "running" for good
+
+**S2 · FIXED · api · `apps/api/app/database/repositories/runs.py`**
+
+`finish_if_all_settled` closes a run once settled outcomes reach `runs.total`,
+and `expire_stale_in_flight` rescues a call that started and never reported. But
+a run is dispatched into `BackgroundTasks` on the uvicorn worker that served the
+request, so an API restart mid-run kills it - and every contact not yet reached
+has *no `call_outcomes` row at all*. Nothing settles them, `count(*) >= total`
+is unreachable, and the run reads "running" forever while the detail page polls
+it forever.
+
+**Fix.** `abandon_undialled()` records the unaccounted contacts as real failures
+(`error = 'never_dialled'`, disposition `unreachable`) once the run is past the
+same stale window, rather than reducing `total` - nobody called those people, and
+a run that quietly shrinks its own target is a success state for something that
+did not happen.
+
+### #157 - one test file failed collection instead of skipping
+
+**S3 · FIXED · api · `apps/api/tests/test_dispatch_contract.py`**
+
+`_load_worker_module` is written to `pytest.skip` when voice-runtime is absent,
+but it checked `spec is None` - and `spec_from_file_location` returns a perfectly
+good spec for a path that does not exist. The failure surfaced at `exec_module`
+as a `FileNotFoundError`, which pytest reports as a **collection error for the
+whole file**, aborting the run. The `api` container mounts only `apps/api`, so
+this was the normal case there: the suite could not be run without
+`--ignore=tests/test_dispatch_contract.py`.
+
+**Fix.** Check `path.is_file()` before building the spec, and skip at module
+level. The file runs where voice-runtime is mounted and skips where it is not.
+
+### #158 - a synced number was never pointed at LiveKit, so the chain stopped one step short
+
+**S1 · FIXED · api · `apps/api/app/api/v1/routes/telephony_numbers.py`**
+
+`POST /telephony/numbers/sync` discovered what a carrier holds and stored each
+number `discovered` with no trunk - which `is_diallable` refuses. Provisioning
+was a separate endpoint nothing called (#150), and after that was wired it was
+still a separate button. So the honest sequence was: connect a carrier, sync,
+read "no number is ready to dial from", and have no way to tell that a third
+step existed at all.
+
+**Fix.** Sync provisions every number it discovers, so connecting a carrier and
+syncing leaves numbers ready to dial. Failures are per number and never raise -
+the carrier and LiveKit are separate systems and either can refuse one number
+for a reason that says nothing about the next, so a sync that 502'd on the third
+would hide the two that worked. Each failure lands on its own row's
+`last_error`, which the Integrations list and the run composer both now show
+instead of a generic sentence. With no agent built yet the numbers are left
+`discovered` with that as the reason, because the dispatch rule has to name one.
+
+### #159 - making a number diallable took over its inbound routing
+
+**S2 · FIXED · api · `apps/api/app/services/number_provisioning.py`, `integrations/telephony/*.py`**
+
+`configure_number` has an `attach_number` flag that stops before associating the
+number with the trunk - everything created is new, the number keeps whatever was
+already answering it, and CallFlow can still dial *out* from it because Twilio
+validates an outbound caller ID against the account. `connect_number` never
+passed it, so every provisioning run took the destructive branch.
+
+**Impact.** Sharper now that sync provisions automatically (#158): a number that
+is someone's support line or IVR would have been silently redirected by pressing
+"Sync". Placing outbound calls never needed that.
+
+**Fix.** `attach_number` is threaded through `connect_number` and defaults to
+**False**. Claiming inbound is still possible and has to be asked for. The flag
+is declared on the `Carrier` protocol rather than special-cased for Twilio;
+Plivo, Telnyx and Vonage accept it and document that their APIs bind the number
+in the same call, so inbound is always claimed there (CLAUDE.md §3, capabilities
+declared rather than assumed).
+
+### #160 - credentials were never checked, so "Connected" meant "typed"
+
+**S2 · FIXED · api · `apps/api/app/domain/providers.py`, `apps/api/app/services/credential_check.py`, `apps/api/app/api/v1/routes/integrations.py`**
+
+`PUT /integrations/providers/{provider}` validated that the declared fields were
+*present* and stored whatever they held. `_validated_fields` rejects an unknown
+key and a blank required one; nothing ever asked the vendor whether the value
+worked. The card then read "Connected" either way, so a mistyped key surfaced
+much later as a sync that found nothing or a call that reached silence - a long
+way from the form that caused it, which is the failure mode non-negotiable #9
+exists to prevent.
+
+**Fix.** `CredentialProbe` on `ProviderSpec` declares one **read-only** request
+that proves a credential - data, not code, for the same reason the credential
+fields are data: 57 providers would otherwise mean 57 functions to keep in step
+with a declarative catalogue. `services/credential_check.py` performs it and
+`connect_provider` refuses to store a credential the vendor rejects.
+
+**The three-way answer is the point.** Rejected blocks the save. *Unreachable*
+does not - an outage at the vendor must not stop someone configuring a working
+account. And a key the vendor authenticates but refuses for **scope** is real,
+so it is stored with that distinction kept: ElevenLabs keys are scoped per
+operation, and a key that cannot read `/voices` may still synthesise speech,
+which is all CallFlow asks of it. Rejecting it would block a working key.
+
+Probes are declared for Twilio, OpenRouter, Groq, xAI, Google, Sarvam and
+ElevenLabs. A provider with no probe returns `ok=None` and is stored unverified
+rather than claimed to be checked.
+
+**Found immediately on real data:** of seven credentials stored in the author's
+own organisation, three were bad - Groq and xAI outright rejected, ElevenLabs
+scoped too narrowly to confirm. All three had been showing "Connected".
+
+### #161 - two credential probes pointed at public endpoints, so they accepted any key
+
+**S2 · FIXED · api · `apps/api/app/domain/providers.py`, `apps/api/app/services/credential_check.py`**
+
+Found by auditing #160's own work rather than trusting it: every probe was
+replayed with **no credential at all**, on the principle that a probe which
+cannot fail proves nothing.
+
+Two of seven answered 200 unauthenticated. Sarvam's `/v1/models` and ElevenLabs'
+`/v1/voices` are public listings, so `check_credentials` returned `ok=True` for
+any string - `{"api_key": "fake-sarvam-key"}` verified clean. Sarvam was the
+worse of the two: it silently accepted garbage. ElevenLabs only looked correct
+because the key it was tested against happened to be scope-refused for an
+unrelated reason.
+
+**Fix.** Sarvam has no read endpoint that authenticates, so `CredentialProbe`
+gained `method` and `accept_statuses`: its probe POSTs an **empty body** to
+`/text-to-speech`, which checks the key before the body - a good key is refused
+for the body (400, "text must be provided"), a bad one for the key (403), and
+nothing is synthesised or charged either way. ElevenLabs moved to `/v1/history`,
+which requires a key and distinguishes "Invalid API key" from "missing the
+permission" in its own message, so a narrowly-scoped real key is still kept
+rather than rejected.
+
+**Also fixed: an empty secret read as a vendor outage.** `Bearer ` is an illegal
+header value, so httpx raised before sending and the handler classified it as
+unreachable - which does not block a save. A blank required field is now
+rejected outright.
+
+**Verified after the fix.** All seven probes answer 4xx unauthenticated; ten
+deliberately-invalid credentials across six vendors were rejected with no false
+accepts; the four genuinely-valid stored credentials still verify. Two tests
+lock the flaw shut - one naming the known-public endpoints, one proving a bare
+400 is still a rejection where `accept_statuses` was not declared.
+
+### #162 - changing a TTS provider kept the old vendor's voice, and the call died on it
+
+**S1 · FIXED · web + voice-runtime · `apps/web/components/app/agentic/agent-editor.tsx`, `provider-wheel.tsx`, `apps/voice-runtime/app/pipeline.py`**
+
+`voice_id` is one column shared by every TTS vendor, and the names do not carry
+across - ElevenLabs' "Rachel" is not a speaker Sarvam's bulbul model has.
+Switching the provider on the Agents screen did not clear it: the preset path
+(`onApply`) reset the voice, but selecting a provider directly on the wheel
+called `setTtsProvider` alone.
+
+**The screen then hid it.** `ProviderWheel` displayed `selectedVoiceId ??
+voiceOptions[0]`, so after the switch it showed a perfectly valid Sarvam voice
+while state still held `Rachel` - the operator picked correctly, saw the right
+thing, and saved the wrong one. A success state for something that did not
+happen (non-negotiable #9).
+
+**Impact.** The worst placement possible: Sarvam validates the speaker in its
+*constructor*, so `build_pipeline` raised after the contact's phone was already
+ringing. They answered to silence, the call was billed, and the run row stuck at
+`in_flight` because the failure path could not report either (#163).
+
+**Fix.** Three layers, because one was not enough. The wheel's `onSelect` now
+moves the voice with the provider; its display no longer falls back for a value
+this provider does not have, so what is shown is what will save; and
+`_sarvam_speaker()` drops a name the vendor's *current model* does not list
+rather than passing it to a constructor that raises. That last check asks the
+plugin's own `MODEL_SPEAKER_COMPATIBILITY` for the model it will actually build
+with - `anushka` is a real speaker for bulbul:v2 and rejected by v3, so the
+union of every model's list would still have let a call fail.
+
+### #163 - the worker's callback could not reach the API on Windows
+
+**S2 · FIXED · config · repo-root `.env`**
+
+`CALLFLOW_PUBLIC_API_URL` was `http://localhost:8000`. On Windows `localhost`
+resolves to IPv6 `::1` first, and `[::1]:8000` was held by Docker Desktop's
+`wslrelay` while uvicorn listened only on `127.0.0.1`. Every completion report
+hit the relay, which speaks no HTTP, and retried to exhaustion with
+`RemoteProtocolError`.
+
+**Impact.** Compounds every call failure: the outcome is never recorded, so the
+row stays `in_flight` and the run never closes - which is what made #162 look
+like a hang rather than an error.
+
+**Fix.** `http://127.0.0.1:8000`. Worth knowing generally: on a Windows host with
+Docker Desktop running, `localhost` is not a safe default for a service that
+binds IPv4 only.
+
+### #164 - the collect fields were listed to the agent but never asked for
+
+**S2 · FIXED · api · `apps/api/app/domain/prompt_assembly.py`**
+
+An operator adds fields on the Agents screen because those are the answers the
+call exists to get. The prompt listed them under *"Record each one as soon as you
+learn it"* - which says what to do with an answer that happened to arrive, not
+that obtaining them is the purpose of the call. A capable model inferred the
+intent; a small one talked about whatever it liked and collected nothing.
+
+**Fix.** The block now opens with "This is what the call is for. Ask for each of
+these, in this order, until you have them all", and closes by telling the agent
+to ask one at a time, wait for each answer, and end the call once it has them.
+The fields drive the conversation, so an agent's own prompt no longer has to
+restate them - it carries identity and manner, which is what an operator should
+be writing.
+
+**Also fixed: a blank `{note}` left a dangling sentence.** `_Safe` renders a
+missing placeholder as empty, which is right for a bare value and wrong for the
+one an agent narrates around: "got in touch about: {note}" with nothing behind it
+reads as "about: " and invites the model to fill the gap with something it
+invented. `note` and `detail` now fall back to "no specific detail was recorded";
+every other placeholder still renders empty. An empty-but-present column is
+treated the same as an absent one - to the agent they are identical.
+
+### #165 - nothing on the Agents screen said a prompt could carry placeholders
+
+**S3 · FIXED · web · `apps/web/components/app/agentic/prompt-placeholders.tsx`, `agent-editor.tsx`**
+
+`_identity_block` substitutes `{name}` and every context column into an agent's
+prompt per contact, which is the feature that lets one agent call a whole sheet.
+The editor was a bare textarea, so there was no way to learn this existed short
+of reading `domain/prompt_assembly.py`.
+
+**Impact.** Quiet and easy to miss in testing: a prompt gets written as "You are
+calling Arbaaz about his Dubai trip", reads perfectly against the one contact it
+was tried on, and then greets every other row in the run by the wrong name. The
+prompt on this repo's own test agent had exactly that shape.
+
+**Fix.** The tokens sit above the textarea as buttons: hovering explains what
+each fills in, clicking inserts at the caret rather than appending, since anyone
+reaching for `{name}` is mid-sentence. Only `{name}` and `{note}` get a button -
+every column works, but listing a sheet's own headers would make the panel
+change per run, and these two exist on every contact by definition.
+
+### #166 - every Sarvam voice offered was one the runtime could not use
+
+**S2 · FIXED · api · `apps/api/app/integrations/ai_providers/catalog.py`, `apps/api/tests/test_dispatch_contract.py`**
+
+`ProviderCatalogEntry.voice_options` drives the Voice wheel, so every entry is a
+promise: pick this and you will hear it. Sarvam ties its speaker list to the TTS
+model and **replaced the entire set between bulbul v2 and v3**. The catalogue
+listed seven v2 speakers - `anushka`, `abhilash`, `manisha`, `vidya`, `arya`,
+`karun`, `hitesh` - and the plugin constructs with v3, which rejects all seven.
+
+Compounded by #162's own fix: `_sarvam_speaker()` drops an unrecognised name to
+`None` rather than letting the constructor raise, and `None` resolves to the
+model default - `shubh`, who is **male**. So an operator picked "Anushka", the
+agent was called Riya, and a man's voice answered. No error anywhere.
+
+**Fix.** The catalogue lists bulbul:v3 speakers, female first because the default
+is male. `voice_model` names the model the list belongs to, and
+`test_dispatch_contract.py` checks every offered voice against the *plugin's own*
+`MODEL_SPEAKER_COMPATIBILITY` table for that model, plus that both genders are
+offered - a list that drifted all-male would hide the same bug. `apps/api` cannot
+import `livekit.plugins` (that would invert the layering), so the test is the
+seam that keeps the two in step. Verified by re-introducing `anushka` and
+watching the suite fail with the reason.
+
+### #167 - a customer's Google API key was logged in full
+
+**S1 · FIXED · api · `apps/api/app/domain/providers.py`, `apps/api/app/core/logging.py`**
+
+The Gemini credential probe passed the key as `?key=…`, and httpx logs every
+request URL at INFO. `RedactingFilter` did not catch it: `_TOKEN_RE` matches
+`api_key=`, `token=`, `secret=` and friends, but not a bare `key=` - verified by
+running the regex over a real log line and watching the key come through intact.
+
+**Fix.** The probe sends `x-goog-api-key` instead, so the secret never reaches a
+URL; and `_TOKEN_RE` gained `key=\S+` as a backstop. The word boundary is
+load-bearing - without it the filter also redacts `monkey=` and `turkey=`.
+
+### #168 - "outbound only" was true for Twilio and false for the other three carriers
+
+**S1 · FIXED · api · `apps/api/app/integrations/telephony/{plivo,telnyx,vonage}.py`**
+
+`connect_number` defaults `attach_number=False` so that provisioning does not
+repoint a number's inbound routing (#159), and the sync path depends on that:
+every discovered number is provisioned automatically (#158). Plivo, Telnyx and
+Vonage each **accepted the flag and ignored it**, attaching unconditionally, and
+each said so in its own docstring.
+
+**Impact.** An organisation with a Plivo support line presses "Sync plivo" and
+every inbound call to that number is silently rerouted to LiveKit. Nothing asked,
+nothing warned, and there is no un-attach path in the product.
+
+**Fix.** All three now guard their final attach step, so the flag means the same
+thing on every carrier. `test_telephony_carriers.py` asserts the guard exists in
+each adapter *and* that the attach call sits inside it - checked against the
+source because the alternative is a live carrier account. Verified by removing
+one guard and watching the suite name the carrier.
+
+### #169 - an unverified credential still reported "Connected"
+
+**S2 · FIXED · api + web · `apps/api/app/api/v1/routes/integrations.py`, `apps/web/app/(app)/app/integrations/page.tsx`**
+
+`check_credentials` returns three states and #160 only acted on one of them.
+`ok=False` blocked the save; `ok=None` - no probe declared, vendor unreachable,
+or a key scoped too narrowly to confirm - was computed, its explanatory message
+built, and then dropped, because `ProviderCredentialOut` had nowhere to put it.
+The card said "Connected" for a credential nothing had confirmed, which is the
+exact failure the verification work exists to remove.
+
+**Fix.** The response carries `verified` and `verification_note`, and the dialog
+distinguishes all three: rejected, saved-but-unconfirmed, and confirmed.
+
+### #170 - "Try again" on a retired number reported success and did nothing
+
+**S3 · FIXED · web · `apps/web/components/app/carrier-numbers.tsx`**
+
+`_mirror_to_number` deliberately refuses to move a `disabled` number back into
+service (#149), but `connect_number` still marks its own attempt `verified`. The
+button was offered for any non-diallable number, so retiring a number and then
+pressing "Try again" produced a success toast, a fresh pair of LiveKit trunks,
+and no visible change.
+
+**Fix.** The button is not offered for a `disabled` number. Re-enabling stays a
+separate, deliberate act.
+
+### #171 - the voice wheel drew a substitution it never saved
+
+**S2 · FIXED · web · `apps/web/components/app/agentic/provider-wheel.tsx`**
+
+#162 stopped the wheel *displaying* a voice the selected provider does not have -
+except both branches of the fallback still ended at `voiceOptions[0]`, so the
+rendered output was unchanged and nothing propagated to the editor's state.
+
+**Impact.** Any agent saved before that fix still holds the old vendor's voice.
+Opening it, editing the prompt and saving re-persisted the stale value: the wheel
+showed `ritu`, the payload wrote `Rachel`, and the runtime then dropped it to the
+model default. The displayed voice and the voice the contact hears never matched.
+
+**Fix.** The wheel reports the substitution through `onVoiceIdChange` when the
+stored value is not one this provider offers, so what is shown is what will save.
+
+### #172 - the Needs-a-person queue could not show what the call got
+
+**S2 · FIXED · api · `apps/api/app/api/v1/routes/escalations.py`**
+
+`repositories/escalations.py` has always selected `collected`,
+`missing_required_fields`, `handoff_questions` and `from_number_masked` - the
+four columns #155 made real. `EscalationOut` declared none of them, so they were
+read from the database and dropped at the response boundary.
+
+**Impact.** The queue exists so somebody can pick a call up, and the only way
+they can is by seeing what the agent already established and what it still
+needs. They got a transcript and a disposition. `TranscriptView` on that screen
+was already written to render all four - it had nothing to render.
+
+**Fix.** The four fields are on `EscalationOut` and mapped in `_row_to_out`.
+`Escalation extends Outcome` in `api.ts`, which already declared them, so the
+frontend needed no change - the data simply arrives now. Verified end to end
+against the real database: a call where the contact asks for a person reaches
+the queue carrying `{flying_from: Delhi}`, `missing: [budget]`, and "Ask: Their
+budget / They asked to speak to a person - call them back."
+
+### #173 - 39 of the vendors the runtime can drive stored credentials unverified
+
+**S3 · FIXED · api · `apps/api/app/domain/providers.py`**
+
+#160 added credential verification and #161 fixed two probes that proved
+nothing, but only 7 of 57 providers had a probe at all. Every other vendor -
+including every LLM and most of the speech vendors an agent actually uses -
+stored whatever was typed and reported it unconfirmed.
+
+**Fix.** 23 more probes, each **tested unauthenticated first** on the principle
+from #161 that a probe which cannot fail is worse than none: `rime`,
+`smallestai` and `fishaudio` answer 200 with no credential and were deliberately
+left unprobed rather than given a probe that accepts any string. All 23 were then
+checked against deliberately-invalid keys - zero false accepts. Coverage is now
+30/57, and `test_credential_check.py` pins the remaining wired gaps by name, so a
+new vendor cannot quietly join them.
+
+### #174 - an expired session looked like a missing page
+
+**S2 · FIXED · web · `apps/web/lib/api.ts`, `lib/hooks/use-session-expiry.ts`, `components/layout/app-shell.tsx`, `app/(auth)/login/page.tsx`**
+
+`req()` turned every non-2xx into a bare `Error` carrying the response body's
+message. A 401 was therefore indistinguishable from any other failure, and each
+screen described it in its own terms: the run detail page reported the run
+missing. Someone whose token had expired went looking for a run that was sitting
+in the database, visible to them, the whole time - confirmed by querying it
+directly and by checking RLS as the owner who started it.
+
+**Fix.** `api.ts` throws a named `SessionExpiredError` on 401 - a type rather
+than a message match, because every data-loading screen has to tell this apart
+from a real failure and comparing strings breaks the moment a message is
+reworded. `useSessionExpiry()` listens once, in the shell every authenticated
+page renders inside, signs the dead token out, and replaces the route with
+`/login?next=…&reason=expired`. The login page explains why they are there,
+because arriving at a login screen you did not ask for otherwise reads as the
+app being broken - and they arrived from a page that would not load, so that
+question is already in their head.
+
+Listening on `unhandledrejection` rather than wrapping each call site: a poll or
+a background refresh rejects with nothing awaiting it, which is exactly the case
+that matters here. The bounce is guarded so several requests failing together -
+a poll, a refresh, a page load - produce one sign-out rather than three.
+
+## Iteration 47 - 2026-08-18 · a UI polish pass, scoped by an audit rather than by taste
+
+> Renumbered from #133/#134 on merge into `arbaaz/agent-run-v1`: that branch
+> had independently used both numbers, and its entries are cited from code
+> comments. This iteration was renumbered instead because nothing outside
+> this file referred to it yet.
+
+
+### #175 - nine icon-only controls had hit areas below 44x44, and no control moved when pressed
 
 **S3 · FIXED · web · `apps/web/app/globals.css` + 6 components**
 
@@ -5161,7 +6109,7 @@ Tailwind v4 compiles `-translate-y-1/2` to that same `translate` property, so th
 
 **Verified.** `eslint` 0 errors, `tsc` clean on source. Not measured in a browser - hit-area growth is geometric rather than perceptual, but a device check on the toast dismiss and the avatar trigger is worth doing.
 
-### #134 - Settings listed an Integrations tab that threw you out of Settings
+### #176 - Settings listed an Integrations tab that threw you out of Settings
 
 **S4 · FIXED · web · `apps/web/app/(app)/app/settings/layout.tsx`, `CAPABILITIES.md`**
 
@@ -5507,6 +6455,112 @@ the refusal is informative rather than a bare validation failure. Bounded by the
 *per-period grant*, not the current balance - a balance-based bound would make the same
 share setting appear to shrink every time the organisation spent money, which is not what
 "a teammate's share" should mean.
+
+### #177 - with no vendor plugin installed, every Sarvam voice was silently dropped
+
+**S2 · FIXED · voice-runtime · `apps/voice-runtime/app/pipeline.py`**
+
+`_sarvam_speaker()` asks the plugin which speakers its current model accepts, so
+a name the model rejects can be dropped before it raises in the constructor
+(#162, #166). Its `except` returned `None` - the same value as "not a valid
+speaker" - so where the plugin is *not installed* every voice was dropped,
+including valid ones.
+
+`None` means "use the model default", so this was the failure the function
+exists to prevent, reached by another road: an operator's chosen voice replaced
+silently, with nothing logged. CI caught it because the vendor plugins are
+optional extras that CI does not install; three green local runs did not,
+because this machine has them.
+
+**Fix.** `_sarvam_known_speakers()` returns `None` for "cannot be asked", which
+is distinct from "not in the list". With no table to consult the voice is passed
+through and the plugin decides - the only component that can. Tests now pin the
+table explicitly so both branches run everywhere, and the one test that needs
+the real plugin `importorskip`s it rather than failing for the absence it exists
+to tolerate.
+
+### #178 - six tests outlived the guards they covered
+
+**S3 · FIXED · api · `apps/api/tests/test_orchestrator.py`**
+
+The per-run ceiling, allowlist, rate limiter, daily budget and per-teammate
+credits were removed from `domain/safety.py` at the product owner's direction,
+pending a replacement security layer - the module docstring records it. Six
+tests still passed `credit_ceiling`, `credits_used_before_run` and
+`max_calls_per_run` to a dialler and a `Config` that no longer accept them, so
+they failed on `TypeError` and had been red since that commit.
+
+**Impact.** Not the guards - those went deliberately. The red suite: nine
+failures nobody was reading meant a real regression would have looked the same,
+and it blocked the PR's API check.
+
+**Fix.** The six are removed, and the module docstring says why and what brings
+them back. Three others in the same file failed only because a shared helper
+passed `max_calls_per_run` - those test room naming and session sharing, which
+are still real behaviour, so the argument was dropped and the tests kept.
+
+Worth stating plainly: this was mistaken for uncommitted local work several
+times while it was in fact committed, deliberate and documented.
+
+## Iteration 48 - 2026-08-22 · merging `dev`: what the two branches disagreed about
+
+### #179 - the Billing page metered a ceiling nothing enforced any more
+
+**S2 · FIXED · api + web · `apps/api/app/api/v1/routes/billing.py`,
+`apps/web/app/(app)/app/billing/page.tsx`**
+
+`GET /billing/subscription` still returned `usage.calls_today` and
+`effective_daily_call_budget`, and the Billing page still rendered them as a
+"Calls today" meter with the copy "Set a lower one in Settings → Safety." All
+three of those had stopped being true:
+
+- The number came from `_daily_calls()`, which read `app.core.rate_limit`'s
+  in-process limiter and `safety_settings` - **both modules were deleted** with
+  the dial-gate simplification (#178). The endpoint could not import, so every
+  route module that pulled in `billing.py` failed at collection: three test
+  modules erroring, not a subtle wrong number.
+- Settings → Safety no longer exists as a route, so the copy pointed somewhere
+  a reader could not go.
+- Nothing counts calls per day or refuses a dial on that count any more
+  (`domain/safety.py`), so a meter showing "3 of 500" would have been a
+  ceiling the product does not apply.
+
+**Impact.** The API did not start. Beyond that, had it started, this is exactly
+the failure CLAUDE.md §4 #9 names - a page stating an enforced limit that is
+not enforced, which is worse than showing nothing, because nothing about it
+looks wrong.
+
+**Fix.** `_daily_calls()`, its two dead imports, `UsageOut.calls_today`,
+`EntitlementUsage.calls_today` and `BillingOverviewOut.effective_daily_call_budget`
+are gone, along with the "Calls today" section and the matching fields in
+`lib/api.ts`. `Entitlements.daily_call_budget` **stays** on the wire, with its
+docstring rewritten to say plainly that it is informational: platform admins can
+still set it per organisation as a negotiated limit, and removing the column
+would be a separate decision from removing the guard that read it.
+
+### #180 - a merge silently dropped a permission check and a dead switcher survived one
+
+**S3 · FIXED · web · `apps/web/app/(app)/app/organisation/page.tsx`,
+`apps/web/components/layout/app-shell.tsx`**
+
+Two opposite failure modes from the same merge, both worth recording because
+neither shows up as a conflict.
+
+`canSetCredits` was defined on one side of a conflict hunk and used on the
+other. Git took the side without the definition and left three call sites
+referring to a name that did not exist - a build error, caught, but the class
+of bug is the point: **when only one side of a merge touches a line, git
+applies that side with no marker at all.** The three usages were inside
+conflict regions and so were visible; the definition was not.
+
+The reverse: `SidebarOrgSwitcher` (163 lines) survived the merge intact and
+uncalled, because `DashSidebar`/`DashProfileMenu` replaced it on the other side
+and nothing conflicted. Only ESLint's unused-symbol warning found it. Removed,
+along with the eleven imports that existed solely to serve it.
+
+**Fix.** Both resolved. Worth carrying forward: after a large merge, an
+unused-symbol lint pass is a real correctness check, not tidying - it is the
+only thing that finds code the merge orphaned.
 
 ## Template for the next iteration
 

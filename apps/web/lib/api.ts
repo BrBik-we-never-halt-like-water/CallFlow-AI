@@ -58,39 +58,54 @@ export type Disposition =
 
 export type Sentiment = 'positive' | 'neutral' | 'negative' | 'unknown';
 
-export interface Campaign {
-  id: string;
-  name: string;
-  region: string | null;
-  language: string | null;
-  outcome_fields: Record<string, string>;
-  goal_template: string;
-  goal_preview: string;
-  built_in: boolean;
-}
-
 export type FieldType = 'string' | 'boolean' | 'integer' | 'number';
 
-export interface CampaignField {
+/**
+ * One thing an agent has to establish while the call is happening.
+ *
+ * `required` is load-bearing rather than advisory: a completed call missing a
+ * required answer is escalated to a person, with this field's `description`
+ * becoming what they are told to ask (ADR-5).
+ */
+export interface CollectField {
   key: string;
   type: FieldType;
   description: string;
   required?: boolean;
 }
 
-export interface CampaignDraft {
-  name: string;
-  goal_template: string;
-  extra_fields: CampaignField[];
-  region?: string | null;
-  language?: string | null;
-  escalate_on_negative?: boolean;
+/** One number the organisation owns, as a picker needs it. */
+export interface TelephonyNumber {
+  id: string;
+  provider: string;
+  /** Masked. The full number is a separate, permissioned reveal. */
+  phone_masked: string;
+  label: string | null;
+  status: string;
+  /** Whether a run may dial from it - resolved server-side from the domain's
+   *  own rule, so the client never compares status strings. */
+  diallable: boolean;
+  last_error: string | null;
+  last_synced_at: string | null;
+}
+
+/** One attempt at pointing a number at LiveKit. `status` plus `last_error` is
+ *  the whole of what the screen needs - the trunk ids are LiveKit's internal
+ *  handles and an operator can do nothing with them. */
+export interface NumberProvisioning {
+  id: string;
+  voice_agent_id: string;
+  status: string;
+  last_error: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface Outcome {
   contact_name: string;
   phone_masked: string;
-  campaign_id: string;
+  /** Which agent held the conversation. Null on rows written before ADR-8. */
+  voice_agent_id: string | null;
   status: string;
   /** The run this outcome belongs to - always the real run id now (see provider_call_id). */
   run_id: string | null;
@@ -101,6 +116,15 @@ export interface Outcome {
   sentiment: Sentiment;
   sentiment_reason: string | null;
   extracted: Record<string, unknown>;
+  /** The organisation's own business fields, kept apart from `extracted` so a
+   *  field named `sentiment` cannot rewrite triage's own input. */
+  collected: Record<string, unknown>;
+  /** Required fields the call ended without. Empty means complete. */
+  missing_required_fields: string[];
+  /** What a person still has to ask, in the agent's own words. */
+  handoff_questions: string[];
+  /** Which of the organisation's lines placed the call, masked. */
+  from_number_masked: string | null;
   disposition: Disposition;
   disposition_reason: string | null;
   error: string | null;
@@ -117,7 +141,8 @@ export interface Outcome {
  */
 export interface Escalation extends Outcome {
   id: string;
-  campaign_id: string;
+  /** The agent whose call this was. Resolved server-side. */
+  agent_name: string | null;
   escalation_status: 'open' | 'resolved';
   assigned_to: string | null;
   assigned_to_name: string | null;
@@ -128,24 +153,15 @@ export interface Escalation extends Outcome {
   resolved_at: string | null;
 }
 
-export type ShareResourceType = 'campaign' | 'escalation';
+export type ShareResourceType = 'escalation';
 export type ShareRequestStatus = 'pending' | 'approved' | 'rejected';
 
-/** Name + owner only - never a campaign's goal, fields, or results. What an
- *  operator sees to decide what's worth requesting (Phase 4). */
-export interface CampaignDirectoryEntry {
-  id: string;
-  name: string;
-  owner_user_id: string | null;
-  owner_name: string | null;
-}
-
-/** Contact + campaign + current owner for an *open* escalation - never the
+/** Contact + agent + current owner for an *open* escalation - never the
  *  transcript, sentiment, or disposition detail. */
 export interface EscalationDirectoryEntry {
   id: string;
   contact_name: string;
-  campaign_name: string;
+  agent_name: string | null;
   owner_user_id: string | null;
   owner_name: string | null;
 }
@@ -165,6 +181,46 @@ export interface ShareRequest {
   owner_name: string | null;
 }
 
+/**
+ * What starting a run needs.
+ *
+ * The number lives here rather than on the agent (ADR-8), which is what lets one
+ * agent dial through any carrier the organisation has connected.
+ */
+/** One row of an uploaded spreadsheet, as the server read it. */
+export interface SheetRow {
+  row: number;
+  name: string;
+  /** Masked. The full number travels only inside `contact`. */
+  phone_masked: string;
+  note: string;
+  context: Record<string, string>;
+  valid: boolean;
+  error: string | null;
+  /** Ready to post straight back in `contacts`, or null when the row cannot be
+   *  dialled. Built server-side so the context rules live in one place. */
+  contact: ContactInput | null;
+}
+
+export interface ParsedSheet {
+  rows: SheetRow[];
+  /** Context columns found across the sheet - what each contact brings into
+   *  its own conversation. */
+  context_columns: string[];
+}
+
+export interface StartRunBody {
+  voice_agent_id: string;
+  /** One, several, or every verified number. A run with none is refused. */
+  number_ids: string[];
+  contacts: ContactInput[];
+  name?: string | null;
+  /** Appended to every prompt in this run, so a one-off instruction does not
+   *  mean editing an agent the whole organisation shares. */
+  run_instruction?: string | null;
+  allocation_strategy?: 'round_robin' | 'area_affinity';
+}
+
 export interface RunStats {
   completed: number;
   total: number;
@@ -175,7 +231,9 @@ export interface RunStats {
 
 export interface Run {
   id: string;
-  campaign_id: string;
+  voice_agent_id: string | null;
+  /** Resolved server-side: the client holds no agent list to look it up in. */
+  agent_name: string | null;
   total: number;
   status: 'running' | 'completed' | 'failed';
   started_at: string;
@@ -191,17 +249,24 @@ export interface Run {
  */
 export interface RunSummary {
   id: string;
-  campaign_id: string;
+  voice_agent_id: string | null;
+  agent_name: string | null;
+  name: string | null;
   total: number;
   status: 'running' | 'completed' | 'failed';
   started_at: string;
   finished_at: string | null;
   error: string | null;
   completed: number;
+  /** Who started the run. Returned by the list endpoint; null on rows
+   *  written before attribution existed. */
+  started_by: string | null;
+  started_by_name: string | null;
+  started_by_avatar_url: string | null;
 }
 
 /** The deployment's own defaults - `/api/health` is unauthenticated, so this is
- * never any one organisation's live usage. See `SafetySettings` for that. */
+ * never any one organisation's live usage. */
 export interface Limits {
   daily_budget: number;
   per_window: number;
@@ -218,17 +283,6 @@ export interface Health {
   max_calls_per_run: number;
   allowlist_active: boolean;
   limits?: Limits;
-}
-
-/** An organisation's own safety overrides, merged onto the deployment defaults,
- * plus that organisation's real, live rate-limit usage. */
-export interface SafetySettings {
-  allowlist: string[];
-  max_calls_per_run: number;
-  calls_per_window: number;
-  window_minutes: number;
-  daily_budget: number;
-  used_today: number;
 }
 
 export interface ContactInput {
@@ -309,9 +363,12 @@ export interface Entitlements {
   max_seats: number | null;
   max_organisations: number | null;
   max_ai_integrations: number | null;
+  /** Informational only — nothing enforces this any more. The dial gate that
+   *  checked it was removed pending a replacement security layer (`ISSUES.md`
+   *  #178). Still settable per org from platform admin, so it stays on the wire. */
   daily_call_budget: number | null;
-  /** Paise granted each period. The plan's real economic limit - `daily_call_budget`
-   *  is a uniform runaway bound, not a differentiator. */
+  /** Paise granted each period. The plan's real economic limit, and now the only
+   *  enforced one — checked at the run gate before any dialling starts. */
   monthly_credit_paise: number | null;
   llm_spend_limit_usd: number;
 }
@@ -322,7 +379,6 @@ export interface EntitlementUsage {
   seats: number;
   organisations: number;
   ai_integrations: number;
-  calls_today: number;
 }
 
 /**
@@ -466,14 +522,6 @@ export interface BillingOverview {
   subscription: Subscription | null;
   entitlements: Entitlements;
   usage: EntitlementUsage;
-  /**
-   * What runs actually stop at today. Distinct from
-   * `entitlements.daily_call_budget`, which is what the *plan* permits: a
-   * deployment default or the org's own Settings → Safety value can be lower, and
-   * the lower one wins. Show this on the meter, or the page promises a number
-   * runs will not honour.
-   */
-  effective_daily_call_budget: number;
   /** True when a platform admin has set a negotiated limit on this org. */
   has_custom_limits: boolean;
   credit: Credit;
@@ -542,6 +590,12 @@ export interface Channel {
   member_ids: string[];
   unread_count: number;
   created_at: string;
+  /** When *you* pinned this conversation. Per-member: pinning it does not
+   *  move it in anyone else's list. Null when not pinned. */
+  pinned_at: string | null;
+  /** Where *you* dragged it. Null means never placed by hand, which sorts
+   *  by recency. */
+  sort_order: number | null;
 }
 
 export interface ChatMessage {
@@ -614,6 +668,11 @@ export interface ProviderCredential {
   phone_number: string | null;
   created_at: string;
   updated_at: string;
+  /** Whether the vendor confirmed these credentials. `null` when the check
+   *  could not be completed - no probe for this vendor, it was unreachable,
+   *  or the key is scoped too narrowly to verify. */
+  verified?: boolean | null;
+  verification_note?: string | null;
 }
 
 export interface ProviderCredentialInput {
@@ -694,9 +753,9 @@ export interface VoiceAgentDraft {
   system_prompt?: string | null;
   prebuilt_persona?: string | null;
   telephony_provider?: TelephonyProvider | null;
-  /** What the agent has to come back with. Same shape as a campaign's
+  /** What the agent has to come back with. Same shape as the run composer's
    *  `extra_fields` - both end up as structured call results. */
-  collect_fields?: CampaignField[];
+  collect_fields?: CollectField[];
 }
 
 export interface VoiceAgent {
@@ -713,8 +772,8 @@ export interface VoiceAgent {
   prebuilt_persona: string | null;
   telephony_provider: TelephonyProvider | null;
   /** What the agent has to come back with from a call. Same shape as a
-   *  campaign's `extra_fields` - both become structured call results. */
-  collect_fields: CampaignField[];
+   *  own field editor - both become structured call results. */
+  collect_fields: CollectField[];
   created_at: string;
   created_by: string | null;
   created_by_name: string | null;
@@ -782,12 +841,34 @@ async function authHeaders(): Promise<Record<string, string>> {
  */
 const REQUEST_TIMEOUT_MS = 45_000;
 
+/**
+ * The session is gone - the token expired, was revoked, or never existed.
+ *
+ * A named type rather than a message match: every screen that loads data has to
+ * tell this apart from a genuine failure, and comparing strings would break the
+ * moment the API rewords a message.
+ */
+export class SessionExpiredError extends Error {
+  constructor() {
+    super('Your session has ended. Sign in again to continue.');
+    this.name = 'SessionExpiredError';
+  }
+}
+
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
   let res: Response;
   try {
     res = await fetch(`${BASE}${path}`, {
       ...init,
-      headers: { 'Content-Type': 'application/json', ...init?.headers },
+      headers: {
+        // A multipart upload must set its own Content-Type: the boundary is
+        // generated per request, and naming the type here without one produces
+        // a body the server cannot parse.
+        ...(init?.body instanceof FormData
+          ? {}
+          : { 'Content-Type': 'application/json' }),
+        ...init?.headers,
+      },
       cache: 'no-store',
       signal: init?.signal ?? AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
@@ -813,6 +894,15 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
   }
   if (!res.ok) {
     let message = `Request failed: ${res.status}`;
+    // 401 is not "something went wrong", it is "your session ended", and the
+    // two need different endings: one is a toast, the other is a trip back to
+    // the login page. Without this distinction an expired session surfaced as
+    // whatever the calling screen says when it cannot load - the run detail
+    // page reported the run missing, which sent people looking for a deleted
+    // run that was sitting in the database the whole time (`ISSUES.md` #174).
+    if (res.status === 401) {
+      throw new SessionExpiredError();
+    }
     try {
       const body = await res.json();
       // FastAPI puts validation and HTTPException messages under `detail`.
@@ -841,37 +931,23 @@ async function authReq<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   health: () => req<Health>('/api/health'),
-  campaigns: () => authReq<Campaign[]>('/api/v1/campaigns'),
-  createCampaign: (draft: CampaignDraft) =>
-    authReq<Campaign>('/api/v1/campaigns', {
-      method: 'POST',
-      body: JSON.stringify(draft),
-    }),
-  updateCampaign: (id: string, draft: CampaignDraft) =>
-    authReq<Campaign>(`/api/v1/campaigns/${id}`, {
-      method: 'PATCH',
-      body: JSON.stringify(draft),
-    }),
-  deleteCampaign: (id: string) =>
-    authReq<void>(`/api/v1/campaigns/${id}`, { method: 'DELETE' }),
-  preview: (campaign_id: string, contacts: ContactInput[]) =>
-    authReq<{ previews: { name: string; goal?: string; error?: string }[] }>(
-      '/api/v1/campaigns/preview',
-      { method: 'POST', body: JSON.stringify({ campaign_id, contacts }) },
-    ),
-  startRun: (campaign_id: string, contacts: ContactInput[]) =>
+  startRun: (body: StartRunBody) =>
     authReq<{ run_id: string; total: number }>('/api/v1/runs', {
       method: 'POST',
-      body: JSON.stringify({ campaign_id, contacts }),
+      body: JSON.stringify(body),
     }),
   listRuns: () => authReq<RunSummary[]>('/api/v1/runs'),
-  getRun: (id: string) => authReq<Run>(`/api/v1/runs/${id}`),
-  /** Stops a run from dialling further contacts. Can't interrupt a call
-   *  already in progress - see the endpoint's own docstring. */
-  cancelRun: (id: string) =>
-    authReq<{ status: string }>(`/api/v1/runs/${id}/cancel`, {
+  /** Read an .xlsx into contact rows. Nothing is dialled or stored - the rows
+   *  come back for review, exactly as a pasted CSV is reviewed. */
+  parseSheet: (file: File) => {
+    const body = new FormData();
+    body.append('file', file);
+    return authReq<ParsedSheet>('/api/v1/runs/parse-sheet', {
       method: 'POST',
-    }),
+      body,
+    });
+  },
+  getRun: (id: string) => authReq<Run>(`/api/v1/runs/${id}`),
   teamSummary: () =>
     authReq<TeamMemberSummary[]>('/api/v1/runs/team-summary'),
 
@@ -888,8 +964,6 @@ export const api = {
     authReq<void>(`/api/v1/escalations/${id}/resolve`, { method: 'POST' }),
 
   // --- sharing (Phase 4) - authenticated ------------------------------------
-  campaignDirectory: () =>
-    authReq<CampaignDirectoryEntry[]>('/api/v1/campaigns/directory'),
   listShareRequests: () => authReq<ShareRequest[]>('/api/v1/share-requests'),
   createShareRequest: (
     resourceType: ShareResourceType,
@@ -909,7 +983,7 @@ export const api = {
   rejectShareRequest: (id: string) =>
     authReq<void>(`/api/v1/share-requests/${id}/reject`, { method: 'POST' }),
 
-  // --- team performance + credits - authenticated --------------------------
+  // --- team performance - authenticated ------------------------------------
   teamPerformance: () =>
     authReq<TeamPerformance[]>('/api/v1/organisations/me/team-performance'),
   myCredits: () =>
@@ -1067,20 +1141,6 @@ export const api = {
       body: JSON.stringify(patch),
     }),
 
-  // --- safety ----------------------------------------------------------------
-  getSafetySettings: () => authReq<SafetySettings>('/api/v1/safety'),
-  updateSafetySettings: (patch: {
-    allowlist: string[];
-    max_calls_per_run: number;
-    calls_per_window: number;
-    window_minutes: number;
-    daily_budget: number;
-  }) =>
-    authReq<SafetySettings>('/api/v1/safety', {
-      method: 'PATCH',
-      body: JSON.stringify(patch),
-    }),
-
   // --- API keys ------------------------------------------------------------
   listApiKeys: () => authReq<ApiKey[]>('/api/v1/api-keys'),
   createApiKey: (name: string) =>
@@ -1125,6 +1185,55 @@ export const api = {
     }),
 
   // --- voice agents + ai providers (Agentic tab) ----------------------------
+  // --- the numbers an organisation owns -------------------------------------
+  listNumbers: (provider?: string) =>
+    authReq<TelephonyNumber[]>(
+      `/api/v1/telephony/numbers${provider ? `?provider=${provider}` : ''}`,
+    ),
+  /** Ask the carrier what the account actually holds. Idempotent. */
+  syncNumbers: (provider: string) =>
+    authReq<TelephonyNumber[]>(
+      `/api/v1/telephony/numbers/sync?provider=${provider}`,
+      { method: 'POST' },
+    ),
+  /**
+   * Point a number at LiveKit so a run can dial from it.
+   *
+   * This is the step between "the carrier says we own this number" and "a run
+   * may dial from it": it creates the LiveKit trunks and the dispatch rule,
+   * configures the carrier, and marks the number verified. Without it a synced
+   * number stays `discovered` and every run composer reports no line to dial
+   * from, however many carriers are connected.
+   *
+   * `idempotencyKey` is the retry token: reusing it *resumes* the attempt
+   * instead of starting a second one, which is what stops a double-click from
+   * creating a second pair of LiveKit trunks that nobody ever cleans up.
+   */
+  connectNumber: (
+    voiceAgentId: string,
+    body: {
+      provider: string;
+      /** The synced number to connect. Numbers are masked everywhere they are
+       *  shown, so the id is the only handle the client has - the server
+       *  resolves it to the real E.164. */
+      number_id: string;
+      idempotency_key: string;
+    },
+  ) =>
+    authReq<NumberProvisioning>(
+      `/api/v1/voice-agents/${voiceAgentId}/connect-number`,
+      { method: 'POST', body: JSON.stringify(body) },
+    ),
+  numberProvisioningStatus: (voiceAgentId: string) =>
+    authReq<NumberProvisioning>(
+      `/api/v1/voice-agents/${voiceAgentId}/connect-number`,
+    ),
+  setNumberStatus: (numberId: string, status: 'verified' | 'disabled') =>
+    authReq<TelephonyNumber>(`/api/v1/telephony/numbers/${numberId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status }),
+    }),
+
   listVoiceAgents: () => authReq<VoiceAgent[]>('/api/v1/voice-agents'),
   /** Choose which agents stay usable when the plan covers fewer than exist.
    *  Marking more than the limit is allowed - the most recent choice wins and the
@@ -1186,6 +1295,18 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify({ name }),
     }),
+  pinChannel: (channelId: string, pinned: boolean) =>
+    authReq<void>(`/api/v1/channels/${channelId}/pin`, {
+      method: 'PATCH',
+      body: JSON.stringify({ pinned }),
+    }),
+  reorderChannel: (channelId: string, sortOrder: number) =>
+    authReq<void>(`/api/v1/channels/${channelId}/order`, {
+      method: 'PATCH',
+      body: JSON.stringify({ sort_order: sortOrder }),
+    }),
+  deleteChannel: (channelId: string) =>
+    authReq<void>(`/api/v1/channels/${channelId}`, { method: 'DELETE' }),
   addChannelMember: (channelId: string, userId: string) =>
     authReq<void>(`/api/v1/channels/${channelId}/members`, {
       method: 'POST',

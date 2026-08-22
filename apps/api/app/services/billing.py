@@ -164,14 +164,13 @@ async def _override_mapping(
     return mapping or None
 
 
-async def usage_for(conn: asyncpg.Connection, org_id: UUID, *, calls_today: int) -> EntitlementUsage:
+async def usage_for(conn: asyncpg.Connection, org_id: UUID) -> EntitlementUsage:
     members, pending = await org_repo.seat_usage(conn, org_id)
     return EntitlementUsage(
         voice_agents=await voice_agents_repo.count_for_org(conn, org_id),
         seats=members + pending,
         organisations=await org_repo.count_owned_orgs_for_current_user(conn),
         ai_integrations=await ai_keys_repo.count_for_org(conn, org_id),
-        calls_today=calls_today,
     )
 
 

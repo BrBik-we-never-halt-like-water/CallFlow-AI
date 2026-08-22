@@ -28,12 +28,22 @@ from typing import Any, Self
 
 import httpx
 
-from app.integrations.telephony import CarrierError, CarrierTrunk, sip_uri
+from app.integrations.telephony import (
+    CarrierError,
+    CarrierNumber,
+    CarrierTrunk,
+    sip_uri,
+)
 
 log = logging.getLogger("app.integrations.telephony.twilio")
 
 _TRUNKING = "https://trunking.twilio.com/v1"
 _API = "https://api.twilio.com/2010-04-01"
+
+# A ceiling on pagination, not an expected count. 100 pages at 100 per page is
+# far past any real account, and it means a vendor bug cannot hold the request
+# open indefinitely.
+_MAX_NUMBER_PAGES = 100
 
 # Twilio signals from a published, stable set of ranges. Restricting the LiveKit
 # inbound trunk to these is the only thing standing between a leaked origination
@@ -124,6 +134,61 @@ class TwilioCarrier:
             (i for i in items if all(i.get(k) == v for k, v in match.items())),
             None,
         )
+
+    async def _get(self, url: str, *, action: str) -> dict[str, Any]:
+        if self._client is None:
+            raise RuntimeError("TwilioCarrier is not open. Use `async with TwilioCarrier(...)`.")
+        try:
+            response = await self._client.get(url, auth=self._auth)
+        except httpx.HTTPError as exc:
+            raise CarrierError("Twilio", action, f"could not be reached ({type(exc).__name__}).") from exc
+        if response.status_code >= 300:
+            raise CarrierError("Twilio", action, _detail(response))
+        return response.json()
+
+    async def list_numbers(self) -> list[CarrierNumber]:
+        """The voice-capable numbers already on this Twilio account.
+
+        Followed page by page rather than reading the first response only:
+        Twilio returns 50 per page by default and puts the rest behind
+        `next_page_uri`, so an account with more numbers than that would show a
+        truncated picker with no indication anything was missing. The loop is
+        bounded because a vendor that kept returning a next page would
+        otherwise hang the request.
+        """
+        numbers: list[CarrierNumber] = []
+        url: str | None = (
+            f"{_API}/Accounts/{self._account_sid}/IncomingPhoneNumbers.json?PageSize=100"
+        )
+
+        for _ in range(_MAX_NUMBER_PAGES):
+            if url is None:
+                break
+            body = await self._get(url, action="list the numbers on this account")
+            for item in body.get("incoming_phone_numbers") or []:
+                e164 = (item.get("phone_number") or "").strip()
+                sid = (item.get("sid") or "").strip()
+                if not (e164 and sid):
+                    continue
+                capabilities = {
+                    name
+                    for name, enabled in (item.get("capabilities") or {}).items()
+                    if enabled
+                }
+                numbers.append(
+                    CarrierNumber(
+                        provider="twilio",
+                        e164=e164,
+                        number_ref=sid,
+                        label=(item.get("friendly_name") or "").strip() or None,
+                        capabilities=frozenset(capabilities),
+                    )
+                )
+            # Twilio returns this as a path, not an absolute URL.
+            next_page = body.get("next_page_uri")
+            url = f"https://api.twilio.com{next_page}" if next_page else None
+
+        return numbers
 
     async def configure_number(
         self,

@@ -36,6 +36,7 @@ import { useActiveOrg } from '@/lib/hooks/use-active-org';
 import { useOrgRealtime } from '@/lib/hooks/use-org-realtime';
 import { useOrgScopedEffect } from '@/lib/hooks/use-org-scoped-effect';
 import { useSession, type SessionProfile } from '@/lib/hooks/use-session';
+import { PageHeader } from '@/components/app/page-header';
 
 /**
  * Managing this organisation and its team.
@@ -66,18 +67,14 @@ function OrganisationPageContent() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-1">
-        <p className="text-small font-bold text-text-mute">Organisation</p>
-        <h1 className="font-display text-h2 text-text">
-          <SessionGate session={session} skeletonClassName="h-9 w-64">
+      <PageHeader
+        title="Organisation"
+        figure={
+          <SessionGate session={session} skeletonClassName="h-5 w-40">
             {(profile) => profile.active.org_name}
           </SessionGate>
-        </h1>
-        <p className="measure text-small text-text-dim">
-          How this organisation introduces itself on every call, and who&apos;s
-          allowed inside it.
-        </p>
-      </div>
+        }
+      />
 
       <SessionGate session={session}>
         {(profile) => (
@@ -118,7 +115,7 @@ function PageFallback() {
   );
 }
 
-function OrganisationPane({
+export function OrganisationPane({
   profile,
   refresh,
 }: {
@@ -230,7 +227,7 @@ function DeleteOrgSection({ orgName }: { orgName: string }) {
     <>
       <SettingsSection
         title="Delete this organisation"
-        description="Removes everyone's access. Campaigns and runs made under it are gone for good."
+        description="Removes everyone's access. Agents and runs made under it are gone for good."
         footer={
           <Button
             variant="danger"
@@ -325,7 +322,7 @@ function DeleteOrgDialog({
   );
 }
 
-function TeamPane({ profile }: { profile: SessionProfile }) {
+export function TeamPane({ profile }: { profile: SessionProfile }) {
   const toast = useToast();
   const [team, setTeam] = useState<Team | null>(null);
   const [loading, setLoading] = useState(true);
@@ -474,7 +471,7 @@ function TeamPane({ profile }: { profile: SessionProfile }) {
  * (`sharing:request`, operator-only); anyone who happens to own a
  * resource, any role, can be on the receiving end.
  */
-function SharingPane({ profile }: { profile: SessionProfile }) {
+export function SharingPane({ profile }: { profile: SessionProfile }) {
   const toast = useToast();
   const [requests, setRequests] = useState<ShareRequest[] | null>(null);
   const [deciding, setDeciding] = useState<string | null>(null);
@@ -590,7 +587,7 @@ function SharingPane({ profile }: { profile: SessionProfile }) {
         ) : sentByYou.length === 0 ? (
           <EmptyState
             title="Nothing sent"
-            body="Ask for a teammate's campaign or escalation from its own page."
+            body="Ask to help with a teammate's escalation from the Needs a person page."
           />
         ) : (
           <ul className="flex flex-col divide-y divide-rule">
@@ -600,7 +597,7 @@ function SharingPane({ profile }: { profile: SessionProfile }) {
                 className="flex flex-wrap items-center justify-between gap-3 py-3"
               >
                 <span className="min-w-0 truncate text-small text-text">
-                  {request.resource_type === 'campaign' ? 'Campaign' : 'Escalation'}{' '}
+                  Escalation{' '}
                   {request.resource_name
                     ? `"${request.resource_name}"`
                     : request.resource_id}{' '}
@@ -659,7 +656,7 @@ function RemoveTeammateDialog({
     >
       <Dialog
         title={member ? `Remove ${label}?` : 'Remove teammate?'}
-        description="This deletes their CallFlow account entirely, not just their access here - campaigns and runs they created in this organisation move to you, but anything they own in another organisation is unaffected. This can't be undone."
+        description="This deletes their CallFlow account entirely, not just their access here - agents and runs they created in this organisation move to you, but anything they own in another organisation is unaffected. This can't be undone."
         size="sm"
         footer={
           <>

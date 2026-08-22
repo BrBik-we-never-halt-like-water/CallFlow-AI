@@ -74,6 +74,17 @@ function SignInForm() {
         </>
       }
     >
+      {searchParams.get("reason") === "expired" ? (
+        // Arriving at a login page you did not ask for is confusing unless it
+        // says why. The alternative someone reaches for is "did I get signed
+        // out, or is the app broken?" - and they came from a page that could
+        // not load, so that question is live (`ISSUES.md` #174).
+        <p className="mb-4 rounded-md border border-rule bg-surface-sunken px-3 py-2 text-small text-text-dim">
+          Your session ended, so we signed you out. Sign in to pick up where you
+          left off.
+        </p>
+      ) : null}
+
       <form onSubmit={submit} noValidate className="flex flex-col gap-4">
         <Field label="Email" error={error} required>
           <Input

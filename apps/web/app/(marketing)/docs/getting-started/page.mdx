@@ -7,22 +7,36 @@ export const metadata = {
 # Getting started
 
 This walkthrough ends with you looking at a typed result from a real call. Every run
-dials for real, so the first two steps below are about protecting yourself before you
+dials for real, so two of the steps below are about protecting yourself before you
 start one.
 
-## 1. Add a few contacts
+## 1. Connect a carrier and sync its numbers
+
+A run needs a line to dial from, and that line belongs to your organisation rather than
+to any one agent. Open **Integrations**, connect your carrier with its credentials, then
+press **Sync numbers**.
+
+Syncing asks the carrier what the account actually holds and records it. It is safe to
+press twice - it updates the rows it already has rather than making new ones. The
+numbers appear masked, which is enough to tell two lines apart in a picker.
+
+## 2. Add a few contacts
 
 Open **Contacts → Import CSV**, or paste straight from a spreadsheet. Three rows is
 enough to start.
 
-The columns recognised are `name`, `phone`, and `note`. A header row is optional;
+`name`, `phone`, and `note` are the recognised columns. A header row is optional;
 without one, columns are read in that order.
 
+Any **other** column you include becomes per-contact context under its own header, and
+reaches that one contact's prompt - so a `destination` column is how one agent opens
+with Bali for the first person and Singapore for the third:
+
 ```text
-name,phone,note
-Aditi Sharma,+15555550100,asked about Bali in December
-Rahul Verma,+15555550101,honeymoon package enquiry
-Priya Nair,+15555550102,family trip to Singapore
+name,phone,note,destination
+Aditi Sharma,+15555550100,asked about December,Bali
+Rahul Verma,+15555550101,honeymoon package enquiry,Maldives
+Priya Nair,+15555550102,family trip,Singapore
 ```
 
 Every row is validated before anything else happens. Numbers must be E.164 — a
@@ -33,17 +47,24 @@ silently dropped.
 Those sample numbers are reserved fictional ones in the `+1 555 0100–0199` range.
 They cannot connect to a real person, which is why the sample data uses them.
 
-## 2. Pick a campaign
+## 3. Build an agent
 
-A campaign is two things: a goal written in plain English, and the fields you want
-back from every call.
+Open **Agents → New agent**. An agent is how the call sounds and what it comes back
+with:
 
-Start with one of the built-in templates. They are marked `TEMPLATE` and cannot be
-edited in place — duplicate one if you want to change it. Reading a template's goal
-is also the fastest way to understand what a good goal looks like; see
-[Writing a good goal](/docs/writing-a-good-goal).
+- a **name**, so you can tell it apart in the run composer
+- how it hears, speaks, and thinks — a transcription provider, a voice, and a model.
+  The presets pick a sensible combination if you would rather not choose.
+- a **system prompt** — the goal, in plain English. This is the part that decides
+  whether the call goes well; see [Writing a good goal](/docs/writing-a-good-goal).
+- **fields to collect** — what every call must come back with, each with a key, a type,
+  and a description. Mark the ones that matter as required; see
+  [Result schemas](/docs/result-schemas).
 
-## 3. Set your guards before the first run
+An agent is shared across your organisation rather than being yours alone, and it is
+reused by every run, so it is worth writing the prompt properly once.
+
+## 4. Set your guards before the first run
 
 Every run dials for real, so do two things before you start one:
 
@@ -55,17 +76,24 @@ Every run dials for real, so do two things before you start one:
 Both live in [Safety configuration](/docs/safety-configuration), and both are also
 visible as mono chips on the run composer, above the button that starts the run.
 
-## 4. Start the run
+## 5. Start the run
 
-Go to **Runs → New run**, review the guards on the panel, and press Start. Each
-contact is:
+Go to **Runs → New run**. A run is where the three pieces come together: pick the
+**agent**, pick one or more of your **numbers** to dial from, and load your
+**contacts**. Review the guards on the panel, then press Start.
+
+You can add a **run instruction** here too — one line appended to every prompt in this
+run only, for the case where a one-off note does not justify editing an agent the whole
+organisation shares.
+
+Each contact is then:
 
 - validated before anything else happens
 - checked against the safety gate, including the allowlist and the suppression list
-- called with the goal rendered and each contact's details substituted in
+- called with the agent's prompt assembled around that contact's own details
 - passed through the real triage logic as the call ends
 
-## 5. Read the result
+## 6. Read the result
 
 Open any row as results land. You get the conversation on the left and, on the right,
 the extracted fields plus the triage decision as a short chain — `Frustration detected

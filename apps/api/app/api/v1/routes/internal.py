@@ -26,19 +26,21 @@ import uuid
 from typing import Annotated, Any
 
 import asyncpg
-from fastapi import APIRouter, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 from pydantic import BaseModel, Field
 
-from app.api.v1.routes.campaigns import resolve_campaign
 from app.core.config import config
 from app.core.logging import CallContext
 from app.database import database
 from app.database.repositories import escalations as escalations_repo
 from app.database.repositories import runs as runs_repo
+from app.database.repositories import voice_agents as voice_agents_repo
+from app.domain.collection import handoff_questions, missing_required
 from app.domain.entities import (
     NEEDS_A_PERSON_DISPOSITIONS,
     TERMINAL_STATUSES,
     CallOutcome,
+    CollectField,
 )
 from app.domain.plans import PlanId, entitlements_for
 from app.domain.triage import triage
@@ -75,16 +77,47 @@ class CallCompletion(BaseModel):
     transcript: str | None = None
     summary: str | None = None
     extracted: dict[str, Any] = Field(default_factory=dict)
+    #: The org's own business fields, from the agent's collect_fields.
+    #: Kept apart from `extracted` so a field an org happened to name
+    #: `sentiment` cannot rewrite triage's own input.
+    collected: dict[str, Any] = Field(default_factory=dict)
     duration_seconds: int | None = None
     error: str | None = None
 
 
-def _require_internal_key(presented: str | None) -> None:
+def _collect_fields(raw: object) -> list[CollectField]:
+    """An agent's `collect_fields` as typed values.
+
+    Tolerant of a non-list: rows written before the column existed read back as
+    anything, and a completion report must never be lost because the agent that
+    produced it predates a feature.
+    """
+    if not isinstance(raw, list):
+        return []
+    return [
+        CollectField(**item)
+        for item in raw
+        if isinstance(item, dict) and item.get("key")
+    ]
+
+
+def _require_internal_key(
+    x_callflow_internal_key: Annotated[str | None, Header()] = None,
+) -> None:
     """Fails closed on an unset secret, so a misconfigured deployment refuses
-    writes rather than accepting anonymous ones."""
+    writes rather than accepting anonymous ones.
+
+    A **dependency**, not a call inside the handler, and the difference is the
+    point: FastAPI resolves dependencies before it validates the request body,
+    so an unauthenticated caller gets the same bare 404 whatever it sends.
+    Called from inside the handler, every malformed request answered 422 naming
+    the field that was wrong - handing anyone who could reach the port the exact
+    schema of an internal endpoint, one field at a time (`ISSUES.md` #154).
+    """
     if not config.internal_api_secret:
         log.error("internal callback rejected: CALLFLOW_INTERNAL_API_SECRET is not set")
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+    presented = x_callflow_internal_key
     if not presented or not secrets.compare_digest(presented, config.internal_api_secret):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
 
@@ -131,11 +164,14 @@ async def _settle_usage_credit(
     )
 
 
-@router.post("/runs/{run_id}/complete", status_code=status.HTTP_200_OK)
+@router.post(
+    "/runs/{run_id}/complete",
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(_require_internal_key)],
+)
 async def complete_call(
     run_id: str,
     payload: CallCompletion,
-    x_callflow_internal_key: Annotated[str | None, Header()] = None,
 ) -> dict[str, bool]:
     """Record one finished call and, if it was the last, close the run.
 
@@ -148,8 +184,6 @@ async def complete_call(
     A 404 for both a bad key and an unknown run: a caller without the secret
     learns nothing about which run ids exist.
     """
-    _require_internal_key(x_callflow_internal_key)
-
     # Checked here rather than inferred from the triaged disposition: `triage()`
     # assigns a bucket to any status it is given, so a worker reporting
     # "RINGING" would be recorded as a settled outcome and the row would never
@@ -172,31 +206,54 @@ async def complete_call(
 
     with CallContext(run_id=run_id, org_id=str(owner["org_id"])):
         async with database.as_user(str(owner["auth_user_id"])) as conn:
-            resolved = await resolve_campaign(conn, owner["org_id"], owner["campaign_id"])
-            if resolved is None:
-                # The campaign was deleted mid-run. The call still happened, so
-                # the transcript is still worth keeping - triage just cannot ask
-                # this campaign whether negative sentiment should escalate, so
-                # it takes the safer default.
-                log.warning("run %s references a campaign that no longer resolves", run_id)
-                escalate_on_negative = True
+            agent_id = owner["voice_agent_id"]
+            agent_row = (
+                await voice_agents_repo.get_org_agent(conn, owner["org_id"], agent_id)
+                if agent_id
+                else None
+            )
+            if agent_row is None:
+                # `runs.voice_agent_id` is ON DELETE RESTRICT, so this should not
+                # be reachable - but a run started before ADR-8 has no agent at
+                # all, and the conversation still happened. Keep the transcript
+                # rather than 500 on a real call; a missing agent just means no
+                # fields to check completeness against.
+                log.warning("run %s has no resolvable agent", run_id)
+                fields: list[CollectField] = []
             else:
-                escalate_on_negative = resolved[0].escalate_on_negative
+                fields = _collect_fields(agent_row["collect_fields"])
+
+            # Which required answers the call ended without. Computed here, in
+            # the one place that has both the agent's contract and the call's
+            # result - `triage()` stays pure and is handed the answer rather than
+            # learning what a schema is (ADR-5).
+            missing = missing_required(fields, payload.collected)
 
             outcome = triage(
                 CallOutcome(
                     contact_name=payload.contact_name,
                     phone_masked=payload.phone_masked,
-                    campaign_id=owner["campaign_id"],
+                    voice_agent_id=str(agent_id) if agent_id else None,
                     status=status_value,
                     run_id=payload.provider_call_id,
                     transcript=payload.transcript,
                     summary=payload.summary or payload.extracted.get("summary"),
                     extracted=payload.extracted,
+                    collected=payload.collected,
+                    missing_required_fields=missing,
+                    handoff_questions=handoff_questions(
+                        fields,
+                        missing=missing,
+                        wants_human=bool(payload.extracted.get("wants_human_callback")),
+                        do_not_call=bool(payload.extracted.get("do_not_call")),
+                    ),
                     duration_seconds=payload.duration_seconds,
                     error=payload.error,
                 ),
-                escalate_on_negative=escalate_on_negative,
+                # A campaign used to carry this per-campaign. No agent-level
+                # equivalent exists yet, so it takes the safer default: a
+                # negative call is worth one retry rather than being auto-closed.
+                escalate_on_negative=True,
             )
 
             record = outcome.model_dump(mode="json")

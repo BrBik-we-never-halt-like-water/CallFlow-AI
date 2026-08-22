@@ -3,7 +3,7 @@
  *
  * The builder is long enough that losing it to a refresh - or to clicking
  * Contacts to check something - costs real work. The same shape and the same
- * failure posture as `campaign-draft.ts`: a read that cannot parse returns
+ * failure posture as `run-settings.ts`: a read that cannot parse returns
  * null rather than throwing, and a write that cannot store is dropped, so a
  * browser with storage disabled degrades to "this session only" instead of
  * breaking the editor.
@@ -13,7 +13,7 @@
  * organisation is not offered back inside another. `new` is its own key.
  */
 
-import type { CampaignField, TelephonyProvider } from './api';
+import type { CollectField } from './api';
 
 const DRAFT_KEY = 'callflow.agent.draft';
 
@@ -49,8 +49,7 @@ export interface AgentDraft {
   voiceId: string | null;
   llmModel: string | null;
   systemPrompt: string;
-  collectFields: CampaignField[];
-  telephonyProvider: TelephonyProvider | null;
+  collectFields: CollectField[];
   /** What the editor picked on its own, to tell a seeded draft from a built
    *  one. Absent on drafts written before this field existed. */
   seed?: AgentDraftSeed;
@@ -223,8 +222,7 @@ function hasWork(draft: AgentDraft): boolean {
     draft.name?.trim() ||
     draft.systemPrompt?.trim() ||
     draft.collectFields?.length ||
-    draft.voiceId ||
-    draft.telephonyProvider
+    draft.voiceId
   ) {
     return true;
   }

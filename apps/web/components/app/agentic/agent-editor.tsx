@@ -5,15 +5,15 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Field } from '@/components/ui/field';
 import { Input, Textarea } from '@/components/ui/input';
+import { PromptPlaceholders } from '@/components/app/agentic/prompt-placeholders';
 import { Panel } from '@/components/ui/panel';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tooltip } from '@/components/ui/tooltip';
 import { useToast } from '@/components/ui/toast';
 import {
   api,
-  type CampaignField,
+  type CollectField,
   type ProviderCatalog,
-  type TelephonyProvider,
   type VoiceAgent,
   type VoiceAgentDraft,
 } from '@/lib/api';
@@ -31,16 +31,13 @@ import { AgentPresets } from './agent-presets';
 import { CollectFieldsEditor } from './collect-fields-editor';
 import { ProviderWheel } from './provider-wheel';
 
-const TELEPHONY_LABEL: Record<TelephonyProvider, string> = {
-  twilio: 'Twilio',
-  plivo: 'Plivo',
-};
-
 /**
- * The voice-agent editor: name, then four legs of provider configuration
- * (STT, TTS, model, phone number) plus the system prompt.
+ * The voice-agent editor: name, then three legs of provider configuration
+ * (STT, TTS, model) plus the system prompt and the fields to collect.
  *
- * Structurally the same shape as `campaign-editor.tsx` - seeded local state,
+ * No number here: which line a call comes from is chosen per run (ADR-8), which
+ * is what lets one agent dial through any carrier the organisation has
+ * connected. Seeded local state,
  * a `blocker` string that names the exact thing standing between here and a
  * save, one save handler that creates or updates depending on `existing`.
  *
@@ -86,16 +83,29 @@ export function AgentEditor({ existing }: { existing?: VoiceAgent }) {
   const [systemPrompt, setSystemPrompt] = useState(
     draft?.systemPrompt ?? existing?.system_prompt ?? '',
   );
-  const [collectFields, setCollectFields] = useState<CampaignField[]>(
+  const promptRef = useRef<HTMLTextAreaElement>(null);
+
+  /** Insert at the caret, not at the end - someone clicking `{name}` is
+   *  almost always mid-sentence. Falls back to appending when the field has
+   *  never been focused and there is no caret to insert at. */
+  function insertPlaceholder(token: string) {
+    const field = promptRef.current;
+    if (!field) {
+      setSystemPrompt((prompt) => prompt + token);
+      return;
+    }
+    const start = field.selectionStart ?? field.value.length;
+    const end = field.selectionEnd ?? start;
+    setSystemPrompt(field.value.slice(0, start) + token + field.value.slice(end));
+    // After React has written the new value, or the caret lands on the old one.
+    requestAnimationFrame(() => {
+      field.focus();
+      field.setSelectionRange(start + token.length, start + token.length);
+    });
+  }
+  const [collectFields, setCollectFields] = useState<CollectField[]>(
     draft?.collectFields ?? existing?.collect_fields ?? [],
   );
-  // Read-only for now: the number picker was pulled out of this editor pending
-  // a rethink, but an agent that already has a number keeps it through a save
-  // rather than being silently unassigned by an edit that never showed it.
-  const [telephonyProvider] = useState<TelephonyProvider | null>(
-    draft?.telephonyProvider ?? existing?.telephony_provider ?? null,
-  );
-
   const [catalog, setCatalog] = useState<ProviderCatalog | null>(null);
   const [saving, setSaving] = useState(false);
   // Carried forward from a restored draft, so a resumed session still knows
@@ -148,7 +158,6 @@ export function AgentEditor({ existing }: { existing?: VoiceAgent }) {
       llmModel,
       systemPrompt,
       collectFields,
-      telephonyProvider,
       seed: seed.current,
     });
   }, [
@@ -161,7 +170,6 @@ export function AgentEditor({ existing }: { existing?: VoiceAgent }) {
     llmModel,
     systemPrompt,
     collectFields,
-    telephonyProvider,
   ]);
 
   const blocker = useMemo<string | null>(() => {
@@ -172,16 +180,8 @@ export function AgentEditor({ existing }: { existing?: VoiceAgent }) {
     if (name.trim().length < 2)
       return 'Give the agent a name of at least 2 characters.';
     if (!llmModel) return 'Pick a model before saving.';
-    if (telephonyProvider) {
-      const option = catalog?.telephony.find(
-        (t) => t.provider === telephonyProvider,
-      );
-      if (!option?.connected) {
-        return `Connect a ${TELEPHONY_LABEL[telephonyProvider]} number in Settings → Integrations before assigning it to an agent.`;
-      }
-    }
     return null;
-  }, [canWrite, name, llmModel, telephonyProvider, catalog]);
+  }, [canWrite, name, llmModel]);
 
   async function save() {
     if (blocker) return;
@@ -198,7 +198,6 @@ export function AgentEditor({ existing }: { existing?: VoiceAgent }) {
         system_prompt: systemPrompt.trim() || null,
         prebuilt_persona: existing?.prebuilt_persona ?? null,
         collect_fields: collectFields.filter((f) => f.key.trim().length > 0),
-        telephony_provider: telephonyProvider,
       };
       if (existing) {
         await api.updateVoiceAgent(existing.id, payload);
@@ -335,7 +334,18 @@ export function AgentEditor({ existing }: { existing?: VoiceAgent }) {
               title="Voice"
               entries={catalog.tts}
               selectedId={ttsProvider}
-              onSelect={(entry) => setTtsProvider(entry.id)}
+              // The voice moves with the provider. `voice_id` is one column
+              // shared by every vendor and the names do not carry across -
+              // ElevenLabs' "Rachel" is not a speaker Sarvam's bulbul model
+              // has - so keeping the old value made the wheel *display* a
+              // valid voice (it falls back to the first option) while the
+              // saved agent still held the previous vendor's name, and the
+              // call then failed at the pipeline with the contact already
+              // ringing (`ISSUES.md` #162).
+              onSelect={(entry) => {
+                setTtsProvider(entry.id);
+                setVoiceId(entry.voice_options[0] ?? null);
+              }}
               category="tts"
               selectedVoiceId={voiceId}
               onVoiceIdChange={(_entry, id) => setVoiceId(id)}
@@ -349,12 +359,14 @@ export function AgentEditor({ existing }: { existing?: VoiceAgent }) {
               page that benefits from the whole line length. */}
           <section className="flex flex-col gap-3">
             <div className="flex flex-wrap items-center gap-3">
-              <h2 className="font-display text-h4 leading-none text-text">
+              <h2 className="text-[0.6875rem] font-semibold uppercase tracking-[0.05em] leading-none" style={{ color: 'var(--dash-text)' }}>
                 System prompt
               </h2>
               <PersonaTag persona={existing?.prebuilt_persona ?? null} />
             </div>
+            <PromptPlaceholders onInsert={insertPlaceholder} disabled={!canWrite} />
             <Textarea
+              ref={promptRef}
               value={systemPrompt}
               onChange={(e) => setSystemPrompt(e.target.value)}
               rows={16}

@@ -7,6 +7,7 @@ import {
   MagnifyingGlassIcon,
 } from '@phosphor-icons/react/dist/ssr';
 import { BrandMark } from '@/components/app/brand-mark';
+import { CarrierNumbers } from '@/components/app/carrier-numbers';
 import { VoiceField } from '@/components/brand/voice-field';
 import { NotWiredNotice } from '@/components/app/settings-section';
 import { SessionGate } from '@/components/app/session-gate';
@@ -28,6 +29,7 @@ import {
 import { beginOAuth, takePendingOAuth } from '@/lib/oauth';
 import { useOrgScopedEffect } from '@/lib/hooks/use-org-scoped-effect';
 import { useSession, type SessionProfile } from '@/lib/hooks/use-session';
+import { PageHeader } from '@/components/app/page-header';
 
 /**
  * One filterable grid, not seven stacked walls of cards.
@@ -127,6 +129,16 @@ function IntegrationsContent({ profile }: { profile: SessionProfile }) {
     [credentials],
   );
 
+  /** Carriers only: the numbers section can sync from a phone provider, and
+   *  asking a speech or model vendor for numbers is meaningless. */
+  const connectedCarriers = useMemo(
+    () =>
+      (catalogue ?? [])
+        .filter((s) => s.roles.includes('telephony') && connectedIds.has(s.id))
+        .map((s) => s.id),
+    [catalogue, connectedIds],
+  );
+
   const counts = useMemo(() => {
     const map = new Map<Filter, number>([['all', (catalogue ?? []).length]]);
     for (const spec of catalogue ?? []) {
@@ -182,6 +194,12 @@ function IntegrationsContent({ profile }: { profile: SessionProfile }) {
         connectedIds={connectedIds}
         loading={loading}
       />
+
+      {/* Directly under the readiness line, because that line's "ready to place
+          a call" is about credentials and a credential is not a diallable line.
+          A connected carrier whose numbers are all still `discovered` cannot
+          carry a run, and this is the only screen that can say so. */}
+      <CarrierNumbers providers={connectedCarriers} canWrite={canWrite} />
 
       <div className="flex flex-col gap-3">
         <label className="relative block">
@@ -329,18 +347,15 @@ function Readiness({
 
   return (
     <header className="flex flex-col gap-3">
-      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-        <h1 className="text-display-l font-medium tracking-tight text-text">
-          Integrations
-        </h1>
+      <PageHeader title="Integrations">
         {loading ? null : (
           <p className="text-small text-text-dim">
-            <span className="font-mono tabular-nums text-text">{done}</span>
+            <span className="dash-num font-semibold" style={{ color: 'var(--dash-figure)' }}>{done}</span>
             <span className="text-text-mute">/{NEEDED.length}</span> ready to
             place a call
           </p>
         )}
-      </div>
+      </PageHeader>
       {loading ? (
         <Skeleton className="h-9 w-full max-w-xl rounded-full" />
       ) : (
@@ -564,7 +579,7 @@ function ConnectDialog({
     if (!valid) return;
     setSaving(true);
     try {
-      await api.connectProvider(spec.id, {
+      const saved = await api.connectProvider(spec.id, {
         fields: Object.fromEntries(
           spec.fields
             .map((f) => [f.key, (values[f.key] ?? '').trim()] as const)
@@ -572,13 +587,40 @@ function ConnectDialog({
         ),
         phone_number: isCarrier ? phoneNumber.trim() || undefined : undefined,
       });
-      toast({ tone: 'success', title: `${spec.name} connected` });
+      // `verified: null` means the check could not be completed - no probe for
+      // this vendor, the vendor was unreachable, or the key is scoped too
+      // narrowly to confirm. The credential is stored either way, and saying
+      // "connected" for an unverified one is the success state this whole
+      // verification path exists to remove (`ISSUES.md` #169).
+      if (saved.verified === false) {
+        toast({
+          tone: 'error',
+          title: `${spec.name} didn't accept that`,
+          body: saved.verification_note ?? undefined,
+        });
+      } else if (saved.verified === null) {
+        toast({
+          tone: 'info',
+          title: `${spec.name} saved, not confirmed`,
+          body: saved.verification_note ?? undefined,
+        });
+      } else {
+        toast({ tone: 'success', title: `${spec.name} connected` });
+      }
       onChanged();
     } catch (error) {
+      // The API verifies against the vendor before storing, so this is most
+      // often the vendor's own refusal rather than a failure to save. Its
+      // message says which, and names where to get a working key - so it is
+      // the body, and the dialog stays open with the fields still filled in
+      // rather than closing on a credential that was never stored.
       toast({
         tone: 'error',
-        title: "Couldn't save credentials",
-        body: error instanceof Error ? error.message : undefined,
+        title: `${spec.name} didn't accept that`,
+        body:
+          error instanceof Error
+            ? error.message
+            : 'The credentials were not saved.',
       });
     } finally {
       setSaving(false);

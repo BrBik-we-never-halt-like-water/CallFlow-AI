@@ -2,6 +2,7 @@
 
 import {
   BuildingsIcon,
+  CoinsIcon,
   GearSixIcon,
   SignOutIcon,
   UserCircleIcon,
@@ -177,7 +178,17 @@ export function UserMenu({
               </Link>
             </DropdownMenuItem>
           </>
-        ) : null}
+        ) : (
+          <DropdownMenuItem>
+            <Link
+              href="/app/billing"
+              className="flex flex-1 items-center gap-2"
+            >
+              <CoinsIcon aria-hidden className="size-4" />
+              My credits
+            </Link>
+          </DropdownMenuItem>
+        )}
 
         <DropdownMenuItem onSelect={handleSignOut} disabled={signingOut}>
           <SignOutIcon aria-hidden className="size-4" />

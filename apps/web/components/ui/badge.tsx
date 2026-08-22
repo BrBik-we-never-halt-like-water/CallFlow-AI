@@ -1,26 +1,22 @@
 import { cn } from '@/lib/cn';
-import { Lamp } from '@/components/brand/lamp';
 import type { LampState } from '@/lib/lamp';
 
 /**
- * Status badge - a lamp plus its label, in one pill.
+ * Status badge - the label, set in its own status colour.
  *
- * Construction follows §4.2 exactly: the surface and rule are mixed from the
- * lamp colour, but the *text* uses the `-text` alias. On a light surface that
- * resolves to the darkened `-ink` variant, because the pure lamp colours do not
- * reach 4.5:1 against paper. The dot keeps the pure colour, so the badge and the
- * lamp it refers to are visibly the same thing.
+ * No dot and no filled pill. The dot made colour the carrier and left the
+ * word repeating it, and the pill turned every list into a row of coloured
+ * blocks louder than the data it labelled. What is left is the smallest
+ * thing that works, and it matches `StatusPill` on the dashboard so one
+ * status reads identically wherever it is drawn (CLAUDE.md §4 #10).
  *
- * The label is never optional. Colour is not allowed to be the only carrier of
- * meaning - a colourblind operator has to be able to run this product.
+ * The text uses the `-text` alias, which resolves to the darkened `-ink`
+ * variant on a light surface - the pure status colours do not clear 4.5:1
+ * against paper.
+ *
+ * The label is never optional. Colour is not allowed to be the only carrier
+ * of meaning - a colourblind operator has to be able to run this product.
  */
-const LAMP_VAR: Record<LampState, string> = {
-  off: 'var(--lamp-off)',
-  ice: 'var(--lamp-ice)',
-  brass: 'var(--lamp-brass)',
-  jade: 'var(--lamp-jade)',
-  flare: 'var(--lamp-flare)',
-};
 
 const TEXT: Record<LampState, string> = {
   off: 'text-lamp-off-text',
@@ -33,28 +29,23 @@ const TEXT: Record<LampState, string> = {
 export function LampBadge({
   state,
   children,
-  pulse = false,
   className,
 }: {
   state: LampState;
   children: React.ReactNode;
+  /** Accepted and ignored: there is no dot left to pulse. Kept so the
+   *  existing call sites compile unchanged. */
   pulse?: boolean;
   className?: string;
 }) {
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-2 rounded-full border px-2.5 py-1 shadow-xs',
-        'text-small leading-none font-medium whitespace-nowrap',
+        'inline-flex items-center whitespace-nowrap text-small leading-none font-medium',
         TEXT[state],
         className,
       )}
-      style={{
-        background: `color-mix(in oklab, ${LAMP_VAR[state]} 12%, transparent)`,
-        borderColor: `color-mix(in oklab, ${LAMP_VAR[state]} 30%, transparent)`,
-      }}
     >
-      <Lamp state={state} size="sm" pulse={pulse} />
       {children}
     </span>
   );

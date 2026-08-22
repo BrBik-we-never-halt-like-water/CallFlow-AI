@@ -226,8 +226,8 @@ class RequirePermission:
     """Dependency factory guarding an endpoint with one permission.
 
     Usage:
-        @router.post("/campaigns",
-                     dependencies=[Depends(RequirePermission(Permission.CAMPAIGNS_WRITE))])
+        @router.post("/voice-agents",
+                     dependencies=[Depends(RequirePermission(Permission.AGENTS_WRITE))])
 
     The message names the role that would be allowed, because "not permitted" leaves
     the user with nothing to act on.

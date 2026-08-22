@@ -22,7 +22,8 @@ that both say `completed` and two rows where one is jade and one is flare.
 
 ## Your own fields
 
-Add fields in the campaign editor. Each one needs a key, a type, and a description.
+Add fields to an agent, in the **Fields to collect** editor. Each one needs a key, a
+type, a description, and a decision about whether it is required.
 
 The description is not documentation - it is the instruction the extraction uses to
 decide what belongs in that field. `"party_size"` with the description "number of
@@ -30,29 +31,40 @@ people travelling, including children" behaves differently from the same key wit
 description at all. Write them as if explaining to a colleague who will fill the form
 in for you.
 
-Supported types:
+The editor offers five types. Four of them travel to the service as themselves:
 
-| Type      | Comes back as              | Use it for                           |
-| --------- | -------------------------- | ------------------------------------ |
-| `string`  | text                       | Anything in the contact's own words. |
-| `number`  | numeric                    | Counts, durations, amounts.          |
-| `boolean` | true / false               | A yes-or-no fact.                    |
-| `date`    | ISO date string            | A specific day.                      |
-| `enum`    | one of your listed options | A choice from a fixed set.           |
+| Type      | Comes back as   | Use it for                           |
+| --------- | --------------- | ------------------------------------ |
+| `string`  | text            | Anything in the contact's own words. |
+| `number`  | numeric         | Counts, durations, amounts.          |
+| `integer` | a whole number  | Counts that cannot be fractional.    |
+| `boolean` | true / false    | A yes-or-no fact.                    |
 
-Prefer an `enum` over a `string` wherever the answers really are a fixed set. A string
-field for location fit will come back as "hybrid", "Hybrid", "2 days a week", and
-"flexible" across four calls; an enum comes back as one of your four values, every
-time, and can be filtered.
+**Date** and **Choice** are the other two. Both are sent as `string`, with their
+constraint folded into the description - "one of: onsite, hybrid, remote_only" is what
+the engine actually reads when it decides what belongs in the field, so the constraint
+still does its work while the transport type stays one the service validates.
 
-## Nothing is required except the two defaults
+Prefer **Choice** over plain text wherever the answers really are a fixed set. A free
+text field for location fit will come back as "hybrid", "Hybrid", "2 days a week", and
+"flexible" across four calls; a listed set of options comes back as one of your four
+values far more often, and can be filtered.
+
+## A missing field is missing, not invented
 
 A field the contact never mentioned comes back null rather than invented. That is
 deliberate, and it is why the results are trustworthy: an extraction that fills every
 field on every call is guessing on some of them.
 
-If a field being missing means the call was not useful, that belongs in your triage
-reading of the results - not in forcing the agent to produce a value it does not have.
+Marking a field **required** does not change that. It does not force the agent to
+produce a value it does not have - it says the value matters. Two things follow. The
+agent is told which fields are required, so its conversational priority matches yours.
+And a call that connected and still ended without one is escalated rather than
+auto-closed, with the missing fields named in the reason - see
+[Triage rules](/docs/triage-rules).
+
+So the rule of thumb is: required means "a person should chase this if the call did
+not get it", not "invent it".
 
 ## Extraction happens during the call
 
@@ -66,7 +78,7 @@ to ask again, in the same call, which no post-hoc parser can do.
 
 ## Example
 
-A lead qualification campaign returning six fields:
+An agent qualifying leads, returning six fields:
 
 ```json
 {
@@ -100,8 +112,9 @@ A lead qualification campaign returning six fields:
 
 ## Changing a schema later
 
-Editing a campaign's fields does not rewrite results that already exist. Old runs keep
+Editing an agent's fields does not rewrite results that already exist. Old runs keep
 the shape they were recorded with, so a report you built last month still works.
 
-If you need a clean break, duplicate the campaign instead of editing it. The runs stay
-separated and you can compare the two.
+An agent is shared infrastructure - everyone in the organisation reads the same one -
+so if you need a clean break, build a second agent rather than editing the one other
+people's runs depend on. The runs stay separated and you can compare the two.

@@ -203,21 +203,56 @@ These override style preference, convenience, and personal taste.
 8. **Every run dials for real - there is no dry-run gate.** That was a deliberate,
    confirmed removal (`ISSUES.md` iteration 4), not a cosmetic UI change: `dry_run` does
    not exist on `Config`, `CallOutcome`, the run-start request, or anywhere in the
-   frontend. The guards that must hold on the very first call an organisation ever makes
-   are the allowlist, the per-run ceiling, rate limiting, the daily budget, E.164
-   validation, and the suppression list - the last of these is checked **per dial**,
-   inside `check_dial_allowed()`, not just shown in the interface (`ISSUES.md` #3 -
-   enforcement is real, though nothing yet writes to the list from the product itself;
-   don't describe it as fully closed). Calling windows are **not** currently enforced
+   frontend. **`check_dial_allowed()` now checks only the suppression list**, per dial
+   - the allowlist, the per-run ceiling, rate limiting, the daily budget, E.164
+   validation, and the per-teammate call-count allocation were all removed at the
+   product owner's direction, pending a replacement security layer (`ISSUES.md` #178,
+   `domain/safety.py`'s module docstring). This is not a partial or accidental
+   weakening - it was a deliberate call, made with the same scrutiny that removing
+   dry_run required, and it means the suppression check is currently the *only* thing
+   standing between a run and a real dial. The run-start credit checks
+   (org-wide balance, per-teammate usage-credit cap) in `routes/runs.py` are separate
+   from this gate and still enforced. Calling windows are **not** currently enforced
    anywhere server-side despite several surfaces implying they are (`ISSUES.md` #20) -
    do not add a new guard to this list, or claim one is real, without verifying it's
-   actually checked in `check_dial_allowed()`, not just displayed. Weakening any real
-   guard requires the same scrutiny as removing dry_run did.
+   actually checked in `check_dial_allowed()`, not just displayed. Restoring any of the
+   removed guards, or weakening the suppression check that remains, requires the same
+   scrutiny as removing dry_run did - this is a security-relevant gate, not a place for
+   a quiet drive-by edit.
 9. **Never show a success state for something that did not happen.** If an action is not
    wired up, say so plainly. A fake "check your inbox" leaves someone waiting for an email
    that will never arrive, and they blame the product rather than the gap. Existing pattern:
    `AuthNotice` / `NotWiredNotice`.
-10. **Colour with meaning is reserved for meaning.** The five lamp colours communicate call
+10. **Colour with meaning is reserved for meaning.** This rule is unchanged; what carries
+    it now depends on the surface, because there are two.
+
+    **The dashboard (`/app`) - the coral surface.** Its palette is `.dash` in
+    `globals.css`, and it is self-contained: nothing on it reads a lamp token, and no
+    value crosses between the two palettes. `--dash-brand` (`#F04A49`) is the identity
+    colour - active nav, credits meter, chart bars and line, selected tab, upgrade
+    button. Red here means *CallFlow*, not *error*.
+
+    **Status on that surface is coloured text, never a dot.** `StatusPill` sets the
+    status word itself in its own colour on a soft backing of the same hue. There are
+    no lamp dots on the dashboard at all. The dot-plus-neutral-word pattern put the
+    meaning in the colour and made the word a duplicate; a coloured word needs no
+    legend and gives assistive tech the same information a sighted reader gets.
+
+    **The constraint that replaces the lamp hue-distance rule:** brand coral and a red
+    danger status are the same hue family, so `--dash-danger` (`#C2352F`) is deliberately
+    deeper and less orange than the brand - far enough that a "Failed" pill can never be
+    mistaken for chrome. **If you move the brand hue, re-verify that separation first.**
+    It is the one thing keeping a failed call from looking like a button, and it is the
+    direct successor to the hue-distance argument that governed the indigo primary.
+
+    **Dark mode there is layered, not inverted:** four elevations (`#0B0D0E` app,
+    `#101214` sidebar, `#141719` card, `#181C1F` elevated), separating panels by surface
+    contrast rather than shadow. See `apps/web/DESIGN_NOTES.md` §2a.
+
+    **Everywhere else - the lamp surface.** Marketing, auth, and every `/app/*` route the
+    dashboard rebuild has not reached still follow the original rule below, unchanged.
+
+    The five lamp colours communicate call
     state and nothing else - never buttons, links, headings, or decoration. See
     `apps/web/DESIGN_NOTES.md` §2 for the three documented exceptions. With dry_run gone,
     `ice` (previously "simulated") is reserved and currently unassigned - do not repurpose

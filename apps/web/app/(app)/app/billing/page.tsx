@@ -376,31 +376,6 @@ function OrgBilling({ profile }: { profile: SessionProfile }) {
       />
 
       <SettingsSection
-        title="Calls today"
-        description={
-          limits.daily_call_budget !== null &&
-          overview.effective_daily_call_budget < limits.daily_call_budget
-            ? `A safety ceiling, not a plan allowance - it exists to bound a runaway, and usage credit above is what actually limits how much you can call. This organisation is set to ${overview.effective_daily_call_budget}, below the ${limits.daily_call_budget} the deployment permits.`
-            : 'A safety ceiling over a rolling 24 hours, identical on every plan - it exists to bound a runaway, not to meter you. Usage credit above is the real limit. Set a lower one in Settings → Safety.'
-        }
-      >
-        <EntitlementMeter
-          label="Calls used today"
-          used={usage.calls_today}
-          // The effective ceiling, not the plan allowance. Settings → Safety and
-          // the deployment default can both be lower, and the lower one is what
-          // runs actually stop at.
-          limit={overview.effective_daily_call_budget}
-          // "a rolling 24 hours", not "until tomorrow": the org-wide limiter prunes
-          // its bucket to the last 86,400 seconds (`rate_limit.py`), so capacity
-          // comes back gradually as old calls age out rather than all at once at
-          // midnight. The copy here used to say "Resets daily", which is the one
-          // thing it does not do.
-          atLimitHint="Capacity returns as calls from the last 24 hours age out."
-        />
-      </SettingsSection>
-
-      <SettingsSection
         title="Plans"
         description="Every plan, and what each one includes."
         footer={

@@ -3,10 +3,9 @@ import { Panel } from '@/components/ui/panel';
 /**
  * A settings group: heading, one line of explanation, then the controls.
  *
- * `effect` is the important prop. Every safety control in this product shows its current
- * effect in plain language underneath it - "Only 1 number can be dialled" rather than
- * just an allowlist field - because a guard whose consequence you have to infer is a
- * guard people set wrong.
+ * `effect` is the important prop. A control that changes what the product does to
+ * real people states its current effect in plain language underneath itself, because
+ * a setting whose consequence you have to infer is a setting people get wrong.
  */
 export function SettingsSection({
   title,
@@ -26,7 +25,12 @@ export function SettingsSection({
   return (
     <Panel className="flex flex-col gap-4 p-4 sm:p-5">
       <div className="flex flex-col gap-1">
-        <h2 className="text-h3 font-medium text-text">{title}</h2>
+        <h2
+          className="text-[0.6875rem] font-semibold uppercase tracking-[0.05em]"
+          style={{ color: 'var(--dash-text)' }}
+        >
+          {title}
+        </h2>
         {description ? (
           <p className="measure text-small text-text-dim">{description}</p>
         ) : null}

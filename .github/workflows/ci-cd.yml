@@ -264,9 +264,27 @@ jobs:
             # on how it happened to be cloned.
             git remote set-url origin "$REPO_URL"
             git fetch --prune origin
+            # The build writes into the checkout (Next.js regenerates
+            # `next-env.d.ts` on every run), so a tracked file can be dirty
+            # here through no fault of the commit being deployed - and
+            # `git checkout` then refuses outright with "local changes would
+            # be overwritten", failing the deploy until someone SSHes in.
+            # This directory is owned by the pipeline and holds nothing worth
+            # keeping between runs, so discard local state rather than
+            # letting build output veto a deploy.
+            git reset --hard HEAD
+            # `-e` exclusions are belt-and-braces: bootstrap.sh rewrites both
+            # env files from secrets after this runs, so cleaning them would
+            # recover - but a deploy should not depend on that ordering to
+            # avoid blowing away the running config.
+            git clean -fd -e node_modules -e .venv -e .next -e .env -e apps/web/.env.local
             # checkout -B rather than `git pull`: pins the checkout to the branch
             # being deployed instead of trusting whatever it was left on.
             git checkout -B "$BRANCH" "origin/$BRANCH"
+            # `reset --hard` again *after* the checkout: the first one cleaned
+            # the old branch's state, this one guarantees the tree matches the
+            # commit actually being deployed.
+            git reset --hard "origin/$BRANCH"
 
             for required in apps/api apps/web scripts/bootstrap.sh; do
               [ -e "$required" ] || { echo "FATAL: $required missing."; exit 1; }

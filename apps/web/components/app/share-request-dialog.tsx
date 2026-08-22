@@ -10,7 +10,7 @@ import { useToast } from '@/components/ui/toast';
 
 /**
  * "Request access" / "Request to help" - the one dialog both directories
- * (campaigns, escalations) open. The server resolves who actually owns the
+ * (escalations) open. The server resolves who actually owns the
  * target resource (`resolve_resource_owner()`) - this dialog never needs to
  * know or send that itself.
  */
@@ -62,9 +62,7 @@ export function ShareRequestDialog({
       }}
     >
       <Dialog
-        title={
-          resourceType === 'campaign' ? 'Request access' : 'Request to help'
-        }
+        title="Request to help"
         description={`${resourceLabel} - the owner decides whether to say yes.`}
         size="sm"
         footer={
@@ -82,11 +80,7 @@ export function ShareRequestDialog({
           <Textarea
             value={message}
             onChange={(e) => setMessage(e.target.value)}
-            placeholder={
-              resourceType === 'campaign'
-                ? "I'd like to use this for my own contacts."
-                : "I'm free to follow up on this one."
-            }
+            placeholder="I'm free to follow up on this one."
             rows={3}
             autoFocus
           />

@@ -4,8 +4,8 @@ Decrypts an org's stored API key and calls the matching vendor adapter to
 produce a one-shot audio/transcript sample. This is `services/`, not
 `domain/`, because it does real I/O (decryption, an HTTP call to a vendor) -
 `domain/` stays pure per CLAUDE.md's dependency rule, the same split
-`campaign_runner.py` draws between orchestration and the pure logic in
-`domain/outcome_extraction.py` and `domain/goal_rendering.py`.
+`run_dialer.py` draws between orchestration and the pure logic in
+`domain/prompt_assembly.py` and `domain/number_allocation.py`.
 
 The route layer (a later task) owns fetching the org's
 `ai_provider_credentials` row via the Task 2 repository and passing the

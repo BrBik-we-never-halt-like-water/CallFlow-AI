@@ -37,7 +37,11 @@ _PHONE_RE = re.compile(r"\+?\d{8,15}")
 _TOKEN_RE = re.compile(
     r"(?i)(bearer\s+[a-z0-9._\-]{8,}"
     r"|sk_[a-z0-9_\-]{8,}"
-    r"|(?:api[_-]?key|token|authorization|secret|password)\s*[=:]\s*\S+)"
+    r"|(?:api[_-]?key|token|authorization|secret|password)\s*[=:]\s*\S+"
+    # A bare `key=` is how Google (and others) take a credential in a query
+    # string, and httpx logs whole URLs at INFO. The word boundary is the
+    # whole point: without it this also redacts `monkey=` and `turkey=`.
+    r"|\bkey=\S+)"
 )
 
 # Structured `extra=` field names redacted by name, in full, regardless of

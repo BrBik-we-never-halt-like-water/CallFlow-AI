@@ -14,6 +14,7 @@ import { useActiveOrg } from '@/lib/hooks/use-active-org';
 import { useOrganisations } from '@/lib/hooks/use-organisations';
 import { isAtLimit, usePlanLimits } from '@/lib/hooks/use-plan-limits';
 import { useSession } from '@/lib/hooks/use-session';
+import { PageHeader } from '@/components/app/page-header';
 
 type Step = 'name' | 'logo';
 
@@ -109,13 +110,13 @@ export default function NewOrganisationPage() {
   return (
     <div className="mx-auto flex max-w-lg flex-col gap-6">
       <div className="flex flex-col gap-1">
-        <p className="text-small font-bold text-text-mute">New organisation</p>
-        <h1 className="font-display text-h2 text-text">
-          {step === 'name' ? 'Name your organisation' : 'Add a logo'}
-        </h1>
+        <PageHeader
+          title="New organisation"
+          figure={step === 'name' ? 'Name your organisation' : 'Add a logo'}
+        />
         <p className="measure text-small text-text-dim">
           {step === 'name'
-            ? 'A separate workspace with its own team, campaigns, and settings.'
+            ? 'A separate workspace with its own team, agents, and settings.'
             : 'Optional - everyone you invite will see this next to the name.'}
         </p>
       </div>

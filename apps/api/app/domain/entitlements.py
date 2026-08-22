@@ -33,7 +33,6 @@ class EntitlementUsage:
     seats: int
     organisations: int
     ai_integrations: int
-    calls_today: int
 
 
 @dataclass(frozen=True)
