@@ -1,5 +1,6 @@
 'use client';
 
+import { LockIcon, LockOpenIcon } from '@phosphor-icons/react/dist/ssr';
 import Link from 'next/link';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
@@ -116,6 +117,33 @@ export function AgentCard({
 
   const [pendingDelete, setPendingDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [activating, setActivating] = useState(false);
+
+  async function makeActive() {
+    setActivating(true);
+    try {
+      await api.keepAgent(agent.id);
+      toast({
+        tone: 'success',
+        title: `${agent.name} is now active`,
+        // Says what it cost, because on a one-agent plan this necessarily takes
+        // the slot from something else and finding that out later is worse.
+        body: 'Whichever agent it replaced is now locked.',
+      });
+      onChanged();
+    } catch (error) {
+      toast({
+        tone: 'error',
+        title: "That agent wasn't activated",
+        body:
+          error instanceof Error
+            ? error.message
+            : "The service didn't respond.",
+      });
+    } finally {
+      setActivating(false);
+    }
+  }
 
   async function confirmDelete() {
     setDeleting(true);
@@ -145,9 +173,24 @@ export function AgentCard({
           small "Edit" button in its corner made the other 90% of the surface
           dead space. */}
       <Panel
-        interactive
-        className="group/agent relative flex w-full flex-col gap-5 p-5"
+        interactive={!agent.locked}
+        className="group/agent relative flex w-full flex-col gap-5 overflow-hidden p-5"
       >
+        {agent.locked ? <LockedOverlay agent={agent} busy={activating} onUnlock={makeActive} /> : null}
+
+        {/* Everything below is inert while locked: blurred, unreadable to a
+            screen reader, and untabbable. Without `pointer-events-none` and
+            `inert` the card-wide link underneath would still be clickable
+            through the blur, so a locked card would quietly behave like an
+            unlocked one for anyone using a keyboard. */}
+        <div
+          className={
+            agent.locked
+              ? 'pointer-events-none flex select-none flex-col gap-5 blur-[3px] saturate-50 opacity-55'
+              : 'contents'
+          }
+          inert={agent.locked}
+        >
         <div className="flex items-start justify-between gap-3">
           <div className="flex min-w-0 flex-col gap-1">
             <h3 className="min-w-0 truncate text-[0.875rem] font-semibold text-text">
@@ -164,6 +207,8 @@ export function AgentCard({
               </p>
             ) : null}
           </div>
+          {/* No "Locked" tag here - it would sit behind the blur, saying the
+              same thing the overlay says in front of it. */}
           {agent.kind === 'prebuilt' ? <Tag>Prebuilt</Tag> : null}
         </div>
 
@@ -215,6 +260,7 @@ export function AgentCard({
             </Button>
           ) : null}
         </div>
+        </div>
       </Panel>
 
       <DialogRoot
@@ -245,5 +291,59 @@ export function AgentCard({
         />
       </DialogRoot>
     </>
+  );
+}
+
+
+/**
+ * What sits over a locked agent: the reason, and the two ways out.
+ *
+ * A blur alone reads as a rendering fault, so the overlay has to say *why* the
+ * card is unreadable. The lock is the affordance and the label together - the
+ * icon alone would be decoration, and on its own a padlock is as easily read as
+ * "secure" as "unavailable".
+ *
+ * The card underneath is `inert` rather than merely blurred, so this is the only
+ * thing reachable by pointer or keyboard. Blur is a visual effect; without
+ * inerting it, tabbing still lands on links nobody can read.
+ *
+ * Ink and surface only - no lamp colour. The five lamp colours mean call state
+ * (CLAUDE.md §4 #10), and an agent locked by a plan has nothing to do with how a
+ * call went.
+ */
+function LockedOverlay({
+  agent,
+  busy,
+  onUnlock,
+}: {
+  agent: VoiceAgent;
+  busy: boolean;
+  onUnlock: () => Promise<void>;
+}) {
+  return (
+    <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 rounded-[inherit] bg-surface/70 p-5 text-center backdrop-blur-[2px]">
+      <span className="flex size-10 items-center justify-center rounded-full bg-surface-sunken">
+        <LockIcon aria-hidden weight="bold" className="size-5 text-text-mute" />
+      </span>
+
+      <div className="flex flex-col gap-1">
+        <p className="text-small font-medium text-text">Locked by your plan</p>
+        <p className="measure text-[0.6875rem] leading-relaxed text-text-dim">
+          Nothing was deleted. Make{' '}
+          <span className="text-text-mute">{agent.name}</span> the active agent,
+          or upgrade to run more than one.
+        </p>
+      </div>
+
+      <div className="flex items-center gap-1.5">
+        <Button size="sm" loading={busy} onClick={() => void onUnlock()}>
+          <LockOpenIcon aria-hidden weight="bold" className="size-4" />
+          Make active
+        </Button>
+        <Button asChild variant="ghost" size="sm">
+          <Link href="/app/billing">Upgrade</Link>
+        </Button>
+      </div>
+    </div>
   );
 }

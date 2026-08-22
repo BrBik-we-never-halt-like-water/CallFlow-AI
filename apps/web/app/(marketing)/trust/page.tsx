@@ -27,9 +27,9 @@ const SECTIONS = [
     heading: 'How calls are placed, and what the person answering is told',
     paragraphs: [
       'Every call is placed to a single number, from a caller ID you have verified as yours. Calls originate from our infrastructure; there is no dialler running on your machines and no telephony stack for you to maintain.',
-      'The agent identifies itself in the opening seconds. It says which organisation it is calling on behalf of and states that it is an automated assistant. That disclosure line is on by default, it is editable so it can match your own wording and language, and it cannot be removed entirely.',
+      "Every agent is expected to identify itself in the opening seconds - which organisation it is calling on behalf of, and that it is an automated assistant. That is policy for every goal you write, not a per-campaign choice.",
       'The agent will not claim to be a human being. If someone asks directly whether they are speaking to a person, it answers honestly and offers to hand over.',
-      'Recording is off unless you turn it on. Where you do enable it, the disclosure line is extended to say so before the conversation begins.',
+      'Recording is off unless you turn it on.',
     ],
   },
   {

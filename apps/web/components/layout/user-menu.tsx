@@ -152,11 +152,13 @@ export function UserMenu({
           </Link>
         </DropdownMenuItem>
 
-        {/* Organisation/Settings are owner+admin destinations - an operator
-            or viewer gets "My credits" instead of Settings (their one
-            relevant corner of it, Phase 5), and no Organisation entry at
-            all, matching the same restriction the sidebar's footer links
-            apply (app-shell.tsx). */}
+        {/* Organisation/Settings are owner+admin destinations, matching the same
+            restriction the sidebar's footer links apply (app-shell.tsx). An
+            operator or viewer gets neither - and no longer gets a "My credits"
+            entry either, because Billing became a sidebar destination and that
+            page already shows a non-admin their own credits rather than the
+            organisation's plan. Two links to one page is how one of them goes
+            stale. */}
         {isOwnerOrAdmin ? (
           <>
             <DropdownMenuItem>

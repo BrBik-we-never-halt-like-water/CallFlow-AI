@@ -21,6 +21,11 @@ import { cn } from '@/lib/cn';
 import { api, type VoiceAgent } from '@/lib/api';
 import { useScopedOrgId } from '@/lib/hooks/use-active-org';
 import { useOrgScopedEffect } from '@/lib/hooks/use-org-scoped-effect';
+import {
+  isAtLimit,
+  type PlanLimits,
+  usePlanLimits,
+} from '@/lib/hooks/use-plan-limits';
 import { useSession, type SessionProfile } from '@/lib/hooks/use-session';
 
 export default function AgenticPage() {
@@ -118,6 +123,68 @@ function DraftCard({
   );
 }
 
+/**
+ * `Create agent`, or the way out when the plan has no room for another one.
+ *
+ * At the cap the button is *replaced*, not disabled. A greyed-out control tells
+ * someone the product is broken; naming the plan and offering the upgrade tells
+ * them what happened and what to do next (CLAUDE.md §5). The refusal itself still
+ * comes from the API's 402 and a before-insert trigger below it - this only stops
+ * someone filling in a whole agent before finding out.
+ *
+ * Only an owner holds `billing:write`, so an operator at the cap gets the reason
+ * and no button, rather than one that would 403 on them.
+ */
+function CreateAgentAction({
+  limits,
+  agentCount,
+  lockedCount,
+  canUpgrade,
+}: {
+  limits: PlanLimits;
+  /** `null` while the list is still loading. */
+  agentCount: number | null;
+  /** How many the API says the plan no longer covers. Reported by the server
+   *  rather than derived from `agentCount - allowed`, because which agents are
+   *  locked depends on explicit choices the client does not resolve. */
+  lockedCount: number;
+  canUpgrade: boolean;
+}) {
+  const create = (
+    <Button asChild>
+      <Link href="/app/agentic/new">Create agent</Link>
+    </Button>
+  );
+
+  // Until both numbers are in, offer the normal action. Guessing the other way
+  // would flash an upgrade prompt at an owner who has room to spare, and a
+  // failed limits fetch would lock out creation the plan actually permits.
+  if (limits.status !== 'ready' || agentCount === null) return create;
+
+  const allowed = limits.entitlements.max_voice_agents;
+  if (!isAtLimit(allowed, agentCount)) return create;
+
+  return (
+    <div className="flex flex-col items-end gap-1.5">
+      {canUpgrade ? (
+        <Button asChild>
+          <Link href="/app/billing">Upgrade plan</Link>
+        </Button>
+      ) : null}
+      <p className="measure text-small text-text-dim">
+        {limits.planName} includes {allowed}{' '}
+        {allowed === 1 ? 'agent' : 'agents'}.{' '}
+        {lockedCount > 0
+          ? `${lockedCount} of your ${agentCount} ${
+              agentCount === 1 ? 'agent is' : 'agents are'
+            } locked and can't place calls - nothing was deleted, and you can make a different one active.`
+          : `${allowed === 1 ? "It's" : "They're"} all in use.`}
+        {canUpgrade ? null : ' Ask an owner to upgrade.'}
+      </p>
+    </div>
+  );
+}
+
 /** A quiet group label with its count - the same hairline-and-words treatment
  *  the tab row above uses, rather than a second filled control competing with
  *  it for attention. */
@@ -163,6 +230,7 @@ function AgenticContent({ profile }: { profile: SessionProfile }) {
     typeof window === 'undefined' ? [] : listUnsavedAgentDrafts(scopedOrgId),
   );
   const [tab, setTab] = useState<'agents' | 'drafts'>('agents');
+  const planLimits = usePlanLimits();
 
   function load() {
     if (!canRead) return;
@@ -213,9 +281,12 @@ function AgenticContent({ profile }: { profile: SessionProfile }) {
 
       <PageHeader title="Agents" figure={agents?.length ?? undefined}>
         {canWrite ? (
-          <Button asChild size="sm">
-            <Link href="/app/agentic/new">Create agent</Link>
-          </Button>
+          <CreateAgentAction
+            limits={planLimits}
+            agentCount={agents?.length ?? null}
+            lockedCount={agents?.filter((a) => a.locked).length ?? 0}
+            canUpgrade={profile.permissions.includes('billing:write')}
+          />
         ) : null}
       </PageHeader>
 

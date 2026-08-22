@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from app.auth.dependencies import CurrentUser, current_user
 from app.database import database
 from app.database.repositories import invitations as invitations_repo
+from app.database.repositories.invitations import SeatLimitReached
 
 router = APIRouter(prefix="/api/v1/invitations", tags=["invitations"])
 
@@ -53,8 +54,17 @@ async def preview(token: str) -> InvitationPreviewOut:
 async def accept(
     token: str, user: Annotated[CurrentUser, Depends(current_user)]
 ) -> AcceptedOut:
-    async with database.as_user(user.auth_user_id) as conn:
-        row = await invitations_repo.accept(conn, token)
+    try:
+        async with database.as_user(user.auth_user_id) as conn:
+            row = await invitations_repo.accept(conn, token)
+    except SeatLimitReached as exc:
+        # 402, not 400: the invitation is perfectly valid and the organisation is
+        # full. Telling this person their link is broken would send them back for
+        # another one that fails the same way - the org's owner is the only one who
+        # can fix it (`docs/BILLING.md` §2).
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED, detail=exc.detail
+        ) from exc
     if row is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

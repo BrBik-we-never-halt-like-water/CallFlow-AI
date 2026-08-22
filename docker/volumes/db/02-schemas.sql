@@ -24,6 +24,28 @@ create extension if not exists pgcrypto with schema extensions;
 create extension if not exists citext;
 create extension if not exists "uuid-ossp" with schema extensions;
 
+-- `extensions` has to be on the search path, because hosted Supabase puts it
+-- there and this database is supposed to behave the same.
+--
+-- Without this, pgcrypto lives in a schema nothing looks in: `gen_salt('bf')`
+-- fails with "function gen_salt(unknown) does not exist" while
+-- `extensions.gen_salt('bf')` works. That is not a theoretical difference - the
+-- entire DATABASE_URL-gated test suite creates its tenants with
+-- `crypt('x', gen_salt('bf'))`, unqualified, exactly as hosted Supabase accepts.
+-- Against a local stack without this line every one of those tests errors in
+-- setup, so `npm run local` produced a database the tests could not use.
+--
+-- Set on the database rather than per role: GoTrue, PostgREST, Storage, Alembic
+-- and the API all connect as different roles, and any of them may call a
+-- pgcrypto function. The two `alter role` lines above are narrower on purpose -
+-- those roles own one schema each and should not see more than they need.
+do $$
+begin
+  execute 'alter database ' || quote_ident(current_database())
+       || ' set search_path = "$user", public, extensions';
+end
+$$;
+
 -- The `supabase_realtime` publication is deliberately NOT created here.
 --
 -- The image's own `init-scripts/00000000000000-initial-schema.sql` creates it,

@@ -203,16 +203,22 @@ These override style preference, convenience, and personal taste.
 8. **Every run dials for real - there is no dry-run gate.** That was a deliberate,
    confirmed removal (`ISSUES.md` iteration 4), not a cosmetic UI change: `dry_run` does
    not exist on `Config`, `CallOutcome`, the run-start request, or anywhere in the
-   frontend. The guards that must hold on the very first call an organisation ever makes
-   are the allowlist, the per-run ceiling, rate limiting, the daily budget, E.164
-   validation, and the suppression list - the last of these is checked **per dial**,
-   inside `check_dial_allowed()`, not just shown in the interface (`ISSUES.md` #3 -
-   enforcement is real, though nothing yet writes to the list from the product itself;
-   don't describe it as fully closed). Calling windows are **not** currently enforced
+   frontend. **`check_dial_allowed()` now checks only the suppression list**, per dial
+   - the allowlist, the per-run ceiling, rate limiting, the daily budget, E.164
+   validation, and the per-teammate call-count allocation were all removed at the
+   product owner's direction, pending a replacement security layer (`ISSUES.md` #178,
+   `domain/safety.py`'s module docstring). This is not a partial or accidental
+   weakening - it was a deliberate call, made with the same scrutiny that removing
+   dry_run required, and it means the suppression check is currently the *only* thing
+   standing between a run and a real dial. The run-start credit checks
+   (org-wide balance, per-teammate usage-credit cap) in `routes/runs.py` are separate
+   from this gate and still enforced. Calling windows are **not** currently enforced
    anywhere server-side despite several surfaces implying they are (`ISSUES.md` #20) -
    do not add a new guard to this list, or claim one is real, without verifying it's
-   actually checked in `check_dial_allowed()`, not just displayed. Weakening any real
-   guard requires the same scrutiny as removing dry_run did.
+   actually checked in `check_dial_allowed()`, not just displayed. Restoring any of the
+   removed guards, or weakening the suppression check that remains, requires the same
+   scrutiny as removing dry_run did - this is a security-relevant gate, not a place for
+   a quiet drive-by edit.
 9. **Never show a success state for something that did not happen.** If an action is not
    wired up, say so plainly. A fake "check your inbox" leaves someone waiting for an email
    that will never arrive, and they blame the product rather than the gap. Existing pattern:
@@ -283,7 +289,7 @@ These override style preference, convenience, and personal taste.
 
 ## 4b. Auth and the database - how it actually works
 
-Four facts that are not obvious from reading the code, and that you will get wrong
+Five facts that are not obvious from reading the code, and that you will get wrong
 without them.
 
 **`postgres` holds BYPASSRLS.** A plain connection sees _every_ organisation's rows,
@@ -292,15 +298,28 @@ is therefore only real because `database.as_user()` drops to the `authenticated`
 and installs the JWT claims per request. If you add a code path that queries without
 going through `as_user`, tenancy silently stops applying.
 
-**Two ways into the database, and only two.**
+**Three ways into the database, and only three.**
 
 ```python
-async with database.as_user(claims.auth_user_id) as conn:   # RLS applies
-async with privileged.acquire("nightly purge") as conn:      # RLS bypassed, logged
+async with database.as_user(claims.auth_user_id) as conn:              # RLS applies
+async with database.as_platform_reader(admin_id, reason="…") as conn:  # RLS applies, cross-org, READ ONLY
+async with privileged.acquire("nightly purge") as conn:                # RLS bypassed, logged
 ```
 
 `privileged` requires a reason string and refuses an empty one. It must never appear in
 a request handler.
+
+`as_platform_reader` is the one deliberate cross-tenant surface (`docs/PLATFORM_ADMIN.md`)
+and is **not** a bypass - RLS still evaluates every row. It widens visibility through one
+predicate, `public.platform_can_read(org_id)`, added to `select` policies only, which
+returns false unless the session set `callflow.platform_session` *and* the caller holds a
+`platform_admins` row. An ordinary `as_user` session never sets that flag, so elevation is
+per-session and explicit rather than ambient. The connection opens with
+`transaction(readonly=True)`, so Postgres refuses any write regardless of policy - with
+cross-org visibility that is the only thing standing between a platform admin and a
+cross-tenant write, which is why it lives in the primitive and never at a call site. Cross-org
+*writes* go through narrow `SECURITY DEFINER` functions that re-check authorisation
+themselves, because function EXECUTE defaults to PUBLIC.
 
 **Migrations use psycopg; runtime uses asyncpg.** asyncpg prepares every statement and
 so rejects the multi-statement DDL that RLS policies and plpgsql functions are written

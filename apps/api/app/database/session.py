@@ -174,6 +174,66 @@ class Database:
             await self._release(connection)
 
     @asynccontextmanager
+    async def as_platform_reader(
+        self, auth_user_id: UUID | str, *, reason: str
+    ) -> AsyncIterator[asyncpg.Connection]:
+        """A cross-organisation **read-only** connection for a platform admin.
+
+        The third and last way into the database (`docs/PLATFORM_ADMIN.md` §4,
+        CLAUDE.md §4b), and deliberately not a bypass: this assumes the admin's own
+        identity and RLS still evaluates every row. What widens visibility is one
+        predicate, `platform_can_read`, present on `select` policies only.
+
+        Three things make it safe, and all three live here rather than at a call
+        site, because a call site is where one of them gets forgotten:
+
+        - `readonly=True` is asyncpg-native, so **Postgres refuses any write**
+          regardless of what a policy would have permitted. With all-orgs
+          visibility this is the only thing standing between a platform admin and a
+          cross-tenant write.
+        - the elevation flag is set with `set_config(..., true)` - transaction-local,
+          so it cannot outlive this block or leak to the next borrower of the pooled
+          connection.
+        - `platform_open_read_session` re-checks the capability in the database and
+          writes the audit row *before* the caller sees the connection. It raises
+          for anyone without `data:read`, so this cannot open an elevated session for
+          a non-admin even if a route forgot its dependency.
+
+        `reason` is mandatory and refused when blank, the same discipline
+        `privileged.acquire` applies. It is free text because the ticket reference
+        is the only thing that makes an all-orgs session reconstructable later.
+        """
+        if not reason or not reason.strip():
+            raise ValueError("A platform read session needs a reason.")
+        detail = reason.strip()
+
+        async with self._acquire() as connection:
+            # The audit row is written in its own writable transaction *before* the
+            # read-only one opens, and not only because `readonly=True` would refuse
+            # the insert. It also means the record of "a session was opened" commits
+            # independently: a session that later errors, or reads nothing, still
+            # leaves the trace. An audit row rolled back with the thing it was
+            # auditing is an audit log with a hole in it.
+            #
+            # This is also the authorisation check. `platform_open_read_session`
+            # raises 42501 for anyone without `data:read`, so no elevated session
+            # can open even if a route forgot its dependency - the database is the
+            # boundary, not the handler.
+            async with connection.transaction():
+                await self._assume(connection, "authenticated", str(auth_user_id))
+                await connection.execute(
+                    "select public.platform_open_read_session($1)", detail
+                )
+
+            async with connection.transaction(readonly=True):
+                await self._assume(connection, "authenticated", str(auth_user_id))
+                await connection.execute(
+                    "select set_config('callflow.platform_session', $1, true)",
+                    detail[:200],
+                )
+                yield connection
+
+    @asynccontextmanager
     async def anonymous(self) -> AsyncIterator[asyncpg.Connection]:
         """A connection with no identity. Every tenant policy evaluates false."""
         async with self._acquire() as connection, connection.transaction():

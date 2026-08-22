@@ -27,13 +27,15 @@ from app.database.repositories import (
 )
 from app.database.repositories import voice_agents as voice_agents_repo
 from app.domain.entities import FIELD_TYPES
+from app.domain.entitlements import (
+    AgentStanding,
+    check_agent_create_allowed,
+    usable_agent_ids,
+)
 from app.integrations.ai_providers import catalog
-from app.services import voice_preview
+from app.services import billing, voice_preview
 
 router = APIRouter(prefix="/api/v1/voice-agents", tags=["voice-agents"])
-
-
-
 
 class CollectFieldIn(BaseModel):
     """One thing the agent has to come back with.
@@ -69,6 +71,14 @@ class VoiceAgentOut(VoiceAgentIn):
     created_by: str | None = None
     created_by_name: str | None = None
     created_by_avatar_url: str | None = None
+    kept_at: datetime | None = None
+    """When the customer chose to keep this agent active over the plan's limit."""
+    locked: bool = False
+    """True when the plan no longer covers this agent, so it cannot place calls.
+
+    Locked, never deleted: an agent is configuration and comes back the moment the
+    plan does. The interface must offer the way out that costs nothing - making
+    *this* one active instead - alongside the upgrade."""
 
 
 
@@ -131,7 +141,63 @@ async def list_voice_agents(
 ) -> list[VoiceAgentOut]:
     async with database.as_user(user.auth_user_id) as conn:
         rows = await voice_agents_repo.list_org_agents(conn, user.org_id)
-    return [_row_json(r) for r in rows]
+        effective = await billing.resolve_plan(conn, user.org_id, user.org_plan_id)
+
+    usable = usable_agent_ids(
+        [
+            AgentStanding(
+                agent_id=str(r["id"]), created_at=r["created_at"], kept_at=r["kept_at"]
+            )
+            for r in rows
+        ],
+        limit=effective.entitlements.max_voice_agents,
+    )
+    return [
+        _row_json(r).model_copy(update={"locked": str(r["id"]) not in usable})
+        for r in rows
+    ]
+
+
+@router.post("/{agent_id}/keep", response_model=VoiceAgentOut)
+async def set_agent_kept(
+    agent_id: UUID,
+    keep: bool = True,
+    user: Annotated[CurrentUser, Depends(RequirePermission(Permission.AGENTS_WRITE))] = ...,
+) -> VoiceAgentOut:
+    """Choose which agents stay active when the plan covers fewer than exist.
+
+    Not a billing action, so it needs `agents:write` rather than `billing:write` -
+    an operator deciding which of their own agents runs is not a commercial
+    decision, and gating it behind an owner would leave the person actually
+    blocked unable to unblock themselves.
+
+    Marking more agents than the plan allows is permitted: the most recent choice
+    wins and the older one falls out (`usable_agent_ids`). Refusing instead would
+    force a customer to work out which to unmark first, to reach a state the rule
+    can already resolve.
+    """
+    async with database.as_user(user.auth_user_id) as conn:
+        updated = await voice_agents_repo.set_kept(
+            conn, user.org_id, agent_id, keep=keep
+        )
+        if updated is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="No such agent."
+            )
+        rows = await voice_agents_repo.list_org_agents(conn, user.org_id)
+        effective = await billing.resolve_plan(conn, user.org_id, user.org_plan_id)
+
+    usable = usable_agent_ids(
+        [
+            AgentStanding(
+                agent_id=str(r["id"]), created_at=r["created_at"], kept_at=r["kept_at"]
+            )
+            for r in rows
+        ],
+        limit=effective.entitlements.max_voice_agents,
+    )
+    row = next(r for r in rows if str(r["id"]) == str(agent_id))
+    return _row_json(row).model_copy(update={"locked": str(agent_id) not in usable})
 
 
 def _serialize_catalog(
@@ -221,6 +287,17 @@ async def create_voice_agent(
 ) -> VoiceAgentOut:
     async with database.as_user(user.auth_user_id) as conn:
         await _validate_agent_fields(conn, user.org_id, body)
+        # The plan ceiling. A `before insert` trigger enforces the same limit
+        # against raw SQL; this check exists so the refusal is a 402 with a
+        # readable reason instead of a constraint violation surfacing as a 500.
+        effective = await billing.resolve_plan(conn, user.org_id, user.org_plan_id)
+        billing.refuse(
+            check_agent_create_allowed(
+                entitlements=effective.entitlements,
+                plan_name=billing.plan_name(effective.plan_id),
+                current_agent_count=await voice_agents_repo.count_for_org(conn, user.org_id),
+            )
+        )
         row = await voice_agents_repo.create_agent(
             conn,
             org_id=user.org_id,

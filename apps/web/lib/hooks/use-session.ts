@@ -22,6 +22,13 @@ export interface SessionProfile {
   avatar_url: string | null;
   active: ActiveOrg;
   permissions: string[];
+  /**
+   * Whether this person holds any platform-admin capability. Renders the Platform
+   * nav entry and nothing else - every platform route resolves the capability
+   * again, and the definer functions behind them check it a third time in the
+   * database (`docs/PLATFORM_ADMIN.md` §2).
+   */
+  is_platform_admin: boolean;
 }
 
 export type SessionState =

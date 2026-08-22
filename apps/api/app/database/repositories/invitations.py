@@ -5,6 +5,22 @@ from __future__ import annotations
 import asyncpg
 
 
+class SeatLimitReached(Exception):
+    """The organisation has no seat free for this invitation.
+
+    Distinct from `accept()` returning `None`, which means the token itself is no
+    good. This one says the token is fine and the plan is not, so the route can
+    answer 402 with an upgrade path instead of 400 "this invitation isn't valid" -
+    which would send someone to ask for a fresh invite that will fail identically.
+
+    Carries the trigger's own message because it names the plan's actual numbers.
+    """
+
+    def __init__(self, detail: str) -> None:
+        self.detail = detail
+        super().__init__(detail)
+
+
 async def lookup_public(conn: asyncpg.Connection, token: str) -> asyncpg.Record:
     """Unauthenticated preview, via the SECURITY DEFINER `lookup_invitation` function.
 
@@ -77,6 +93,11 @@ async def accept(conn: asyncpg.Connection, token: str) -> asyncpg.Record | None:
                     invitation["role"],
                     invitation["invited_by"],
                 )
+        except asyncpg.exceptions.CheckViolationError as exc:
+            # `enforce_seat_limit` (migration `202608181000`). A downgrade landed
+            # between the invitation and this click, so the seat the invitation was
+            # counted against no longer exists.
+            raise SeatLimitReached(_seat_limit_detail(exc)) from exc
         except (asyncpg.exceptions.InsufficientPrivilegeError, asyncpg.exceptions.UniqueViolationError):
             return None
 
@@ -85,3 +106,13 @@ async def accept(conn: asyncpg.Connection, token: str) -> asyncpg.Record | None:
     )
 
     return invitation
+
+
+def _seat_limit_detail(exc: asyncpg.exceptions.CheckViolationError) -> str:
+    """The trigger's sentence, or a plain one if Postgres sent none.
+
+    Never the raw exception: `str(exc)` on an asyncpg error can carry the statement
+    that failed, and a route must not hand that to a browser.
+    """
+    message = getattr(exc, "message", None)
+    return message or "This organisation has no free seats on its current plan."

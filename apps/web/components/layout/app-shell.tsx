@@ -1,36 +1,20 @@
 'use client';
 
-import {
-  CaretUpDownIcon,
-  CheckIcon,
-  PlusIcon,
-  XIcon,
-} from '@phosphor-icons/react/dist/ssr';
+import { XIcon } from '@phosphor-icons/react/dist/ssr';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { Fragment, useState } from 'react';
 import { cn } from '@/lib/cn';
 import { BrandLockup } from '@/components/brand/wordmark';
 import { Mark } from '@/components/brand/mark';
-import { Tag } from '@/components/ui/badge';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import { Tooltip } from '@/components/ui/tooltip';
 import { VRule } from '@/components/ui/rule';
 import { useActiveOrg } from '@/lib/hooks/use-active-org';
-import { useOrganisations } from '@/lib/hooks/use-organisations';
-import { hasRole } from '@/lib/hooks/use-permission';
 import { useSidebarCollapsed } from '@/lib/hooks/use-sidebar-collapsed';
 import { usePrefersReducedMotion } from '@/lib/hooks/use-external-store';
 import { useAppStore } from '@/lib/app-store';
 import { useChatUnreadCount } from '@/lib/hooks/use-chat-unread';
-import { AppTabBar, OrgMark } from './app-nav';
+import { AppTabBar } from './app-nav';
 import { DashSidebar } from '@/components/app/dashboard/dash-sidebar';
 import { DashProfileMenu } from '@/components/app/dashboard/dash-profile-menu';
 import { type SessionProfile, useSession } from '@/lib/hooks/use-session';
@@ -342,160 +326,8 @@ function AppSidebar({
         collapsed={collapsed}
         onToggleCollapsed={() => setCollapsed(!collapsed)}
       />
-
     </aside>
   );
 }
 
-
-/**
- * The one real place to switch, create, or manage organisations. Same
- * behaviour as before the header rebuild, now a full-width vertical trigger
- * instead of a compact horizontal one to match the sidebar it lives in.
- */
-function SidebarOrgSwitcher({
-  profile,
-  refreshSession,
-  collapsed,
-}: {
-  profile: SessionProfile | null;
-  refreshSession: () => void;
-  collapsed: boolean;
-}) {
-  const { orgs } = useOrganisations(profile);
-  const [, setActiveOrgId] = useActiveOrg();
-
-  const label = profile?.active.org_name ?? 'Loading…';
-
-  if (!profile) {
-    return (
-      <span
-        className={cn(
-          'block h-9 rounded-md bg-surface-sunken',
-          collapsed ? 'w-9' : 'w-full',
-        )}
-      />
-    );
-  }
-
-  function switchOrg(orgId: string) {
-    if (orgId === profile?.active.org_id) return;
-    setActiveOrgId(orgId);
-    refreshSession();
-  }
-
-  const list = orgs ?? [
-    {
-      id: profile.active.org_id,
-      name: profile.active.org_name,
-      slug: profile.active.org_slug,
-      logo_url: profile.active.org_logo_url,
-      role: profile.active.role,
-    },
-  ];
-
-  // Belonging to more than one organisation is what entitles someone to move
-  // between them - their role is not part of that question. This used to be
-  // gated on owner/admin, which read reasonably ("managing several orgs is an
-  // admin concern") and stranded people in practice: anyone whose role differs
-  // between organisations - an owner of A who is a viewer in B - lost the
-  // control the moment they arrived in B, with no way back short of clearing
-  // site data (`ISSUES.md` #127). Role governs what you can do *inside* an
-  // organisation; `GET /organisations` has always returned every membership to
-  // every member, so the API never agreed with that gate either.
-  //
-  // The admin case stays in the condition because this menu is also where
-  // "New organisation" lives: a single-org owner still needs it.
-  const canSwitch = list.length > 1 || hasRole(profile, 'owner', 'admin');
-
-  if (!canSwitch) {
-    return (
-      <div
-        className={cn(
-          'flex items-center gap-2 rounded-md text-small',
-          collapsed ? 'size-9 justify-center' : 'w-full px-2 py-2',
-        )}
-      >
-        <OrgMark name={label} logoUrl={profile.active.org_logo_url} size="sm" />
-        {!collapsed && (
-          <span className="min-w-0 flex-1 truncate font-medium text-text">
-            {label}
-          </span>
-        )}
-      </div>
-    );
-  }
-
-  const trigger = (
-    <button
-      type="button"
-      aria-label={`Switch organisation - currently ${label}`}
-      className={cn(
-        'flex cursor-pointer items-center gap-2 rounded-md text-small transition-colors hover:bg-surface-hover',
-        collapsed ? 'size-9 justify-center' : 'w-full px-2 py-2',
-      )}
-    >
-      <OrgMark
-        name={label}
-        logoUrl={profile.active.org_logo_url}
-        size="sm"
-      />
-      {!collapsed && (
-        <>
-          <span className="min-w-0 flex-1 truncate text-left font-medium text-text">
-            {label}
-          </span>
-          <CaretUpDownIcon
-            aria-hidden
-            className="size-3.5 shrink-0 text-text-mute"
-          />
-        </>
-      )}
-    </button>
-  );
-
-  return (
-    <DropdownMenu>
-      {collapsed ? (
-        <Tooltip content={label} side="right">
-          <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
-        </Tooltip>
-      ) : (
-        <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
-      )}
-
-      <DropdownMenuContent align="start" className="min-w-64">
-        <DropdownMenuLabel>Organisations</DropdownMenuLabel>
-        {list.map((org) => (
-          <DropdownMenuItem key={org.id} onSelect={() => switchOrg(org.id)}>
-            {org.id === profile.active.org_id ? (
-              <CheckIcon
-                aria-hidden
-                weight="bold"
-                className="size-4 shrink-0"
-              />
-            ) : (
-              <span className="size-4 shrink-0" aria-hidden />
-            )}
-            <OrgMark name={org.name} logoUrl={org.logo_url} size="sm" />
-            <span className="min-w-0 flex-1 truncate">{org.name}</span>
-            <Tag>{org.role}</Tag>
-          </DropdownMenuItem>
-        ))}
-
-        <DropdownMenuSeparator />
-
-        <DropdownMenuItem>
-          <Link
-            href="/app/organisation/new"
-            className="flex flex-1 items-center gap-2"
-          >
-            <PlusIcon aria-hidden className="size-4" />
-            New organisation
-          </Link>
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
 

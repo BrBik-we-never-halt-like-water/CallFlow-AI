@@ -24,6 +24,18 @@ async def list_for_org(conn: asyncpg.Connection, org_id: UUID) -> list[asyncpg.R
     )
 
 
+async def count_for_org(conn: asyncpg.Connection, org_id: UUID) -> int:
+    """How many model-provider keys this organisation has connected.
+
+    Only admin/owner can read this table (`ai_provider_credentials_select` uses
+    `has_org_role`), which is fine: connecting one needs `INTEGRATIONS_WRITE`, and
+    that is admin+ too, so nobody who can hit the limit is blind to the count.
+    """
+    return await conn.fetchval(
+        "select count(*) from public.ai_provider_credentials where org_id = $1", org_id
+    )
+
+
 async def get_credential(
     conn: asyncpg.Connection, org_id: UUID, provider: str
 ) -> asyncpg.Record | None:

@@ -154,6 +154,19 @@ exist in this repo**; `SYSTEM.md` §12 is the closest real gap map until it's wr
 | [#132](#132--voice-agents-were-visible-to-every-member-missing-the-per-creator-silo-the-rest-of-the-product-already-had) | S2  | Voice agents were visible to every member - missing the per-creator silo campaigns and runs already had                | backend        | it-44 | **FIXED**        |
 | [#133](#133--nine-icon-only-controls-had-hit-areas-below-44x44-and-no-control-moved-when-pressed) | S3  | Nine icon-only controls had hit areas below 44x44, and no control moved when pressed                                  | web            | it-45 | **FIXED**        |
 | [#134](#134--settings-listed-an-integrations-tab-that-threw-you-out-of-settings) | S4  | Settings listed an Integrations tab that threw you out of Settings                                                     | web            | it-45 | **FIXED**        |
+| [#135](#135--a-seat-limit-counted-when-an-invitation-was-sent-and-never-again-so-a-downgrade-let-an-organisation-past-it-one-accept-at-a-time) | S2  | Seat limit counted at invite, never at accept - a downgrade let an org past it one accept at a time | api | it-46 | **FIXED** |
+| [#136](#136--the-enterprise-tier-could-not-be-sold-has_custom_limits-was-hard-coded-false-and-no-override-table-existed) | S2  | Enterprise tier unsellable: `has_custom_limits` hard-coded `false`, no override table, no platform surface | api+web | it-46 | **FIXED** |
+| [#137](#137--the-cap-was-reachable-through-four-ui-surfaces-that-all-walked-someone-into-the-refusal) | S3  | Four UI surfaces offered an action the plan would refuse | web | it-46 | **FIXED** |
+| [#138](#138--not-a-bug-the-llm-spend-cap-enforces-nothing-because-the-feature-it-would-gate-does-not-exist) | -  | LLM spend cap enforces nothing - the key-minting feature it would gate does not exist | api | it-46 | **INVALID** |
+| [#139](#139--credit_appendcredit_balancecredit_member_spend-took-org_id-as-a-plain-argument---any-signed-in-user-could-forge-or-read-another-organisations-usage-credit) | S1  | `credit_append`/`credit_balance`/`credit_member_spend` had no caller check - any signed-in user could forge or read another organisation's usage credit | api | it-47 | **FIXED** |
+| [#140](#140--a-lapsed-or-abandoned-subscription-permanently-froze-an-organisations-usage-credit-grants) | S1  | A lapsed or abandoned subscription permanently froze an organisation's usage-credit grants | api | it-47 | **FIXED** |
+| [#141](#141--subscriptionplan_changedupdated-webhook-events-were-unmapped---a-plan-change-or-a-scheduled-cancellation-never-applied) | S1  | `subscription.plan_changed`/`.updated` webhook events were unmapped - a plan change or a scheduled cancellation never applied | api | it-47 | **FIXED** |
+| [#142](#142--credit-pack-top-ups-were-unwired-end-to-end---no-subscription-row-to-match-and-no-code-anywhere-granted-credit) | S2  | Credit-pack top-ups were unwired end to end - no subscription row to match, and no code anywhere granted credit | api | it-47 | **FIXED** |
+| [#143](#143--the-growth-pricing-card-and-the-trust-page-advertised-features-that-dont-exist) | S2  | The Growth pricing card and the `/trust` page advertised features that don't exist | web | it-47 | **FIXED** |
+| [#144](#144--the-per-member-usage-credit-cap-had-a-column-and-an-enforcement-function-and-no-caller) | S3  | The per-member usage-credit cap had a column and an enforcement function, and no caller | api+web | it-47 | **FIXED** |
+| [#145](#145--three-smaller-billing-ui-gaps-a-naming-collision-a-false-unlimited-claim-and-a-stale-sidebar) | S4  | Three smaller billing UI gaps: a naming collision, a false "Unlimited" claim, and a stale sidebar | web | it-47 | **FIXED** |
+| [#146](#146--retired-the-per-teammate-call-count-allocation-usage-credit-is-the-one-share-left) | -   | Retired the per-teammate call-count allocation - usage credit is the one share left | api+web | it-47 | **FIXED** |
+| [#147](#147--a-teammates-usage-credit-cap-could-be-set-above-the-plans-own-per-period-grant) | S2  | A teammate's usage-credit cap could be set above the plan's own per-period grant | api | it-47 | **FIXED** |
 
 ---
 
@@ -6107,6 +6120,341 @@ Removed the entry; kept the redirect. A comment sits where the tab used to be so
 `CAPABILITIES.md` still told readers the frontend lived at `/app/settings/integrations` and now names the real path. `SYSTEM.md` was already correct. Nothing in code linked to the old route - the two remaining mentions describe `ConnectDialog` as a structural template, which is still accurate since that component moved with the page.
 
 **Left alone:** `VOICE_AGENT_PLATFORM.md` still points at the old file for the `COMING_SOON` vendor list. It is a planning document rather than a reference one, so correcting it was not folded into this.
+## Iteration 46 - 2026-08-19 · closing the plan model: a seat limit nobody re-checked, and the enterprise tier that could not be sold
+
+Four gaps found by auditing the billing work against `docs/BILLING.md`'s own plan rather than
+against the code written for it. Three were real; the fourth turned out not to exist.
+
+### #135 - a seat limit counted when an invitation was sent and never again, so a downgrade let an organisation past it one accept at a time
+
+**S2 · FIXED · api · `alembic/versions/202608181000_enforce_seat_limit_on_membership_insert.py`, `repositories/invitations.py`, `routes/invitations.py`**
+
+`POST /organisations/me/invitations` counted seats before sending. `POST /invitations/{token}/accept`
+did not - so an invitation issued on Growth (10 seats) could be accepted after a downgrade to
+Starter (3), putting the organisation over a limit it was being billed against. The send-side
+comment claimed "Accept re-checks anyway", which made it read as covered.
+
+**Why a trigger, not a check in the handler.** At accept time the caller is not yet a member of
+the target organisation, so an RLS-scoped connection cannot read that organisation's memberships
+to count them. Only a definer function sees the true count, and putting it in a
+`before insert on memberships` trigger covers every path rather than the one route.
+
+**The off-by-one that would have been worse than the bug.** The invitation being accepted is
+itself pending, so counting it against the seat it is claiming makes the *last* seat of every
+plan unreachable - the limit would silently be one lower than sold. `pending` therefore excludes
+invitations addressed to the joining user's own email, and `test_the_last_seat_is_actually_usable`
+exists for exactly that.
+
+Surfaced as **402**, not the existing 400 "this invitation isn't valid": the token is fine and the
+plan is not, and telling someone their link is broken sends them back for another one that fails
+identically.
+
+**Fallout.** 61 tests in `test_rls_isolation.py` began failing - correctly. Its fixtures build
+two- and three-member orgs on Free, which allows one seat. Fixed at the tenant factory rather
+than at a dozen call sites, with a comment saying why, because a seat refusal inside an RLS test
+looks exactly like a policy failure.
+
+### #136 - the enterprise tier could not be sold: `has_custom_limits` was hard-coded `false` and no override table existed
+
+**S2 · FIXED · api+web · four migrations, `auth/platform.py`, `routes/platform.py`, `repositories/platform.py`, `services/billing.py`, `app/(app)/app/platform/`, `scripts/platform_admin.py`**
+
+`docs/PLATFORM_ADMIN.md` was design only. The consequence was concrete: an Enterprise deal got
+Growth's numbers as a floor with no way to raise them, and `resolve_plan` returned
+`has_custom_limits=False` unconditionally while Billing already had UI to display it.
+
+Built per that document, with **two deliberate departures, both recorded in its banner**:
+
+- §4 describes appending an `or public.platform_can_read(...)` clause to each of the 17 existing
+  `select` policies. The migration adds a *separate* permissive `select` policy per table
+  instead. Postgres ORs permissive policies so the effect is identical - but no existing qual is
+  rewritten, and those quals are where tenant isolation lives. Transcribing 17 of them by hand
+  to append one clause is a way to break isolation with a typo that still reads right.
+- §4 says the audit row is written "before yielding". It is - but in its own writable
+  transaction *before* the read-only one opens, because `readonly=True` refuses the insert. That
+  also means the trace survives a session that later errors, which the original ordering would
+  not have.
+
+**Two bugs found by testing, not by reading.**
+
+`platform_list_organisations` declared `slug text` while `organisations.slug` is `citext`.
+Postgres does not check a `returns table` signature against its query at creation time, so the
+function created cleanly and raised "structure of query does not match function result type" the
+first time anyone called it. Every policy test passed - none of them called the function. Fixed
+in `202608181300`, with call-time tests added for every platform function.
+
+`routes/platform.py` caught `asyncpg.exceptions.RaiseException`, which does not exist. The real
+classes are `RaiseError` (a bare `raise`) and `InvalidParameterValueError` (`using errcode =
+'22023'`), and the definer functions use the latter - so the first refused platform write would
+have raised `AttributeError` and 500'd instead of returning 400. Both are caught now, through a
+named `REFUSALS` tuple, because which one a given check uses is a detail of the SQL and must not
+decide whether the API 400s or 500s.
+
+**The test that matters most** is `test_an_ordinary_user_calling_the_write_function_directly_is_refused`.
+Function EXECUTE defaults to PUBLIC, so any customer can call `platform_set_org_entitlements`
+over SQL with no route and no dependency involved. If that succeeded, every FastAPI dependency in
+`auth/platform.py` would be decoration. 31 tests in total, including: setting the session flag
+alone grants nothing; a platform admin browsing normally sees only their own orgs; no *write*
+policy anywhere references the predicate; team chat stays invisible even to an elevated session;
+and an expired grant stops working.
+
+### #137 - the cap was reachable through four UI surfaces that all walked someone into the refusal
+
+**S3 · FIXED · web · `lib/hooks/use-plan-limits.ts`, `components/app/plan-limit-notice.tsx`, `agentic/page.tsx`, `organisation/new/page.tsx`, `invite-dialog.tsx`, `app-shell.tsx`**
+
+Agents, the org switcher, org creation and the invite dialog all offered the action and let the
+402 explain afterwards. Each now names the plan's actual number and offers the upgrade instead -
+replaced, not disabled, because a greyed-out control reads as "this product is broken".
+
+Reads `GET /billing/plans` rather than `/billing/subscription`, and that is the whole reason the
+former is signed-in-only rather than `billing:read`: creating an agent is `agents:write`, which
+reaches further down than admin, and an operator who hits the cap has to be told what stopped
+them. Only owners hold `billing:write`, so anyone else gets the reason and no button.
+
+**Fails open throughout.** A slow or failed limits fetch leaves the normal action in place. The
+402 and the triggers are the gate; this only stops someone filling in a form that will be
+refused.
+
+### #138 - not a bug: the LLM spend cap enforces nothing because the feature it would gate does not exist
+
+**INVALID · api**
+
+`llm_spend_limit_usd` is in the ladder and served over the API, and
+`OpenRouterProvisioning.create_key`/`set_limit` both accept a limit - but grepping for their
+callers returns nothing. No code mints an OpenRouter key, so there is no gate to attach the
+entitlement to. Recorded rather than "fixed" so the next reader does not go looking for missing
+wiring: the entitlement is not the blocker, the key-minting feature is.
+
+Same shape as `ConnectAiKeyDialog`, which is fully built and mounted nowhere - which is also why
+"make the integrations page cap-aware" turned out to be a no-op. That page connects
+`provider_credentials` (deliberately ungated), and nothing in the UI calls
+`PUT /ai-providers/{provider}` at all.
+
+**Verified.** 721 tests pass (`test_platform_admin.py` 31, `test_entitlement_enforcement.py` 22).
+`ruff` clean. `eslint`, `tsc` and `next build` clean.
+
+## Iteration 47 - 2026-08-22 · auditing the credit ledger, the subscription webhook path, and the billing UI against each other
+
+Three parallel audits, one per surface, then a security pass while writing the tests for what
+they found - which is how #139 turned up: none of the three had checked function `EXECUTE`
+grants directly, only Python call sites.
+
+### #139 - `credit_append`/`credit_balance`/`credit_member_spend` took `org_id` as a plain argument - any signed-in user could forge or read another organisation's usage credit
+
+**S1 · FIXED · api · `alembic/versions/202608221000_credit_and_subscription_functions_check_the_caller.py`, `tests/test_credit_ledger.py`**
+
+All three are `SECURITY DEFINER` (migration `202608190900`) and none checked that the caller had
+anything to do with `target_org_id`. Postgres grants `EXECUTE` to `PUBLIC` on every function
+unless something revokes it - CLAUDE.md's own warning about this ("function EXECUTE defaults to
+PUBLIC") describes exactly this shape, and it was missed. In practice: any authenticated session
+could call `select public.credit_append(<any org>, null, 'grant', 999999999, 'x', null, null,
+null)` and hand itself another organisation's credit, or the same call with `'spend'` to drain
+one to nothing. The read direction leaked a balance or a teammate's spend the same way.
+
+The three subscription-webhook functions from `202608172100` (`record_gateway_payment`,
+`apply_subscription_event`, `lookup_org_for_subscription`) had the identical gap, for the same
+reason - and that migration's own comment on `attach_gateway_ids` names the intended rule
+precisely: *"the one function here a session is meant to call, so it is the one that has to
+check who is calling"* - implying the other three were never meant to be reachable from a
+session at all. They were not revoked either.
+
+**Two different fixes, because the functions are called two different ways.**
+`credit_append`/`credit_balance`/`credit_member_spend` are called by both an ordinary
+authenticated session (its own organisation) and the anonymous webhook path (granting on a
+renewal or a top-up), so an outright `revoke` would have broken the legitimate calls. These three
+gained an internal check instead: allowed when the session is `anon`, or when
+`public.is_org_member(target_org_id)` is true. `record_gateway_payment`,
+`apply_subscription_event`, and `lookup_org_for_subscription` are called *only* from the
+anonymous webhook path - confirmed by grepping every caller in `services/billing.py` - so they
+simply lost `EXECUTE` from `authenticated` and `PUBLIC`.
+
+**The bug inside the fix, caught by its own test before it shipped.** The first draft checked
+`current_user = 'anon'`. Inside a `SECURITY DEFINER` function, `current_user` reports the
+function's *owner*, not the calling session, for the whole duration of the call - `SET
+ROLE`/`set_config('role', ...)` does not change that. Every anonymous grant would have been
+rejected: a webhook-driven renewal or top-up would have failed 100% of the time. Fixed to
+`current_setting('role', true)`, an ordinary session GUC untouched by entering a definer
+function - the same reason `auth.uid()` already worked correctly there. `test_credit_ledger.py`'s
+reaper test is what caught it, by actually driving the anonymous path rather than only the
+authenticated one.
+
+### #140 - a lapsed or abandoned subscription permanently froze an organisation's usage-credit grants
+
+**S1 · FIXED · api · `domain/subscriptions.py`, `services/billing.py`, `routes/runs.py`, `routes/billing.py`**
+
+`ensure_period_credit` (the lazy grant for an organisation with no *live* subscription) was
+gated on `effective_plan.subscription is not None` - but that field is `resolve_plan`'s "latest
+ever" row, which stays populated forever once an organisation has subscribed once, including
+through `cancelled`, `expired`, `failed`, or an abandoned `pending` checkout. Once a subscription
+reached any of those, the org was told forever after that a subscription covered its grants,
+while `grant_for_period` (the subscription-driven path) only ever fires from an active-webhook
+branch - so it received credit from neither path again, permanently.
+
+Fixed with `domain/subscriptions.grants_via_subscription()`, checking the row's *status* (`active`
+or `on_hold` only) rather than its mere existence, via a new `services/billing.subscription_grants_credit()`
+helper used at both call sites.
+
+### #141 - `subscription.plan_changed`/`.updated` webhook events were unmapped - a plan change or a scheduled cancellation never applied
+
+**S1 · FIXED · api · `integrations/payments/dodo.py`, `integrations/payments/stub.py`, `services/billing.py`, `tests/test_billing_webhook_handling.py`**
+
+`handle_event` returned a no-op for any event whose kind was not a key in `_TARGET_STATUS` -
+and Dodo reports a plan change as `subscription.plan_changed` (unmapped entirely) and a
+cancel-at-period-end as `subscription.updated` (mapped, but `_TARGET_STATUS` deliberately has no
+entry for it). Both hit the no-op branch **before** ever reaching the "same status, different
+details" branch a few lines later, which already correctly handled a payment-gated plan swap and
+a `cancel_at_period_end` update - that branch was fully written and simply unreachable for the
+event names Dodo actually sends. In practice: a customer clicked "change plan," was charged the
+prorated difference at the gateway, and `organisations.plan_id` never moved until someone
+manually ran `POST /billing/sync`. The same mechanism silently dropped every scheduled
+cancellation.
+
+Fixed by mapping `subscription.plan_changed` onto the existing `SUBSCRIPTION_UPDATED` kind (no
+new enum member needed) and special-casing that kind in `handle_event` to set `target = current`
+directly, routing into the branch that already worked.
+
+**A related gap found while fixing it: `on_hold → active` recovery never expired the prior
+period's remainder.** Every activation called `_grant_period_credit(expire_remainder=False)`,
+correct for a first activation but wrong for a recovery from a failed-payment hold - unlike
+`subscription.renewed`, a recovery was granting a full new period on top of whatever balance was
+left when the hold started, the opposite of "credit does not roll over." Fixed by keying
+`expire_remainder` on whether the prior status was `on_hold`. Also hardened: a recovery whose
+webhook omits `current_period_end` now logs a distinguishable warning rather than silently
+granting nothing through a stale, already-used dedupe key.
+
+No test exercised `handle_event` end to end before this - `test_subscription_state.py` is pure,
+`test_payment_gating.py` tests `withholds_grant` in isolation, and `test_public_billing.py` never
+reaches the webhook route. That gap is exactly how this shipped unnoticed.
+
+### #142 - credit-pack top-ups were unwired end to end - no subscription row to match, and no code anywhere granted credit
+
+**S2 · FIXED (latent until `DODO_PRODUCT_CREDIT_PACK` is configured) · api · `services/billing.py`, `services/credit.py`, `routes/billing.py`**
+
+`POST /billing/top-up` opens a checkout with a `subscription_row_id` that is never persisted
+anywhere (a top-up is not a subscription). `handle_event`'s first step is to look up a
+subscription row by that id; when it found none, it returned immediately - **before**
+`record_payment` ever ran, and there was no code anywhere that turned a settled top-up payment
+into a credit grant, despite both the route's own docstring and `docs/PRICING_DECISIONS.md`
+describing that wiring as real.
+
+Fixed without touching the checkout call (its `subscription_row_id` is harmless noise once the
+fix stops depending on it resolving to a row): `handle_event` now recognises a `payment.succeeded`/
+`.failed` with no matching row, `event.plan_id == CREDIT_PACK`, and a present `event.org_id`
+(planted in checkout metadata independently of any subscription lookup) as a standalone one-time
+payment, calling `record_payment(subscription_id=None, ...)` - which already accepted a null
+subscription - and a new `credit.grant_for_topup()`, one paise of credit per paise paid, keyed on
+the gateway's own payment id.
+
+Known simplification, tracked rather than fixed here: top-up credit does not expire on its own
+(the original design's 365-day expiry was never built); it lapses only through the ordinary
+monthly `expire_remainder` write-off at the next renewal.
+
+### #143 - the Growth pricing card and the `/trust` page advertised features that don't exist
+
+**S2 · FIXED · web · `lib/pricing.ts`, `app/(marketing)/trust/page.tsx`**
+
+Three of the four bullets shown for Growth on the homepage (`plan.features.slice(0, 4)`) named
+features with no server-side implementation: "Webhooks with a delivery log and replay" (no such
+route or table exists), "CRM integrations" (`routes/integrations.py`'s own docstring says nothing
+reads these credentials yet), and "Scheduled runs and calling windows per campaign" (`#20`, still
+open, and the exact claim `CLAUDE.md` §4 #8 warns against making) - a live recurrence of `#20`'s
+bug class in a surface that fix's sweep did not reach. `/trust` separately claimed an AI-disclosure
+line "is on by default... and it cannot be removed entirely"; grepping `apps/api` and
+`apps/voice-runtime` for any disclosure/consent construction returns nothing.
+
+Fixed by removing the three unbuilt claims from Growth's card and the matching `FEATURE_MATRIX`
+rows, and softening `/trust`'s paragraph to describe policy intent rather than a shipped,
+unremovable mechanism. This corrects the claim; it does not build webhooks, CRM integrations,
+calling-window enforcement, or a real disclosure-line mechanism, each of which is its own feature.
+
+### #144 - the per-member usage-credit cap had a column and an enforcement function, and no caller
+
+**S3 · FIXED · api+web · `database/repositories/credits.py`, `domain/entitlements.py` (already had `check_member_credit_cap`), `services/credit.py`, `routes/runs.py`, `routes/organisations.py`, `lib/api.ts`, `organisation/page.tsx`**
+
+`member_credit_allocations.monthly_credit_cap_paise` (migration `202608190900`) and
+`check_member_credit_cap`/`credits_repo.member_spend_this_period` existed with zero callers -
+grepping the whole app found them referenced only from pure unit tests. The per-teammate paise
+cap the original design described was never enforced anywhere, and nothing let an owner set one.
+
+Wired up: the run gate now reads the cap and this calendar month's spend
+(`credit.member_credit_cap_status`) alongside the org-wide balance check, refusing a run either
+way can refuse it; a new `PATCH .../members/{id}/credit-cap` endpoint sets it (`null` explicitly
+uncapped, `0` a real "blocks them entirely," never conflated - the same tri-state convention
+`get_enforced_ceiling` already established for the call-count allocation); and Organisation →
+Team gained a second, adjacent field for it, parsed through a new `lib/format.parseMajorUnitsToMinor`
+rather than a bare number input, so typing "850" means ₹850 and not 850 paise.
+
+### #145 - three smaller billing UI gaps: a naming collision, a false "Unlimited" claim, and a stale sidebar
+
+**S4 · FIXED · web · `organisation/page.tsx`, `app/(app)/app/page.tsx`, `lib/pricing.ts`, `lib/hooks/use-entitlements-version.ts` (new), `lib/hooks/use-plan-limits.ts`, `billing/page.tsx`**
+
+- "Credits/day" and "Credits today" carried no qualifier next to the new money-denominated
+  "usage credit," reproducing the exact collision `MANUAL_TESTING.md` already documents and
+  Billing's own "My credits" panel already avoids. Renamed to "Calls/day"/"Calls today".
+- `PLAN_LIMITS.enterprise.seats` and two feature-matrix rows said "Unlimited seats and
+  organisations"; `domain/plans.py` seeds Enterprise at Growth's real numbers (10 seats, 3 orgs)
+  by design, specifically to avoid a window with no ceiling before a human writes the override.
+  Changed to "Custom", matching how `agents`/`credit` already handle Enterprise honestly.
+- The sidebar org switcher's `usePlanLimits()` mounts once per session and only refetched on an
+  org switch, so an in-place plan change on Billing could leave "Upgrade to create another"
+  showing after the upgrade until the next switch or reload. Fixed with a small
+  `useSyncExternalStore`-backed version counter, bumped by Billing's plan-change/cancel/sync
+  handlers, that `usePlanLimits` now depends on.
+
+**Verified.** 800 tests pass, including 8 new (`test_credit_ledger.py`), 2 new
+(`test_billing_webhook_handling.py`), and 4 new (`test_subscription_state.py`), against the real
+dev database. `ruff` clean. `eslint`, `tsc` and `next build` clean.
+
+### #146 - retired the per-teammate call-count allocation - usage credit is the one share left
+
+**FIXED · api+web · `campaign_runner.py`, `domain/safety.py`, `routes/runs.py`, `routes/organisations.py`, `database/repositories/credits.py`, migration `202608221200`, `organisation/page.tsx`, `billing/page.tsx`, `app/page.tsx`**
+
+A product decision, not a bug: `member_credit_allocations.daily_allocation` let an owner
+give a teammate a slice of the org-wide daily call budget ("13 calls a day"), enforced at
+dial time via `check_dial_allowed`'s `credits_remaining` param and `CampaignRunner`'s
+in-run reservation bookkeeping (`_credit_ceiling`/`_credits_reserved`). Calls-per-day
+stopped being a meaningful lever once the usage-credit model shipped - the org-wide daily
+budget is now a uniform runaway safety rail on every plan (`RUNAWAY_CALL_CEILING`) rather
+than a packaging number, and a plan's real flow limit is its usage credit. Keeping a
+second, money-blind allocation next to the real one was confusing rather than useful - a
+teammate told "13 calls a day" could still be capped by usage credit well before reaching
+it, or the reverse.
+
+Removed end to end: `check_dial_allowed`'s `credits_remaining` param and the dial-time
+gate it drove; `CampaignRunner`'s reservation bookkeeping and its four `release_credit()`
+call sites; `credits_repo.get_allocation`/`get_enforced_ceiling`/`used_today`/
+`used_today_by_member`/`list_allocations`/`set_allocation`; the
+`PATCH .../members/{id}/credits` route; the `daily_allocation`/`used_today` fields
+everywhere they appeared (`TeamPerformanceOut`, `MyCreditsOut`, the Team pane, the
+dashboard's per-teammate table, Billing's "My credits" panel); and the column itself
+(`member_credit_allocations.daily_allocation`, migration `202608221200`, along with its
+`>= 0` check constraint).
+
+The per-teammate **usage-credit** cap (`monthly_credit_cap_paise`, `#144`) is the one
+ceiling that remains, and is now what a teammate's "share" means end to end. The Team
+pane's second field ("Calls/day") is gone; only "₹/month" remains next to each name.
+Billing's "My credits" panel and the dashboard's per-teammate table were rewritten to show
+usage-credit spend/cap instead of calls-used/allowance.
+
+**Not touched:** the organisation-wide daily budget (`org_safety_settings.daily_budget`,
+`CALLFLOW_DAILY_BUDGET`) and its own `used_today` in `GET /api/health` - a different,
+still-real safety rail, unrelated to this per-teammate concept.
+
+### #147 - a teammate's usage-credit cap could be set above the plan's own per-period grant
+
+**S2 · FIXED · api · `routes/organisations.py::set_member_credit_cap`**
+
+`PATCH .../members/{id}/credit-cap` accepted any non-negative paise value with no upper
+bound, so an owner could set a teammate's share to, say, ₹5,000 a month on a plan that
+grants the whole organisation ₹850 a month - a number with no real meaning, since the
+organisation-wide balance would refuse the run long before that share was ever reached.
+Found by a user testing the field directly, the same session it shipped in.
+
+Fixed by resolving the org's effective plan inside the route and refusing (`400`) a cap
+larger than `entitlements.monthly_credit_paise`, naming the actual ceiling in the error so
+the refusal is informative rather than a bare validation failure. Bounded by the plan's
+*per-period grant*, not the current balance - a balance-based bound would make the same
+share setting appear to shrink every time the organisation spent money, which is not what
+"a teammate's share" should mean.
 
 ### #177 - with no vendor plugin installed, every Sarvam voice was silently dropped
 
@@ -6154,16 +6502,81 @@ are still real behaviour, so the argument was dropped and the tests kept.
 Worth stating plainly: this was mistaken for uncommitted local work several
 times while it was in fact committed, deliberate and documented.
 
-## Iteration 48 - 2026-08-22 · the verification answer did not survive a reload, and two thirds of providers had no logo
+## Iteration 48 - 2026-08-22 · merging `dev`: what the two branches disagreed about
+
+### #179 - the Billing page metered a ceiling nothing enforced any more
+
+**S2 · FIXED · api + web · `apps/api/app/api/v1/routes/billing.py`,
+`apps/web/app/(app)/app/billing/page.tsx`**
+
+`GET /billing/subscription` still returned `usage.calls_today` and
+`effective_daily_call_budget`, and the Billing page still rendered them as a
+"Calls today" meter with the copy "Set a lower one in Settings → Safety." All
+three of those had stopped being true:
+
+- The number came from `_daily_calls()`, which read `app.core.rate_limit`'s
+  in-process limiter and `safety_settings` - **both modules were deleted** with
+  the dial-gate simplification (#178). The endpoint could not import, so every
+  route module that pulled in `billing.py` failed at collection: three test
+  modules erroring, not a subtle wrong number.
+- Settings → Safety no longer exists as a route, so the copy pointed somewhere
+  a reader could not go.
+- Nothing counts calls per day or refuses a dial on that count any more
+  (`domain/safety.py`), so a meter showing "3 of 500" would have been a
+  ceiling the product does not apply.
+
+**Impact.** The API did not start. Beyond that, had it started, this is exactly
+the failure CLAUDE.md §4 #9 names - a page stating an enforced limit that is
+not enforced, which is worse than showing nothing, because nothing about it
+looks wrong.
+
+**Fix.** `_daily_calls()`, its two dead imports, `UsageOut.calls_today`,
+`EntitlementUsage.calls_today` and `BillingOverviewOut.effective_daily_call_budget`
+are gone, along with the "Calls today" section and the matching fields in
+`lib/api.ts`. `Entitlements.daily_call_budget` **stays** on the wire, with its
+docstring rewritten to say plainly that it is informational: platform admins can
+still set it per organisation as a negotiated limit, and removing the column
+would be a separate decision from removing the guard that read it.
+
+### #180 - a merge silently dropped a permission check and a dead switcher survived one
+
+**S3 · FIXED · web · `apps/web/app/(app)/app/organisation/page.tsx`,
+`apps/web/components/layout/app-shell.tsx`**
+
+Two opposite failure modes from the same merge, both worth recording because
+neither shows up as a conflict.
+
+`canSetCredits` was defined on one side of a conflict hunk and used on the
+other. Git took the side without the definition and left three call sites
+referring to a name that did not exist - a build error, caught, but the class
+of bug is the point: **when only one side of a merge touches a line, git
+applies that side with no marker at all.** The three usages were inside
+conflict regions and so were visible; the definition was not.
+
+The reverse: `SidebarOrgSwitcher` (163 lines) survived the merge intact and
+uncalled, because `DashSidebar`/`DashProfileMenu` replaced it on the other side
+and nothing conflicted. Only ESLint's unused-symbol warning found it. Removed,
+along with the eleven imports that existed solely to serve it.
+
+**Fix.** Both resolved. Worth carrying forward: after a large merge, an
+unused-symbol lint pass is a real correctness check, not tidying - it is the
+only thing that finds code the merge orphaned.
+
+## Iteration 49 - 2026-08-22 · the verification answer did not survive a reload, and two thirds of providers had no logo
 
 Asked to match the integrations section to the dashboard's theme, make the
 integrations fail-proof against a wrong API key, and use real vendor icons. The
 theme half turned out to be mostly done already (#177's revamp shipped
 `PageHeader`, and re-adding a display headline would have undone it) and the
 fail-proof half turned out to be one step short rather than absent - #160 and
-#169 had built it, and #179 is the step they were missing.
+#169 had built it, and #181 is the step they were missing.
 
-### #179 - a confirmed credential forgot it had been confirmed
+**Renumbered on merge.** This landed as iteration 48 with #179-#181 and moved to
+49 with #181-#183 when PR #40 merged, which had already claimed 48 and #179-#180.
+Four commit messages on `dev` still name the old numbers - `85aed4c`, `d4c898d`,
+`bdffb80`, `b8dde19` - and this note is how they stay traceable.
+
+### #181 - a confirmed credential forgot it had been confirmed
 
 **S2 · FIXED · api + web · `d1a83c5f27e6`, `routes/integrations.py`, `repositories/provider_credentials.py`, the integrations page**
 
@@ -6227,7 +6640,7 @@ end still reads Connected until a human presses Re-check or a call fails. The
 probe also runs inline on the connect request, so a slow vendor makes Save wait -
 fine for a once-per-vendor action, wrong if anything ever verifies in bulk.
 
-### #180 - two thirds of providers had no logo, and two brand systems disagreed
+### #182 - two thirds of providers had no logo, and two brand systems disagreed
 
 **S4 · FIXED · web · `scripts/fetch-brand-logos.mjs`, `public/brands/`, `lib/brand-logos.ts`, `brand-mark.tsx`, `provider-icons.tsx`, `lib/brand-paths.ts` (deleted)**
 
@@ -6277,7 +6690,7 @@ was right; at 56-of-57 the coherence argument changes sides.
 **Not done:** no licence audit. §9 already flags the attribution check as a
 five-minute job.
 
-### #181 - the database suites run against whatever `DATABASE_URL` points at, and delete organisations globally
+### #183 - the database suites run against whatever `DATABASE_URL` points at, and delete organisations globally
 
 **S2 · OPEN · api · `apps/api/tests/test_rls_isolation.py`, `tests/conftest.py`**
 

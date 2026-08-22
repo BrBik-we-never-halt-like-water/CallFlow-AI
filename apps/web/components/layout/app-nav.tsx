@@ -6,10 +6,12 @@ import {
   BroadcastIcon,
   BuildingsIcon,
   ChatCircleIcon,
+  CreditCardIcon,
   GaugeIcon,
   GearSixIcon,
   PlugsConnectedIcon,
   RobotIcon,
+  ShieldCheckIcon,
   UserFocusIcon,
 } from '@phosphor-icons/react/dist/ssr';
 import Link from 'next/link';
@@ -47,9 +49,28 @@ export const NAV_ITEMS: Omit<NavItem, 'badge'>[] = [
   { label: 'Contacts', href: '/app/contacts', icon: AddressBookIcon },
   { label: 'Chat', href: '/app/chat', icon: ChatCircleIcon },
   { label: 'Integrations', href: '/app/integrations', icon: PlugsConnectedIcon },
+  // Out of Settings and onto the sidebar for the same reason Integrations was:
+  // the plan gates how much of the product exists at all, and every 402 points
+  // here, so it should not be two clicks behind the rarest menu.
+  { label: 'Billing', href: '/app/billing', icon: CreditCardIcon },
   { label: 'Organisation', href: '/app/organisation', icon: BuildingsIcon },
   { label: 'Settings', href: '/app/settings', icon: GearSixIcon },
 ];
+
+/**
+ * CallFlow staff only, and absent from `NAV_ITEMS` entirely rather than filtered
+ * out of it - a destination nobody but staff has must not be something every other
+ * consumer of that list has to remember to exclude.
+ *
+ * The entry renders on `is_platform_admin` from `GET /me`, which is display only:
+ * the route itself 404s for anyone without a `platform_admins` row, and the
+ * database checks again below that (`docs/PLATFORM_ADMIN.md` §2).
+ */
+export const PLATFORM_NAV_ITEM: Omit<NavItem, 'badge'> = {
+  label: 'Platform',
+  href: '/app/platform',
+  icon: ShieldCheckIcon,
+};
 
 /** The destinations shown as the sidebar's primary nav list - everything
  *  except `Organisation` and `Settings` (see the account menu note above).

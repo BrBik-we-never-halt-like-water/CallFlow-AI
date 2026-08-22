@@ -17,6 +17,12 @@ dependencies = [
     "psycopg[binary]>=3.2.0",
     "PyJWT>=2.9.0",
     "cryptography>=43.0.0",
+    # The `[webhooks]` extra is not optional for us: it pulls in
+    # `standardwebhooks`, and without it `client.webhooks.unwrap` raises
+    # "You need to install dodopayments[webhooks]" on *every* delivery. Installing
+    # plain `dodopayments` produced an API that rejected every genuine webhook as
+    # unverified - a dependency problem wearing an authentication problem's clothes.
+    "dodopayments[webhooks]>=1.112.0",
     "openpyxl>=3.1.0",
     "python-multipart>=0.0.9",
 ]

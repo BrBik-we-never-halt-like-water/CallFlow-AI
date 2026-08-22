@@ -343,9 +343,202 @@ export interface TeamPerformance {
   total_calls: number;
   calls_closed: number;
   open_escalations: number;
-  /** Today's credit ceiling for this member, in credits. 0 means unset. */
-  daily_allocation: number;
-  credits_used_today: number;
+  /** `null` means nobody has set a usage-credit share for this teammate — only
+   *  the organisation-wide balance governs them. Money in paise. */
+  credit_cap_paise: number | null;
+  credit_spent_paise: number;
+}
+
+export interface MyCredits {
+  credit_cap_paise: number | null;
+  credit_spent_paise: number;
+}
+
+/**
+ * A plan's ceilings. `null` means unlimited, never a sentinel — and `0` is a
+ * real, enforced value, so never collapse the two with a falsiness check.
+ */
+export interface Entitlements {
+  max_voice_agents: number | null;
+  max_seats: number | null;
+  max_organisations: number | null;
+  max_ai_integrations: number | null;
+  /** Informational only — nothing enforces this any more. The dial gate that
+   *  checked it was removed pending a replacement security layer (`ISSUES.md`
+   *  #178). Still settable per org from platform admin, so it stays on the wire. */
+  daily_call_budget: number | null;
+  /** Paise granted each period. The plan's real economic limit, and now the only
+   *  enforced one — checked at the run gate before any dialling starts. */
+  monthly_credit_paise: number | null;
+  llm_spend_limit_usd: number;
+}
+
+/** What the organisation has actually used, against `Entitlements`. */
+export interface EntitlementUsage {
+  voice_agents: number;
+  seats: number;
+  organisations: number;
+  ai_integrations: number;
+}
+
+/**
+ * Prices come from the gateway, not from `lib/pricing.ts` — it is the Merchant
+ * of Record and holds the price of record. `amount_minor` is an integer in the
+ * currency's smallest unit; render it with `formatMinorUnits`.
+ */
+export interface PlanPrice {
+  amount_minor: number;
+  currency: string;
+  period: 'monthly' | 'annual';
+}
+
+export interface PlanOption {
+  plan_id: string;
+  name: string;
+  entitlements: Entitlements;
+  /** Empty when the plan has no checkout — enterprise is invoiced. */
+  prices: PlanPrice[];
+  self_serve: boolean;
+  current: boolean;
+  /** What a connected minute costs on your own model keys — the platform fee
+   *  alone, since no tier add-on applies once nothing runs on CallFlow's keys.
+   *  The same value on every plan; carried per option so a card can show it
+   *  next to the included credit without a second request. */
+  baseline_rate_paise_per_minute: number;
+}
+
+export type SubscriptionStatus =
+  | 'pending'
+  | 'active'
+  | 'on_hold'
+  | 'cancelled'
+  | 'expired'
+  | 'failed';
+
+export interface Subscription {
+  status: SubscriptionStatus;
+  plan_id: string;
+  current_period_end: string | null;
+  cancel_at_period_end: boolean;
+  /** Why a renewal failed, shown verbatim to an owner. */
+  last_error: string | null;
+}
+
+export interface PaymentRecord {
+  /** False when the payment hasn't settled, or the gateway issues no invoice. */
+  has_receipt: boolean;
+  id: string;
+  amount_minor: number;
+  currency: string;
+  status: 'succeeded' | 'failed' | 'refunded';
+  description: string | null;
+  paid_at: string | null;
+}
+
+/* --- platform admin (docs/PLATFORM_ADMIN.md) --------------------------------
+   Every one of these 404s for anyone without a `platform_admins` row, so a
+   non-admin never distinguishes "no permission" from "no such route". */
+
+export interface PlatformOrg {
+  org_id: string;
+  name: string;
+  slug: string;
+  plan_id: string;
+  has_override: boolean;
+  member_count: number;
+  agent_count: number;
+  run_count: number;
+  created_at: string;
+}
+
+export interface EntitlementOverride {
+  org_id: string;
+  max_voice_agents: number | null;
+  max_seats: number | null;
+  max_organisations: number | null;
+  max_ai_integrations: number | null;
+  daily_call_budget: number | null;
+  llm_spend_limit_usd: number | null;
+  /** Limits with no ceiling at all. `null` above means "inherit the plan", which
+   *  is a different thing - hence two channels rather than one. */
+  unlimited: string[];
+  note: string | null;
+  updated_at: string;
+}
+
+export interface PlatformAuditEntry {
+  id: string;
+  actor_user_id: string | null;
+  action: string;
+  target_org_id: string | null;
+  reason: string;
+  created_at: string;
+}
+
+export interface OverrideInput {
+  max_voice_agents: number | null;
+  max_seats: number | null;
+  max_organisations: number | null;
+  max_ai_integrations: number | null;
+  daily_call_budget: number | null;
+  unlimited: string[];
+  note: string | null;
+  reason: string;
+}
+
+export interface Credit {
+  /** Paise. Negative is real: a call that overran its hold settles for more than
+   *  was reserved rather than being cut off mid-sentence. */
+  balance_paise: number;
+  granted_this_period_paise: number;
+  rate_paise_per_minute: number;
+  /** Derived from the *current* rate, so it is an estimate and must be labelled
+   *  one - the next call may use a different pipeline. */
+  estimated_minutes_left: number;
+  /** True for a plan with no credit ceiling: render "unlimited", not a bar. */
+  is_uncapped: boolean;
+}
+
+export interface LedgerEntry {
+  id: string;
+  entry_kind: 'grant' | 'hold' | 'release' | 'spend' | 'expiry' | 'adjustment';
+  /** Signed. Positive added credit, negative consumed or expired it. */
+  amount_minor: number;
+  currency: string;
+  call_key: string | null;
+  rate_paise_per_minute: number | null;
+  reason: string | null;
+  created_at: string;
+}
+
+export interface BillingOverview {
+  plan_id: string;
+  plan_name: string;
+  /**
+   * `null` for an organisation that has never subscribed, and for an enterprise
+   * account on an invoiced deal — neither is an error state, so both must render
+   * as a plan without a subscription rather than as a failure.
+   */
+  subscription: Subscription | null;
+  entitlements: Entitlements;
+  usage: EntitlementUsage;
+  /** True when a platform admin has set a negotiated limit on this org. */
+  has_custom_limits: boolean;
+  credit: Credit;
+  payments: PaymentRecord[];
+  /**
+   * False on a deployment with no gateway key. The Billing page uses this to keep
+   * saying "no payment processor is connected" rather than offering an upgrade
+   * button that would run against a stub and take no money (CLAUDE.md §4 #9).
+   */
+  payments_configured: boolean;
+  /**
+   * False when the deployment has no credit-pack product configured. Distinct
+   * from `payments_configured` - a deployment can take real subscription
+   * payments and still have no top-up product - so the "Top up" button reads
+   * this rather than `payments_configured` alone (CLAUDE.md §4 #9).
+   */
+  credit_pack_configured: boolean;
 }
 
 export interface InvitationPreview {
@@ -600,6 +793,12 @@ export interface VoiceAgent {
   created_by: string | null;
   created_by_name: string | null;
   created_by_avatar_url: string | null;
+  /** When the customer chose to keep this agent active over the plan's limit. */
+  kept_at: string | null;
+  /** True when the plan no longer covers this agent, so it cannot place calls.
+   *  Locked, never deleted - it comes back the moment the plan does, and the
+   *  customer can make *this* one the active agent instead of upgrading. */
+  locked: boolean;
 }
 
 export interface VoicePreviewRequest {
@@ -802,6 +1001,104 @@ export const api = {
   // --- team performance - authenticated ------------------------------------
   teamPerformance: () =>
     authReq<TeamPerformance[]>('/api/v1/organisations/me/team-performance'),
+  myCredits: () =>
+    authReq<MyCredits>('/api/v1/organisations/me/members/me/credits'),
+  /** `capPaise: null` explicitly clears the cap (uncapped — only the
+   *  organisation-wide balance governs this teammate). */
+  setMemberCreditCap: (userId: string, capPaise: number | null) =>
+    authReq<void>(`/api/v1/organisations/me/members/${userId}/credit-cap`, {
+      method: 'PATCH',
+      body: JSON.stringify({ monthly_credit_cap_paise: capPaise }),
+    }),
+
+  // --- platform admin ------------------------------------------------------
+  platformOrgs: (search?: string) =>
+    authReq<PlatformOrg[]>(
+      `/api/v1/platform/organisations${search ? `?search=${encodeURIComponent(search)}` : ''}`,
+    ),
+  platformOverride: (orgId: string) =>
+    authReq<EntitlementOverride | null>(
+      `/api/v1/platform/organisations/${orgId}/entitlements`,
+    ),
+  // `reason` is mandatory server-side and lands in the audit log beside the
+  // before/after state. There is no unaudited variant of either of these.
+  platformSetPlan: (orgId: string, planId: string, reason: string) =>
+    authReq<void>(`/api/v1/platform/organisations/${orgId}/plan`, {
+      method: 'PUT',
+      body: JSON.stringify({ plan_id: planId, reason }),
+    }),
+  platformSetOverride: (orgId: string, body: OverrideInput) =>
+    authReq<void>(`/api/v1/platform/organisations/${orgId}/entitlements`, {
+      method: 'PUT',
+      body: JSON.stringify(body),
+    }),
+  platformAudit: (limit = 100) =>
+    authReq<PlatformAuditEntry[]>(`/api/v1/platform/audit?limit=${limit}`),
+
+  // --- billing -------------------------------------------------------------
+  /**
+   * The plan ladder with the gateway's live prices, for the marketing site.
+   *
+   * `req`, not `authReq`: the public pages have no session, and adding a bearer
+   * header they cannot produce is what would make a pricing section render empty
+   * for every visitor who is not already a customer. `current` is always false
+   * here - there is no organisation to be current for.
+   */
+  publicPlans: () => req<PlanOption[]>('/api/v1/public/billing/plans'),
+  billingPlans: () => authReq<PlanOption[]>('/api/v1/billing/plans'),
+  billingOverview: () => authReq<BillingOverview>('/api/v1/billing/subscription'),
+  creditLedger: (limit = 100) =>
+    authReq<LedgerEntry[]>(`/api/v1/billing/credit-ledger?limit=${limit}`),
+  /** Buys a one-time credit pack. The credit is granted by the resulting webhook,
+   *  not by this call - so the balance moves once the payment settles. */
+  startTopUp: (idempotencyKey: string) =>
+    authReq<{ checkout_url: string }>('/api/v1/billing/top-up', {
+      method: 'POST',
+      body: JSON.stringify({ idempotency_key: idempotencyKey }),
+    }),
+  /**
+   * The gateway's invoice PDF for one payment, as a blob.
+   *
+   * Fetched rather than linked because the endpoint needs the session's bearer
+   * token - a plain `<a href>` sends no Authorization header and would 401. The
+   * caller turns the blob into an object URL and revokes it.
+   */
+  paymentReceipt: async (paymentId: string): Promise<Blob> => {
+    const res = await fetch(
+      `${BASE}/api/v1/billing/payments/${paymentId}/receipt`,
+      { headers: await authHeaders(), cache: 'no-store' },
+    );
+    if (!res.ok) {
+      throw new Error(
+        res.status === 404
+          ? 'No receipt is available for this payment yet.'
+          : "The receipt couldn't be fetched. Try again in a moment.",
+      );
+    }
+    return res.blob();
+  },
+  // `idempotencyKey` is the caller's own retry token: reusing it resumes the
+  // same checkout instead of opening a second one, the same contract
+  // `connectNumber` already has. Generate it once per button press, not per
+  // render, or a re-render starts a new subscription attempt.
+  startCheckout: (planId: string, period: 'monthly' | 'annual', idempotencyKey: string) =>
+    authReq<{ checkout_url: string }>('/api/v1/billing/checkout', {
+      method: 'POST',
+      body: JSON.stringify({ plan_id: planId, period, idempotency_key: idempotencyKey }),
+    }),
+  changePlan: (planId: string, period: 'monthly' | 'annual') =>
+    authReq<Subscription>('/api/v1/billing/change-plan', {
+      method: 'POST',
+      body: JSON.stringify({ plan_id: planId, period }),
+    }),
+  cancelSubscription: () =>
+    authReq<Subscription>('/api/v1/billing/cancel', { method: 'POST' }),
+  // Pulls whatever the gateway actually holds and applies it. For when a webhook
+  // never arrived - the payment succeeded but nothing told us.
+  syncBilling: () =>
+    authReq<{ applied: boolean; detail: string }>('/api/v1/billing/sync', {
+      method: 'POST',
+    }),
 
   // --- organisations, team, profile - authenticated -----------------------
   listOrganisations: () => authReq<Organisation[]>('/api/v1/organisations'),
@@ -964,6 +1261,13 @@ export const api = {
     }),
 
   listVoiceAgents: () => authReq<VoiceAgent[]>('/api/v1/voice-agents'),
+  /** Choose which agents stay usable when the plan covers fewer than exist.
+   *  Marking more than the limit is allowed - the most recent choice wins and the
+   *  oldest falls out, so nobody has to work out what to unmark first. */
+  keepAgent: (id: string, keep = true) =>
+    authReq<VoiceAgent>(`/api/v1/voice-agents/${id}/keep?keep=${keep}`, {
+      method: 'POST',
+    }),
   createVoiceAgent: (draft: VoiceAgentDraft) =>
     authReq<VoiceAgent>('/api/v1/voice-agents', {
       method: 'POST',

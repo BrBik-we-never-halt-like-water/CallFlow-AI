@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
 from app.auth.dependencies import CurrentUser, current_user
+from app.auth.platform import is_platform_admin
 from app.database import database
 from app.database.repositories import users as users_repo
 
@@ -36,6 +37,10 @@ class MeOut(BaseModel):
     avatar_url: str | None
     active: MembershipOut
     permissions: list[str]
+    is_platform_admin: bool
+    """Display only - it gates a nav entry and nothing else. Every platform route
+    resolves the capability again, and the definer functions behind them check it a
+    third time in the database (`docs/PLATFORM_ADMIN.md` §2)."""
 
 
 class ProfileUpdateIn(BaseModel):
@@ -70,6 +75,7 @@ async def me(user: Annotated[CurrentUser, Depends(current_user)]) -> MeOut:
         # Sent so the client can disable actions the role cannot perform, rather
         # than letting someone click through to a 403.
         permissions=sorted(p.value for p in user.permissions),
+        is_platform_admin=await is_platform_admin(user),
     )
 
 

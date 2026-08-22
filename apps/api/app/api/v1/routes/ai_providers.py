@@ -23,6 +23,8 @@ from app.database import database
 from app.database.repositories import (
     ai_provider_credentials as ai_provider_credentials_repo,
 )
+from app.domain.entitlements import check_ai_integration_allowed
+from app.services import billing
 
 router = APIRouter(prefix="/api/v1/ai-providers", tags=["ai-providers"])
 
@@ -76,6 +78,21 @@ async def connect_ai_provider(
         ) from exc
 
     async with database.as_user(user.auth_user_id) as conn:
+        # Connect only, never rotate: an existing credential must stay updatable
+        # after a downgrade, or a failed renewal strands a secret nobody can
+        # replace (`docs/BILLING.md` §3). `upsert` below is an update when the row
+        # exists, which is why the count is what decides, not the call itself.
+        if await ai_provider_credentials_repo.get_credential(conn, user.org_id, provider) is None:
+            effective = await billing.resolve_plan(conn, user.org_id, user.org_plan_id)
+            billing.refuse(
+                check_ai_integration_allowed(
+                    entitlements=effective.entitlements,
+                    plan_name=billing.plan_name(effective.plan_id),
+                    current_count=await ai_provider_credentials_repo.count_for_org(
+                        conn, user.org_id
+                    ),
+                )
+            )
         row = await ai_provider_credentials_repo.upsert(
             conn,
             org_id=user.org_id,

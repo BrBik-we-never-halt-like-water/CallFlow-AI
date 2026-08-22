@@ -11,6 +11,7 @@ import {
   GearSixIcon,
   PlugsConnectedIcon,
   RobotIcon,
+  ShieldCheckIcon,
   UserFocusIcon,
 } from '@phosphor-icons/react/dist/ssr';
 import Link from 'next/link';
@@ -81,6 +82,23 @@ const SECTIONS: { label: string; items: DashNavItem[] }[] = [
   },
 ];
 
+/**
+ * CallFlow staff only, and absent from `SECTIONS` entirely rather than
+ * filtered out of it - a destination nobody but staff has must not be
+ * something every other consumer of that list has to remember to exclude.
+ * Its own section, not folded into "Platform" above: that label already
+ * means "what the platform holds" for a customer, and a staff-only link
+ * among Integrations/Billing would read as a feature every org has.
+ *
+ * Renders on `profile.is_platform_admin` from `GET /me`, which is display
+ * only - the route itself 404s for anyone without a `platform_admins` row,
+ * and the database checks again below that (`docs/PLATFORM_ADMIN.md` §2).
+ */
+const STAFF_SECTION: { label: string; items: DashNavItem[] } = {
+  label: 'Staff',
+  items: [{ label: 'Platform admin', href: '/app/platform', icon: ShieldCheckIcon }],
+};
+
 export function DashSidebar({
   profile,
   escalationCount,
@@ -103,6 +121,9 @@ export function DashSidebar({
   className?: string;
 }) {
   const pathname = usePathname() ?? '';
+  const sections = profile?.is_platform_admin
+    ? [...SECTIONS, STAFF_SECTION]
+    : SECTIONS;
 
   return (
     // The nav list scrolls; the plan card and theme control do not. Both were
@@ -117,7 +138,7 @@ export function DashSidebar({
           collapsed ? 'items-center px-2' : 'px-3',
         )}
       >
-        {SECTIONS.map((section) => {
+        {sections.map((section) => {
           const items = section.items.filter(
             (item) => !item.permission || hasPermission(profile, item.permission),
           );

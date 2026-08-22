@@ -43,9 +43,13 @@ const SOLUTION_LINKS = [
 ];
 
 // "Pricing" sat at the top of this list until the pricing pages were removed —
-// the plans are not decided, and the page was rendering `TODO` chips where the
-// numbers belong. Put it back here when there is something true to link to.
+// the plans were not decided and the page rendered `TODO` chips where the numbers
+// belong. It is back, pointing at the home page's pricing section rather than a
+// `/pricing` route: the plans, the limits and the gateway's live prices are all
+// real now, but the standalone page and its comparison matrix are not rebuilt, and
+// linking to one that does not exist is the same mistake in the other direction.
 const FLAT_LINKS = [
+  { label: "Pricing", href: "/#pricing" },
   { label: "Docs", href: "/docs" },
   { label: "Trust", href: "/trust" },
 ];

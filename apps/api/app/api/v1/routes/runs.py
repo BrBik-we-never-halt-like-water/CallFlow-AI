@@ -2,13 +2,18 @@
 
 Every run dials for real. There is no dry-run mode (CLAUDE.md, ADR-3).
 
-**The only guard between "started a run" and "rang a real phone" is the
-suppression list.** The per-run ceiling, the allowlist, per-organisation rate
-limiting, the daily budget and per-teammate credits were all removed at the
+**The only per-dial guard is the suppression list.** The per-run ceiling, the
+allowlist, per-organisation rate limiting, the daily budget and the
+per-teammate call-count allocation were all removed from the dial gate at the
 product owner's direction while a replacement security layer is designed - see
-`domain/safety.py`'s module docstring. Nothing here throttles, caps, or bills a
-run: a request that resolves an agent and a verified number dials every contact
-in the list.
+`domain/safety.py`'s module docstring. `RunDialer` throttles nothing beyond
+that.
+
+**Usage credit is still checked, once, before a run starts** (not per dial):
+the organisation-wide balance and the acting teammate's own share of it, both
+refusing before a single contact is dialled if either is exhausted. This is a
+different system from the removed cost guards above - money, not a call
+count - and was not part of that removal.
 """
 
 from __future__ import annotations
@@ -25,7 +30,6 @@ from fastapi import (
     Depends,
     File,
     HTTPException,
-    Request,
     UploadFile,
     status,
 )
@@ -36,11 +40,13 @@ from app.auth.permissions import Permission
 from app.core.config import config
 from app.core.logging import CallContext
 from app.database import database
+from app.database.repositories import credits as credits_repo
 from app.database.repositories import escalations as escalations_repo
 from app.database.repositories import run_numbers as run_numbers_repo
 from app.database.repositories import runs as runs_repo
 from app.database.repositories import suppressions as suppressions_repo
 from app.domain.entities import NEEDS_A_PERSON_DISPOSITIONS, CallOutcome, Contact
+from app.domain.entitlements import check_credit_available, check_member_credit_cap
 from app.domain.safety import mask, phone_hash
 from app.domain.spreadsheet import (
     MAX_ROWS,
@@ -48,6 +54,8 @@ from app.domain.spreadsheet import (
     parse_rows,
     to_contact_payload,
 )
+from app.services import billing
+from app.services import credit as credit_service
 from app.services.run_dialer import RunDialer
 from app.services.run_dispatch import RunNotDispatchable, RunPlan, resolve_run_plan
 
@@ -168,7 +176,6 @@ async def _run_and_persist(
 @router.post("", status_code=status.HTTP_200_OK)
 async def start_run(
     req: RunRequest,
-    request: Request,
     background: BackgroundTasks,
     user: Annotated[CurrentUser, Depends(RequirePermission(Permission.RUNS_START))],
 ) -> dict[str, Any]:
@@ -198,6 +205,54 @@ async def start_run(
 
     run_id = uuid.uuid4().hex[:12]
     async with database.as_user(user.auth_user_id) as conn:
+        # Usage credit, checked once before the run starts rather than per dial.
+        #
+        # **The limit this accepts, stated rather than hidden:** a run that starts
+        # with credit can overspend it, because the money only moves when each
+        # call settles and nothing re-checks the balance mid-run. The exposure is
+        # bounded by how many contacts are in the run times the rate, and a call
+        # already talking to a person is never cut off for money anyway, so a
+        # mid-run balance check could only refuse calls that had not started.
+        #
+        # A per-dial persisted hold would close that gap and needs a database
+        # connection inside `RunDialer`, which is deliberately I/O-free. That is
+        # a real change to its shape, not a line here.
+        effective_plan = await billing.resolve_plan(conn, user.org_id, user.org_plan_id)
+        if effective_plan.entitlements.monthly_credit_paise is not None:
+            # An unsubscribed plan is granted lazily, because nothing else will:
+            # `grant_for_period` runs off subscription webhooks and Free has no
+            # subscription. Idempotent per calendar month, so this is a no-op after
+            # the first run of the month.
+            await credit_service.ensure_period_credit(
+                conn,
+                org_id=user.org_id,
+                entitlements=effective_plan.entitlements,
+                has_subscription=billing.subscription_grants_credit(effective_plan),
+            )
+            balance = await credits_repo.balance(conn, user.org_id)
+            billing.refuse(
+                check_credit_available(
+                    balance_paise=balance,
+                    plan_name=billing.plan_name(effective_plan.plan_id),
+                )
+            )
+
+            # A ceiling on this teammate's own share of the pool above,
+            # independent of whether the org-wide balance would allow the run -
+            # both are checked, and either can refuse. `cap_paise=None` means
+            # nobody has set a share for this person, so only the org-wide
+            # balance just checked governs them.
+            cap_paise, spent_paise = await credit_service.member_credit_cap_status(
+                conn, org_id=user.org_id, user_id=user.id
+            )
+            billing.refuse(
+                check_member_credit_cap(
+                    cap_paise=cap_paise,
+                    spent_paise=spent_paise,
+                    plan_name=billing.plan_name(effective_plan.plan_id),
+                )
+            )
+
         # Resolved once here, not once per contact - the one guard that still
         # stands before a dial.
         suppressed: set[str] = set()

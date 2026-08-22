@@ -68,9 +68,6 @@ class GateResult:
     reason: str = ""
 
 
-
-
-
 def check_dial_allowed(
     phone: str,
     *,

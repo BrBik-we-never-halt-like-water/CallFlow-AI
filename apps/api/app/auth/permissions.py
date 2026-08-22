@@ -143,6 +143,12 @@ _OWNER = _ADMIN | {
     Permission.SUPPRESSIONS_REMOVE,
 }
 
+# **Platform admin is deliberately not in here, and must not be added.** This map is
+# `OrgRole -> Permission`, and an org role is scoped to one organisation by
+# definition - so a fifth value would be the wrong shape for an identity that spans
+# every organisation, and every `has_org_role` policy in the schema would silently
+# start treating staff as a member of tables they only ever read. It lives in
+# `auth/platform.py` as a capability set instead (`docs/PLATFORM_ADMIN.md` §2).
 ROLE_PERMISSIONS: MappingProxyType[OrgRole, frozenset[Permission]] = MappingProxyType(
     {
         # Viewer sees the same breadth as admin/owner, just read-only - so it

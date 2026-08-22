@@ -21,7 +21,7 @@ import asyncpg
 _LIST_COLUMNS = """
     v.id, v.org_id, v.created_by, v.name, v.kind, v.stt_provider, v.tts_provider,
     v.llm_provider, v.llm_model, v.voice_id, v.system_prompt, v.prebuilt_persona,
-    v.collect_fields, v.created_at, v.updated_at,
+    v.collect_fields, v.created_at, v.updated_at, v.kept_at,
     u.name as created_by_name, u.avatar_url as created_by_avatar_url
 """
 
@@ -42,6 +42,20 @@ async def list_org_agents(conn: asyncpg.Connection, org_id: UUID) -> list[asyncp
         order by v.created_at desc
         """,
         org_id,
+    )
+
+
+async def count_for_org(conn: asyncpg.Connection, org_id: UUID) -> int:
+    """How many agents this organisation has, for the plan gate.
+
+    Accurate under RLS because `voice_agents_select` is org-wide
+    (`is_org_member`), not per-creator - an operator counting does not undercount
+    a teammate's agents. The `before insert` trigger counts again as `postgres`,
+    which is what makes the limit hold against raw SQL; this count only exists so
+    the API can refuse with a readable reason first.
+    """
+    return await conn.fetchval(
+        "select count(*) from public.voice_agents where org_id = $1", org_id
     )
 
 
@@ -148,4 +162,31 @@ async def delete_agent(conn: asyncpg.Connection, org_id: UUID, agent_id: UUID) -
         "delete from public.voice_agents where org_id = $1 and id = $2 returning id::text",
         org_id,
         agent_id,
+    )
+
+
+async def set_kept(
+    conn: asyncpg.Connection, org_id: UUID, agent_id: UUID, *, keep: bool
+) -> asyncpg.Record | None:
+    """Mark or unmark an agent as one to keep active over the plan's limit.
+
+    A preference rather than a state - see the migration `c4e7f2b81d63`. Stamped
+    with `now()` rather than a boolean because the *order* of choices decides who
+    wins when more agents are marked than the plan allows, and the most recent
+    choice should be the one that takes effect.
+
+    Returns `None` when the agent is not visible to this session, which RLS
+    already decides - so the caller answers 404 rather than leaking that an id
+    exists in another organisation.
+    """
+    return await conn.fetchrow(
+        """
+        update public.voice_agents
+           set kept_at = case when $3 then now() else null end
+         where id = $2 and org_id = $1
+        returning id, kept_at
+        """,
+        org_id,
+        agent_id,
+        keep,
     )

@@ -40,6 +40,8 @@ from fastapi import HTTPException
 from app.api.v1.routes import organisations
 from app.auth.dependencies import CurrentUser
 from app.database.models import OrgRole
+from app.domain.plans import entitlements_for
+from app.services import billing as billing_service
 
 
 def _current_user(role: OrgRole) -> CurrentUser:
@@ -270,6 +272,26 @@ async def test_admin_can_still_invite_as_operator_or_viewer(
     )
     monkeypatch.setattr(organisations.org_repo, "create_invitation", create_invitation)
     monkeypatch.setattr(organisations, "EmailGateway", _FakeEmailGateway)
+    # Invite now passes a plan gate before it writes. This test is about *roles* -
+    # that an admin may invite as operator or viewer - so the seat count and the
+    # plan are stubbed to a state that allows it rather than asserted on here.
+    # `test_entitlements.py` owns whether the seat arithmetic is right, and
+    # `test_entitlement_enforcement.py` owns whether it holds against raw SQL.
+    monkeypatch.setattr(
+        organisations.org_repo, "seat_usage", AsyncMock(return_value=(1, 0))
+    )
+    monkeypatch.setattr(
+        organisations.billing,
+        "resolve_plan",
+        AsyncMock(
+            return_value=billing_service.EffectivePlan(
+                plan_id="growth",
+                entitlements=entitlements_for("growth"),
+                subscription=None,
+                has_custom_limits=False,
+            )
+        ),
+    )
     admin = _current_user(OrgRole.ADMIN)
 
     result = await organisations.invite(

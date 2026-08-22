@@ -84,6 +84,17 @@ async def _create_tenant(conn: asyncpg.Connection, label: str) -> Tenant:
         auth_user_id,
     )
     assert row is not None, "signup trigger did not create a user and organisation"
+
+    # Every new organisation starts on Free, which allows exactly one seat
+    # (`enforce_seat_limit`, migration `202608181000`). This file is about RLS and
+    # role boundaries, and most of its scenarios need two or three members in one
+    # org - so a seat refusal here would be a fixture failing while looking exactly
+    # like a policy failing. Lifted once at the factory rather than at each of the
+    # dozen call sites that add a member. The seat limit itself is covered in
+    # `test_entitlement_enforcement.py`, against orgs whose plan is set on purpose.
+    await conn.execute(
+        "update public.organisations set plan_id = 'growth' where id = $1", row["org_id"]
+    )
     return Tenant(auth_user_id, row["user_id"], row["org_id"])
 
 
@@ -1696,6 +1707,13 @@ async def test_operator_cannot_assign_or_resolve_a_teammates_escalation(
 async def test_member_credit_allocations_scoped_to_self_or_team_read(
     db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
 ) -> None:
+    """`member_credit_allocations` now holds only the usage-credit share
+    (`monthly_credit_cap_paise`) - the call-count allocation this table used
+    to also carry was retired. The RLS boundary is unchanged and still worth
+    proving directly: a known, real cap set for op1 must read back as `None`
+    for a teammate RLS blocks, real for op1 themselves, and real for an
+    admin - `get_credit_cap` cannot otherwise tell "blocked" from "never set",
+    so a genuine non-null value is what makes a blocked read provable."""
     a, _ = tenants
     await _as_postgres(db)
 
@@ -1708,24 +1726,24 @@ async def test_member_credit_allocations_scoped_to_self_or_team_read(
 
     async with db.transaction():
         await _as_user(db, admin.auth_user_id)
-        await credits_repo.set_allocation(
-            db, org_id=a.org_id, user_id=op1.user_id, daily_allocation=50, updated_by=admin.user_id
+        await credits_repo.set_credit_cap(
+            db, org_id=a.org_id, user_id=op1.user_id, cap_paise=50_00, updated_by=admin.user_id
         )
 
     async with db.transaction():
         await _as_user(db, op2.auth_user_id)
-        rows = await credits_repo.list_allocations(db, a.org_id)
-    assert rows == [], "operator can see a teammate's credit allocation"
+        seen_by_op2 = await credits_repo.get_credit_cap(db, a.org_id, op1.user_id)
+    assert seen_by_op2 is None, "operator can see a teammate's usage-credit cap"
 
     async with db.transaction():
         await _as_user(db, op1.auth_user_id)
-        rows = await credits_repo.list_allocations(db, a.org_id)
-    assert [r["daily_allocation"] for r in rows] == [50], "operator cannot see their own allocation"
+        seen_by_self = await credits_repo.get_credit_cap(db, a.org_id, op1.user_id)
+    assert seen_by_self == 50_00, "operator cannot see their own usage-credit cap"
 
     async with db.transaction():
         await _as_user(db, admin.auth_user_id)
-        rows = await credits_repo.list_allocations(db, a.org_id)
-    assert len(rows) == 1, "admin cannot see the team's credit allocations"
+        seen_by_admin = await credits_repo.get_credit_cap(db, a.org_id, op1.user_id)
+    assert seen_by_admin == 50_00, "admin cannot see the team's usage-credit caps"
 
     await _as_postgres(db)
     await db.execute("delete from public.member_credit_allocations where org_id = $1", a.org_id)
@@ -1753,8 +1771,8 @@ async def test_operator_cannot_set_a_credit_allocation_directly(
     with pytest.raises(asyncpg.exceptions.InsufficientPrivilegeError):
         async with db.transaction():
             await _as_user(db, op1.auth_user_id)
-            await credits_repo.set_allocation(
-                db, org_id=a.org_id, user_id=op2.user_id, daily_allocation=99, updated_by=op1.user_id
+            await credits_repo.set_credit_cap(
+                db, org_id=a.org_id, user_id=op2.user_id, cap_paise=99_00, updated_by=op1.user_id
             )
 
     await _as_postgres(db)
@@ -1762,78 +1780,6 @@ async def test_operator_cannot_set_a_credit_allocation_directly(
     await db.execute(
         "delete from auth.users where id = any($1::uuid[])",
         [op1.auth_user_id, op2.auth_user_id],
-    )
-    await db.execute("delete from public.organisations where deleted_at is not null")
-
-
-async def test_used_today_counts_only_connected_calls_and_ceiling_distinguishes_unset_from_zero(
-    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
-) -> None:
-    """`used_today()` now backs credit *enforcement*
-    (`check_dial_allowed`'s `credits_remaining`, wired up in
-    `RunDialer`), not just display - it must count a connected call
-    (`status = 'COMPLETED'`), not merely an attempted one, or setting
-    someone's daily allocation to N would start blocking them after N dial
-    *attempts*, most of which never actually spent anything.
-    `get_enforced_ceiling()` must also tell "no row at all" (no per-teammate
-    limit - only the org-wide budget applies) apart from "a row with
-    daily_allocation = 0" (deliberately blocked) - `get_allocation()`'s own
-    0-default conflates the two for display, which is the right call for the
-    UI but would be a real enforcement bug here.
-    """
-    a, _ = tenants
-    await _as_postgres(db)
-
-    admin = await _create_tenant(db, "credits-enforce-admin")
-    op1 = await _create_tenant(db, "credits-enforce-op1")
-    op2 = await _create_tenant(db, "credits-enforce-op2")
-    await _seat(db, a.org_id, admin, "admin")
-    await _seat(db, a.org_id, op1, "operator")
-    await _seat(db, a.org_id, op2, "operator")
-
-    run_id = await _insert_run(db, org_id=a.org_id, started_by=op1.user_id)
-    await db.execute(
-        """
-        insert into public.call_outcomes (run_id, org_id, contact_name, phone_masked, status, disposition)
-        values ($1, $2, 'Connected', '+1 555 0102', 'COMPLETED', 'auto_closed')
-        """,
-        run_id,
-        a.org_id,
-    )
-    await db.execute(
-        """
-        insert into public.call_outcomes (run_id, org_id, contact_name, phone_masked, status, disposition)
-        values ($1, $2, 'Never answered', '+1 555 0103', 'NO_ANSWER', 'unreachable')
-        """,
-        run_id,
-        a.org_id,
-    )
-
-    async with db.transaction():
-        await _as_user(db, op1.auth_user_id)
-        used = await credits_repo.used_today(db, a.org_id, op1.user_id)
-        no_row_ceiling = await credits_repo.get_enforced_ceiling(db, a.org_id, op1.user_id)
-    assert used == 1, "used_today counted a call that never connected"
-    assert no_row_ceiling is None, "a teammate with no allocation row was treated as having a ceiling"
-
-    async with db.transaction():
-        await _as_user(db, admin.auth_user_id)
-        await credits_repo.set_allocation(
-            db, org_id=a.org_id, user_id=op2.user_id, daily_allocation=0, updated_by=admin.user_id
-        )
-
-    async with db.transaction():
-        await _as_user(db, op2.auth_user_id)
-        zero_ceiling = await credits_repo.get_enforced_ceiling(db, a.org_id, op2.user_id)
-    assert zero_ceiling == 0, "an explicit zero allocation was indistinguishable from no allocation at all"
-
-    await _as_postgres(db)
-    await db.execute("delete from public.call_outcomes where run_id = $1", run_id)
-    await db.execute("delete from public.runs where id = $1", run_id)
-    await db.execute("delete from public.member_credit_allocations where org_id = $1", a.org_id)
-    await db.execute(
-        "delete from auth.users where id = any($1::uuid[])",
-        [admin.auth_user_id, op1.auth_user_id, op2.auth_user_id],
     )
     await db.execute("delete from public.organisations where deleted_at is not null")
 
@@ -4040,20 +3986,26 @@ async def test_ai_provider_credentials_are_invisible_across_tenants_for_agents(
     await db.execute("delete from public.ai_provider_credentials where org_id = $1", a.org_id)
 
 
-async def test_voice_agents_follow_the_per_creator_silo_for_operators(
+async def test_voice_agents_follow_the_per_creator_silo(
     db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
 ) -> None:
-    """`voice_agents` follows the per-creator visibility silo that runs and
-    outcomes already use (migration `202608092000`): an **operator** sees only the
-    agents they created, while owner, admin and viewer see every agent in the
-    organisation.
+    """An operator sees only the agents they created; a viewer sees the org's.
 
-    This test previously asserted the opposite - plain `is_org_member` read for
-    everyone - which is what `202608151200` originally created. It was narrowed
-    deliberately ("an operator sees only their own agents; an admin sees
-    everyone's"), so what is pinned here is the *asymmetry*: the roles that
-    oversee an organisation see all of it, and the role that builds sees its own
-    work."""
+    Rewritten, not deleted. This test previously asserted the *opposite* - that
+    voice agents were the deliberate contrast to the campaigns/runs per-creator
+    silo - and migration `202608171900` closed that gap on purpose. Deleting the
+    test would have left the new boundary uncovered; inverting it keeps the silo
+    itself asserted.
+
+    Worth knowing how this was found: the migration landed with the old assertion
+    still in the suite, and nothing caught it, because every DB-backed test skips
+    when `DATABASE_URL` is unset and CI sets none. The first real run after the
+    merge is what surfaced it.
+
+    The asymmetry is the point. `viewer` is a read-only *oversight* role, so it
+    sees everything; `operator` is a doer, so it sees its own work. Testing only
+    one of them would pass under a policy that got the other wrong.
+    """
     a, _ = tenants
     await _as_postgres(db)
 
@@ -4064,23 +4016,29 @@ async def test_voice_agents_follow_the_per_creator_silo_for_operators(
 
     async with db.transaction():
         await _as_user(db, a.auth_user_id)
-        created = await _insert_voice_agent(db, org_id=a.org_id, created_by=a.user_id)
+        owners_agent = await _insert_voice_agent(db, org_id=a.org_id, created_by=a.user_id)
 
-    # The overseeing roles see an agent they did not create.
-    for member in (a, viewer):
-        async with db.transaction():
-            await _as_user(db, member.auth_user_id)
-            rows = await voice_agents_repo.list_org_agents(db, a.org_id)
-        assert [r["id"] for r in rows] == [created["id"]], (
-            f"member {member.user_id} cannot see an agent created by another org member"
-        )
-
-    # The operator does not - and this is the half worth pinning, because it is
-    # the one a well-meaning "why can't my teammate see this?" fix would undo.
     async with db.transaction():
         await _as_user(db, operator.auth_user_id)
-        rows = await voice_agents_repo.list_org_agents(db, a.org_id)
-    assert rows == [], "an operator saw an agent created by another org member"
+        operators_agent = await _insert_voice_agent(
+            db, org_id=a.org_id, created_by=operator.user_id
+        )
+
+    # The viewer oversees, so it sees both.
+    async with db.transaction():
+        await _as_user(db, viewer.auth_user_id)
+        seen = {r["id"] for r in await voice_agents_repo.list_org_agents(db, a.org_id)}
+    assert seen == {owners_agent["id"], operators_agent["id"]}, (
+        "a viewer must see every agent in the organisation it oversees"
+    )
+
+    # The operator sees its own and not the owner's.
+    async with db.transaction():
+        await _as_user(db, operator.auth_user_id)
+        seen = {r["id"] for r in await voice_agents_repo.list_org_agents(db, a.org_id)}
+    assert seen == {operators_agent["id"]}, (
+        "an operator must see only the agents it created"
+    )
 
     await _as_postgres(db)
     await db.execute("delete from public.voice_agents where org_id = $1", a.org_id)
@@ -4091,9 +4049,27 @@ async def test_voice_agents_follow_the_per_creator_silo_for_operators(
     await db.execute("delete from public.organisations where deleted_at is not null")
 
 
-async def test_only_operator_or_above_can_create_voice_agents_and_only_admin_or_above_can_delete(
+async def test_an_operator_can_delete_its_own_agent_but_not_someone_elses(
     db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
 ) -> None:
+    """Creating still needs operator or above; deleting now follows authorship.
+
+    Rewritten alongside `test_voice_agents_follow_the_per_creator_silo`, and for
+    the same reason: migration `202608171900` deliberately let the person who
+    created an agent delete it, and this test previously asserted the opposite
+    ("delete should be admin/owner only"). The old assertion was still green in CI
+    because CI sets no `DATABASE_URL` and skips every DB-backed test.
+
+    Both halves matter. Asserting only that an operator *can* delete its own would
+    pass under a policy that let it delete anything; asserting only that it cannot
+    delete another's would pass under the old admin-only rule.
+
+    A `USING` clause filters the row out of the delete rather than raising, so a
+    refused delete is a silent no-op - same shape as
+    `test_admin_cannot_demote_an_owner_via_direct_update` above. That is why each
+    case checks the row is still really there afterwards rather than trusting the
+    return value alone.
+    """
     a, _ = tenants
     await _as_postgres(db)
 
@@ -4109,40 +4085,37 @@ async def test_only_operator_or_above_can_create_voice_agents_and_only_admin_or_
 
     async with db.transaction():
         await _as_user(db, operator.auth_user_id)
-        created = await _insert_voice_agent(
+        own = await _insert_voice_agent(
             db, org_id=a.org_id, created_by=operator.user_id, name="Operator Agent"
         )
-    assert created is not None, "operator could not create a voice agent"
+    assert own is not None, "operator could not create a voice agent"
 
-    # `voice_agents_delete` widened in `b6d1e93af472`: an owner or admin may
-    # remove any agent, and everyone else may remove the ones they created. An
-    # operator who could build an agent but never remove it had to ask an admin
-    # to undo their own work (`ISSUES.md` #129).
-    async with db.transaction():
-        await _as_user(db, operator.auth_user_id)
-        deleted = await voice_agents_repo.delete_agent(db, a.org_id, created["id"])
-    assert deleted is not None, "an operator could not delete the agent they created"
-
-    # The other half of the same policy, and the half worth pinning: the widening
-    # is per-creator, not a blanket operator grant. A `USING` clause filters the
-    # row out rather than raising, so a refused delete is silently a no-op -
-    # which is why this asserts the row survives rather than expecting an error.
     async with db.transaction():
         await _as_user(db, a.auth_user_id)
-        colleagues = await _insert_voice_agent(
-            db, org_id=a.org_id, created_by=a.user_id, name="Owner's Agent"
+        someone_elses = await _insert_voice_agent(
+            db, org_id=a.org_id, created_by=a.user_id, name="Owner Agent"
         )
 
+    # Not its own: filtered out, and genuinely still present.
     async with db.transaction():
         await _as_user(db, operator.auth_user_id)
-        refused = await voice_agents_repo.delete_agent(db, a.org_id, colleagues["id"])
-    assert refused is None, "an operator deleted an agent they did not create"
-
+        refused = await voice_agents_repo.delete_agent(db, a.org_id, someone_elses["id"])
+    assert refused is None, "an operator deleted an agent it did not create"
     await _as_postgres(db)
-    still_there = await db.fetchval(
-        "select exists(select 1 from public.voice_agents where id = $1)", colleagues["id"]
-    )
-    assert still_there, "a colleague's voice agent was actually deleted by an operator"
+    assert await db.fetchval(
+        "select exists(select 1 from public.voice_agents where id = $1)",
+        someone_elses["id"],
+    ), "the other member's agent was actually deleted by an operator"
+
+    # Its own: allowed, and genuinely gone.
+    async with db.transaction():
+        await _as_user(db, operator.auth_user_id)
+        removed = await voice_agents_repo.delete_agent(db, a.org_id, own["id"])
+    assert removed is not None, "an operator could not delete the agent it created"
+    await _as_postgres(db)
+    assert not await db.fetchval(
+        "select exists(select 1 from public.voice_agents where id = $1)", own["id"]
+    ), "the operator's own agent survived its delete"
 
     await db.execute("delete from public.voice_agents where org_id = $1", a.org_id)
     await db.execute(

@@ -21,6 +21,8 @@ export interface SessionProfileLike {
   user_id: string;
   permissions: string[];
   active: { role: string };
+  /** CallFlow staff only - absent or false for every ordinary customer. */
+  is_platform_admin?: boolean;
 }
 
 /**

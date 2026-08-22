@@ -2,6 +2,7 @@ import { CapabilityGrid } from "@/components/marketing/capability-grid";
 import { FinalCta } from "@/components/marketing/final-cta";
 import { Hero } from "@/components/marketing/hero";
 import { Listening } from "@/components/marketing/listening";
+import { PricingPreview } from "@/components/marketing/pricing-preview";
 import { ProblemCompare } from "@/components/marketing/problem-compare";
 import { SafetySection } from "@/components/marketing/safety-section";
 import { Steps } from "@/components/marketing/steps";
@@ -18,16 +19,19 @@ import { DeckSection, SectionDeck } from "@/components/marketing/section-deck";
  *
  * Order carries that argument: show the product working, show it still working
  * while you read, explain why a call log is not enough, show the four steps,
- * list what you get, name who it is for, prove the guards, close.
+ * list what you get, name who it is for, prove the guards, price it, close.
  *
- * There was a pricing section between the guards and the close. It is gone
- * until the numbers are actually decided - it was rendering `TODO` chips where
- * the prices belong, which is worse than not making the claim at all. The close
- * (`FinalCta`) sits on the base ground, so removing the section that preceded it
- * does not put two `sand` grounds next to each other.
+ * Pricing is back in that order, between the guards and the close, after being
+ * removed for rendering `TODO` chips where the prices belonged. It reads last
+ * before the close on purpose: the cost of something is a fair question only once
+ * a visitor knows what it does, and the guards are the argument that most needs
+ * to land before a number does.
  *
  * Ground alternates so no two adjacent sections share a surface. At this size a
- * repeated ground makes two sections read as one.
+ * repeated ground makes two sections read as one - which is why pricing takes no
+ * `ground` prop: `safety` above it is `sand`, and `FinalCta` below sits on the
+ * base ground, so the plain surface between them is the one that keeps all three
+ * distinct.
  */
 export default function HomePage() {
   return (
@@ -73,6 +77,10 @@ export default function HomePage() {
 
         <DeckSection id="safety" ground="sand">
           <SafetySection />
+        </DeckSection>
+
+        <DeckSection id="pricing">
+          <PricingPreview />
         </DeckSection>
       </SectionDeck>
 
