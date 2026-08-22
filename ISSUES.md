@@ -6721,6 +6721,94 @@ Filed rather than fixed because it is not this task's change, and it wants its o
 review: a host guard that is too strict makes the suite unrunnable in CI against
 an ephemeral Postgres, which is where it should be running.
 
+## Iteration 50 - 2026-08-22 · the dashboard accent was the error colour
+
+Asked to synchronise the design and colour theme across the codebase, fix any
+breakage, and add typing and live indicators to chat. The theme half turned out
+to have one real defect rather than many: the token systems interoperate
+correctly, but the accent inside the newer one sat on its own danger hue.
+
+### #184 - the dashboard's accent was, by hue, its error colour
+
+**S3 · FIXED · web · `app/globals.css`, `scripts/check-tokens.mjs` (new)**
+
+The `.dash` family is 110 declarations, properly scoped to a class and properly
+themed in both directions - the problem was one hue. Measured in OKLCh against
+`--dash-danger`: `--dash-figure` (every KPI number) **0.8°**, `--dash-brand`
+(buttons, active nav) **2.2°**, `--dash-chart-line` **2.2°**, `--dash-heat-4`
+**2.4°**. For contrast the same palette puts `warning` 48.6° away and `success`
+126.6°, so it separates its other statuses correctly; only the accent collided.
+
+On a surface whose job is showing call outcomes, that means the headline figure,
+the active nav item and the trend line were the colour of a failure. The token's
+own comment said danger was kept "deeper and cooler than the brand on purpose" -
+true of its *value*, but hue is what the eye sorts by in a table. The same coral
+also sat 6.3° from `--lamp-flare`, where CLAUDE.md §10 cites 14° from jade as the
+mistake it already learned.
+
+Two more, found on the way:
+
+- **`--dash-figure` changed hue between themes** - coral `#c0322f` in light,
+  magenta `#ff0082` in dark, **24.8° apart**. The headline number changed colour
+  rather than lightness when the theme flipped.
+- **`--lamp-ice` was rebound to the brand in four scopes** (`.dash`, both
+  `[data-dash-overlay]` blocks, both toast overlays). While the brand was coral
+  that left `ice` 2.2° from `flare`: two different call states, one colour, in the
+  surface that shows call state. Ice has had no assigned meaning since dry_run was
+  removed, so it now inherits its canonical blue and nothing rebinds it.
+
+**Fix.** `--dash-brand`/`--dash-figure` are `--primary`; the heat and chart ramps
+were regenerated as one hue at stepped lightness. The neutrals and the
+success/warning/danger triad were correct and are untouched. 12 of 12 contrast
+pairs clear 4.5:1, including the two that actually constrain the choice: white on
+the dark fill (6.29:1) and the dark ink tier (8.77:1 on the card, because
+`#4f46e5` itself is 2.86:1 there and cannot carry a word).
+
+**A trap this created, and the guard for it.** `.dash` rebinds `--primary` to
+`--dash-brand`, so `--dash-brand: var(--primary)` closes a custom-property cycle:
+CSS resolves both to invalid and every brand surface renders unstyled, with no
+error in the console or the build. That was introduced and caught during this
+change. `scripts/check-tokens.mjs` now fails on it, on a second accent appearing,
+and on any accent within 30° of a lamp or status hue - and runs inside
+`npm run lint`, so CI covers it with no workflow change. Negative-tested: it
+reports the cycle, and reports 16 problems if the coral is put back.
+
+**Verified.** Values confirmed in the CSS the dev server actually serves (correct
+per theme, zero coral anywhere), lint 0 errors, `tsc` clean, build passes, and the
+figure rendered visibly distinct from failed/completed/running in a browser.
+
+### #185 - chat had no typing or presence indicator
+
+**S4 · FIXED · web · `lib/hooks/use-chat-liveness.ts` (new), `components/app/chat/typing-indicator.tsx` (new), `chat-shell.tsx`, `app/globals.css`**
+
+Messages arrived live (`useOrgRealtime` on `messages`/`channels`/`channel_members`),
+but nothing showed that a colleague was mid-sentence or even in the conversation.
+
+Built on Realtime **presence and broadcast**, not `postgres_changes`: a keystroke
+is not a row, and writing one per keypress would mean a table, an RLS policy and a
+cleanup job for state that is worthless four seconds later. No migration.
+
+Typing throttles at 1.8s with a 4.5s TTL and a swept interval, so a continuous
+typist never flickers and a force-quit tab expires on its own; presence is keyed
+by user id so two tabs are one entry. Scoped to the open conversation - presence
+per sidebar row would be one channel per row for state nobody acts on.
+
+The indicator row reserves its height (a thread that jumps a line whenever someone
+starts typing is worse than 20px of space), counts past two names, and the presence
+dot renders **only while the subscription is live** - "nobody here" and "we don't
+know" are different, and only one is honest to draw.
+
+**Known limit, filed rather than hidden:** a broadcast channel is not covered by
+the `messages` RLS policy. Its name carries the conversation UUID and RLS gates who
+can discover that UUID, so membership gates discovery, not the channel. Payloads
+are chosen to match - a user id and a display name the org can already see, never
+message text, never a draft. Supabase Realtime Authorization would close it
+properly and wants its own migration.
+
+**Not done:** no presence in the conversation list, and no browser test of the
+two-session path - it needs two authenticated sessions, so the Realtime wiring is
+verified by compile and by the indicator rendering, not by two people typing.
+
 ## Template for the next iteration
 
 ```

@@ -35,6 +35,8 @@ import {
 } from '@/lib/api';
 import { useOrgRealtime } from '@/lib/hooks/use-org-realtime';
 import { useSession } from '@/lib/hooks/use-session';
+import { useChatLiveness } from '@/lib/hooks/use-chat-liveness';
+import { TypingIndicator } from '@/components/app/chat/typing-indicator';
 
 const MESSAGE_PAGE_SIZE = 50;
 /** How long to wait after the last keystroke before searching - avoids a
@@ -238,6 +240,22 @@ export function ChatShell() {
     session.status === 'signed-in' &&
     (session.profile.active.role === 'admin' ||
       session.profile.active.role === 'owner');
+
+  /**
+   * Presence and typing for the open conversation.
+   *
+   * Scoped to `channelId`, so switching conversations leaves one channel and
+   * joins another rather than accumulating subscriptions. Nothing here touches a
+   * table - see the hook for why a keystroke is not a row.
+   */
+  const liveness = useChatLiveness({
+    channelId,
+    userId: currentUserId,
+    name:
+      session.status === 'signed-in'
+        ? (session.profile.name ?? session.profile.email)
+        : null,
+  });
 
   const [channels, setChannels] = useState<Channel[]>([]);
   const [pendingDelete, setPendingDelete] = useState<Channel | null>(null);
@@ -714,6 +732,8 @@ export function ChatShell() {
       );
       setComposerBody('');
       setMention(null);
+      // The message itself is the update now; dots alongside it would be stale.
+      liveness.notifyStopped();
     } catch (e) {
       toast({
         title: 'Message not sent',
@@ -856,6 +876,12 @@ export function ChatShell() {
     const value = e.target.value;
     const cursor = e.target.selectionStart ?? value.length;
     setComposerBody(value);
+
+    // Throttled inside the hook, so calling it per character is the intended
+    // usage. Clearing the box says "stopped" immediately rather than leaving the
+    // other side watching dots for a draft that no longer exists.
+    if (value.trim()) liveness.notifyTyping();
+    else liveness.notifyStopped();
 
     const upToCursor = value.slice(0, cursor);
     const match = /(?:^|\s)@(\w*)$/.exec(upToCursor);
@@ -1146,6 +1172,23 @@ export function ChatShell() {
                     )}
                     <span className="flex flex-wrap items-center gap-3 text-small text-text-mute">
                       <span>{selectedChannel.kind === 'dm' ? 'Direct message' : 'Channel'}</span>
+                      {/* Only while the subscription is actually live. "Nobody
+                          here" and "we don't know yet" are different states, and
+                          drawing the first while the truth is the second is the
+                          kind of confident-and-wrong this codebase avoids
+                          (CLAUDE.md non-negotiable #9). */}
+                      {liveness.connected ? (
+                        <span className="flex items-center gap-1.5">
+                          <span
+                            aria-hidden
+                            className="presence-dot"
+                            data-state={liveness.online.length ? 'here' : 'away'}
+                          />
+                          {liveness.online.length
+                            ? `${liveness.online.length} here now`
+                            : 'Nobody else here'}
+                        </span>
+                      ) : null}
                       <button
                         type="button"
                         className="flex items-center gap-1.5 underline decoration-dotted underline-offset-2 hover:text-text"
@@ -1329,6 +1372,17 @@ export function ChatShell() {
               </div>
 
               <div className="border-t border-rule p-4 md:p-5">
+                {/* Above the composer, in a row that keeps its height whether or
+                    not anyone is typing - see `TypingIndicator` on why the
+                    reserved space is worth 20px. Ids resolve through the same
+                    `namesById` map the header and message list already use, so a
+                    member whose name has not loaded shows nothing rather than a
+                    raw uuid. */}
+                <TypingIndicator
+                  names={liveness.typing
+                    .map((id) => namesById[id])
+                    .filter((name): name is string => Boolean(name))}
+                />
                 {canSend ? (
                   <form
                     className="relative w-full"
