@@ -2,9 +2,9 @@
 
 import { useCallback, useMemo, useState } from 'react';
 import {
+  ArrowClockwiseIcon,
   ArrowSquareOutIcon,
   CheckIcon,
-  MagnifyingGlassIcon,
 } from '@phosphor-icons/react/dist/ssr';
 import { BrandMark } from '@/components/app/brand-mark';
 import { CarrierNumbers } from '@/components/app/carrier-numbers';
@@ -15,10 +15,13 @@ import { Tag } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogRoot } from '@/components/ui/dialog';
 import { Field } from '@/components/ui/field';
-import { Input } from '@/components/ui/input';
+import { EmptyState } from '@/components/ui/empty-state';
+import { Input, SearchInput } from '@/components/ui/input';
+import { Panel } from '@/components/ui/panel';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/components/ui/toast';
 import { cn } from '@/lib/cn';
+import { formatAge } from '@/lib/format';
 import {
   api,
   type Provider,
@@ -56,6 +59,42 @@ const FILTERS: { id: Filter; label: string }[] = [
   { id: 'automation', label: 'Automation' },
   { id: 'observability', label: 'Tracing' },
 ];
+
+/**
+ * What a card may claim, from the two facts that decide it.
+ *
+ * `wired` is "does anything in a call read this vendor". `verified_at` is "did
+ * the vendor confirm this key". Only the second earns the word Connected, and
+ * conflating them is what let a credential saved while a vendor was unreachable
+ * - or one for any of the 27 vendors with no probe, or one revoked months ago -
+ * render as Connected the moment the page reloaded. `connect_provider` already
+ * refuses to store a *rejected* credential, so that was never the gap; the gap
+ * was that the answer did not outlive the request that produced it.
+ */
+function statusOf(
+  spec: ProviderSpec,
+  credential: ProviderCredential | null,
+): { label: string; sub: string | null; confirmed: boolean } | null {
+  if (!credential) return null;
+  if (!spec.wired) {
+    return { label: 'Key saved', sub: 'Nothing reads it yet', confirmed: false };
+  }
+  if (credential.verified_at) {
+    return {
+      label: 'Connected',
+      sub:
+        credential.phone_number ??
+        `Checked ${formatAge(credential.verified_at)}`,
+      confirmed: true,
+    };
+  }
+  return {
+    label: 'Key saved',
+    // Two different reasons, and only one of them is worth retrying.
+    sub: spec.verifiable ? 'Not confirmed yet' : "Can't be confirmed",
+    confirmed: false,
+  };
+}
 
 /** The four a call actually reads. The rest are stored-only, and counting them
  *  towards readiness would invent work nobody has to do. */
@@ -191,7 +230,7 @@ function IntegrationsContent({ profile }: { profile: SessionProfile }) {
 
       <Readiness
         catalogue={catalogue}
-        connectedIds={connectedIds}
+        credentials={credentials}
         loading={loading}
       />
 
@@ -202,21 +241,18 @@ function IntegrationsContent({ profile }: { profile: SessionProfile }) {
       <CarrierNumbers providers={connectedCarriers} canWrite={canWrite} />
 
       <div className="flex flex-col gap-3">
-        <label className="relative block">
-          <span className="sr-only">Search integrations</span>
-          <MagnifyingGlassIcon
-            aria-hidden
-            weight="bold"
-            className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-text-mute"
-          />
-          <Input
-            type="search"
+        {/* The shared field, not a hand-rolled one: it brings the clear
+            button this page was missing, and Contacts, Runs and Chat already
+            use it. */}
+        <div className="max-w-sm">
+          <SearchInput
             value={query}
             onChange={(e) => setQuery(e.target.value)}
+            onClear={() => setQuery('')}
             placeholder="Search by name"
-            className="pl-9"
+            aria-label="Search integrations"
           />
-        </label>
+        </div>
 
         <nav aria-label="Filter by what the credential is for">
           <ul className="flex flex-wrap gap-1.5">
@@ -248,10 +284,19 @@ function IntegrationsContent({ profile }: { profile: SessionProfile }) {
       </div>
 
       {loading ? (
-        <ul className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+        <ul className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {Array.from({ length: 9 }, (_, i) => (
             <li key={i}>
-              <Skeleton className="h-[104px] w-full rounded-md" />
+              <Panel className="flex flex-col gap-3 rounded-2xl p-4">
+                <div className="flex items-center gap-3">
+                  <Skeleton className="size-9 rounded-md" />
+                  <div className="flex flex-1 flex-col gap-1.5">
+                    <Skeleton className="h-3.5 w-24" />
+                    <Skeleton className="h-3 w-full" />
+                  </div>
+                </div>
+                <Skeleton className="mt-2 h-3 w-20" />
+              </Panel>
             </li>
           ))}
         </ul>
@@ -276,7 +321,7 @@ function IntegrationsContent({ profile }: { profile: SessionProfile }) {
           const available = shown.filter((s) => !isConnected(s));
 
           const grid = (list: ProviderSpec[]) => (
-            <ul className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+            <ul className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
               {list.map((spec) => (
                 <ProviderCard
                   key={spec.id}
@@ -328,19 +373,33 @@ function IntegrationsContent({ profile }: { profile: SessionProfile }) {
  * What is still missing before a call is possible - the page's thesis, so it
  * leads rather than sitting in a panel below the fold.
  */
+/**
+ * A role counts as ready only where the vendor *confirmed* the credential.
+ *
+ * Counting stored rows made "3/4 ready to place a call" a statement about how
+ * many forms had been filled in. This makes it a statement about what will
+ * actually answer when a call is placed.
+ */
 function Readiness({
   catalogue,
-  connectedIds,
+  credentials,
   loading,
 }: {
   catalogue: ProviderSpec[] | null;
-  connectedIds: Set<Provider>;
+  credentials: ProviderCredential[] | null;
   loading: boolean;
 }) {
+  const confirmedIds = useMemo(
+    () =>
+      new Set<Provider>(
+        (credentials ?? []).filter((c) => c.verified_at).map((c) => c.provider),
+      ),
+    [credentials],
+  );
   const status = NEEDED.map((role) => ({
     ...role,
     ready: (catalogue ?? []).some(
-      (s) => s.roles.includes(role.id) && connectedIds.has(s.id),
+      (s) => s.roles.includes(role.id) && confirmedIds.has(s.id),
     ),
   }));
   const done = status.filter((s) => s.ready).length;
@@ -378,7 +437,7 @@ function Readiness({
               )}
               {s.label}
               <span className="sr-only">
-                {s.ready ? 'connected' : 'not connected'}
+                {s.ready ? 'connected and confirmed' : 'not connected'}
               </span>
             </li>
           ))}
@@ -437,7 +496,34 @@ function ProviderCard({
   onChanged: () => void;
 }) {
   const toast = useToast();
-  const [busy, setBusy] = useState<'connect' | 'disconnect' | null>(null);
+  const [busy, setBusy] = useState<
+    'connect' | 'disconnect' | 'verify' | null
+  >(null);
+
+  /**
+   * Ask the vendor again about a key already on file.
+   *
+   * The case connect-time checking cannot reach: a key revoked or rotated at the
+   * vendor's end, or one saved while they were unreachable. Reloads either way -
+   * a refusal clears `verified_at`, and nothing is more misleading than a failed
+   * check leaving "Connected" on screen.
+   */
+  async function recheck() {
+    setBusy('verify');
+    try {
+      await api.verifyProvider(spec.id);
+      toast({ tone: 'success', title: `${spec.name} still working` });
+    } catch (error) {
+      toast({
+        tone: 'error',
+        title: `${spec.name} didn't accept the stored key`,
+        body: error instanceof Error ? error.message : undefined,
+      });
+    } finally {
+      setBusy(null);
+      onChanged();
+    }
+  }
 
   async function disconnect() {
     setBusy('disconnect');
@@ -474,40 +560,55 @@ function ProviderCard({
     }
   }
 
+  const status = statusOf(spec, credential);
+
   return (
-    <li
-      className={cn(
-        'group relative flex h-full flex-col gap-3 rounded-md border p-3',
-        'transition-[background-color,border-color,transform] duration-[--dur-micro]',
-        credential
-          ? 'border-rule-strong bg-surface-raised'
-          : 'border-rule bg-surface hover:-translate-y-px hover:border-rule-strong hover:bg-surface-hover',
-      )}
-    >
+    <li className="flex">
+      {/* `Panel`, matching Agents and Needs-a-person. This page was the last one
+          drawing its own flat card. */}
+      <Panel
+        interactive={!credential}
+        className={cn(
+          'flex h-full w-full flex-col gap-3 rounded-2xl p-4',
+          credential && 'border-rule-strong',
+        )}
+      >
       <div className="flex items-start gap-3">
-        <BrandMark providerId={spec.id} name={spec.name} connected={!!credential} />
+        <BrandMark
+          providerId={spec.id}
+          name={spec.name}
+          connected={status?.confirmed ?? false}
+        />
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
           <div className="flex items-center gap-2">
             <h2 className="truncate text-small font-medium text-text">{spec.name}</h2>
-            {!credential && spec.connect === 'oauth' ? <Tag>Login</Tag> : null}
+            {/* One tag at most, and `Soon` outranks `Login`: a key you can
+                store for a feature that does not exist yet is the more
+                surprising thing to know. */}
+            {!spec.wired ? (
+              <Tag>Soon</Tag>
+            ) : !credential && spec.connect === 'oauth' ? (
+              <Tag>Login</Tag>
+            ) : null}
           </div>
           <p className="truncate text-small text-text-dim">{spec.summary}</p>
         </div>
       </div>
 
-      <div className="mt-auto flex items-center justify-between gap-2">
-        {credential ? (
+      <div className="mt-auto flex items-end justify-between gap-2">
+        {status ? (
           <span className="flex min-w-0 flex-col">
-            <span className="text-small text-text">
-              {spec.wired ? 'Connected' : 'Key saved'}
+            <span
+              className={cn(
+                'text-small',
+                status.confirmed ? 'text-text' : 'text-text-dim',
+              )}
+            >
+              {status.label}
             </span>
-            {/* Two separate facts, said separately: the key is stored, and
-                nothing reads it (CLAUDE.md non-negotiable #9). */}
-            {!spec.wired ? (
-              <span className="text-small text-text-mute">Not in use yet</span>
-            ) : credential.phone_number ? (
-              <span className="truncate font-mono text-small text-text-mute">
-                {credential.phone_number}
+            {status.sub ? (
+              <span className="truncate text-small text-text-mute">
+                {status.sub}
               </span>
             ) : null}
           </span>
@@ -525,6 +626,24 @@ function ProviderCard({
 
         {canWrite ? (
           <span className="flex shrink-0 items-center gap-1">
+            {/* Only where it can mean something. A vendor with no probe would
+                return the same "cannot confirm" every time, which is a button
+                that looks broken rather than one that is honest. */}
+            {credential && spec.verifiable ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={recheck}
+                loading={busy === 'verify'}
+                aria-label={`Re-check ${spec.name}`}
+              >
+                <ArrowClockwiseIcon
+                  aria-hidden
+                  weight="bold"
+                  className="size-3.5"
+                />
+              </Button>
+            ) : null}
             <Button
               variant={credential ? 'ghost' : 'secondary'}
               size="sm"
@@ -546,6 +665,7 @@ function ProviderCard({
           </span>
         ) : null}
       </div>
+      </Panel>
     </li>
   );
 }

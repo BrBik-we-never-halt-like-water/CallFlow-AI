@@ -17,7 +17,7 @@ A provider that has no login flow never renders one - see `ConnectMethod` in
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Annotated
 
 import asyncpg
@@ -27,11 +27,11 @@ from pydantic import BaseModel, Field
 
 from app.auth.dependencies import CurrentUser, RequirePermission
 from app.auth.permissions import Permission
-from app.core.crypto import CredentialsNotConfigured, pack_fields
+from app.core.crypto import CredentialsNotConfigured, pack_fields, unpack_fields
 from app.database import database
 from app.database.repositories import provider_credentials as credentials_repo
 from app.domain.providers import PROVIDERS, ConnectMethod, ProviderSpec, spec
-from app.services.credential_check import check_credentials
+from app.services.credential_check import CheckResult, check_credentials
 
 router = APIRouter(prefix="/api/v1/integrations", tags=["integrations"])
 
@@ -91,6 +91,13 @@ class ProviderSpecOut(BaseModel):
     fields: list[CredentialFieldOut]
     docs_url: str
     wired: bool
+    #: Whether CallFlow can prove a credential for this vendor is real - i.e.
+    #: whether a probe is declared. `is_verifiable` existed on the spec already
+    #: but was never sent, which left the interface with only `wired` to reason
+    #: from: "a call reads this vendor", which is not "this key works". It is
+    #: what decides whether Re-check is offered, and it is why a vendor with no
+    #: probe says "Can't be confirmed" rather than pretending a retry would help.
+    verifiable: bool
     needs_model: bool
     note: str | None
 
@@ -111,6 +118,21 @@ class ProviderCredentialOut(BaseModel):
     verified: bool | None = None
     #: Why, when `verified` is None and there is something to say.
     verification_note: str | None = None
+    #: When the vendor last confirmed *these* credentials - the durable half of
+    #: the same answer.
+    #:
+    #: `verified` above is per-request: it describes the check this call just
+    #: ran, and is null on every read. That is enough for the toast at connect
+    #: time and nothing else, so a card rendered after a reload had only
+    #: `wired` left to go on - "does a call read this vendor", not "does this
+    #: key work" - and said **Connected** for a credential stored while the
+    #: vendor was unreachable, for any of the 27 vendors with no probe, and for
+    #: a key revoked at the vendor's end months ago. A rejected credential was
+    #: never the problem; `connect_provider` already refuses to store one.
+    #:
+    #: Null is the absence of a claim, not a failure, and the interface must not
+    #: render it as one.
+    verified_at: datetime | None = None
 
 
 class ProviderCredentialIn(BaseModel):
@@ -142,6 +164,7 @@ def _row_to_out(row: asyncpg.Record) -> ProviderCredentialOut:
         provider=row["provider"],
         label=row["label"],
         phone_number=row["phone_number"],
+        verified_at=row["verified_at"],
         created_at=row["created_at"],
         updated_at=row["updated_at"],
     )
@@ -179,6 +202,7 @@ def _spec_to_out(p: ProviderSpec) -> ProviderSpecOut:
         ],
         docs_url=p.docs_url,
         wired=p.is_wired,
+        verifiable=p.is_verifiable,
         needs_model=p.needs_model,
         note=p.note,
     )
@@ -250,12 +274,17 @@ async def exchange_oauth_code(
             ),
         )
 
+    # Checked like any other credential. A key handed over by the vendor's own
+    # login is very likely good, and "very likely" is not something this
+    # endpoint is allowed to record as confirmed.
+    fields = {provider_spec.fields[0].key: key}
     return await _store(
         user=user,
         provider=provider,
-        fields={provider_spec.fields[0].key: key},
+        fields=fields,
         phone_number=None,
         label="Connected with OpenRouter",
+        verified_at=_verified_now(await check_credentials(provider_spec, fields)),
     )
 
 
@@ -266,6 +295,7 @@ async def _store(
     fields: dict[str, str],
     phone_number: str | None,
     label: str | None,
+    verified_at: datetime | None,
 ) -> ProviderCredentialOut:
     """Encrypt the whole field set as one blob and upsert it."""
     try:
@@ -284,8 +314,19 @@ async def _store(
             label=label,
             fields_encrypted=packed,
             phone_number=phone_number,
+            verified_at=verified_at,
         )
     return _row_to_out(row)
+
+
+def _verified_now(checked: CheckResult) -> datetime | None:
+    """A check result as a timestamp to store.
+
+    Only `ok is True` earns one. `ok is None` - no probe, unreachable vendor, a
+    key too narrowly scoped to confirm - stores nothing, which is what keeps the
+    column an assertion rather than a guess.
+    """
+    return datetime.now(UTC) if checked.ok is True else None
 
 
 def _validated_fields(provider_spec: ProviderSpec, submitted: dict[str, str]) -> dict[str, str]:
@@ -359,8 +400,67 @@ async def connect_provider(
         fields=fields,
         phone_number=body.phone_number,
         label=body.label,
+        verified_at=_verified_now(checked),
     )
     return stored.model_copy(
+        update={"verified": checked.ok, "verification_note": checked.detail}
+    )
+
+
+@router.post("/providers/{provider}/verify", response_model=ProviderCredentialOut)
+async def verify_provider(
+    provider: str,
+    user: Annotated[CurrentUser, Depends(RequirePermission(Permission.INTEGRATIONS_WRITE))],
+) -> ProviderCredentialOut:
+    """Ask the vendor again about a credential that is already stored.
+
+    The one thing checking-on-connect cannot do. A key revoked, rotated, or
+    expired at the vendor's end leaves a row that was honestly verified months
+    ago and is dead now, and nothing in CallFlow would notice until a call
+    failed. It is also the way out of an `ok=None`: a credential saved while the
+    vendor was unreachable stays unconfirmed until something asks again.
+
+    A refusal clears `verified_at` rather than deleting the row - the operator
+    asked a question, not for their configuration to be thrown away, and a
+    credential they can see and update beats one that silently vanished.
+
+    Requires INTEGRATIONS_WRITE despite reading nothing: it spends a request
+    against the organisation's own vendor account, and it changes what the
+    interface will claim.
+    """
+    _require_known(provider)
+    provider_spec = spec(provider)
+    assert provider_spec is not None  # guarded above
+
+    async with database.as_user(user.auth_user_id) as conn:
+        row = await credentials_repo.get_for_provider(conn, user.org_id, provider)
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not connected.")
+
+    try:
+        fields = unpack_fields(row)
+    except CredentialsNotConfigured as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
+        ) from exc
+
+    checked = await check_credentials(provider_spec, fields)
+    async with database.as_user(user.auth_user_id) as conn:
+        updated = await credentials_repo.mark_verified(
+            conn, user.org_id, provider, at=_verified_now(checked)
+        )
+    if updated is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not connected.")
+
+    if checked.ok is False:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                checked.detail
+                or f"{provider_spec.name} no longer accepts the stored credentials."
+            ),
+        )
+    return _row_to_out(updated).model_copy(
         update={"verified": checked.ok, "verification_note": checked.detail}
     )
 

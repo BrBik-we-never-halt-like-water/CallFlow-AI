@@ -10,6 +10,7 @@ Reads carry `identifier_encrypted`/`secret_encrypted` alongside
 
 from __future__ import annotations
 
+from datetime import datetime
 from uuid import UUID
 
 import asyncpg
@@ -23,7 +24,7 @@ async def list_for_org(conn: asyncpg.Connection, org_id: UUID) -> list[asyncpg.R
     """
     return await conn.fetch(
         """
-        select provider, label, phone_number, created_at, updated_at
+        select provider, label, phone_number, verified_at, created_at, updated_at
         from public.provider_credentials
         where org_id = $1
         order by provider
@@ -41,8 +42,14 @@ async def upsert(
     label: str | None,
     fields_encrypted: str,
     phone_number: str | None,
+    verified_at: datetime | None,
 ) -> asyncpg.Record:
     """Store one provider's credentials, replacing whatever was there.
+
+    `verified_at` is written from the caller's check result rather than
+    preserved, and that is the point: credentials replacing verified ones are
+    unverified until *they* are checked. Carrying the old timestamp forward
+    would let a working key vouch for the typo that replaced it.
 
     The two superseded columns are nulled on write, not left alone: a row that
     kept stale `secret_encrypted` ciphertext beside a fresh `fields_encrypted`
@@ -52,16 +59,18 @@ async def upsert(
     return await conn.fetchrow(
         """
         insert into public.provider_credentials
-            (org_id, created_by, provider, label, fields_encrypted, phone_number)
-        values ($1, $2, $3, $4, $5, $6)
+            (org_id, created_by, provider, label, fields_encrypted, phone_number,
+             verified_at)
+        values ($1, $2, $3, $4, $5, $6, $7)
         on conflict (org_id, provider) do update set
             label = excluded.label,
             fields_encrypted = excluded.fields_encrypted,
             identifier_encrypted = null,
             secret_encrypted = null,
             phone_number = excluded.phone_number,
+            verified_at = excluded.verified_at,
             updated_at = now()
-        returning provider, label, phone_number, created_at, updated_at
+        returning provider, label, phone_number, verified_at, created_at, updated_at
         """,
         org_id,
         created_by,
@@ -69,6 +78,30 @@ async def upsert(
         label,
         fields_encrypted,
         phone_number,
+        verified_at,
+    )
+
+
+async def mark_verified(
+    conn: asyncpg.Connection, org_id: UUID, provider: str, *, at: datetime | None
+) -> asyncpg.Record | None:
+    """Record what re-checking an already-stored credential found.
+
+    `updated_at` is deliberately left alone: nothing about the credential
+    changed, only what we know about it. Moving it would make a read-only
+    check look like an edit everywhere that shows when a provider was last
+    touched.
+    """
+    return await conn.fetchrow(
+        """
+        update public.provider_credentials
+        set verified_at = $3
+        where org_id = $1 and provider = $2
+        returning provider, label, phone_number, verified_at, created_at, updated_at
+        """,
+        org_id,
+        provider,
+        at,
     )
 
 

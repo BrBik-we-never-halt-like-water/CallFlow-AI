@@ -54,7 +54,7 @@ def _request(probe: CredentialProbe, fields: dict[str, str]) -> tuple[str, dict[
     if probe.auth == "bearer":
         headers["Authorization"] = f"Bearer {secret}"
     elif probe.auth == "header" and probe.header:
-        headers[probe.header] = secret
+        headers[probe.header] = f"{probe.value_prefix}{secret}"
     elif probe.auth == "query" and probe.header:
         params[probe.header] = secret
     elif probe.auth == "basic":

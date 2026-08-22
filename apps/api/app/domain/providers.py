@@ -132,6 +132,11 @@ class CredentialProbe:
     field: str
     auth: str = "bearer"
     header: str | None = None
+    #: Prepended to the value under `header`. For the vendors that want a scheme
+    #: word of their own: Deepgram documents `Authorization: Token <key>`, which
+    #: is one header with a prefixed value, not a header called
+    #: `Authorization-Token`. Sending the latter means the key is never read.
+    value_prefix: str = ""
     basic_user_field: str | None = None
     #: `GET` for a listing endpoint. `POST` for a vendor with no read endpoint
     #: that authenticates - sent with an empty body, so a valid key is refused
@@ -361,7 +366,20 @@ _TRANSCRIBER: tuple[ProviderSpec, ...] = (
         "Fast English speech, plus Aura voices.",
         "https://console.deepgram.com",
         runtime_extra="deepgram",
-        probe=CredentialProbe("https://api.deepgram.com/v1/projects", "api_key", auth="header", header="Authorization-Token"),
+        # Deepgram documents `Authorization: Token <key>` - one header whose
+        # *value* carries the scheme word, not a header named
+        # `Authorization-Token`. That is not a header Deepgram defines, so a
+        # valid key sent under it is never read and comes back 401, reporting a
+        # working credential as wrong. Both spellings answer 401 to an *invalid*
+        # key, so this is not provable black-box; it is the documented form,
+        # which is reason enough to send it.
+        probe=CredentialProbe(
+            "https://api.deepgram.com/v1/projects",
+            "api_key",
+            auth="header",
+            header="Authorization",
+            value_prefix="Token ",
+        ),
     ),
     _p(
         "assemblyai", "AssemblyAI", {R.TRANSCRIBER},
