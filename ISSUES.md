@@ -6154,6 +6154,160 @@ are still real behaviour, so the argument was dropped and the tests kept.
 Worth stating plainly: this was mistaken for uncommitted local work several
 times while it was in fact committed, deliberate and documented.
 
+## Iteration 48 - 2026-08-22 · the verification answer did not survive a reload, and two thirds of providers had no logo
+
+Asked to match the integrations section to the dashboard's theme, make the
+integrations fail-proof against a wrong API key, and use real vendor icons. The
+theme half turned out to be mostly done already (#177's revamp shipped
+`PageHeader`, and re-adding a display headline would have undone it) and the
+fail-proof half turned out to be one step short rather than absent - #160 and
+#169 had built it, and #179 is the step they were missing.
+
+### #179 - a confirmed credential forgot it had been confirmed
+
+**S2 · FIXED · api + web · `d1a83c5f27e6`, `routes/integrations.py`, `repositories/provider_credentials.py`, the integrations page**
+
+#169 gave the connect *response* `verified` and `verification_note`, and the
+dialog told all three states apart. Nothing stored the answer, so it lived
+exactly as long as the toast.
+
+On the next render the card had only `wired` left to reason from - "does a call
+read this vendor", which is not "does this key work" - and reported **Connected**
+for three credentials nothing had confirmed:
+
+- one saved while the vendor was unreachable (`ok=None`, which #169 correctly
+  refuses to block the save for)
+- one for any of the 27 vendors with no probe declared, Sarvam included
+- one whose key was revoked or rotated at the vendor's end afterwards
+
+A *rejected* credential was never the problem - `connect_provider` has refused to
+store one since #160. The durable claim was. So the honest interface lasted until
+someone pressed F5, which is roughly the worst place for a guarantee to end.
+
+**`verified_at`, not `verified`.** A boolean cannot separate "confirmed a minute
+ago" from "confirmed in March", and a key revoked at the vendor's end is exactly
+where that difference decides whether the word Connected is true. Nullable, no
+default, no backfill: `now()` as a default would assert that every row already in
+the table had been checked, which is the same false claim wearing a schema, and a
+backfill cannot check anything without the encryption key (`c8e1f4a29b76` on why a
+migration must not need one). Existing rows read as unconfirmed, which is what
+they are.
+
+**`POST /providers/{provider}/verify`** is the way out of an `ok=None` and the
+only thing that can notice a revoked key. A refusal clears `verified_at` rather
+than deleting the row: the operator asked a question, not for their configuration
+to be thrown away. It needs INTEGRATIONS_WRITE despite reading nothing, because it
+spends a request against the organisation's own vendor account and changes what
+the interface will claim.
+
+**`ProviderSpecOut.verifiable`** exposes `is_verifiable`, which the spec has had
+since #160 but never sent. Without it the frontend cannot tell "not confirmed
+yet" from "cannot be confirmed", so Re-check would have been offered on the 27
+vendors where it can only ever return the same shrug.
+
+**Also fixed: Deepgram's probe header.** It sent a header named
+`Authorization-Token`. Deepgram documents `Authorization: Token <key>` - one
+header whose *value* carries the scheme word - so a key sent the other way is
+never read and a working credential comes back 401. Both spellings answer 401 to
+an *invalid* key, so this is **not provable black-box** and is not claimed as a
+confirmed defect; it is the documented form, which is reason enough to send it.
+`CredentialProbe.value_prefix` is the general case.
+
+Anthropic and Cartesia were checked for the same class of bug and are **fine** -
+both reject an invalid key with 401 with or without their version headers, which
+is worth recording because the opposite was assumed at first.
+
+**Verified.** 673 backend tests pass against a local Postgres replaying all 44
+migrations of this branch's chain, including `test_rls_isolation`. Migration
+applies, downgrades and re-applies cleanly. `ruff` clean, `tsc` clean, lint 0
+errors, build passes.
+
+**Not done:** nothing re-checks on a schedule, so a key revoked at the vendor's
+end still reads Connected until a human presses Re-check or a call fails. The
+probe also runs inline on the connect request, so a slow vendor makes Save wait -
+fine for a once-per-vendor action, wrong if anything ever verifies in bulk.
+
+### #180 - two thirds of providers had no logo, and two brand systems disagreed
+
+**S4 · FIXED · web · `scripts/fetch-brand-logos.mjs`, `public/brands/`, `lib/brand-logos.ts`, `brand-mark.tsx`, `provider-icons.tsx`, `lib/brand-paths.ts` (deleted)**
+
+`brand-paths.ts` carried 19 monochrome paths from simple-icons; the other 38
+providers rendered a capital letter. Its docstring explained why and was right at
+the time - simple-icons had removed Twilio, OpenAI, Slack, Salesforce, AWS and
+Azure after trademark requests. Checked against the installed 16.28.0: it has
+**20 of our 57**, and the 20th is Twitter's `x` rather than xAI's mark, which the
+original author correctly declined to use.
+
+The compounding problem was a second system. `provider-icons.tsx` resolved marks
+for the agent builder from simple-icons at runtime in full colour, plus one asset
+file, plus its own 14-entry monogram map - so Twilio was a red logo on the Agents
+tab and the letter "T" on Integrations, each file's docstring separately
+justifying its own approach.
+
+**`scripts/fetch-brand-logos.mjs`** fetches each provider's mark from its own site
+into `public/brands/` and gets **56 of 57** (483 kB). Three details that are
+load-bearing rather than incidental:
+
+- **Self-hosted, not proxied.** A favicon-service request per card would tell a
+  third party which vendors an organisation is shopping for, and the grid would be
+  blank offline.
+- **Largest candidate wins, not first.** Several vendors serve a 32px
+  `apple-touch-icon` beside a `favicon.ico` carrying a 256px frame. Rasters
+  normalise to 128px, and an ICO's largest PNG frame is unwrapped out of its
+  container first because libvips cannot read ICO - one vendor serves its logo at
+  3972px, another ships 205 kB of frames for a 20px mark.
+- **A theme-reactive SVG is skipped for its raster.** An SVG carrying its own
+  `prefers-color-scheme` block resolves it against the *viewer's OS* rather than
+  the plate it sits on, so it disappears on half the theme combinations. Monochrome
+  alone is not the trigger - ElevenLabs and Perplexity are monochrome vectors and
+  both read correctly, so this stays a narrow rule rather than a heuristic that
+  swaps out good marks.
+
+PlayAI is the one miss; none of its domains resolve, which may mean the vendor is
+gone. It keeps the monogram, now a genuine exception rather than a third of the
+page. `provider-icons.tsx` checks `BRAND_LOGOS` before its monograms, replacing 11
+of the 14 with real marks, while its simple-icons tier still wins where it has an
+entry - a vector taking `currentColor` is the better asset.
+
+**Worth knowing:** `DESIGN_NOTES.md` §9's monochrome rule was about visual
+coherence, not de-branding - §9 already sanctions vendor names in
+`provider_credentials` "because the operator picked it". At 19-of-57 monochrome
+was right; at 56-of-57 the coherence argument changes sides.
+
+**Not done:** no licence audit. §9 already flags the attribution check as a
+five-minute job.
+
+### #181 - the database suites run against whatever `DATABASE_URL` points at, and delete organisations globally
+
+**S2 · OPEN · api · `apps/api/tests/test_rls_isolation.py`, `tests/conftest.py`**
+
+Found by walking into it. The repo-root `.env` `DATABASE_URL` points at the
+shared Supabase project, `tests/test_rls_isolation.py` reads
+`config.database_url` with no host check, and its own README says *"Never point
+these at a shared Supabase project. They create and delete `auth.users` rows"* -
+a warning nothing enforces.
+
+Two statements make it worse than stray rows. The `tenants` fixture teardown runs
+as `postgres` (BYPASSRLS) and is scoped **globally, not to the test tenants**:
+
+```sql
+delete from public.organisations o
+where not exists (select 1 from public.memberships m where m.org_id = o.id)
+delete from public.organisations where deleted_at is not null
+```
+
+Any member-less organisation and every soft-deleted one, in whatever database is
+configured. Against a shared project that is somebody's real data.
+
+**Two fixes, neither applied here:** scope both deletes to the tenant ids the
+fixture created, and refuse to run at all unless the host is loopback. The second
+is what actually closes it - the first still trusts the caller to have pointed at
+the right database.
+
+Filed rather than fixed because it is not this task's change, and it wants its own
+review: a host guard that is too strict makes the suite unrunnable in CI against
+an ephemeral Postgres, which is where it should be running.
+
 ## Template for the next iteration
 
 ```

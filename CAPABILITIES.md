@@ -485,15 +485,35 @@ yet.
 | Endpoint | Permission | What it does |
 |---|---|---|
 | `GET /api/v1/integrations/providers` | `integrations:read` | List connected providers (label, masked phone number, timestamps - never the credential itself). |
-| `PUT /api/v1/integrations/providers/{provider}` | `integrations:write` | Connect or update (`twilio` or `plivo`). Both providers authenticate with an identifier+secret pair, not OAuth - this is credential storage, not a connection flow. |
+| `PUT /api/v1/integrations/providers/{provider}` | `integrations:write` | Connect or update any of the 57 providers. Each declares its own credential fields, so most authenticate with an identifier+secret pair rather than OAuth. **Checks the vendor first:** a rejection is a `400` and nothing is stored. |
+| `POST /api/v1/integrations/providers/{provider}/verify` | `integrations:write` | Re-check a stored credential. Clears `verified_at` and returns `400` when the vendor no longer accepts it. Needs `write` despite reading nothing: it spends a request against the org's own vendor account. |
 | `DELETE /api/v1/integrations/providers/{provider}` | `integrations:write` | Disconnect. |
 
 **What to expect.** Credentials are encrypted at rest (Fernet, keyed by a server-side
 secret) - a `503 "..."` on connect means that encryption key isn't configured in this
-deployment at all, an environment problem, not a bad request. There is currently no way
-to verify the stored credentials are actually valid Twilio/Plivo credentials - connecting
-succeeds as long as the fields are non-empty; nothing calls out to either provider to
-check.
+deployment at all, an environment problem, not a bad request.
+
+**Credentials are checked with the vendor before they are stored, and the answer is
+kept.** This paragraph used to say the opposite - "connecting succeeds as long as the
+fields are non-empty; nothing calls out to either provider to check" - which is no
+longer true on either half (`ISSUES.md` #160, #169, #179):
+
+- The vendor **rejects** them -> `400` with its own refusal, and **nothing is
+  stored**.
+- The vendor **accepts** them -> stored with `verified_at` set. The only state
+  reported as "Connected", and the only one the readiness line counts.
+- CallFlow **cannot tell** -> stored with `verified_at` null and the reason shown.
+  Covers an unreachable vendor, a key too narrowly scoped to check, and the 27
+  of 57 providers with no probe. It deliberately does not fail the request: an
+  outage must not stop someone saving a working key.
+
+30 of the 57 declare a probe, carriers included. Sarvam deliberately does not - its
+models endpoint returns 200 for an invalid key, so a probe there would manufacture the
+exact false "Connected" this exists to prevent.
+
+`POST .../verify` re-runs the check against a stored credential. It is the only
+thing that notices a key revoked or rotated at the vendor's end, and the way out of
+an unconfirmed save; a refusal clears `verified_at` rather than deleting the row.
 
 **Debugging this section.** The response never contains the identifier or secret, even
 right after connecting - if you need to confirm *which* credentials are stored, that's
