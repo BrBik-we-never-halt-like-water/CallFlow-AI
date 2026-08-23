@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from 'next';
-import { Geist, JetBrains_Mono, Space_Grotesk } from 'next/font/google';
+import { Bricolage_Grotesque, Geist, JetBrains_Mono } from 'next/font/google';
 import { NuqsAdapter } from 'nuqs/adapters/next/app';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { ToastProvider } from '@/components/ui/toast';
@@ -13,15 +13,23 @@ import './globals.css';
  * squared bowls and the single-storey `a` read as instrument panel rather than
  * brochure, which is the right register for a product that reports what
  * happened on a phone call. The only preloaded face.
+ *
+ * Bricolage Grotesque rather than Space Grotesk: Space Grotesk's wide, quirky
+ * forms read as a design-tool brand at the 84px this scale reaches, and it is
+ * one of the two or three faces every AI product ships with. Bricolage is a
+ * grotesque with real character in its terminals and a tighter fit, so a
+ * display line looks composed rather than stretched.
  */
-const spaceGrotesk = Space_Grotesk({
-  variable: '--font-space-grotesk',
+const bricolage = Bricolage_Grotesque({
+  variable: '--font-display-face',
   subsets: ['latin'],
+  // Variable axis rather than a fixed list: the display scale spans 32px to
+  // 84px, and one weight cannot hold at both ends - a 600 that looks right on
+  // an h4 is too heavy at 84px.
   weight: ['500', '600', '700'],
   display: 'swap',
   preload: true,
 });
-
 /**
  * Text face. Geist rather than Inter: Inter is the default every product
  * reaches for, and at the small sizes this interface lives at, Geist's wider
@@ -98,7 +106,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${spaceGrotesk.variable} ${geist.variable} ${jetbrainsMono.variable}`}
+      className={`${bricolage.variable} ${geist.variable} ${jetbrainsMono.variable}`}
       // The pre-paint script sets `data-theme` on this element before React
       // hydrates, so the server-rendered markup and the DOM legitimately differ
       // by that one attribute. Without this, React warns on every load.

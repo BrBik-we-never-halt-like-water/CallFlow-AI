@@ -335,7 +335,7 @@
   --dark-glass-border: var(--dark-glass-border);
   --dark-glass-blur: var(--dark-glass-blur);
 
-  --font-display: var(--font-space-grotesk), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-display-face), ui-sans-serif, system-ui, sans-serif;
   --font-sans: var(--font-geist), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-jetbrains-mono), ui-monospace, monospace;
 
@@ -782,7 +782,7 @@ body {
    comes from the letterforms themselves, so the tightening that used to be
    done by expanding Archivo is done by tracking instead. */
 .font-display {
-  font-family: var(--font-space-grotesk), ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--font-display-face), ui-sans-serif, system-ui, sans-serif;
   font-weight: 600;
   letter-spacing: -0.03em;
 }
@@ -3399,52 +3399,6 @@ button[data-menu][data-state='open']:focus-visible {
    moment the theme flips.
    -------------------------------------------------------------------------- */
 
-.hero-portrait-mask {
-  --feather: 22%;
-  -webkit-mask-image: linear-gradient(
-    to top,
-    transparent 0%,
-    #000 var(--feather),
-    #000 100%
-  );
-  mask-image: linear-gradient(
-    to top,
-    transparent 0%,
-    #000 var(--feather),
-    #000 100%
-  );
-}
-
-@media (min-width: 1024px) {
-  .hero-portrait-mask {
-    /* Two gradients intersected, so the photo has no hard edge on any side: it
-       feathers left into the text column and top-and-bottom into the ground,
-       and runs off the right of the viewport where there is no edge to hide.
-       A single gradient only ever softens one axis, which is how the first
-       version left three visible rectangle edges. */
-    -webkit-mask-image:
-      linear-gradient(to right, transparent 0%, #000 38%, #000 100%),
-      linear-gradient(
-        to bottom,
-        transparent 0%,
-        #000 14%,
-        #000 78%,
-        transparent 100%
-      );
-    -webkit-mask-composite: source-in;
-    mask-image:
-      linear-gradient(to right, transparent 0%, #000 38%, #000 100%),
-      linear-gradient(
-        to bottom,
-        transparent 0%,
-        #000 14%,
-        #000 78%,
-        transparent 100%
-      );
-    mask-composite: intersect;
-  }
-}
-
 /* Five bars, the only colour on the card. `jade` is the person and `--primary`
    the agent - which of the two is talking is the one thing a glance should get.
    Animated in CSS: a per-frame React update for decoration is the cheapest
@@ -3496,30 +3450,3 @@ button[data-menu][data-state='open']:focus-visible {
   }
 }
 
-/* The hero's mask, one section on. Same reasoning (DESIGN_NOTES §27: a
-   rectangle of photograph on a single-ground page reintroduces the band that
-   section removed) with a gentler left feather, because here the photo sits
-   *behind* a card stack rather than beside a headline - it has to stay quiet
-   enough for the cards to read against it. */
-.section-photo-mask {
-  -webkit-mask-image:
-    linear-gradient(to right, transparent 0%, #000 46%, #000 100%),
-    linear-gradient(
-      to bottom,
-      transparent 0%,
-      #000 22%,
-      #000 74%,
-      transparent 100%
-    );
-  -webkit-mask-composite: source-in;
-  mask-image:
-    linear-gradient(to right, transparent 0%, #000 46%, #000 100%),
-    linear-gradient(
-      to bottom,
-      transparent 0%,
-      #000 22%,
-      #000 74%,
-      transparent 100%
-    );
-  mask-composite: intersect;
-}

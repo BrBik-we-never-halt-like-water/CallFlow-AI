@@ -4,23 +4,20 @@ import { motion, useReducedMotion, useScroll, useTransform } from "framer-motion
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { VoiceField } from "@/components/brand/voice-field";
-import { usePrefersReducedMotion, useTypewriter } from "@/lib/hooks/use-typewriter";
-import { HeroPortrait } from "./hero-portrait";
+import { usePrefersReducedMotion } from "@/lib/hooks/use-typewriter";
 
 /**
- * The hero pairs an argument with a proof.
+ * The hero is the argument, on its own.
  *
- * Left: the thesis and the two ways in. Right: a scripted call that plays once
- * on load. It starts as just the voice signal and the line being spoken; once
- * the line finishes, the card blooms open — expanding up and down from its
- * centre — to reveal the typed result. The bloom grows inside a reserved height,
- * so the left column never moves.
+ * It had a second column: first a card showing a scripted call, then a
+ * photograph with two conversation cards floating over it. Both are gone. The
+ * `Listening` section immediately below already renders settled calls with
+ * their typed fields, in more space and at the point in the page where the
+ * claim is being proved rather than made - so the hero was showing the same
+ * thing one screen earlier and smaller.
  *
  * Under `prefers-reduced-motion` the whole card renders finished on first paint.
  */
-
-const DEFAULT_NAME = "Aditi";
-
 
 /** Shared easing for the bloom — a soft, water-like ease-out. */
 const EASE_OUT = [0.22, 1, 0.36, 1] as const;
@@ -48,27 +45,10 @@ const RISE = {
   show: { opacity: 1, y: 0, transition: { duration: 0.55, ease: EASE_OUT } },
 };
 
-function spokenLine(name: string): string {
-  const who = name.trim() || "there";
-  return `Hi ${who}, this is CallFlow calling about your holiday enquiry. Is now a good time?`;
-}
-
-const SPOKEN = spokenLine(DEFAULT_NAME);
 
 export function Hero() {
   const reduced = usePrefersReducedMotion();
 
-  // Hold until the site loader has handed off (~1.5s), then play slowly so the
-  // voice and the data feel like they are arriving, not racing. Beat one: the
-  // line the contact hears. Beat two: the data that comes back.
-  const heard = useTypewriter(SPOKEN, {
-    delayMs: 1000,
-    durationMs: 2200,
-    instant: reduced,
-  });
-
-  // Only "speaking" once characters are actually landing.
-  const speaking = heard.output.length > 0 && !heard.done;
 
   return (
     <section className="relative overflow-hidden">
@@ -136,23 +116,6 @@ export function Hero() {
             </motion.ul>
           </motion.div>
 
-          {/* ---- The proof: opens as the voice signal, then blooms into the
-                  typed result — expanding up and down from the centre so the
-                  left column never moves. ------------------------------------ */}
-          {/* ---- The caller, and the conversation over them ----------------
-              Was a single card holding the spoken line and the typed result. It
-              said the right thing in the wrong register: the product is a voice
-              on a phone, and a face carries that in one glance where a table of
-              typed fields reads as a schema. The typed result is not lost -
-              `Listening`, the very next section, already renders it as a stack
-              of settled calls with their fields. The hero was showing the same
-              thing one screen earlier and in less space, so removing it here
-              deletes a duplicate rather than a feature.
-
-              `HeroPortrait` takes the live typewriter output, so the card over
-              the photograph is the same running line the old card showed - the
-              liveness is kept, not redrawn. */}
-          <HeroPortrait output={heard.output} speaking={speaking} />
         </div>
       </div>
     </section>

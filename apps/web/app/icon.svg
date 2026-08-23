@@ -1,10 +1,32 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
-  <!-- Favicon variant of the mark. The geometry is thickened for small sizes: at
-       16px the three lamps merge into a readable tri-colour bar, which is exactly
-       what the mark is meant to do at this scale. -->
-  <rect width="32" height="32" rx="7" fill="#0B0F12"/>
-  <rect x="4.5" y="11" width="23" height="10" rx="5" fill="none" stroke="#35434A" stroke-width="1.5"/>
-  <circle cx="11" cy="16" r="3.2" fill="#3E9E7A"/>
-  <circle cx="16" cy="16" r="3.2" fill="#D69B2D"/>
-  <circle cx="21" cy="16" r="3.2" fill="#DC4B34"/>
+  <!-- Favicon variant of the mark (components/brand/mark.tsx).
+
+       The light mark on white, in both themes. A browser tab is chrome the
+       site does not own: it sits on the browser's own bar, which is light in
+       most setups regardless of what the page is doing, and a dark tile there
+       reads as a different product's icon than the one in the header. This was
+       a near-black tile (#0B0F12) with dimmed lamps, which is the dark-surface
+       variant - correct inside the app, wrong here.
+
+       Geometry is thickened against the real mark: at 16px three separate
+       lamps in a 44x20 capsule blur into mud, so the capsule is squarer, the
+       lamps are larger relative to it, and they nearly touch - the tri-colour
+       bar reading as one shape at small sizes is the point.
+
+       Lamp colours are the light-theme tokens verbatim (globals.css):
+       jade #2f8f6b, brass #c2871a, flare #d2402a. Keep them in step. -->
+  <rect width="32" height="32" rx="7" fill="#ffffff"/>
+  <rect
+    x="3.25"
+    y="10.25"
+    width="25.5"
+    height="11.5"
+    rx="5.75"
+    fill="none"
+    stroke="#c2cac8"
+    stroke-width="1.5"
+  />
+  <circle cx="10.5" cy="16" r="3.4" fill="#2f8f6b"/>
+  <circle cx="16" cy="16" r="3.4" fill="#c2871a"/>
+  <circle cx="21.5" cy="16" r="3.4" fill="#d2402a"/>
 </svg>

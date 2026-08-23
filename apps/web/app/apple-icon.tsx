@@ -5,9 +5,19 @@ import { ImageResponse } from "next/og";
  *
  * Every brand asset in this project is generated from the mark, so there is exactly one
  * definition of what the logo is. The previous version of this file was a JPEG.
+ *
+ * Light mark on white, matching `app/icon.svg`. A home-screen tile and a browser
+ * tab are both chrome the site does not own, and a dark tile there reads as a
+ * different product's icon than the one in the header. This was `#0B0F12` with
+ * the dark-surface lamp values, which is right inside the app and wrong here.
+ *
+ * Lamp colours are the light-theme tokens verbatim (globals.css): jade #2f8f6b,
+ * brass #c2871a, flare #d2402a. Keep them in step with `icon.svg`.
  */
 export const size = { width: 180, height: 180 };
 export const contentType = "image/png";
+
+const LAMPS = ["#2f8f6b", "#c2871a", "#d2402a"];
 
 export default function AppleIcon() {
   return new ImageResponse(
@@ -20,12 +30,15 @@ export default function AppleIcon() {
           alignItems: "center",
           justifyContent: "center",
           gap: 18,
-          background: "#0B0F12",
+          background: "#ffffff",
         }}
       >
-        <div style={{ width: 30, height: 30, borderRadius: 999, background: "#3E9E7A" }} />
-        <div style={{ width: 30, height: 30, borderRadius: 999, background: "#D69B2D" }} />
-        <div style={{ width: 30, height: 30, borderRadius: 999, background: "#DC4B34" }} />
+        {LAMPS.map((fill) => (
+          <div
+            key={fill}
+            style={{ width: 30, height: 30, borderRadius: 999, background: fill }}
+          />
+        ))}
       </div>
     ),
     size,
