@@ -1393,6 +1393,45 @@ own migration (`ISSUES.md` #184).
 
 ---
 
+## 27. One marketing ground, and the lesson the old one taught
+
+The home page alternated three section backgrounds to give the scroll a rhythm:
+`--surface`, `--secondary` (`ground-sand`) and `--surface-sunken`
+(`ground-sunken`). Measured, they are not three shades of one surface:
+
+| ground | light | dark |
+| --- | --- | --- |
+| base | `#f3f4f6` cool grey | `#050505` near-black |
+| sand | `#f0e9de` **warm** beige | `#141414` grey |
+| sunken | `#eceff0` cool grey | `#141419` +14% white -> **blue-tinted** |
+
+So in light the page alternated warm and cool grey, and in dark it alternated
+near-black with a blue-lifted surface. Scrolling changed the page's colour
+*temperature*, which reads as two sites stitched together rather than as rhythm -
+and it is two of `redesign-skill`'s named anti-patterns at once ("mixing warm and
+cool grays", "random dark sections in a light mode page").
+
+Every deck section now shares `--surface`. Rhythm comes from the depth
+transition `SectionDeck` already applies and from the sections' own content. **If
+a section needs separating from its neighbour, change its shape - a mask, an
+image, a layout - not its grey.**
+
+**The lesson worth keeping from the class that went.** `ground-sand` carried a
+light-only override:
+
+```css
+:root[data-theme='light'] .ground-sand { --text-mute: #636a78; }
+```
+
+`--text-mute` clears 4.5:1 on `--surface` (4.73:1) but only 4.31:1 on the warmer
+sand, so it failed AA on those bands alone. Written unscoped first, it applied in
+dark too - where `--secondary` is a near-black neutral, not warm sand - turning
+one failure into 29 worse ones. **A contrast fix that names a colour is a fix for
+one theme; scope it to that theme.** That generalises well past this class, which
+is why it is here and not in the deleted CSS.
+
+---
+
 ## 24. Polish pass: hit areas and a tactile press, with the two things the audit
 found nothing wrong with
 

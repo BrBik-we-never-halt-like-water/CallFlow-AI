@@ -39,7 +39,7 @@ export default function HomePage() {
       <Hero />
 
       <SectionDeck>
-        <DeckSection id="listening" ground="sand">
+        <DeckSection id="listening">
           <div className="mx-auto max-w-(--container-marketing) px-4 sm:px-6">
             <Listening />
           </div>
@@ -63,7 +63,7 @@ export default function HomePage() {
           <ProblemCompare />
         </DeckSection>
 
-        <DeckSection id="how-it-works" ground="sunken">
+        <DeckSection id="how-it-works">
           <Steps />
         </DeckSection>
 
@@ -71,11 +71,11 @@ export default function HomePage() {
           <CapabilityGrid />
         </DeckSection>
 
-        <DeckSection id="verticals" ground="sunken">
+        <DeckSection id="verticals">
           <VerticalStrip />
         </DeckSection>
 
-        <DeckSection id="safety" ground="sand">
+        <DeckSection id="safety">
           <SafetySection />
         </DeckSection>
 

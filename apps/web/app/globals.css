@@ -2417,45 +2417,11 @@ button[data-menu][data-state='open']:focus-visible {
   transition: opacity 120ms linear;
 }
 
-/* --------------------------------------------------------------------------
-   Section grounds.
+/* Section grounds were here - three alternating backgrounds, now one.
+   `components/marketing/section-deck.tsx` says why; `DESIGN_NOTES.md` §27 keeps
+   the contrast lesson the `ground-sand` override taught, which is worth more
+   than the class was. */
 
-   Rhythm comes from alternating ground rather than from a rule between every
-   block. `sand` is the warm secondary surface; it appears on marketing only.
-   -------------------------------------------------------------------------- */
-
-.ground-sand {
-  background: var(--secondary);
-}
-
-/* `--text-mute` is tuned to clear 4.5:1 against `--surface` (4.73:1), and the
-   sand ground is warmer and slightly darker than that - which drops the same
-   token to 4.31:1 on it, under the AA floor. Pre-existing, and found by
-   auditing every rendered text node rather than by looking: the two grounds are
-   close enough that nothing about it reads as wrong.
-
-   Nudged just far enough to pass (4.51:1) rather than to a round number -
-   `--text-mute` is deliberately the quietest text in the product, and
-   over-correcting here would make metadata on the sand bands louder than the
-   same metadata everywhere else.
-
-   **Light only, and that qualifier is the whole point.** Written unscoped
-   first, this same override applied in dark, where `--secondary` is a
-   near-black neutral rather than warm sand - turning one 4.31:1 failure into
-   29 far worse ones. A contrast fix that names a colour is always a fix for
-   one theme; scope it to that theme. */
-:root[data-theme='light'] .ground-sand {
-  --text-mute: #636a78;
-}
-
-.ground-sunken {
-  background: var(--surface-sunken);
-}
-
-.ground-inverse {
-  background: var(--surface-inverse);
-  color: var(--text-inverse);
-}
 
 @media (prefers-reduced-motion: reduce) {
   .card-interactive:hover {

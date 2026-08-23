@@ -6,6 +6,19 @@ import { useScrollDepth } from "@/lib/hooks/use-scroll-depth";
 /**
  * The home page as a deck of sections.
  *
+ * **One ground, not three.** Sections used to alternate between `--surface`,
+ * `--secondary` and `--surface-sunken` to give the page rhythm. Measured, those
+ * were not three shades of one surface - in light they mixed a *warm* beige
+ * (#f0e9de) with two cool greys, and in dark `--surface-sunken` resolves to
+ * `#141419` lifted 14% toward white, which reads as blue against the near-black
+ * `#050505` beside it. So scrolling changed the colour temperature of the page,
+ * which looks like two sites stitched together rather than like rhythm.
+ *
+ * Rhythm now comes from the depth transition below and from the sections'
+ * own content, both of which survive a single ground. If a section needs
+ * separating from its neighbour, give it a different *shape* - a mask, an
+ * image, a change of layout - not a different colour of grey.
+ *
  * Depth does the transition: the section nearest the viewport's centre sits
  * forward at full presence while the ones around it scale back and take a veil.
  * Scrolling reads as moving through a stack rather than past a list.
@@ -36,14 +49,12 @@ export function SectionDeck({ children }: { children: React.ReactNode }) {
 
 export function DeckSection({
   id,
-  ground = "base",
   /** Vertically centre the content. Off for sections that are naturally tall. */
   centred = true,
   className,
   children,
 }: {
   id?: string;
-  ground?: "base" | "sand" | "sunken";
   centred?: boolean;
   className?: string;
   children: React.ReactNode;
@@ -57,8 +68,6 @@ export function DeckSection({
         // `100svh` minus the sticky header, which needs the token in a calc.
         "deck-section relative flex flex-col",
         centred ? "justify-center" : "justify-start",
-        ground === "sand" && "ground-sand",
-        ground === "sunken" && "ground-sunken",
         className,
       )}
     >
