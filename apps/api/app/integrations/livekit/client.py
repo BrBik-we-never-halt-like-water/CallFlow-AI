@@ -124,13 +124,23 @@ _TWIRP_CODE_ADVICE: dict[str, str] = {
         "the media server has no SIP service on this project. It has to be "
         "enabled there before a number can be pointed at it."
     ),
+    # Reworded from a guess to what LiveKit actually says. The first version
+    # blamed E.164 form or LIVEKIT_SIP_HOST; reproducing the failure gave
+    #   Conflicting inbound SIP Trunks: "<new>" and "ST_…", using the same
+    #   number(s) ["+1…"] without AllowedNumbers set
+    # so the real cause is a trunk that already carries the number - and
+    # LIVEKIT_SIP_HOST is not even an input to `create_inbound_trunk`. Leading
+    # with the wrong cause sends someone to check an environment variable that
+    # cannot be involved.
     "invalid_argument": (
-        "the media server rejected the trunk CallFlow described. Usually the "
-        "number is not in E.164 form, or LIVEKIT_SIP_HOST is unset or wrong."
+        "the media server already routes this number through a trunk it does not "
+        "recognise as CallFlow's. Retrying adopts that trunk instead of building "
+        "a second one; if it persists, the number may be in the wrong format."
     ),
     "already_exists": (
-        "the media server already has a trunk for this number. Retrying resumes "
-        "from what exists rather than building a second one."
+        "the media server already has a trunk for this number, created by an "
+        "earlier attempt whose id was never recorded. Retrying now adopts it "
+        "instead of trying to build a second one."
     ),
     "unavailable": (
         "the media server could not be reached. Nothing was created - retry when "
@@ -267,6 +277,29 @@ class LiveKitGateway:
                 "LiveKitGateway is not open. Use `async with LiveKitGateway() as gateway:`."
             )
         return self._client
+
+    async def find_inbound_trunk(self, number: str) -> str | None:
+        """The id of an existing inbound trunk already carrying `number`, if any.
+
+        Exists because LiveKit refuses a second trunk for a number it already
+        has, and a trunk it created that CallFlow failed to record is
+        unreachable: provisioning reads its own column, sees null, tries to
+        create, and is refused - identically, on every retry, forever. That is
+        not hypothetical, it is how a dev number got stuck (`ISSUES.md` #188).
+
+        Matching on the E.164 is safe as a tenancy boundary even though one
+        LiveKit project is shared by every organisation: a phone number is
+        globally unique and reaches this code only after the org's *own* carrier
+        credentials confirmed the org holds it. A trunk carrying that number is
+        this number's trunk.
+        """
+        existing = await self._sip.list_inbound_trunk(
+            _vendor_api.ListSIPInboundTrunkRequest()
+        )
+        for trunk in existing.items:
+            if number in list(trunk.numbers):
+                return str(trunk.sip_trunk_id)
+        return None
 
     async def create_inbound_trunk(
         self, *, name: str, numbers: list[str], allowed_addresses: list[str] | None = None

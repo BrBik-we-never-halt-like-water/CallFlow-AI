@@ -41,9 +41,14 @@ NUMBER = "+15555550100"
 class StubGateway:
     """Counts every LiveKit object it is asked to create."""
 
-    def __init__(self, fail_on: str | None = None) -> None:
+    def __init__(
+        self, fail_on: str | None = None, existing_inbound: str | None = None
+    ) -> None:
         self.created: list[str] = []
         self._fail_on = fail_on
+        # A trunk LiveKit already has for this number - the state that made a
+        # dev number permanently unprovisionable (`ISSUES.md` #188).
+        self._existing_inbound = existing_inbound
 
     async def __aenter__(self) -> Self:
         return self
@@ -54,6 +59,9 @@ class StubGateway:
     def _maybe_fail(self, what: str) -> None:
         if self._fail_on == what:
             raise RuntimeError(f"LiveKit refused to create the {what}")
+
+    async def find_inbound_trunk(self, _number: str) -> str | None:
+        return self._existing_inbound
 
     async def create_inbound_trunk(self, **_: Any) -> str:
         self._maybe_fail("inbound")
@@ -643,6 +651,29 @@ async def test_each_actionable_code_names_a_different_thing_to_do() -> None:
     assert len(set(advice.values())) == 4, "two codes gave identical advice"
 
 
+async def test_the_conflict_code_points_at_the_conflict_not_at_env_vars() -> None:
+    """LiveKit reports a duplicate number as `invalid_argument`, not
+    `already_exists`. Reproduced against the live API, the message is:
+
+        Conflicting inbound SIP Trunks: "<new>" and "ST_...", using the same
+        number(s) ["+1..."] without AllowedNumbers set
+
+    The first version of this advice blamed E.164 formatting or
+    LIVEKIT_SIP_HOST - and `create_inbound_trunk` never receives
+    LIVEKIT_SIP_HOST at all, so that sent a reader to check a variable which
+    cannot be involved.
+    """
+    from livekit.api import TwirpError
+
+    from app.integrations.livekit.client import explain_error
+
+    explained = explain_error(TwirpError("invalid_argument", "conflict", status=400))
+
+    assert explained is not None
+    assert "LIVEKIT_SIP_HOST" not in explained
+    assert "already routes this number" in explained
+
+
 async def test_an_unmapped_code_still_names_the_code_rather_than_the_class() -> None:
     from livekit.api import TwirpError
 
@@ -735,3 +766,63 @@ async def test_success_clears_the_reason_so_a_working_number_shows_none(
     assert after is not None
     assert after["status"] == NumberStatus.VERIFIED.value
     assert after["last_error"] is None
+
+
+# --- adopting a trunk LiveKit already has (`ISSUES.md` #188) -------------------
+
+
+async def test_an_existing_inbound_trunk_is_adopted_rather_than_rebuilt(
+    db: asyncpg.Connection, agent: Agent
+) -> None:
+    """The loop this breaks.
+
+    LiveKit refuses a second inbound trunk for a number it already carries. A
+    trunk an earlier attempt created but never recorded therefore left this step
+    permanently unrunnable: read null, try to create, get refused, record
+    nothing, repeat - identically, forever. A dev number sat in exactly that
+    state, with LiveKit holding `ST_tujXb56xEx5K` and the row holding null.
+    """
+    await _discover(db, agent)
+    gateway = StubGateway(existing_inbound="ST_already_there")
+
+    row = await _connect(db, agent, "a1", gateway=gateway)
+
+    assert "inbound" not in gateway.created, "rebuilt a trunk LiveKit already had"
+    assert row["livekit_inbound_trunk_id"] == "ST_already_there"
+    assert row["status"] == ProvisioningStatus.VERIFIED.value
+
+
+async def test_adoption_makes_the_number_diallable_and_clears_the_error(
+    db: asyncpg.Connection, agent: Agent
+) -> None:
+    """The operator-visible half: the number that could never provision now can."""
+    number = await _discover(db, agent)
+    await numbers_repo.record_error(
+        db,
+        org_id=agent.org_id,
+        number_id=number["id"],
+        message="Couldn't set up the call route: the media server already has a trunk.",
+    )
+
+    await _connect(db, agent, "a2", gateway=StubGateway(existing_inbound="ST_already_there"))
+
+    after = await numbers_repo.by_e164(
+        db, org_id=agent.org_id, provider="twilio", phone_e164=NUMBER
+    )
+    assert after is not None
+    assert after["status"] == NumberStatus.VERIFIED.value
+    assert after["last_error"] is None
+    assert after["livekit_inbound_trunk_id"] == "ST_already_there"
+
+
+async def test_nothing_to_adopt_still_creates_one(
+    db: asyncpg.Connection, agent: Agent
+) -> None:
+    """The ordinary path must be untouched by the lookup."""
+    await _discover(db, agent)
+    gateway = StubGateway()
+
+    row = await _connect(db, agent, "a3", gateway=gateway)
+
+    assert gateway.created == ["inbound", "dispatch", "outbound"]
+    assert row["livekit_inbound_trunk_id"] == "ST_in_1"

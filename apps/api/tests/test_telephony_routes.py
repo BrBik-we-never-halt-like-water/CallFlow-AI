@@ -63,6 +63,11 @@ class StubGateway:
     async def __aexit__(self, *_exc: object) -> None:
         return None
 
+    async def find_inbound_trunk(self, _number: str) -> str | None:
+        """Nothing to adopt. These tests exercise the routes, not the
+        already-registered case `test_number_provisioning.py` covers."""
+        return None
+
     async def create_inbound_trunk(self, **_kw: Any) -> str:
         self.created.append("inbound")
         return "ST_in_1"

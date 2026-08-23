@@ -410,6 +410,24 @@ async def _run_steps(
 
     async with gateway_factory() as gateway:
         if not row["livekit_inbound_trunk_id"]:
+            # Adopt before creating. LiveKit refuses a second trunk for a number
+            # it already carries, so a trunk an earlier attempt created but did
+            # not record left this step permanently unrunnable: read null, try to
+            # create, get refused, record nothing, repeat. Claiming the existing
+            # trunk is what "a resume does not rebuild what already exists"
+            # actually requires - the column was only ever consulted for what
+            # *this* ledger knew, never for what the media server had.
+            adopted = await gateway.find_inbound_trunk(phone_number)
+            if adopted is not None:
+                log.info("adopting the inbound trunk already registered for this number")
+                row = _require(
+                    await provisioning_repo.record_livekit_ids(
+                        conn, attempt_id, inbound_trunk_id=adopted
+                    ),
+                    attempt_id,
+                )
+
+        if not row["livekit_inbound_trunk_id"]:
             trunk_id = await gateway.create_inbound_trunk(
                 name=f"CallFlow {label} inbound",
                 numbers=[phone_number],
