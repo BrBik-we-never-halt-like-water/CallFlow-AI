@@ -41,9 +41,18 @@ NUMBER = "+15555550100"
 class StubGateway:
     """Counts every LiveKit object it is asked to create."""
 
-    def __init__(self, fail_on: str | None = None) -> None:
+    def __init__(
+        self,
+        fail_on: str | None = None,
+        existing_inbound: str | None = None,
+        existing_rule: str | None = None,
+    ) -> None:
         self.created: list[str] = []
         self._fail_on = fail_on
+        # Objects LiveKit already has - the state that made a dev number
+        # permanently unprovisionable (`ISSUES.md` #188).
+        self._existing_inbound = existing_inbound
+        self._existing_rule = existing_rule
 
     async def __aenter__(self) -> Self:
         return self
@@ -54,6 +63,12 @@ class StubGateway:
     def _maybe_fail(self, what: str) -> None:
         if self._fail_on == what:
             raise RuntimeError(f"LiveKit refused to create the {what}")
+
+    async def find_inbound_trunk(self, _number: str) -> str | None:
+        return self._existing_inbound
+
+    async def find_dispatch_rule(self, _trunk_id: str) -> str | None:
+        return self._existing_rule
 
     async def create_inbound_trunk(self, **_: Any) -> str:
         self._maybe_fail("inbound")
@@ -598,3 +613,261 @@ async def test_claiming_inbound_is_possible_but_has_to_be_asked_for(
     )
 
     assert StubCarrier.calls[-1]["attach_number"] is True
+
+
+# --- media-server errors say which one they are (`ISSUES.md` #186) ------------
+
+
+async def test_a_media_server_error_is_explained_by_its_code() -> None:
+    """The regression this exists for.
+
+    LiveKit's `ServerError` **is** `TwirpError` - the SDK renamed the class and
+    kept the old name as an alias - so `type(exc).__name__` is "ServerError" and
+    the provisioning handler's generic branch reported exactly that. Three
+    attempts failed on dev with no trunk ids recorded, meaning the very first
+    call was refused, and nothing anywhere said whether that was credentials,
+    permissions, SIP not being enabled, or a bad argument.
+    """
+    from livekit.api import TwirpError
+
+    from app.integrations.livekit.client import explain_error
+
+    explained = explain_error(
+        TwirpError("unauthenticated", "whatever the vendor said", status=401)
+    )
+
+    assert explained is not None
+    assert "credentials" in explained
+    # The class name was the whole of the old message and is useless to a reader.
+    assert "ServerError" not in explained
+
+
+async def test_each_actionable_code_names_a_different_thing_to_do() -> None:
+    """Four failures an operator fixes four different ways. Collapsing them to
+    one sentence is what made the original message useless."""
+    from livekit.api import TwirpError
+
+    from app.integrations.livekit.client import explain_error
+
+    advice = {
+        code: explain_error(TwirpError(code, "x", status=400))
+        for code in ("unauthenticated", "permission_denied", "not_found", "invalid_argument")
+    }
+
+    assert all(v is not None for v in advice.values())
+    assert len(set(advice.values())) == 4, "two codes gave identical advice"
+
+
+async def test_the_conflict_code_points_at_the_conflict_not_at_env_vars() -> None:
+    """LiveKit reports a duplicate number as `invalid_argument`, not
+    `already_exists`. Reproduced against the live API, the message is:
+
+        Conflicting inbound SIP Trunks: "<new>" and "ST_...", using the same
+        number(s) ["+1..."] without AllowedNumbers set
+
+    Two things this pins, both of which were got wrong once:
+
+    - It must not name LIVEKIT_SIP_HOST. `create_inbound_trunk` never receives
+      it, so blaming it sent a reader to a variable that cannot be involved.
+    - It must not name a specific object. This string is shown for whichever
+      step raised, and the version that said "this number ... trunk" was
+      displayed verbatim for a *dispatch rule* conflict one step later.
+    """
+    from livekit.api import TwirpError
+
+    from app.integrations.livekit.client import explain_error
+
+    explained = explain_error(TwirpError("invalid_argument", "conflict", status=400))
+
+    assert explained is not None
+    assert "LIVEKIT_SIP_HOST" not in explained
+    assert "already there" in explained
+    assert "trunk" not in explained, "names one object for an any-step message"
+
+
+async def test_an_unmapped_code_still_names_the_code_rather_than_the_class() -> None:
+    from livekit.api import TwirpError
+
+    from app.integrations.livekit.client import explain_error
+
+    explained = explain_error(TwirpError("internal", "x", status=500))
+
+    assert explained is not None
+    assert "internal" in explained
+    assert "TwirpError" not in explained and "ServerError" not in explained
+
+
+async def test_something_that_is_not_a_media_server_error_is_not_dressed_up_as_one() -> None:
+    """`None`, not a fallback sentence: the provisioning handler uses the
+    distinction to decide whether it can describe the failure at all."""
+    from app.integrations.livekit.client import explain_error
+
+    assert explain_error(ValueError("not ours")) is None
+
+
+# --- the number shows its *current* reason (`ISSUES.md` #187) ------------------
+
+
+async def test_a_failed_attempt_writes_its_reason_onto_the_number(
+    db: asyncpg.Connection, agent: Agent
+) -> None:
+    """The number row is the only one the Integrations list reads.
+
+    The attempt's reason used to land on `telephony_provisioning` alone, so the
+    list showed whatever `telephony_numbers.last_error` happened to hold - which
+    was only ever written by the sync's no-agent guard.
+    """
+    await _discover(db, agent)
+
+    await _connect(db, agent, "e1", carrier_fails=True)
+
+    number = await numbers_repo.by_e164(
+        db, org_id=agent.org_id, provider="twilio", phone_e164=NUMBER
+    )
+    assert number is not None
+    assert number["last_error"], "the number kept no reason at all"
+
+
+async def test_a_stale_reason_is_replaced_rather_than_kept(
+    db: asyncpg.Connection, agent: Agent
+) -> None:
+    """The bug this pins, exactly as it happened on dev.
+
+    A number synced before any agent existed collected "Build an agent first".
+    Nothing ever cleared that column, so after the agent was built and a later
+    attempt failed for an unrelated reason, the list still told the operator to
+    build an agent - a thing they had already done - and hid the real blocker.
+    """
+    number = await _discover(db, agent)
+    await numbers_repo.record_error(
+        db,
+        org_id=agent.org_id,
+        number_id=number["id"],
+        message="Build an agent first - a number is routed to one.",
+    )
+
+    await _connect(db, agent, "e2", carrier_fails=True)
+
+    after = await numbers_repo.by_e164(
+        db, org_id=agent.org_id, provider="twilio", phone_e164=NUMBER
+    )
+    assert after is not None
+    assert "Build an agent first" not in (after["last_error"] or ""), (
+        "the stale precondition survived a later, unrelated failure"
+    )
+
+
+async def test_success_clears_the_reason_so_a_working_number_shows_none(
+    db: asyncpg.Connection, agent: Agent
+) -> None:
+    """A red line beside a number that dials is its own kind of wrong."""
+    number = await _discover(db, agent)
+    await numbers_repo.record_error(
+        db,
+        org_id=agent.org_id,
+        number_id=number["id"],
+        message="whatever went wrong last time",
+    )
+
+    await _connect(db, agent, "e3")
+
+    after = await numbers_repo.by_e164(
+        db, org_id=agent.org_id, provider="twilio", phone_e164=NUMBER
+    )
+    assert after is not None
+    assert after["status"] == NumberStatus.VERIFIED.value
+    assert after["last_error"] is None
+
+
+# --- adopting a trunk LiveKit already has (`ISSUES.md` #188) -------------------
+
+
+async def test_an_existing_inbound_trunk_is_adopted_rather_than_rebuilt(
+    db: asyncpg.Connection, agent: Agent
+) -> None:
+    """The loop this breaks.
+
+    LiveKit refuses a second inbound trunk for a number it already carries. A
+    trunk an earlier attempt created but never recorded therefore left this step
+    permanently unrunnable: read null, try to create, get refused, record
+    nothing, repeat - identically, forever. A dev number sat in exactly that
+    state, with LiveKit holding `ST_tujXb56xEx5K` and the row holding null.
+    """
+    await _discover(db, agent)
+    gateway = StubGateway(existing_inbound="ST_already_there")
+
+    row = await _connect(db, agent, "a1", gateway=gateway)
+
+    assert "inbound" not in gateway.created, "rebuilt a trunk LiveKit already had"
+    assert row["livekit_inbound_trunk_id"] == "ST_already_there"
+    assert row["status"] == ProvisioningStatus.VERIFIED.value
+
+
+async def test_adoption_makes_the_number_diallable_and_clears_the_error(
+    db: asyncpg.Connection, agent: Agent
+) -> None:
+    """The operator-visible half: the number that could never provision now can."""
+    number = await _discover(db, agent)
+    await numbers_repo.record_error(
+        db,
+        org_id=agent.org_id,
+        number_id=number["id"],
+        message="Couldn't set up the call route: the media server already has a trunk.",
+    )
+
+    await _connect(db, agent, "a2", gateway=StubGateway(existing_inbound="ST_already_there"))
+
+    after = await numbers_repo.by_e164(
+        db, org_id=agent.org_id, provider="twilio", phone_e164=NUMBER
+    )
+    assert after is not None
+    assert after["status"] == NumberStatus.VERIFIED.value
+    assert after["last_error"] is None
+    assert after["livekit_inbound_trunk_id"] == "ST_already_there"
+
+
+async def test_nothing_to_adopt_still_creates_one(
+    db: asyncpg.Connection, agent: Agent
+) -> None:
+    """The ordinary path must be untouched by the lookup."""
+    await _discover(db, agent)
+    gateway = StubGateway()
+
+    row = await _connect(db, agent, "a3", gateway=gateway)
+
+    assert gateway.created == ["inbound", "dispatch", "outbound"]
+    assert row["livekit_inbound_trunk_id"] == "ST_in_1"
+
+
+async def test_an_existing_dispatch_rule_is_adopted_too(
+    db: asyncpg.Connection, agent: Agent
+) -> None:
+    """Adopting the trunk only moved the deadlock one step along.
+
+    With the trunk adopted, `create_dispatch_rule` became the refused call - and
+    on dev LiveKit held `SDR_YyjKgkcZmnAN`, CallFlow's own rule, correctly bound
+    to the adopted trunk and recorded nowhere.
+    """
+    await _discover(db, agent)
+    gateway = StubGateway(
+        existing_inbound="ST_already_there", existing_rule="SDR_already_there"
+    )
+
+    row = await _connect(db, agent, "d1", gateway=gateway)
+
+    assert gateway.created == ["outbound"], f"rebuilt something: {gateway.created}"
+    assert row["livekit_inbound_trunk_id"] == "ST_already_there"
+    assert row["livekit_dispatch_rule_id"] == "SDR_already_there"
+    assert row["status"] == ProvisioningStatus.VERIFIED.value
+
+
+async def test_a_rule_is_created_when_there_is_none_to_adopt(
+    db: asyncpg.Connection, agent: Agent
+) -> None:
+    await _discover(db, agent)
+    gateway = StubGateway(existing_inbound="ST_already_there")
+
+    row = await _connect(db, agent, "d2", gateway=gateway)
+
+    assert gateway.created == ["dispatch", "outbound"]
+    assert row["livekit_dispatch_rule_id"] == "SDR_1"

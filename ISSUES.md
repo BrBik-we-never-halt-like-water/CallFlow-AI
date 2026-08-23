@@ -6721,14 +6721,106 @@ Filed rather than fixed because it is not this task's change, and it wants its o
 review: a host guard that is too strict makes the suite unrunnable in CI against
 an ephemeral Postgres, which is where it should be running.
 
-## Iteration 50 - 2026-08-23 · Runs and "needs a person", end to end
+## Iteration 50 - 2026-08-22 · the dashboard accent was the error colour
+
+Asked to synchronise the design and colour theme across the codebase, fix any
+breakage, and add typing and live indicators to chat. The theme half turned out
+to have one real defect rather than many: the token systems interoperate
+correctly, but the accent inside the newer one sat on its own danger hue.
+
+### #184 - the dashboard's accent was, by hue, its error colour
+
+**S3 · FIXED · web · `app/globals.css`, `scripts/check-tokens.mjs` (new)**
+
+The `.dash` family is 110 declarations, properly scoped to a class and properly
+themed in both directions - the problem was one hue. Measured in OKLCh against
+`--dash-danger`: `--dash-figure` (every KPI number) **0.8°**, `--dash-brand`
+(buttons, active nav) **2.2°**, `--dash-chart-line` **2.2°**, `--dash-heat-4`
+**2.4°**. For contrast the same palette puts `warning` 48.6° away and `success`
+126.6°, so it separates its other statuses correctly; only the accent collided.
+
+On a surface whose job is showing call outcomes, that means the headline figure,
+the active nav item and the trend line were the colour of a failure. The token's
+own comment said danger was kept "deeper and cooler than the brand on purpose" -
+true of its *value*, but hue is what the eye sorts by in a table. The same coral
+also sat 6.3° from `--lamp-flare`, where CLAUDE.md §10 cites 14° from jade as the
+mistake it already learned.
+
+Two more, found on the way:
+
+- **`--dash-figure` changed hue between themes** - coral `#c0322f` in light,
+  magenta `#ff0082` in dark, **24.8° apart**. The headline number changed colour
+  rather than lightness when the theme flipped.
+- **`--lamp-ice` was rebound to the brand in four scopes** (`.dash`, both
+  `[data-dash-overlay]` blocks, both toast overlays). While the brand was coral
+  that left `ice` 2.2° from `flare`: two different call states, one colour, in the
+  surface that shows call state. Ice has had no assigned meaning since dry_run was
+  removed, so it now inherits its canonical blue and nothing rebinds it.
+
+**Fix.** `--dash-brand`/`--dash-figure` are `--primary`; the heat and chart ramps
+were regenerated as one hue at stepped lightness. The neutrals and the
+success/warning/danger triad were correct and are untouched. 12 of 12 contrast
+pairs clear 4.5:1, including the two that actually constrain the choice: white on
+the dark fill (6.29:1) and the dark ink tier (8.77:1 on the card, because
+`#4f46e5` itself is 2.86:1 there and cannot carry a word).
+
+**A trap this created, and the guard for it.** `.dash` rebinds `--primary` to
+`--dash-brand`, so `--dash-brand: var(--primary)` closes a custom-property cycle:
+CSS resolves both to invalid and every brand surface renders unstyled, with no
+error in the console or the build. That was introduced and caught during this
+change. `scripts/check-tokens.mjs` now fails on it, on a second accent appearing,
+and on any accent within 30° of a lamp or status hue - and runs inside
+`npm run lint`, so CI covers it with no workflow change. Negative-tested: it
+reports the cycle, and reports 16 problems if the coral is put back.
+
+**Verified.** Values confirmed in the CSS the dev server actually serves (correct
+per theme, zero coral anywhere), lint 0 errors, `tsc` clean, build passes, and the
+figure rendered visibly distinct from failed/completed/running in a browser.
+
+### #185 - chat had no typing or presence indicator
+
+**S4 · FIXED · web · `lib/hooks/use-chat-liveness.ts` (new), `components/app/chat/typing-indicator.tsx` (new), `chat-shell.tsx`, `app/globals.css`**
+
+Messages arrived live (`useOrgRealtime` on `messages`/`channels`/`channel_members`),
+but nothing showed that a colleague was mid-sentence or even in the conversation.
+
+Built on Realtime **presence and broadcast**, not `postgres_changes`: a keystroke
+is not a row, and writing one per keypress would mean a table, an RLS policy and a
+cleanup job for state that is worthless four seconds later. No migration.
+
+Typing throttles at 1.8s with a 4.5s TTL and a swept interval, so a continuous
+typist never flickers and a force-quit tab expires on its own; presence is keyed
+by user id so two tabs are one entry. Scoped to the open conversation - presence
+per sidebar row would be one channel per row for state nobody acts on.
+
+The indicator row reserves its height (a thread that jumps a line whenever someone
+starts typing is worse than 20px of space), counts past two names, and the presence
+dot renders **only while the subscription is live** - "nobody here" and "we don't
+know" are different, and only one is honest to draw.
+
+**Known limit, filed rather than hidden:** a broadcast channel is not covered by
+the `messages` RLS policy. Its name carries the conversation UUID and RLS gates who
+can discover that UUID, so membership gates discovery, not the channel. Payloads
+are chosen to match - a user id and a display name the org can already see, never
+message text, never a draft. Supabase Realtime Authorization would close it
+properly and wants its own migration.
+
+**Not done:** no presence in the conversation list, and no browser test of the
+two-session path - it needs two authenticated sessions, so the Realtime wiring is
+verified by compile and by the indicator rendering, not by two people typing.
+
+## Iteration 51 - 2026-08-23 · Runs and "needs a person", end to end
 
 Prompted by a request to rebuild both sections to production quality. The audit
 that preceded it found gaps where a feature was real in one flow and absent from
 another; they are fixed here. `phone_hash` and the stop signal both needed a
 column, so they share one migration (`f3c7b21a9d04`).
 
-### #184 - a run could not be stopped once it started
+**Renumbered on merge.** This landed as iteration 50 with #184-#193 and moved
+to 51 with #186-#195 when merging `dev`, which had already claimed 50 and
+#184-#185 (`0ef4d16`). Commit `248298e` still names the old numbers.
+
+### #186 - a run could not be stopped once it started
 
 **S1 · FIXED · api + web · `f3c7b21a9d04`, `domain/run_state.py`, `services/run_control.py`, `services/run_dialer.py`, `routes/runs.py`, the run detail page**
 
@@ -6768,7 +6860,7 @@ database: the flag survives the round trip, the run closes as `stopped`, an
 untouched run still closes as `completed`, a finished run answers 409 and an
 unknown one 404, and stopping twice keeps the first timestamp.
 
-### #185 - a run whose dispatcher died stayed "Running" forever
+### #187 - a run whose dispatcher died stayed "Running" forever
 
 **S2 · FIXED · api · `services/run_reconciler.py`, `main.py`, `repositories/runs.py`**
 
@@ -6788,7 +6880,7 @@ handler. Idempotent by `finished_at is null`, so every worker running its own co
 is harmless. A startup-only pass was rejected: the failure this is for is the
 voice runtime dying while the API stays up, which has no restart near it.
 
-### #186 - a call that connected and never reported never reached the queue
+### #188 - a call that connected and never reported never reached the queue
 
 **S2 · FIXED · api · `repositories/runs.py`**
 
@@ -6803,7 +6895,7 @@ nobody knows what was said or what they were promised.
 
 **Fixed.** The sweep inserts the escalation rows itself, `on conflict do nothing`.
 
-### #187 - a contact who was never dialled was reported as "couldn't be reached"
+### #189 - a contact who was never dialled was reported as "couldn't be reached"
 
 **S3 · FIXED · api · `repositories/runs.py`**
 
@@ -6813,10 +6905,10 @@ of five hundred contacts would post five hundred items into the escalation queue
 and bury the handful of real ones.
 
 **Fixed.** `skipped`, which is what this codebase already means by "not tried" (a
-suppressed contact, a stopped run). Found while writing #186 - the two are the
+suppressed contact, a stopped run). Found while writing #188 - the two are the
 same sweep and pulled in opposite directions.
 
-### #188 - a do-not-call was escalated and never suppressed
+### #190 - a do-not-call was escalated and never suppressed
 
 **S1 · FIXED · api · `f3c7b21a9d04`, `routes/internal.py`, `repositories/suppressions.py`, `run_dialer.py`**
 
@@ -6846,7 +6938,7 @@ as un-suppressable rather than guessed at.
 callback stores is the same hash `check_dial_allowed` refuses on, resolved in two
 processes from two different inputs.
 
-### #189 - a plan-locked agent could still start a run
+### #191 - a plan-locked agent could still start a run
 
 **S2 · FIXED · api · `routes/runs.py`**
 
@@ -6860,7 +6952,7 @@ docstring says so.
 **Fixed.** Called in `start_run`, beside the credit checks, through
 `billing.refuse`.
 
-### #190 - a run's own instruction, name and numbers were write-only
+### #192 - a run's own instruction, name and numbers were write-only
 
 **S3 · FIXED · api + web · `routes/runs.py`, `repositories/run_numbers.py`, the run detail page**
 
@@ -6877,7 +6969,7 @@ and not per run.
 panel. Numbers carry their current status, because a run is permanent and a line
 can be retired after it.
 
-### #191 - the escalation queue had no bulk action and no sense of age
+### #193 - the escalation queue had no bulk action and no sense of age
 
 **S3 · FIXED · api + web · `routes/escalations.py`, `repositories/escalations.py`, `lib/escalation-age.ts`, the worklist**
 
@@ -6891,16 +6983,16 @@ success honestly ("18 of 20" when a teammate got there first). `urgencyFor()` at
 4h/24h, shown as a word and type weight - **not colour**, because the five lamp
 colours mean call state and an item's age is a different axis (CLAUDE.md #10).
 
-### #192 - a test fixture wrote a run status the application cannot produce
+### #194 - a test fixture wrote a run status the application cannot produce
 
 **S4 · FIXED · api · `tests/test_platform_admin.py`**
 
-Found by #184's new check constraint. The fixture inserted `status = 'queued'`,
+Found by #186's new check constraint. The fixture inserted `status = 'queued'`,
 which no code path has ever written - it fitted only because the column was
 unconstrained. Changed to `running`; which status it holds is incidental to that
 test.
 
-### #193 - the database suites cannot run against the configured database
+### #195 - the database suites cannot run against the configured database
 
 **S3 · OPEN · api · environment, not code**
 

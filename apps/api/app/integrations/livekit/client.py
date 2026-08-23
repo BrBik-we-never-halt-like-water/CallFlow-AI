@@ -102,6 +102,89 @@ def classify_error(exc: Exception) -> DialFailure:
     return _TWIRP_CODE_FAILURES.get(code, DialFailure.INTERNAL)
 
 
+#: What to go and do about each transport-level code, for the surfaces that show
+#: a provisioning failure to an operator rather than retrying it.
+#:
+#: The vendor's own `message` is deliberately not used. It is the field that
+#: carries the SIP URI and the project host, and a provisioning error is shown in
+#: the interface - so the code is translated here instead, where the vendor's
+#: vocabulary is already allowed to live.
+_TWIRP_CODE_ADVICE: dict[str, str] = {
+    "unauthenticated": (
+        "the media server rejected CallFlow's own credentials. "
+        "LIVEKIT_API_KEY and LIVEKIT_API_SECRET are wrong or belong to a "
+        "different project - this is a deployment setting, not your account."
+    ),
+    "permission_denied": (
+        "the media server refused the request. The API key is valid but is not "
+        "allowed to manage SIP - check the key's grants, and that SIP is enabled "
+        "on the project."
+    ),
+    "not_found": (
+        "the media server has no SIP service on this project. It has to be "
+        "enabled there before a number can be pointed at it."
+    ),
+    # Rewritten twice, and both mistakes are worth recording because they are the
+    # same mistake.
+    #
+    # It first blamed E.164 form or LIVEKIT_SIP_HOST. Reproducing the failure gave
+    #   Conflicting inbound SIP Trunks: "<new>" and "ST_…", using the same
+    #   number(s) ["+1…"] without AllowedNumbers set
+    # - a trunk already carrying the number, and LIVEKIT_SIP_HOST is not even an
+    # input to `create_inbound_trunk`, so it sent the reader to a variable that
+    # cannot be involved.
+    #
+    # It was then reworded to name that trunk conflict - and was immediately shown
+    # verbatim for a *dispatch rule* conflict one step later, because this string
+    # is displayed for whichever step raised. So it now describes the shape of the
+    # failure (something is already there) without asserting which object.
+    "invalid_argument": (
+        "the media server refused something CallFlow tried to create, usually "
+        "because an equivalent is already there from an earlier attempt that was "
+        "not recorded. Retrying adopts what exists rather than duplicating it; if "
+        "it persists, the number may be in the wrong format."
+    ),
+    "already_exists": (
+        "the media server already has a trunk for this number, created by an "
+        "earlier attempt whose id was never recorded. Retrying now adopts it "
+        "instead of trying to build a second one."
+    ),
+    "unavailable": (
+        "the media server could not be reached. Nothing was created - retry when "
+        "it is back."
+    ),
+    "deadline_exceeded": (
+        "the media server did not answer in time. Nothing was created - retry."
+    ),
+    "resource_exhausted": (
+        "the media server is rate-limiting this project. Retry in a minute."
+    ),
+}
+
+
+def explain_error(exc: Exception) -> str | None:
+    """One sentence an operator can act on, or `None` if this is not ours.
+
+    Returns `None` rather than a fallback so a caller can tell "a media-server
+    error I can describe" from "an exception I know nothing about" - the second
+    should not be dressed up as the first.
+    """
+    if not isinstance(exc, EngineError):
+        return None
+    code = str(getattr(exc, "code", "") or "").lower()
+    advice = _TWIRP_CODE_ADVICE.get(code)
+    if advice is not None:
+        return f"Couldn't set up the call route: {advice}"
+    # A code with no entry still beats the class name: `unknown` and `internal`
+    # are the vendor saying so, and naming them lets a support conversation
+    # start somewhere.
+    return (
+        f"Couldn't set up the call route: the media server returned "
+        f"'{code or 'an unnamed error'}'. Nothing about your account is wrong - "
+        "retry, and report the code if it persists."
+    )
+
+
 class SipTransport(str):
     """The transport a carrier's origination URI must name.
 
@@ -202,6 +285,29 @@ class LiveKitGateway:
             )
         return self._client
 
+    async def find_inbound_trunk(self, number: str) -> str | None:
+        """The id of an existing inbound trunk already carrying `number`, if any.
+
+        Exists because LiveKit refuses a second trunk for a number it already
+        has, and a trunk it created that CallFlow failed to record is
+        unreachable: provisioning reads its own column, sees null, tries to
+        create, and is refused - identically, on every retry, forever. That is
+        not hypothetical, it is how a dev number got stuck (`ISSUES.md` #188).
+
+        Matching on the E.164 is safe as a tenancy boundary even though one
+        LiveKit project is shared by every organisation: a phone number is
+        globally unique and reaches this code only after the org's *own* carrier
+        credentials confirmed the org holds it. A trunk carrying that number is
+        this number's trunk.
+        """
+        existing = await self._sip.list_inbound_trunk(
+            _vendor_api.ListSIPInboundTrunkRequest()
+        )
+        for trunk in existing.items:
+            if number in list(trunk.numbers):
+                return str(trunk.sip_trunk_id)
+        return None
+
     async def create_inbound_trunk(
         self, *, name: str, numbers: list[str], allowed_addresses: list[str] | None = None
     ) -> str:
@@ -249,6 +355,23 @@ class LiveKitGateway:
             _vendor_api.CreateSIPOutboundTrunkRequest(trunk=trunk)
         )
         return str(info.sip_trunk_id)
+
+    async def find_dispatch_rule(self, trunk_id: str) -> str | None:
+        """The id of an existing dispatch rule already routing `trunk_id`, if any.
+
+        The companion to `find_inbound_trunk`, and needed for the same reason one
+        step later: adopting the trunk moves the failure to this step, where a
+        rule an earlier attempt created but never recorded blocks it identically.
+        Keyed on the trunk rather than the number - a rule names trunks, and the
+        trunk is the thing this attempt has just established it owns.
+        """
+        existing = await self._sip.list_dispatch_rule(
+            _vendor_api.ListSIPDispatchRuleRequest()
+        )
+        for rule in existing.items:
+            if trunk_id in list(rule.trunk_ids):
+                return str(rule.sip_dispatch_rule_id)
+        return None
 
     async def create_dispatch_rule(
         self, *, name: str, room_prefix: str, trunk_ids: list[str]
@@ -378,4 +501,5 @@ __all__ = [
     "LiveKitGateway",
     "SipTransport",
     "classify_error",
+    "explain_error",
 ]
