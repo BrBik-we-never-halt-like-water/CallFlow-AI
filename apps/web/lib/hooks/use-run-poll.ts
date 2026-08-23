@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, type Run } from '@/lib/api';
 
 const POLL_MS = 2500;
@@ -12,6 +12,10 @@ export interface RunPoll {
   live: boolean;
   /** Seconds since polling began. A live call has real queue and ring time. */
   elapsed: number;
+  /** Re-read the run now instead of waiting for the next tick. For an action
+   *  taken on this screen - stopping the run - where up to a full poll interval
+   *  of the button still offering what it just did reads as a no-op. */
+  refresh: () => void;
 }
 
 interface PollState {
@@ -46,6 +50,8 @@ export function useRunPoll(
   }
 
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [nonce, setNonce] = useState(0);
+  const refresh = useCallback(() => setNonce((n) => n + 1), []);
 
   useEffect(() => {
     if (!runId || paused) return;
@@ -98,13 +104,19 @@ export function useRunPoll(
         timer.current = null;
       }
     };
-  }, [runId, paused]);
+    // `nonce` restarts the effect, which fires `tick()` immediately - so a
+    // refresh re-reads now *and* leaves the interval running from that point
+    // rather than off the original schedule.
+  }, [runId, paused, nonce]);
 
   return {
     run: state.run,
     error: state.error,
+    // A stopping run is still live: calls are in progress and results are
+    // still arriving, so the page keeps polling until it actually closes.
     live: state.run?.status === 'running',
     elapsed: state.elapsed,
+    refresh,
   };
 }
 

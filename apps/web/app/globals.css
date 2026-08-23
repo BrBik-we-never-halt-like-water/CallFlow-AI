@@ -1862,6 +1862,31 @@ button[data-menu][data-state='open']:focus-visible {
   }
 }
 
+/* A page section settling into place on load - opacity plus a small rise,
+   never a scale or a horizontal move, so it reads as "arriving" rather than
+   "growing". Stagger with an inline `animation-delay`, not a per-index class -
+   the delay is the only thing that varies between sections. */
+@keyframes panel-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.panel-enter {
+  animation: panel-enter var(--dur-enter) var(--ease-out) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .panel-enter {
+    animation: none;
+  }
+}
+
 .row-enter {
   animation: row-enter var(--dur-base) var(--ease-out) both;
 }

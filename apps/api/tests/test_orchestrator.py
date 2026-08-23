@@ -468,3 +468,114 @@ def _base() -> CallOutcome:
 
 
 
+
+
+# --- stopping a run in flight --------------------------------------------
+#
+# The dialler's half of Stop. `services/run_control.py` owns reading the flag
+# out of `runs`; everything below passes a plain predicate instead, which is
+# exactly the property that split buys - the whole behaviour is testable with no
+# database, no carrier, and no clock.
+
+
+async def test_a_stopped_run_dials_nobody_else() -> None:
+    """The point of the feature: once the flag is set, no further phone rings."""
+    runner, stub = _dialling_runner(should_stop=_always_stopped)
+    contacts = [Contact(name=f"C{i}", phone=f"+1555555010{i}") for i in range(4)]
+
+    outcomes = await runner.run(TEST_AGENT, contacts)
+
+    assert stub.calls == [], "a stopped run must not reach the carrier at all"
+    assert len(outcomes) == len(contacts)
+
+
+async def test_a_contact_the_stop_reached_first_still_settles() -> None:
+    """A skipped contact needs a real, terminal row or the run can never close -
+    `finish_if_all_settled` counts against `total`, and a missing row is
+    indistinguishable from one still in conversation."""
+    runner, _ = _dialling_runner(should_stop=_always_stopped)
+
+    outcome = (await runner.run(TEST_AGENT, [Contact(name="Aditi", phone="+15555550100")]))[0]
+
+    assert outcome.status == BLOCKED_STATUS
+    assert outcome.disposition is Disposition.SKIPPED
+    assert outcome.disposition_reason == "The run was stopped before this contact was dialled."
+    assert outcome.error == "run_stopped"
+    # Never mistaken for a call that was attempted and failed - that difference
+    # is the whole reason the queue does not fill up with these.
+    assert outcome.disposition is not Disposition.UNREACHABLE
+    assert "5555550" not in outcome.phone_masked
+
+
+async def test_a_stop_part_way_through_keeps_what_already_dialled() -> None:
+    """A stop is not a rollback. Contacts dialled before the button was pressed
+    are real calls that are still happening, and their rows have to say so."""
+    stop_after = 2
+    dialled = 0
+
+    async def stop_once_two_are_out() -> bool:
+        return dialled >= stop_after
+
+    runner, stub = _dialling_runner(should_stop=stop_once_two_are_out, max_concurrent_calls=1)
+    original = stub.start_call
+
+    async def counting_start_call(**kwargs: Any) -> dict[str, Any]:
+        nonlocal dialled
+        dialled += 1
+        return await original(**kwargs)
+
+    stub.start_call = counting_start_call  # type: ignore[method-assign]
+
+    contacts = [Contact(name=f"C{i}", phone=f"+1555555010{i}") for i in range(5)]
+    outcomes = await runner.run(TEST_AGENT, contacts)
+
+    assert len(stub.calls) == stop_after
+    in_flight = [o for o in outcomes if o.disposition is Disposition.IN_FLIGHT]
+    stopped = [o for o in outcomes if o.error == "run_stopped"]
+    assert len(in_flight) == stop_after
+    assert len(stopped) == len(contacts) - stop_after
+    # Every contact accounted for, which is what lets the run close.
+    assert len(in_flight) + len(stopped) == len(contacts)
+
+
+async def test_a_run_nobody_stopped_is_unaffected() -> None:
+    runner, stub = _dialling_runner()
+    contacts = [Contact(name=f"C{i}", phone=f"+1555555010{i}") for i in range(3)]
+
+    outcomes = await runner.run(TEST_AGENT, contacts)
+
+    assert len(stub.calls) == 3
+    assert all(o.disposition is Disposition.IN_FLIGHT for o in outcomes)
+
+
+async def test_a_failing_stop_check_does_not_lose_the_contact() -> None:
+    """Deliberately not fail-closed. This guard *stops* an action rather than
+    permitting one, so treating an unreachable database as "stopped" would
+    abandon a legitimate run over a blip - the more destructive wrong answer."""
+
+    async def broken() -> bool:
+        raise RuntimeError("database went away")
+
+    runner, stub = _dialling_runner(should_stop=broken)
+
+    outcome = (await runner.run(TEST_AGENT, [Contact(name="Aditi", phone="+15555550100")]))[0]
+
+    assert len(stub.calls) == 1
+    assert outcome.disposition is Disposition.IN_FLIGHT
+
+
+async def test_the_suppression_key_is_recorded_for_a_dialled_contact() -> None:
+    """Without this the completion callback cannot honour a do-not-call: it only
+    ever sees a masked number, and a masked number cannot be hashed."""
+    runner, _ = _dialling_runner()
+
+    outcome = (await runner.run(TEST_AGENT, [Contact(name="Aditi", phone="+15555550100")]))[0]
+
+    assert outcome.phone_hash is not None
+    assert len(outcome.phone_hash) == 64
+    # A keyed digest, never the number itself.
+    assert "5555550100" not in outcome.phone_hash
+
+
+async def _always_stopped() -> bool:
+    return True

@@ -45,8 +45,16 @@ from app.database.repositories import escalations as escalations_repo
 from app.database.repositories import run_numbers as run_numbers_repo
 from app.database.repositories import runs as runs_repo
 from app.database.repositories import suppressions as suppressions_repo
+from app.database.repositories import voice_agents as voice_agents_repo
 from app.domain.entities import NEEDS_A_PERSON_DISPOSITIONS, CallOutcome, Contact
-from app.domain.entitlements import check_credit_available, check_member_credit_cap
+from app.domain.entitlements import (
+    AgentStanding,
+    check_agent_usable,
+    check_credit_available,
+    check_member_credit_cap,
+    usable_agent_ids,
+)
+from app.domain.run_state import RunStatus, is_stopping
 from app.domain.safety import mask, phone_hash
 from app.domain.spreadsheet import (
     MAX_ROWS,
@@ -56,6 +64,7 @@ from app.domain.spreadsheet import (
 )
 from app.services import billing
 from app.services import credit as credit_service
+from app.services.run_control import RunNotStoppable, StopSignal, request_stop
 from app.services.run_dialer import RunDialer
 from app.services.run_dispatch import RunNotDispatchable, RunPlan, resolve_run_plan
 
@@ -128,6 +137,10 @@ async def _run_and_persist(
     dialer = RunDialer(
         suppressed_hashes=suppressed_hashes,
         run_id=run_id,
+        # Read from `runs.stop_requested_at`, not from process memory: the stop
+        # request lands on whichever worker serves it, which is rarely this one
+        # (`services/run_control.py`).
+        should_stop=StopSignal(run_id, auth_user_id).is_stopped,
         # The two things nothing ever passed before, which is why every dial was
         # refused before the phone rang.
         lines=plan.lines,
@@ -218,6 +231,34 @@ async def start_run(
         # connection inside `RunDialer`, which is deliberately I/O-free. That is
         # a real change to its shape, not a line here.
         effective_plan = await billing.resolve_plan(conn, user.org_id, user.org_plan_id)
+
+        # The plan's agent limit, enforced where it actually binds. `usable_agent_ids`
+        # has always decided which agents the Agents tab shows as locked, but nothing
+        # checked it here - so a downgrade greyed an agent out in one screen and the
+        # run composer would still dial with it. That made the limit a one-time toll
+        # rather than an entitlement: subscribe, build ten agents, downgrade, keep
+        # running all ten (`check_agent_usable`'s own docstring says so, and had no
+        # caller until now).
+        agent_rows = await voice_agents_repo.list_org_agents(conn, user.org_id)
+        billing.refuse(
+            check_agent_usable(
+                agent_id=str(req.voice_agent_id),
+                usable=usable_agent_ids(
+                    [
+                        AgentStanding(
+                            agent_id=str(r["id"]),
+                            created_at=r["created_at"],
+                            kept_at=r["kept_at"],
+                        )
+                        for r in agent_rows
+                    ],
+                    limit=effective_plan.entitlements.max_voice_agents,
+                ),
+                plan_name=billing.plan_name(effective_plan.plan_id),
+                limit=effective_plan.entitlements.max_voice_agents,
+            )
+        )
+
         if effective_plan.entitlements.monthly_credit_paise is not None:
             # An unsubscribed plan is granted lazily, because nothing else will:
             # `grant_for_period` runs off subscription webhooks and Free has no
@@ -310,6 +351,10 @@ async def list_runs(user: Annotated[CurrentUser, Depends(current_user)]) -> list
             "finished_at": r["finished_at"].isoformat() if r["finished_at"] else None,
             "error": r["error"],
             "completed": r["completed"],
+            # Derived once here rather than in each of the three surfaces that
+            # render a run's state, so the list, the detail page and the
+            # dashboard cannot disagree about what "Stopping…" means.
+            "stopping": is_stopping(RunStatus(r["status"]), r["stop_requested_at"]),
             "started_by": str(r["started_by"]) if r["started_by"] else None,
             "started_by_name": r["started_by_name"],
             "started_by_avatar_url": r["started_by_avatar_url"],
@@ -356,6 +401,27 @@ async def get_run(
         if run is None:
             raise HTTPException(status_code=404, detail="Run not found")
         outcome_rows = await runs_repo.list_outcomes(conn, run_id)
+        number_rows = await run_numbers_repo.list_for_run(
+            conn, run_id=run_id, org_id=user.org_id
+        )
+
+    numbers = [
+        {
+            "id": str(n["number_id"]),
+            # The join is a left join, so `phone_e164` is null if the number row
+            # ever goes missing. It cannot be deleted today (no delete grant),
+            # but a run is permanent and this response must not 500 on a future
+            # schema where it can.
+            "phone_masked": mask(n["phone_e164"]) if n["phone_e164"] else "unknown",
+            "provider": n["provider"],
+            "label": n["label"],
+            # Whether the line is still usable. A run from last month may well
+            # have been placed from a number since retired, and saying so is
+            # more useful than showing it as though it were still live.
+            "status": n["status"],
+        }
+        for n in number_rows
+    ]
 
     outcomes = [
         {
@@ -397,18 +463,38 @@ async def get_run(
     escalated = sum(1 for o in resolved if o["disposition"] == "escalated")
 
     started_by = run["started_by"]
+    stopped_at = run["stop_requested_at"]
     return {
         "id": run["id"],
         "voice_agent_id": str(run["voice_agent_id"]) if run["voice_agent_id"] else None,
         "agent_name": run["agent_name"],
+        # All three were accepted, persisted and used by the dial path, and none
+        # of them were ever read back - so a finished run could not be audited
+        # against what it was actually told to do. `run_instruction` matters
+        # most: it is appended to every prompt in the run, and "why did this
+        # batch say that?" was unanswerable without it.
+        "name": run["name"],
+        "run_instruction": run["run_instruction"],
+        "allocation_strategy": run["allocation_strategy"],
         "total": run["total"],
         "status": run["status"],
+        "stopping": is_stopping(RunStatus(run["status"]), stopped_at),
+        "stop_requested_at": stopped_at.isoformat() if stopped_at else None,
+        "stopped_by": str(run["stopped_by"]) if run["stopped_by"] else None,
+        "stopped_by_name": run["stopped_by_name"],
         "started_at": run["started_at"].isoformat(),
         "finished_at": run["finished_at"].isoformat() if run["finished_at"] else None,
         "error": run["error"],
         "started_by": str(started_by) if started_by else None,
         "started_by_name": run["started_by_name"],
         "started_by_avatar_url": run["started_by_avatar_url"],
+        # Which lines this run was allowed to dial from. Recorded by
+        # `run_numbers_repo.attach` since ADR-8 and never read back until now -
+        # a run spread across several numbers is exactly when "where did these
+        # calls come from?" is worth being able to answer after the fact, and
+        # the per-outcome `from_number_masked` only answers it one call at a
+        # time.
+        "numbers": numbers,
         "outcomes": outcomes,
         "stats": {
             "completed": len(resolved),
@@ -418,6 +504,83 @@ async def get_run(
             "needs_human_pct": round(100 * escalated / len(outcomes)) if outcomes else 0,
         },
     }
+
+
+class RunStoppedOut(BaseModel):
+    """What the interface needs the moment Stop is pressed.
+
+    Deliberately not the whole run: the detail page is already polling and will
+    have the full shape within its next tick. This is the acknowledgement, and
+    it carries `stopping` so the button can change immediately rather than
+    waiting up to 2.5 seconds to admit it did anything.
+    """
+
+    id: str
+    status: str
+    stopping: bool
+    stop_requested_at: str | None
+    #: Contacts the dialler had not reached when the stop landed - the people
+    #: this actually spares. Excludes anyone mid-conversation, whose call was
+    #: already placed and is deliberately left to finish. Approximate by nature:
+    #: a call being originated at this instant still connects.
+    not_yet_dialled: int
+
+
+@router.post("/{run_id}/stop", response_model=RunStoppedOut)
+async def stop_run(
+    run_id: str,
+    user: Annotated[CurrentUser, Depends(RequirePermission(Permission.RUNS_START))],
+) -> RunStoppedOut:
+    """Stop dialling. Calls already in conversation are left to finish.
+
+    **The permission is `runs:start`, not a `runs:stop` of its own.** The set of
+    people who may halt a run is exactly the set who may begin one, and a second
+    enum member with an identical grant set is a name to keep in step for no
+    added control. Stopping is also the strictly less consequential direction -
+    it can only ever reduce what an organisation spends and who gets dialled -
+    so gating it more tightly than starting would leave the person who began a
+    run unable to end it. Viewer holds neither and can do neither.
+
+    **Live calls are not hung up, and that is the product decision.** A stop
+    means "dial nobody else"; someone mid-sentence with an agent is not
+    disconnected to satisfy a button. Their call ends naturally, its result is
+    reported and triaged like any other, and the run closes as `stopped` once
+    the last one lands. Everyone not yet reached gets a settled row saying the
+    run was stopped before they were dialled, so the count is honest and the run
+    can actually close (`RunDialer._stopped_outcome`).
+
+    Idempotent (CLAUDE.md non-negotiable #6). Answers 409 rather than 200 for a
+    run that already ended - reporting "Run stopped" for something that stopped
+    itself ten minutes ago is a success state for an action that did not happen.
+    """
+    try:
+        run = await request_stop(
+            org_id=user.org_id,
+            auth_user_id=user.auth_user_id,
+            user_id=user.id,
+            run_id=run_id,
+        )
+    except RunNotStoppable as exc:
+        # 404 for "no such run" so a caller cannot probe which ids exist; 409 for
+        # a real run in the wrong state, which is a genuine conflict and worth
+        # telling them about.
+        missing = "no longer exists" in str(exc)
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND if missing else status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
+
+    async with database.as_user(user.auth_user_id) as conn:
+        reached = await runs_repo.count_reached(conn, run_id)
+
+    stopped_at = run["stop_requested_at"]
+    return RunStoppedOut(
+        id=str(run["id"]),
+        status=str(run["status"]),
+        stopping=is_stopping(RunStatus(str(run["status"])), stopped_at),
+        stop_requested_at=stopped_at.isoformat() if stopped_at else None,
+        not_yet_dialled=max(0, int(run["total"]) - reached),
+    )
 
 
 #: Refused before a byte is parsed. A workbook this large is either not a

@@ -71,6 +71,7 @@ log = logging.getLogger("app.services.run_dialer")
 JsonObject = dict[str, Any]
 ProgressHook = Callable[[CallOutcome], Awaitable[None]]
 GatewayFactory = Callable[[], LiveKitGateway]
+StopCheck = Callable[[], Awaitable[bool]]
 
 
 class RunDialer:
@@ -86,6 +87,7 @@ class RunDialer:
         lines: Sequence[DialLine] | None = None,
         allocation_strategy: str = "round_robin",
         run_instruction: str | None = None,
+        should_stop: StopCheck | None = None,
     ) -> None:
         self.result_schema = result_schema
         # The verified lines this run may dial from, resolved once by the caller
@@ -128,6 +130,14 @@ class RunDialer:
         self._max_concurrent_calls = (
             max_concurrent_calls if max_concurrent_calls is not None else config.max_concurrent_calls
         )
+        # Asked once per contact, immediately before that contact is dialled.
+        # An awaitable predicate rather than a flag, so this module keeps its
+        # no-database property: the caller owns where the answer comes from
+        # (`services/run_control.StopSignal` reads it from `runs`), and a test
+        # passes a plain lambda. `None` means nothing can stop this run, which
+        # is the right default for the ad-hoc and test callers that have no
+        # persisted run to stop.
+        self._should_stop = should_stop
 
     @asynccontextmanager
     async def _open_gateway(self) -> AsyncIterator[None]:
@@ -180,7 +190,15 @@ class RunDialer:
             # write below - that's our own database, and doesn't need to
             # compete for the same concurrency budget as the carrier.
             async with semaphore:
-                outcome = await self.run_one(agent, contact)
+                # Checked *inside* the semaphore, which is the only place it
+                # works. Every contact's task is created up front by the
+                # `gather` below and then queues here, so a contact that has
+                # been waiting twenty minutes for a slot asks about the stop
+                # now rather than having decided before the button existed.
+                if await self._stop_requested():
+                    outcome = self._stopped_outcome(agent, contact)
+                else:
+                    outcome = await self.run_one(agent, contact)
             if on_progress:
                 await on_progress(outcome)
             return outcome
@@ -212,6 +230,49 @@ class RunDialer:
                 outcomes.append(result)
         return outcomes
 
+    async def _stop_requested(self) -> bool:
+        """Whether this run has been asked to stop.
+
+        Swallows a failing check rather than letting it abort the contact: the
+        predicate reaches the network, and a run must not lose a contact because
+        the question "should I stop?" could not be answered. `StopSignal` already
+        makes the same call for the same reason; this is the backstop for any
+        other predicate a caller passes in.
+        """
+        if self._should_stop is None:
+            return False
+        try:
+            return await self._should_stop()
+        except Exception:  # noqa: BLE001 - a failed stop check must not drop the contact
+            log.warning("stop check failed for run %s - continuing to dial", self._run_id)
+            return False
+
+    def _stopped_outcome(self, agent: RunAgent, contact: Contact) -> CallOutcome:
+        """The row for a contact the stop reached before the dialler did.
+
+        Written as a real settled outcome rather than left absent, and the
+        distinction matters twice over. It keeps `total` reachable, so
+        `finish_if_all_settled` can close the run instead of leaving it open
+        forever waiting for contacts that will never be dialled. And it says
+        plainly that this person was not called - a run that quietly shrinks its
+        own target would report success for 12 of 50 contacts (CLAUDE.md
+        non-negotiable #9).
+
+        BLOCKED/SKIPPED is the same shape a suppressed contact takes: deliberately
+        not dialled, as opposed to dialled and failed. The error code is distinct
+        from the crash sweep's `never_dialled` so the two are tellable apart -
+        one is a person's decision, the other is a dead dispatcher.
+        """
+        return CallOutcome(
+            contact_name=contact.name,
+            phone_masked=mask(contact.phone),
+            voice_agent_id=agent.id,
+            status="BLOCKED",
+            error="run_stopped",
+            disposition=Disposition.SKIPPED,
+            disposition_reason="The run was stopped before this contact was dialled.",
+        )
+
     def _idempotency_key(self, agent: RunAgent, contact: Contact) -> str:
         """A retry of the *same* logical attempt must reuse the same key -
         that's the entire point of `Idempotency-Key`: if the create-call
@@ -240,6 +301,12 @@ class RunDialer:
             contact_name=contact.name,
             phone_masked=mask(contact.phone),
             voice_agent_id=agent.id,
+            # The suppression key for this number, recorded now because this is
+            # the last point anything holds the real one. The completion
+            # callback sees only the masked form, so without this a contact who
+            # asks never to be called again could be escalated but never
+            # actually suppressed (`f3c7b21a9d04`).
+            phone_hash=phone_hash(contact.phone),
         )
 
         # --- Suppression gate: fails closed, runs before anything can dial. --

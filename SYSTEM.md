@@ -582,14 +582,30 @@ Org-scoped. Full run, plus `outcomes[]` (see §6 for every field), plus computed
   "id": "8f2a1c4d9e7b",
   "voice_agent_id": "3f7c1e28-9a44-4b21-8d10-6c2f5b8e4a91",
   "agent_name": "Travel discovery",
+  "name": "December enquiries",
+  "run_instruction": "Mention that the office is closed on the 25th.",
+  "allocation_strategy": "round_robin",
   "total": 3,
   "status": "completed",
+  "stopping": false,
+  "stop_requested_at": null,
+  "stopped_by": null,
+  "stopped_by_name": null,
   "started_at": "2026-08-05T09:12:04.221Z",
   "finished_at": "2026-08-05T09:12:05.108Z",
   "error": null,
   "started_by": "2c7e1a4b-...",
   "started_by_name": "Aditi Rao",
   "started_by_avatar_url": "https://.../avatar.png",
+  "numbers": [
+    {
+      "id": "9b1e...",
+      "phone_masked": "+15******100",
+      "provider": "twilio",
+      "label": "Mumbai line",
+      "status": "verified"
+    }
+  ],
   "outcomes": [
     /* CallOutcome objects, each with both run_id and provider_call_id */
   ],
@@ -618,6 +634,43 @@ Postgres `on conflict … do update`, so one call produces one row across all it
 transitions rather than a row per change. It now returns the row's `id` (previously
 write-only), which is what lets a real `escalations` row (below) reference a specific
 call outcome.
+
+### `POST /api/v1/runs/{run_id}/stop`
+
+Requires `Permission.RUNS_START` - the set of people who may halt a run is exactly the
+set who may begin one, and stopping is strictly the less consequential direction (it
+can only reduce what is spent and who is dialled), so a second permission with an
+identical grant set would be a name to keep in step for no added control. Viewer holds
+neither and can do neither. RLS narrows further: an operator can stop only a run they
+started; an admin or owner can stop any run in the organisation.
+
+**Dialling stops; live calls are left to finish.** A stop is a *request*, not a status
+flip - `runs.stop_requested_at` is set, and the run stays `running` (rendered
+"Stopping…", derived by `domain/run_state.is_stopping`) until the conversations already
+in progress report back. Everyone not yet reached gets a settled
+`BLOCKED`/`skipped` row with `error = "run_stopped"`, so `total` stays reachable and
+`finish_if_all_settled` can close the run - as **`stopped`**, never `completed`
+(CLAUDE.md non-negotiable #9).
+
+The signal lives in the database rather than in process memory because the dispatcher
+runs in `BackgroundTasks` on whichever worker served the start request, and the stop
+lands on whichever worker the balancer picks (`services/run_control.py`).
+
+Idempotent: pressing Stop twice keeps the first timestamp and the first person.
+
+```json
+{
+  "id": "8f2a1c4d9e7b",
+  "status": "running",
+  "stopping": true,
+  "stop_requested_at": "2026-08-23T09:20:11.004Z",
+  "not_yet_dialled": 38
+}
+```
+
+`409` when the run already ended - answering `200` would report "Run stopped" for
+something that stopped itself minutes ago. `404` for a run this caller cannot see, so a
+refusal never confirms which run ids exist.
 
 ### `GET /api/v1/escalations`
 
@@ -672,6 +725,21 @@ Requires `Permission.ESCALATIONS_RESOLVE` (every role except viewer). → `204`,
 if the escalation doesn't exist, is already resolved, or RLS doesn't let this caller
 touch it (an operator can only resolve their own run's escalations or ones assigned to
 them - enforced by RLS, not just the permission check).
+
+### `POST /api/v1/escalations/resolve`
+
+Requires `Permission.ESCALATIONS_RESOLVE`. Resolves a batch in one statement - the case
+it exists for is a run that failed to reach twenty contacts, where clearing them one
+card at a time is twenty clicks of the same decision. Body is
+`{"escalation_ids": [...]}`, 1-200 ids.
+
+Partial success is the contract, not an error: `status = 'open'` filters out anything a
+teammate resolved a second earlier, which is a real race on a shared worklist. The
+response says so rather than claiming all of them.
+
+```json
+{ "resolved": ["a1b2...", "c3d4..."], "skipped": 2 }
+```
 
 ### `GET /api/v1/share-requests`
 
@@ -1952,6 +2020,31 @@ The `check (provider in ('twilio','plivo'))` constraint is replaced by
 vendors (sarvam, openrouter, deepgram, elevenlabs, …) were not in the old list.
 The accepted set now lives in the Pydantic layer, so adding a vendor is an app
 change rather than a migration - which a 16-character ceiling would have undone.
+
+### Stopping a run, and the opt-out key (`f3c7b21a9d04`)
+
+Two columns on `runs`, one on `call_outcomes`, and the constraint `runs.status` never
+had.
+
+| Column | Why it exists |
+| ------ | ------------- |
+| `runs.stop_requested_at` | The stop signal. In the database, not in memory, because the dispatcher and the stop request land on different uvicorn workers. Nullable; set once and never moved (`coalesce`), so pressing Stop twice keeps the first decision. |
+| `runs.stopped_by` | Who asked. `ON DELETE SET NULL`, like `started_by`. |
+| `runs.status` check | `running | completed | failed | stopped`. Three values were a convention while two call sites wrote them; a fourth added by convention is how a typo becomes a run nobody can query. Mirrors `domain/run_state.RunStatus` exactly, the way `telephony_numbers_status_check` mirrors `domain/numbers.py`. |
+| `runs_open_idx` | Partial, on `finished_at is null`. The reconciler and the stop check both ask "is this run still open", never "which are stopped". |
+| `call_outcomes.phone_hash` | The suppression key, written by the dialler at origination. Without it a `do_not_call` could be escalated but never enforced: the completion callback sees only a masked number, and a masked number cannot be hashed. Same SHA-256-plus-pepper `suppressions` has stored since the initial schema, so this adds no class of data the database did not already hold. Nullable, no backfill - rows dialled before this migration have no key, and there is no way back to a number from a masked one. |
+
+**Never serialised to a client.** `phone_hash` is selected by exactly one query
+(`phone_hash_for_outcome`); `list_outcomes` does not return it and no response model
+carries it. It is not a number, but it is a stable per-number identifier, and the
+surfaces that show a call have no use for one.
+
+**A stop does not end a run.** `finish_if_all_settled` reads `stop_requested_at` and
+closes as `stopped` or `completed` accordingly, in the same single atomic statement that
+makes two concurrent callbacks unable to both close the run.
+`domain/run_state.closing_status()` is the readable copy of that branch and
+`tests/test_run_state.py` asserts the two agree - the same
+readable-copy/enforceable-copy split `plans.py` has with `plan_entitlements`.
 
 ## 14. The rule that shapes the schema
 

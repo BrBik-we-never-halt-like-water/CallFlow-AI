@@ -2465,12 +2465,24 @@ async def test_a_number_a_run_dialled_from_cannot_be_deleted(
         a.org_id,
     )
 
-    # ForeignKeyViolationError (23503), not RestrictViolationError (23001).
-    # Postgres raises 23001 only for a deferred RESTRICT check fired by the
-    # referencing side; a plain delete of a still-referenced parent row is a
-    # foreign-key violation, and asyncpg's two classes are unrelated - so
-    # expecting the wrong one lets the delete succeed without the test noticing.
-    with pytest.raises(asyncpg.exceptions.ForeignKeyViolationError):
+    # Either class, because which one Postgres raises for `on delete restrict`
+    # changed under us: 15 and 17 answer 23503 (ForeignKeyViolationError), 18
+    # answers 23001 (RestrictViolationError). Verified directly against both.
+    # This project meets all three - Supabase runs 17, the docker stack 15, and
+    # a local install may be 18 - so pinning either one turns a passing suite
+    # into a failing one purely on where it is pointed.
+    #
+    # Accepting both is not a weakened assertion. asyncpg's two classes are
+    # unrelated, so the tuple is still exhaustive about *which* refusals count:
+    # anything else, including the delete succeeding, still fails the test. What
+    # is being asserted is what the FK is for - a number that placed real calls
+    # cannot be deleted out from under the runs that record it.
+    with pytest.raises(
+        (
+            asyncpg.exceptions.ForeignKeyViolationError,
+            asyncpg.exceptions.RestrictViolationError,
+        )
+    ):
         await db.execute(
             "delete from public.telephony_numbers where id = $1", number_id
         )

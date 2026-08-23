@@ -29,8 +29,12 @@ import {
  *    is a person who never got called and nobody ever finds out why.
  *  - The reason is specific. "Not a valid E.164 number - try +919876543210" tells you
  *    what to type; "invalid" does not.
- *  - Paste works. Almost every real list starts life in a spreadsheet, and making
- *    someone retype it is how a tool gets abandoned on day one.
+ *
+ * Native paste still works on any cell - click in and Ctrl+V, same as any text
+ * input. What was removed is the dedicated "Paste" button that read the whole
+ * clipboard through the Clipboard API and parsed it as a sheet; browsers gate
+ * that read behind a permission prompt most people have never seen before, so
+ * it read as broken more often than it read as a shortcut.
  */
 export function ContactGrid({
   rows,
@@ -202,7 +206,7 @@ export function ContactGrid({
       >
         <div className="flex flex-col gap-1">
           <p className="text-small text-text">
-            Drop a CSV or Excel file here, or paste from a spreadsheet
+            Drop a CSV or Excel file here, or add rows below
           </p>
           <p className="text-small text-text-mute">
             Columns: name, phone, note. Any other column becomes that
@@ -227,30 +231,6 @@ export function ContactGrid({
           >
             <UploadSimpleIcon aria-hidden className="size-4" />
             Import a file
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={async () => {
-              try {
-                const text = await navigator.clipboard.readText();
-                if (text.trim()) ingest(text, { append: rows.length > 0 });
-                else
-                  toast({
-                    tone: 'warning',
-                    title: 'Your clipboard is empty',
-                    body: 'Copy the rows from your spreadsheet first.',
-                  });
-              } catch {
-                toast({
-                  tone: 'warning',
-                  title: 'Paste from your keyboard instead',
-                  body: "This browser won't let a page read the clipboard. Click a cell and press Ctrl+V.",
-                });
-              }
-            }}
-          >
-            Paste
           </Button>
           <Button
             variant="ghost"

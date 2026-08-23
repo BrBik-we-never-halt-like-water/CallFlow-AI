@@ -770,9 +770,15 @@ async def test_the_elevated_read_returns_another_tenants_runs(
     # is nullable, so a bare run is still a valid row.
     run_id = f"plat-run-{uuid.uuid4().hex[:8]}"
     await db.execute(
+        # `running`, not the `queued` this used to write: `f3c7b21a9d04` gave
+        # `runs.status` a check constraint mirroring `domain/run_state.RunStatus`,
+        # and `queued` was never one of the four the application can produce -
+        # it was an arbitrary string that happened to fit an unconstrained
+        # column. Which status this row holds is incidental to the test, which
+        # is about whether a platform reader can see another tenant's run at all.
         """
         insert into public.runs (id, org_id, status, total, started_by)
-        values ($1, $2, 'queued', 0, $3)
+        values ($1, $2, 'running', 0, $3)
         """,
         run_id,
         tenant.org_id,

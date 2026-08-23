@@ -34,6 +34,7 @@ from app.core.logging import CallContext
 from app.database import database
 from app.database.repositories import escalations as escalations_repo
 from app.database.repositories import runs as runs_repo
+from app.database.repositories import suppressions as suppressions_repo
 from app.database.repositories import voice_agents as voice_agents_repo
 from app.domain.collection import handoff_questions, missing_required
 from app.domain.entities import (
@@ -164,6 +165,56 @@ async def _settle_usage_credit(
     )
 
 
+async def _honour_opt_out(
+    conn: asyncpg.Connection,
+    *,
+    org_id: uuid.UUID,
+    call_outcome_id: uuid.UUID,
+    contact_name: str,
+) -> None:
+    """Add a contact who asked not to be called again to the suppression list.
+
+    The gap this closes: triage has always detected `do_not_call` and escalated
+    on it - top of the precedence order, above every other signal - but nothing
+    ever wrote the suppression row. Somebody had to read the queue, notice the
+    disposition, and re-type the number by hand. Until they did, the next run
+    containing that contact dialled them again, because the suppression check is
+    the only per-dial guard left and it can only refuse what is actually in the
+    table.
+
+    **Works from a hash, never a number.** This callback receives `phone_masked`
+    and nothing else, and a masked number cannot be hashed - which is precisely
+    why the write was impossible before. The dialler now records
+    `call_outcomes.phone_hash` at origination, and `suppressions` is keyed on
+    exactly that, so the row can be written without any new surface holding a
+    dialable number (`f3c7b21a9d04`).
+
+    **Never blocks the transcript.** A failure here is logged and swallowed, the
+    same trade `_settle_usage_credit` makes: this callback's first duty is to
+    record what happened on a customer's call, and losing a transcript because a
+    suppression insert failed would be the wrong thing to protect. The
+    escalation is raised either way, so a person still sees the opt-out even in
+    the case where the automatic write did not land.
+    """
+    phone_hash = await runs_repo.phone_hash_for_outcome(conn, call_outcome_id)
+    if phone_hash is None:
+        # Pre-migration rows, and contacts that were never actually dialled.
+        # Nothing to key a suppression on, and inventing one is not possible.
+        log.warning(
+            "an opt-out could not be auto-suppressed - the call has no suppression key"
+        )
+        return
+
+    added = await suppressions_repo.add_opt_out(
+        conn,
+        org_id=org_id,
+        phone_hash=phone_hash,
+        reason=f"Asked not to be called again during a call with {contact_name}.",
+    )
+    if added:
+        log.info("a contact opted out and was added to the suppression list")
+
+
 @router.post(
     "/runs/{run_id}/complete",
     status_code=status.HTTP_200_OK,
@@ -274,6 +325,22 @@ async def complete_call(
                     run_id=run_id,
                     call_outcome_id=call_outcome_id,
                 )
+
+            # "Never call me again" is a promise to a person, and it is the one
+            # signal that has to outlive the call it was said on. Written here,
+            # beside the escalation, because both are consequences of the same
+            # sentence: the escalation gets somebody to follow up, and this makes
+            # sure no run dials them in the meantime.
+            if payload.extracted.get("do_not_call"):
+                try:
+                    await _honour_opt_out(
+                        conn,
+                        org_id=owner["org_id"],
+                        call_outcome_id=call_outcome_id,
+                        contact_name=payload.contact_name,
+                    )
+                except Exception:
+                    log.exception("could not record an opt-out for run %s", run_id)
             # Charge the call. This is the only place usage credit is actually
             # spent, because it is the only place a real duration exists - the
             # dial path returns while the call is still in flight.

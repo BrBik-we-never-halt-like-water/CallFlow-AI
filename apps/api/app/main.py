@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from typing import Any
 
 from fastapi import FastAPI, Request, status
@@ -34,6 +35,7 @@ from app.core.config import config
 from app.core.logging import configure_logging
 from app.database import database
 from app.database.session import DatabasePoolBusy
+from app.services import run_reconciler
 
 configure_logging(json_format=config.log_format == "json")
 log = logging.getLogger("app.main")
@@ -46,12 +48,30 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     database and still work without it, so the API starts and the auth endpoints
     report the problem rather than the whole service refusing to boot.
     """
+    connected = True
     try:
         await database.connect()
     except Exception:
+        connected = False
         log.exception("database unavailable at startup - auth endpoints will fail")
 
+    # Closes runs whose dispatcher died with a previous process. Started only
+    # when the pool is up, because its first act is a query - and skipped
+    # entirely without a database, so a deployment that boots to report its own
+    # misconfiguration does not also log a reconciliation failure every minute.
+    reconciler: asyncio.Task[None] | None = None
+    if connected:
+        reconciler = asyncio.create_task(run_reconciler.run_forever())
+
     yield
+
+    if reconciler is not None:
+        # Cancelled and awaited rather than left to the loop's teardown: an
+        # in-flight reconciliation holds a privileged connection, and
+        # `disconnect()` below would otherwise close the pool underneath it.
+        reconciler.cancel()
+        with suppress(asyncio.CancelledError):
+            await reconciler
 
     await database.disconnect()
 

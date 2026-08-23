@@ -12,7 +12,7 @@
  * headings, borders, hovers, or decoration.
  */
 
-import type { Disposition, Outcome } from './api';
+import type { Disposition, Outcome, RunStatus } from './api';
 
 export type LampState = 'off' | 'ice' | 'brass' | 'jade' | 'flare';
 
@@ -64,21 +64,42 @@ export function lampForDisposition(disposition: Disposition): LampSpec {
   }
 }
 
-/** A run's own batch-level status - distinct from any one call's disposition. */
-export type RunStatus = 'running' | 'completed' | 'failed';
+/**
+ * A run's own batch-level status - distinct from any one call's disposition.
+ *
+ * Re-exported from `api.ts` rather than declared here a second time. The union
+ * is the same one the API sends and the database constrains, and two copies of
+ * it is how a fourth value gets added in one place and silently not the other.
+ */
+export type { RunStatus };
 
 const RUN_STATUS_LABELS: Record<RunStatus, string> = {
   running: 'Running',
   completed: 'Completed',
   failed: 'Failed',
+  stopped: 'Stopped',
 };
 
 /**
  * Which lamp a run's own status gets. `lampForOutcome` is per call; this is
  * the run as a whole, so every list that shows a run's status reads the same
  * colour and the same words instead of each re-deriving them.
+ *
+ * `stopping` is passed separately rather than being a fifth status, because it
+ * is not one: it is `running` plus somebody having pressed Stop, derived
+ * server-side (`domain/run_state.is_stopping`). Rendering it needs both facts,
+ * so both arrive.
  */
-export function lampForRunStatus(status: RunStatus): LampSpec {
+export function lampForRunStatus(
+  status: RunStatus,
+  stopping = false,
+): LampSpec {
+  if (stopping) {
+    // Still brass and still pulsing, because calls really are still in
+    // progress - the label is what changes. A run winding down is not idle and
+    // must not look it.
+    return { state: 'brass', pulse: true, label: 'Stopping' };
+  }
   switch (status) {
     case 'running':
       return { state: 'brass', pulse: true, label: RUN_STATUS_LABELS.running };
@@ -86,6 +107,13 @@ export function lampForRunStatus(status: RunStatus): LampSpec {
       return { state: 'flare', label: RUN_STATUS_LABELS.failed };
     case 'completed':
       return { state: 'jade', label: RUN_STATUS_LABELS.completed };
+    case 'stopped':
+      // Deliberately not jade and deliberately not flare. A stopped run did not
+      // finish its list, so the "clean outcome" colour would be a success state
+      // for something that did not happen (CLAUDE.md #9) - and nothing went
+      // wrong either, so the failure colour would be just as untrue. `off` is
+      // the honest one: this run is over and did not complete.
+      return { state: 'off', label: RUN_STATUS_LABELS.stopped };
   }
 }
 
