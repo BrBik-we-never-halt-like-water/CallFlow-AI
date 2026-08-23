@@ -598,3 +598,140 @@ async def test_claiming_inbound_is_possible_but_has_to_be_asked_for(
     )
 
     assert StubCarrier.calls[-1]["attach_number"] is True
+
+
+# --- media-server errors say which one they are (`ISSUES.md` #186) ------------
+
+
+async def test_a_media_server_error_is_explained_by_its_code() -> None:
+    """The regression this exists for.
+
+    LiveKit's `ServerError` **is** `TwirpError` - the SDK renamed the class and
+    kept the old name as an alias - so `type(exc).__name__` is "ServerError" and
+    the provisioning handler's generic branch reported exactly that. Three
+    attempts failed on dev with no trunk ids recorded, meaning the very first
+    call was refused, and nothing anywhere said whether that was credentials,
+    permissions, SIP not being enabled, or a bad argument.
+    """
+    from livekit.api import TwirpError
+
+    from app.integrations.livekit.client import explain_error
+
+    explained = explain_error(
+        TwirpError("unauthenticated", "whatever the vendor said", status=401)
+    )
+
+    assert explained is not None
+    assert "credentials" in explained
+    # The class name was the whole of the old message and is useless to a reader.
+    assert "ServerError" not in explained
+
+
+async def test_each_actionable_code_names_a_different_thing_to_do() -> None:
+    """Four failures an operator fixes four different ways. Collapsing them to
+    one sentence is what made the original message useless."""
+    from livekit.api import TwirpError
+
+    from app.integrations.livekit.client import explain_error
+
+    advice = {
+        code: explain_error(TwirpError(code, "x", status=400))
+        for code in ("unauthenticated", "permission_denied", "not_found", "invalid_argument")
+    }
+
+    assert all(v is not None for v in advice.values())
+    assert len(set(advice.values())) == 4, "two codes gave identical advice"
+
+
+async def test_an_unmapped_code_still_names_the_code_rather_than_the_class() -> None:
+    from livekit.api import TwirpError
+
+    from app.integrations.livekit.client import explain_error
+
+    explained = explain_error(TwirpError("internal", "x", status=500))
+
+    assert explained is not None
+    assert "internal" in explained
+    assert "TwirpError" not in explained and "ServerError" not in explained
+
+
+async def test_something_that_is_not_a_media_server_error_is_not_dressed_up_as_one() -> None:
+    """`None`, not a fallback sentence: the provisioning handler uses the
+    distinction to decide whether it can describe the failure at all."""
+    from app.integrations.livekit.client import explain_error
+
+    assert explain_error(ValueError("not ours")) is None
+
+
+# --- the number shows its *current* reason (`ISSUES.md` #187) ------------------
+
+
+async def test_a_failed_attempt_writes_its_reason_onto_the_number(
+    db: asyncpg.Connection, agent: Agent
+) -> None:
+    """The number row is the only one the Integrations list reads.
+
+    The attempt's reason used to land on `telephony_provisioning` alone, so the
+    list showed whatever `telephony_numbers.last_error` happened to hold - which
+    was only ever written by the sync's no-agent guard.
+    """
+    await _discover(db, agent)
+
+    await _connect(db, agent, "e1", carrier_fails=True)
+
+    number = await numbers_repo.by_e164(
+        db, org_id=agent.org_id, provider="twilio", phone_e164=NUMBER
+    )
+    assert number is not None
+    assert number["last_error"], "the number kept no reason at all"
+
+
+async def test_a_stale_reason_is_replaced_rather_than_kept(
+    db: asyncpg.Connection, agent: Agent
+) -> None:
+    """The bug this pins, exactly as it happened on dev.
+
+    A number synced before any agent existed collected "Build an agent first".
+    Nothing ever cleared that column, so after the agent was built and a later
+    attempt failed for an unrelated reason, the list still told the operator to
+    build an agent - a thing they had already done - and hid the real blocker.
+    """
+    number = await _discover(db, agent)
+    await numbers_repo.record_error(
+        db,
+        org_id=agent.org_id,
+        number_id=number["id"],
+        message="Build an agent first - a number is routed to one.",
+    )
+
+    await _connect(db, agent, "e2", carrier_fails=True)
+
+    after = await numbers_repo.by_e164(
+        db, org_id=agent.org_id, provider="twilio", phone_e164=NUMBER
+    )
+    assert after is not None
+    assert "Build an agent first" not in (after["last_error"] or ""), (
+        "the stale precondition survived a later, unrelated failure"
+    )
+
+
+async def test_success_clears_the_reason_so_a_working_number_shows_none(
+    db: asyncpg.Connection, agent: Agent
+) -> None:
+    """A red line beside a number that dials is its own kind of wrong."""
+    number = await _discover(db, agent)
+    await numbers_repo.record_error(
+        db,
+        org_id=agent.org_id,
+        number_id=number["id"],
+        message="whatever went wrong last time",
+    )
+
+    await _connect(db, agent, "e3")
+
+    after = await numbers_repo.by_e164(
+        db, org_id=agent.org_id, provider="twilio", phone_e164=NUMBER
+    )
+    assert after is not None
+    assert after["status"] == NumberStatus.VERIFIED.value
+    assert after["last_error"] is None

@@ -194,13 +194,21 @@ async def record_livekit_ids(
 
 
 async def record_error(
-    conn: asyncpg.Connection, *, org_id: UUID, number_id: UUID, message: str
+    conn: asyncpg.Connection, *, org_id: UUID, number_id: UUID, message: str | None
 ) -> None:
-    """The carrier's own reason, kept for whoever retries.
+    """The current reason this number is not diallable, or `None` to clear it.
 
     Deliberately does not change `status`: a part-way failure stays
     `provisioning` so the same attempt can resume, exactly as
     `telephony_provisioning.record_error` reasons about it.
+
+    `None` clears, and that is not a convenience - nothing used to clear this
+    column at all, so the first reason a number ever collected outlived whatever
+    caused it. A number that had been synced before any agent existed kept
+    "Build an agent first" as its displayed reason after the agent was built and
+    after later attempts failed for a completely different cause, telling the
+    operator to do something they had already done and hiding the real blocker
+    (`ISSUES.md` #187).
     """
     await conn.execute(
         "update public.telephony_numbers set last_error = $3 where org_id = $1 and id = $2",

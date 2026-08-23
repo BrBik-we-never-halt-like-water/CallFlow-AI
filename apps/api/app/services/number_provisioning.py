@@ -40,7 +40,11 @@ from app.database.repositories import telephony_numbers as numbers_repo
 from app.database.repositories import telephony_provisioning as provisioning_repo
 from app.domain.numbers import InvalidTransition, NumberStatus
 from app.domain.provisioning import ProvisioningStatus
-from app.integrations.livekit.client import LiveKitGateway, SipTransport
+from app.integrations.livekit.client import (
+    LiveKitGateway,
+    SipTransport,
+    explain_error,
+)
 from app.integrations.telephony import CarrierError, CarrierTrunk
 from app.integrations.telephony.plivo import PlivoCarrier
 from app.integrations.telephony.telnyx import TelnyxCarrier
@@ -119,6 +123,8 @@ async def _mirror_to_number(
     phone_e164: str,
     target: NumberStatus,
     attempt: asyncpg.Record | None = None,
+    error: str | None = None,
+    clear_error: bool = False,
 ) -> None:
     """Carry an attempt's outcome onto the number row the dial gate reads.
 
@@ -155,6 +161,14 @@ async def _mirror_to_number(
             outbound_trunk_id=attempt["livekit_outbound_trunk_id"],
             dispatch_rule_id=attempt["livekit_dispatch_rule_id"],
             carrier_termination_domain=attempt["carrier_termination_domain"],
+        )
+
+    # Before the short-circuit below on purpose: a part-way failure leaves the
+    # number on `provisioning`, which is where it already was, so anything after
+    # that early return would never run for the very case that needs it.
+    if error is not None or clear_error:
+        await numbers_repo.record_error(
+            conn, org_id=org_id, number_id=number["id"], message=error
         )
 
     current = NumberStatus(number["status"])
@@ -307,10 +321,28 @@ async def connect_number(
         # A carrier's own wording is kept because it is the only part that says
         # why; anything else is reported by type, since a raw exception string
         # can carry a credential or a hostname.
-        detail = str(exc) if isinstance(exc, CarrierError | ProvisioningRefused) else (
-            f"An unexpected error stopped provisioning ({type(exc).__name__}). "
-            "The steps already completed are recorded and a retry will resume from there."
-        )
+        # Three tiers, because "what do I do about this" differs for each.
+        #
+        # A carrier's or a refusal's own wording is already operator-facing. A
+        # media-server error is not - but it carries a transport code that says
+        # exactly which of authentication, permission, SIP-not-enabled or a bad
+        # argument went wrong, and `explain_error` turns that into the sentence.
+        # Only a genuinely unknown exception falls back to its type name.
+        #
+        # This tier used to be missing, and the cost was concrete: LiveKit's
+        # `ServerError` *is* `TwirpError` (the SDK renamed the class and kept the
+        # old name as an alias), so every media-server rejection landed in the
+        # last branch and reported "(ServerError)" - a string that names the
+        # vendor's class and tells an operator nothing. Three provisioning
+        # attempts failed on dev with no trunk ids recorded at all, meaning the
+        # very first call was refused, and the recorded error could not say why.
+        if isinstance(exc, CarrierError | ProvisioningRefused):
+            detail = str(exc)
+        else:
+            detail = explain_error(exc) or (
+                f"An unexpected error stopped provisioning ({type(exc).__name__}). "
+                "The steps already completed are recorded and a retry will resume from there."
+            )
         log.exception("provisioning attempt %s stopped", row["id"])
         # The number keeps `provisioning`, matching the attempt: a part-way
         # failure is resumable, and the ids the successful steps recorded are
@@ -322,6 +354,10 @@ async def connect_number(
             phone_e164=phone_number,
             target=NumberStatus.PROVISIONING,
             attempt=row,
+            # The same reason the attempt records. Without this the number row
+            # kept whatever it collected first and the real failure lived only on
+            # the attempt, which nothing in the interface reads.
+            error=detail,
         )
         # Returned, not re-raised, and that is the whole point. `as_user()`
         # wraps a request in a single transaction, so propagating from here
@@ -343,6 +379,10 @@ async def connect_number(
         phone_e164=phone_number,
         target=NumberStatus.VERIFIED,
         attempt=verified,
+        # The number is diallable, so whatever used to be wrong with it is not
+        # wrong any more. Leaving the last reason behind would put a red line
+        # beside a working number.
+        clear_error=True,
     )
     return verified
 

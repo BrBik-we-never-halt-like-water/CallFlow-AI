@@ -102,6 +102,72 @@ def classify_error(exc: Exception) -> DialFailure:
     return _TWIRP_CODE_FAILURES.get(code, DialFailure.INTERNAL)
 
 
+#: What to go and do about each transport-level code, for the surfaces that show
+#: a provisioning failure to an operator rather than retrying it.
+#:
+#: The vendor's own `message` is deliberately not used. It is the field that
+#: carries the SIP URI and the project host, and a provisioning error is shown in
+#: the interface - so the code is translated here instead, where the vendor's
+#: vocabulary is already allowed to live.
+_TWIRP_CODE_ADVICE: dict[str, str] = {
+    "unauthenticated": (
+        "the media server rejected CallFlow's own credentials. "
+        "LIVEKIT_API_KEY and LIVEKIT_API_SECRET are wrong or belong to a "
+        "different project - this is a deployment setting, not your account."
+    ),
+    "permission_denied": (
+        "the media server refused the request. The API key is valid but is not "
+        "allowed to manage SIP - check the key's grants, and that SIP is enabled "
+        "on the project."
+    ),
+    "not_found": (
+        "the media server has no SIP service on this project. It has to be "
+        "enabled there before a number can be pointed at it."
+    ),
+    "invalid_argument": (
+        "the media server rejected the trunk CallFlow described. Usually the "
+        "number is not in E.164 form, or LIVEKIT_SIP_HOST is unset or wrong."
+    ),
+    "already_exists": (
+        "the media server already has a trunk for this number. Retrying resumes "
+        "from what exists rather than building a second one."
+    ),
+    "unavailable": (
+        "the media server could not be reached. Nothing was created - retry when "
+        "it is back."
+    ),
+    "deadline_exceeded": (
+        "the media server did not answer in time. Nothing was created - retry."
+    ),
+    "resource_exhausted": (
+        "the media server is rate-limiting this project. Retry in a minute."
+    ),
+}
+
+
+def explain_error(exc: Exception) -> str | None:
+    """One sentence an operator can act on, or `None` if this is not ours.
+
+    Returns `None` rather than a fallback so a caller can tell "a media-server
+    error I can describe" from "an exception I know nothing about" - the second
+    should not be dressed up as the first.
+    """
+    if not isinstance(exc, EngineError):
+        return None
+    code = str(getattr(exc, "code", "") or "").lower()
+    advice = _TWIRP_CODE_ADVICE.get(code)
+    if advice is not None:
+        return f"Couldn't set up the call route: {advice}"
+    # A code with no entry still beats the class name: `unknown` and `internal`
+    # are the vendor saying so, and naming them lets a support conversation
+    # start somewhere.
+    return (
+        f"Couldn't set up the call route: the media server returned "
+        f"'{code or 'an unnamed error'}'. Nothing about your account is wrong - "
+        "retry, and report the code if it persists."
+    )
+
+
 class SipTransport(str):
     """The transport a carrier's origination URI must name.
 
@@ -378,4 +444,5 @@ __all__ = [
     "LiveKitGateway",
     "SipTransport",
     "classify_error",
+    "explain_error",
 ]

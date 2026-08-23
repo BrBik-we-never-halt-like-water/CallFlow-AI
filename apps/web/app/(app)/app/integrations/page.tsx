@@ -4,7 +4,6 @@ import { useCallback, useMemo, useState } from 'react';
 import {
   ArrowClockwiseIcon,
   ArrowSquareOutIcon,
-  CheckIcon,
 } from '@phosphor-icons/react/dist/ssr';
 import { BrandMark } from '@/components/app/brand-mark';
 import { CarrierNumbers } from '@/components/app/carrier-numbers';
@@ -15,7 +14,6 @@ import { Tag } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogRoot } from '@/components/ui/dialog';
 import { Field } from '@/components/ui/field';
-import { EmptyState } from '@/components/ui/empty-state';
 import { Input, SearchInput } from '@/components/ui/input';
 import { Panel } from '@/components/ui/panel';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -24,7 +22,6 @@ import { cn } from '@/lib/cn';
 import { formatAge } from '@/lib/format';
 import {
   api,
-  type Provider,
   type ProviderCredential,
   type ProviderRole,
   type ProviderSpec,
@@ -32,7 +29,6 @@ import {
 import { beginOAuth, takePendingOAuth } from '@/lib/oauth';
 import { useOrgScopedEffect } from '@/lib/hooks/use-org-scoped-effect';
 import { useSession, type SessionProfile } from '@/lib/hooks/use-session';
-import { PageHeader } from '@/components/app/page-header';
 
 /**
  * One filterable grid, not seven stacked walls of cards.
@@ -95,15 +91,6 @@ function statusOf(
     confirmed: false,
   };
 }
-
-/** The four a call actually reads. The rest are stored-only, and counting them
- *  towards readiness would invent work nobody has to do. */
-const NEEDED: { id: ProviderRole; label: string }[] = [
-  { id: 'telephony', label: 'Phone' },
-  { id: 'transcriber', label: 'STT' },
-  { id: 'voice', label: 'TTS' },
-  { id: 'intelligence', label: 'Intelligence' },
-];
 
 export default function IntegrationsPage() {
   const session = useSession();
@@ -227,12 +214,6 @@ function IntegrationsContent({ profile }: { profile: SessionProfile }) {
       >
         <VoiceField />
       </div>
-
-      <Readiness
-        catalogue={catalogue}
-        credentials={credentials}
-        loading={loading}
-      />
 
       {/* Directly under the readiness line, because that line's "ready to place
           a call" is about credentials and a credential is not a diallable line.
@@ -373,80 +354,6 @@ function IntegrationsContent({ profile }: { profile: SessionProfile }) {
  * What is still missing before a call is possible - the page's thesis, so it
  * leads rather than sitting in a panel below the fold.
  */
-/**
- * A role counts as ready only where the vendor *confirmed* the credential.
- *
- * Counting stored rows made "3/4 ready to place a call" a statement about how
- * many forms had been filled in. This makes it a statement about what will
- * actually answer when a call is placed.
- */
-function Readiness({
-  catalogue,
-  credentials,
-  loading,
-}: {
-  catalogue: ProviderSpec[] | null;
-  credentials: ProviderCredential[] | null;
-  loading: boolean;
-}) {
-  const confirmedIds = useMemo(
-    () =>
-      new Set<Provider>(
-        (credentials ?? []).filter((c) => c.verified_at).map((c) => c.provider),
-      ),
-    [credentials],
-  );
-  const status = NEEDED.map((role) => ({
-    ...role,
-    ready: (catalogue ?? []).some(
-      (s) => s.roles.includes(role.id) && confirmedIds.has(s.id),
-    ),
-  }));
-  const done = status.filter((s) => s.ready).length;
-
-  return (
-    <header className="flex flex-col gap-3">
-      <PageHeader title="Integrations">
-        {loading ? null : (
-          <p className="text-small text-text-dim">
-            <span className="dash-num font-semibold" style={{ color: 'var(--dash-figure)' }}>{done}</span>
-            <span className="text-text-mute">/{NEEDED.length}</span> ready to
-            place a call
-          </p>
-        )}
-      </PageHeader>
-      {loading ? (
-        <Skeleton className="h-9 w-full max-w-xl rounded-full" />
-      ) : (
-        <ul className="flex flex-wrap gap-1.5">
-          {status.map((s) => (
-            <li
-              key={s.id}
-              className={cn(
-                'flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-small',
-                s.ready
-                  ? 'border-rule-strong bg-surface-raised text-text'
-                  : 'border-rule border-dashed bg-transparent text-text-mute',
-              )}
-            >
-              {/* Paired with a word, never colour alone. */}
-              {s.ready ? (
-                <CheckIcon aria-hidden weight="bold" className="size-3.5" />
-              ) : (
-                <span aria-hidden className="font-mono leading-none">+</span>
-              )}
-              {s.label}
-              <span className="sr-only">
-                {s.ready ? 'connected and confirmed' : 'not connected'}
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
-    </header>
-  );
-}
-
 /** Words, a count and a hairline - the same quiet group label the Agents page
  *  uses. A filled header band here would be a third piece of chrome competing
  *  with the readiness line above and the filter pills between them. */
