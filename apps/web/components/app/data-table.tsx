@@ -5,22 +5,10 @@ import {
   CaretUpDownIcon,
   CaretUpIcon,
   CaretRightIcon,
-  DownloadSimpleIcon,
-  SlidersHorizontalIcon,
 } from '@phosphor-icons/react/dist/ssr';
-import { useMemo, useState } from 'react';
 import { cn } from '@/lib/cn';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
-import {
-  DropdownMenu,
-  DropdownMenuCheckboxItem,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import { Select } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 
@@ -37,8 +25,6 @@ export interface Column<T> {
   align?: 'left' | 'right';
   mono?: boolean;
   sortable?: boolean;
-  /** Hidden until the operator turns it on in the column control. */
-  defaultHidden?: boolean;
   /** Tailwind width class, e.g. `w-40`. */
   width?: string;
 }
@@ -84,14 +70,48 @@ export interface DataTableProps<T> {
    */
   mobileCard?: (row: T) => React.ReactNode;
 
-  /** Enables "Export CSV" in the toolbar. */
-  exportFileName?: string;
-  /** Extra controls, rendered at the left of the toolbar. */
-  toolbar?: React.ReactNode;
   className?: string;
 }
 
 const ROWS_PER_PAGE = ['25', '50', '100'];
+
+/**
+ * A column set and its rows, as a CSV string - the same shape the table
+ * itself renders, so an export can never disagree with what was on screen.
+ *
+ * Exported so a page's own toolbar can offer "Export" as a first-class button
+ * next to its filters, rather than it being buried inside this component -
+ * the caller already has `columns` and its own rows to hand it.
+ */
+export function rowsToCsv<T>(columns: Column<T>[], rows: T[]): string {
+  const header = columns.map((c) => c.header);
+  const body = rows.map((row) =>
+    columns.map((c) => {
+      const raw = c.value ? c.value(row) : '';
+      return raw == null ? '' : String(raw);
+    }),
+  );
+  return [header, ...body]
+    .map((line) =>
+      line
+        .map((cell) =>
+          /[",\n]/.test(cell) ? `"${cell.replace(/"/g, '""')}"` : cell,
+        )
+        .join(','),
+    )
+    .join('\n');
+}
+
+/** Triggers the browser download `rowsToCsv` produced. */
+export function downloadCsv(csv: string, fileName: string): void {
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `${fileName}.csv`;
+  link.click();
+  URL.revokeObjectURL(url);
+}
 
 export function DataTable<T>({
   caption,
@@ -113,19 +133,8 @@ export function DataTable<T>({
   onPageSizeChange,
   onRowClick,
   mobileCard,
-  exportFileName,
-  toolbar,
   className,
 }: DataTableProps<T>) {
-  const [hidden, setHidden] = useState<Set<string>>(
-    () => new Set(columns.filter((c) => c.defaultHidden).map((c) => c.id)),
-  );
-
-  const visible = useMemo(
-    () => columns.filter((c) => !hidden.has(c.id)),
-    [columns, hidden],
-  );
-
   const selected = selectedIds ?? new Set<string>();
   const allKeys = rows.map(rowKey);
   const selectedOnPage = allKeys.filter((k) => selected.has(k)).length;
@@ -160,87 +169,11 @@ export function DataTable<T>({
     onSortChange({ id: column.id, dir });
   }
 
-  function exportCsv() {
-    const header = visible.map((c) => c.header);
-    const body = rows.map((row) =>
-      visible.map((c) => {
-        const raw = c.value ? c.value(row) : '';
-        return raw == null ? '' : String(raw);
-      }),
-    );
-    const csv = [header, ...body]
-      .map((line) =>
-        line
-          .map((cell) =>
-            /[",\n]/.test(cell) ? `"${cell.replace(/"/g, '""')}"` : cell,
-          )
-          .join(','),
-      )
-      .join('\n');
-
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `${exportFileName}.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
-  }
-
   const totalPages =
     totalRows != null ? Math.max(1, Math.ceil(totalRows / pageSize)) : null;
-  const showToolbar =
-    Boolean(toolbar) || columns.length > 1 || Boolean(exportFileName);
 
   return (
     <div className={cn('flex flex-col', className)}>
-      {showToolbar ? (
-        <div className="flex flex-wrap items-center justify-between gap-2 pb-3">
-          <div className="flex min-w-0 flex-wrap items-center gap-2">
-            {toolbar}
-          </div>
-
-          <div className="flex items-center gap-2">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="secondary" size="sm">
-                  <SlidersHorizontalIcon aria-hidden className="size-4" />
-                  Columns
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent>
-                <DropdownMenuLabel>Show columns</DropdownMenuLabel>
-                {columns.map((column) => (
-                  <DropdownMenuCheckboxItem
-                    key={column.id}
-                    checked={!hidden.has(column.id)}
-                    onCheckedChange={(next) =>
-                      setHidden((current) => {
-                        const updated = new Set(current);
-                        if (next) updated.delete(column.id);
-                        else updated.add(column.id);
-                        return updated;
-                      })
-                    }
-                  >
-                    {column.header}
-                  </DropdownMenuCheckboxItem>
-                ))}
-                {exportFileName ? (
-                  <>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem onSelect={exportCsv}>
-                      <DownloadSimpleIcon aria-hidden className="size-4" />
-                      Export CSV
-                    </DropdownMenuItem>
-                  </>
-                ) : null}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        </div>
-      ) : null}
-
       {/* ---- Desktop table ------------------------------------------------ */}
       <div className="panel-glass hidden overflow-x-auto rounded-md border border-rule/70 md:block">
         <table className="w-full border-collapse text-left">
@@ -260,7 +193,7 @@ export function DataTable<T>({
                 </th>
               ) : null}
 
-              {visible.map((column) => {
+              {columns.map((column) => {
                 const isSorted = sort?.id === column.id;
                 return (
                   <th
@@ -324,7 +257,7 @@ export function DataTable<T>({
                       <Skeleton className="size-4" />
                     </td>
                   ) : null}
-                  {visible.map((column) => (
+                  {columns.map((column) => (
                     <td key={column.id} className="px-3 py-3">
                       <Skeleton className="h-3.5 w-full max-w-32" />
                     </td>
@@ -333,7 +266,7 @@ export function DataTable<T>({
               ))
             ) : rows.length === 0 ? (
               <tr>
-                <td colSpan={visible.length + (selectable ? 1 : 0)}>{empty}</td>
+                <td colSpan={columns.length + (selectable ? 1 : 0)}>{empty}</td>
               </tr>
             ) : (
               rows.map((row) => {
@@ -368,7 +301,7 @@ export function DataTable<T>({
                       </td>
                     ) : null}
 
-                    {visible.map((column) => (
+                    {columns.map((column) => (
                       <td
                         key={column.id}
                         className={cn(
@@ -411,7 +344,7 @@ export function DataTable<T>({
               mobileCard(row)
             ) : (
               <div className="flex flex-col gap-1">
-                {visible.slice(0, 3).map((column) => (
+                {columns.slice(0, 3).map((column) => (
                   <div
                     key={column.id}
                     className="flex items-baseline justify-between gap-3"

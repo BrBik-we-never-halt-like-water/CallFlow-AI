@@ -11,11 +11,13 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Panel } from '@/components/ui/panel';
 import { useToast } from '@/components/ui/toast';
 import { MaskedPhone } from './masked-phone';
 import { api, type Escalation, type Member } from '@/lib/api';
 import { useAppStore } from '@/lib/app-store';
+import { urgencyFor, urgencyLabel } from '@/lib/escalation-age';
 import { formatAge, formatDuration, formatTimestamp } from '@/lib/format';
 import { useSession } from '@/lib/hooks/use-session';
 
@@ -32,6 +34,8 @@ export function EscalationCard({
   members,
   compact = false,
   onOpen,
+  selected,
+  onSelectedChange,
 }: {
   escalation: Escalation;
   /** The org's team, for the "Reassign" picker - fetched once by the page,
@@ -42,6 +46,10 @@ export function EscalationCard({
    *  as `members`. */
   compact?: boolean;
   onOpen?: () => void;
+  /** Selection for the worklist's bulk actions. Absent on the dashboard's
+   *  condensed preview, which is a summary rather than something acted on. */
+  selected?: boolean;
+  onSelectedChange?: (selected: boolean) => void;
 }) {
   const toast = useToast();
   const { refreshEscalations } = useAppStore();
@@ -57,6 +65,11 @@ export function EscalationCard({
 
   const chain = buildChain(escalation);
   const isOpen = escalation.escalation_status === 'open';
+  // Only meaningful while the item is still waiting - a resolved escalation
+  // that took three days is history, not a call to action.
+  const urgency = isOpen ? urgencyFor(escalation.created_at) : 'fresh';
+  const urgent = urgencyLabel(urgency);
+  const selectable = isOpen && onSelectedChange !== undefined;
   // Resolved server-side and carried on the row: the client holds no agent
   // list to look a name up in any more.
   const agentName = escalation.agent_name;
@@ -114,6 +127,14 @@ export function EscalationCard({
     <Wrapper className={wrapperClassName}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2">
+          {selectable ? (
+            <Checkbox
+              checked={selected ?? false}
+              onCheckedChange={(next) => onSelectedChange?.(next)}
+              label={`Select the escalation for ${escalation.contact_name}`}
+              className="shrink-0"
+            />
+          ) : null}
           {/* `escalations/page.tsx` only ever passes an open escalation
               (resolved ones stay out of the worklist by design), so the
               `jade` branch is currently unreached - kept for whichever
@@ -141,14 +162,26 @@ export function EscalationCard({
           {escalation.assigned_to_name ? (
             <Tag>Assigned · {escalation.assigned_to_name}</Tag>
           ) : null}
+          {/* Weight, not colour. The five lamp colours mean call state, and how
+              long somebody has waited is a different axis - so the urgency is
+              said in a word and shown in type weight, which also means a screen
+              reader gets exactly what a sighted reader gets. */}
           <span
-            className="font-mono text-data text-text-mute"
+            className={cn(
+              'font-mono text-data',
+              urgency === 'overdue'
+                ? 'font-bold text-text'
+                : urgency === 'ageing'
+                  ? 'font-medium text-text-dim'
+                  : 'text-text-mute',
+            )}
             title={formatTimestamp(escalation.created_at)}
           >
             {isOpen
               ? `Waiting ${formatAge(escalation.created_at)}`
               : formatAge(escalation.created_at)}
           </span>
+          {urgent ? <Tag>{urgent}</Tag> : null}
           {escalation.duration_seconds != null ? (
             <span className="font-mono text-data tabular-nums text-text-mute">
               {formatDuration(escalation.duration_seconds)} call

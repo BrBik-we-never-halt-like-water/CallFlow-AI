@@ -1,12 +1,18 @@
 'use client';
 
-import { BroadcastIcon, FunnelIcon } from '@phosphor-icons/react/dist/ssr';
+import {
+  BroadcastIcon,
+  DownloadSimpleIcon,
+  FunnelIcon,
+} from '@phosphor-icons/react/dist/ssr';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
 import { ConnectionBanner } from '@/components/app/connection-banner';
 import {
   DataTable,
+  downloadCsv,
+  rowsToCsv,
   type Column,
   type SortState,
 } from '@/components/app/data-table';
@@ -42,9 +48,11 @@ import { useSession } from '@/lib/hooks/use-session';
  * tokens, correctly, in both themes.
  */
 
-const STATUS_FILTERS = (['running', 'completed', 'failed'] as RunStatus[]).map(
-  (value) => ({ value, label: lampForRunStatus(value).label }),
-);
+// Labels come from the lamp mapping rather than being re-typed here, so the
+// filter menu and every row can never disagree about what a status is called.
+const STATUS_FILTERS = (
+  ['running', 'completed', 'stopped', 'failed'] as RunStatus[]
+).map((value) => ({ value, label: lampForRunStatus(value).label }));
 
 export default function RunsPage() {
   const router = useRouter();
@@ -88,7 +96,10 @@ export default function RunsPage() {
       }
       if (!needle) return true;
       const name = agentName(run).toLowerCase();
-      const statusLabel = lampForRunStatus(run.status).label.toLowerCase();
+      const statusLabel = lampForRunStatus(
+        run.status,
+        run.stopping,
+      ).label.toLowerCase();
       return name.includes(needle) || statusLabel.includes(needle);
     });
   }, [runs, query, statusFilter]);
@@ -145,7 +156,7 @@ export default function RunsPage() {
       header: 'Status',
       sortable: true,
       cell: (run) => {
-        const lamp = lampForRunStatus(run.status);
+        const lamp = lampForRunStatus(run.status, run.stopping);
         return (
           <span className="inline-flex items-center gap-2 text-text">
             <Lamp state={lamp.state} size="sm" pulse={lamp.pulse} />
@@ -153,7 +164,7 @@ export default function RunsPage() {
           </span>
         );
       },
-      value: (run) => lampForRunStatus(run.status).label,
+      value: (run) => lampForRunStatus(run.status, run.stopping).label,
     },
     {
       id: 'completed',
@@ -236,6 +247,22 @@ export default function RunsPage() {
             </DropdownMenuContent>
           </DropdownMenu>
 
+          {/* Exports the full filtered/sorted list, not just the page on
+              screen - pagination is a display artifact, and someone reaching
+              for "Export" wants everything matching their current search and
+              status filter, not an arbitrary 25 of it. */}
+          <Button
+            variant="secondary"
+            size="md"
+            onClick={() =>
+              downloadCsv(rowsToCsv(columns, sorted), 'callflow-runs')
+            }
+            disabled={sorted.length === 0}
+          >
+            <DownloadSimpleIcon aria-hidden className="size-4" />
+            Export
+          </Button>
+
           {canStart ? (
             <Button asChild>
               <Link href="/app/runs/new">Start a run</Link>
@@ -263,9 +290,8 @@ export default function RunsPage() {
           setPage(1);
         }}
         onRowClick={(run) => router.push(`/app/runs/${run.id}`)}
-        exportFileName="callflow-runs"
         mobileCard={(run) => {
-          const lamp = lampForRunStatus(run.status);
+          const lamp = lampForRunStatus(run.status, run.stopping);
           return (
             <div className="flex flex-col gap-1.5">
               <div className="flex items-center gap-2">

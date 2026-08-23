@@ -196,6 +196,24 @@ class CallOutcome(BaseModel):
     #: several numbers is the case where that matters.
     from_number_masked: str | None = None
 
+    #: The suppression key for the number that was dialled - SHA-256 over the
+    #: E.164 plus the per-deployment pepper, the same value `suppressions` is
+    #: keyed on.
+    #:
+    #: Set by the dialler, which is the last thing that holds the real number.
+    #: It exists so a contact who says "never call me again" can actually be
+    #: suppressed: the completion callback that hears them receives only
+    #: `phone_masked`, and a masked number cannot be hashed, so without this the
+    #: opt-out could be escalated to a person but never enforced against the
+    #: next run.
+    #:
+    #: **Never serialised to a client.** No response model reads it and
+    #: `list_outcomes` does not select it - it travels from the dialler to
+    #: `call_outcomes` and is read back only by `phone_hash_for_outcome`. It is
+    #: not a number, but it is a stable per-number identifier, and the surfaces
+    #: that show a call have no use for one.
+    phone_hash: str | None = None
+
     transcript: str | None = None
     summary: str | None = None
 

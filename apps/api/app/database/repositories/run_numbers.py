@@ -46,7 +46,7 @@ async def list_for_run(
     return list(
         await conn.fetch(
             """
-            select rn.number_id, n.phone_e164, n.provider, n.status
+            select rn.number_id, n.phone_e164, n.provider, n.status, n.label
             from public.run_numbers rn
             left join public.telephony_numbers n on n.id = rn.number_id
             where rn.run_id = $1 and rn.org_id = $2

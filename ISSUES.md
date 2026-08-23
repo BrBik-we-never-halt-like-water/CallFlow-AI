@@ -6809,6 +6809,220 @@ properly and wants its own migration.
 two-session path - it needs two authenticated sessions, so the Realtime wiring is
 verified by compile and by the indicator rendering, not by two people typing.
 
+## Iteration 51 - 2026-08-23 · Runs and "needs a person", end to end
+
+Prompted by a request to rebuild both sections to production quality. The audit
+that preceded it found gaps where a feature was real in one flow and absent from
+another; they are fixed here. `phone_hash` and the stop signal both needed a
+column, so they share one migration (`f3c7b21a9d04`).
+
+**Renumbered on merge.** This landed as iteration 50 with #184-#193 and moved
+to 51 with #186-#195 when merging `dev`, which had already claimed 50 and
+#184-#185 (`0ef4d16`). Commit `248298e` still names the old numbers.
+
+### #186 - a run could not be stopped once it started
+
+**S1 · FIXED · api + web · `f3c7b21a9d04`, `domain/run_state.py`, `services/run_control.py`, `services/run_dialer.py`, `routes/runs.py`, the run detail page**
+
+`POST /api/v1/runs` dispatched the whole contact list and nothing could
+interrupt it. The run detail page offered "Pause run", which stopped *that screen
+polling* and touched no call - the page said so in a source comment nobody
+reading the interface could see. A run started against the wrong sheet dialled
+every number on it.
+
+**Impact.** The most consequential gap in the product. Every run dials for real
+(CLAUDE.md #8) and the cost guards were removed at the product owner's direction,
+so a mistake was unrecoverable by design: the only way to stop a run was to kill
+the API process, which also abandoned every other organisation's run on that
+worker.
+
+**Why the obvious fix does not work.** An `asyncio.Event` or a module-level flag
+is invisible across workers: the dispatcher runs in `BackgroundTasks` on whichever
+worker served the start request, and the stop lands on whichever one the balancer
+picks. The signal has to be in the database.
+
+**Fixed.** `runs.stop_requested_at` + `stopped_by`, read by
+`services/run_control.StopSignal` (cached 2s, latching) and passed into
+`RunDialer` as an awaitable predicate - so the dialler keeps its no-database
+property and the whole behaviour is testable with a lambda. A contact the stop
+reaches first gets a real BLOCKED/`skipped` row with `error = 'run_stopped'`, so
+`total` stays reachable and the run can still close.
+
+**A stop does not hang up live calls, and that is the decision.** Somebody
+mid-sentence with an agent is not disconnected to satisfy a button; their call
+ends naturally and reports back as normal. The run then closes as `stopped`
+rather than `completed`, because a run that dialled 12 of 50 did not complete
+(CLAUDE.md #9). `runs.status` gained the check constraint it never had, mirroring
+the new `domain/run_state.RunStatus`.
+
+**Verified.** `tests/test_run_stop_and_opt_out.py` (12 tests) against a real
+database: the flag survives the round trip, the run closes as `stopped`, an
+untouched run still closes as `completed`, a finished run answers 409 and an
+unknown one 404, and stopping twice keeps the first timestamp.
+
+### #187 - a run whose dispatcher died stayed "Running" forever
+
+**S2 · FIXED · api · `services/run_reconciler.py`, `main.py`, `repositories/runs.py`**
+
+`expire_stale_in_flight` and `abandon_undialled` were both correct and both only
+ran *when something asked* - and the only two askers were a worker completion
+callback and the run's own dispatcher. A run whose dispatcher died in a redeploy
+and whose workers died with it had nobody left to ask.
+
+**Impact.** The run read "Running" permanently, the detail page polled it forever,
+and an operator could not tell a stuck run from a slow one. Recorded in the code
+as a known hole since `ISSUES.md` #117.
+
+**Fixed.** A lifespan-owned loop (60s) sweeping open runs quiet for longer than
+twice the call ceiling, through `privileged.acquire()` - reconciliation has no
+user to scope `as_user` with, and CLAUDE.md permits the bypass outside a request
+handler. Idempotent by `finished_at is null`, so every worker running its own copy
+is harmless. A startup-only pass was rejected: the failure this is for is the
+voice runtime dying while the API stays up, which has no restart near it.
+
+### #188 - a call that connected and never reported never reached the queue
+
+**S2 · FIXED · api · `repositories/runs.py`**
+
+`expire_stale_in_flight` marked these `unreachable` - a needs-a-person disposition
+- but wrote no `escalations` row. Every other escalation is raised by an
+application call site reacting to a result it was handed, and by definition
+nothing ever reported these, so no call site was ever reached.
+
+**Impact.** The escalations that most deserve a person were the ones that silently
+never appeared: the call connected, somebody had a conversation with an agent, and
+nobody knows what was said or what they were promised.
+
+**Fixed.** The sweep inserts the escalation rows itself, `on conflict do nothing`.
+
+### #189 - a contact who was never dialled was reported as "couldn't be reached"
+
+**S3 · FIXED · api · `repositories/runs.py`**
+
+`abandon_undialled` wrote disposition `unreachable`, which is both untrue and
+load-bearing: `unreachable` is in `NEEDS_A_PERSON_DISPOSITIONS`, so a crashed run
+of five hundred contacts would post five hundred items into the escalation queue
+and bury the handful of real ones.
+
+**Fixed.** `skipped`, which is what this codebase already means by "not tried" (a
+suppressed contact, a stopped run). Found while writing #188 - the two are the
+same sweep and pulled in opposite directions.
+
+### #190 - a do-not-call was escalated and never suppressed
+
+**S1 · FIXED · api · `f3c7b21a9d04`, `routes/internal.py`, `repositories/suppressions.py`, `run_dialer.py`**
+
+`triage()` has always ranked `do_not_call` above every other signal, and nothing
+ever wrote the suppression row. Somebody had to read the queue, notice the
+disposition and re-type the number by hand; until they did, the next run
+containing that contact dialled them again.
+
+**Impact.** The suppression list is the *only* per-dial guard left
+(`domain/safety.py`), and "never call me again" is a promise with legal weight
+(DPDP, TCPA, TRAI). The product detected the request and then relied on human
+vigilance to honour it.
+
+**Why it was not simply an oversight.** It was not implementable. The completion
+callback receives `contact_name` and `phone_masked`, and a masked number cannot be
+hashed - there was nothing to key `suppressions.phone_hash` on.
+
+**Fixed.** `call_outcomes.phone_hash`, written by the dialler at origination (the
+last thing holding the real number), read back by the callback. `suppressions` is
+keyed on exactly that and its `phone_e164` is already nullable, so the row is
+complete and enforceable with **no new surface holding a dialable number**.
+`source = 'opt_out'`, a value the enum has carried since the initial schema for
+this exact purpose. Rows written before the migration have no key and are logged
+as un-suppressable rather than guessed at.
+
+**Verified.** The end-to-end assertion is the one that matters: the hash the
+callback stores is the same hash `check_dial_allowed` refuses on, resolved in two
+processes from two different inputs.
+
+### #191 - a plan-locked agent could still start a run
+
+**S2 · FIXED · api · `routes/runs.py`**
+
+`check_agent_usable()` was written, documented, and had **no caller**. The Agents
+tab greyed a locked agent out and the run composer dialled with it anyway.
+
+**Impact.** The agent limit was a one-time toll rather than an entitlement:
+subscribe for a month, build ten agents, downgrade, keep running all ten. Its own
+docstring says so.
+
+**Fixed.** Called in `start_run`, beside the credit checks, through
+`billing.refuse`.
+
+### #192 - a run's own instruction, name and numbers were write-only
+
+**S3 · FIXED · api + web · `routes/runs.py`, `repositories/run_numbers.py`, the run detail page**
+
+`run_instruction`, `name` and the attached `run_numbers` rows were all persisted
+by `POST /api/v1/runs` and returned by nothing. `run_numbers.list_for_run()` had
+no caller at all.
+
+**Impact.** `run_instruction` is appended to every prompt in a run, so "why did
+this whole batch say that?" was unanswerable after the fact. For a run spread
+across several lines, "which numbers did this come from?" was answerable per call
+and not per run.
+
+**Fixed.** All three on `GET /api/v1/runs/{run_id}`, rendered in a "This run"
+panel. Numbers carry their current status, because a run is permanent and a line
+can be retired after it.
+
+### #193 - the escalation queue had no bulk action and no sense of age
+
+**S3 · FIXED · api + web · `routes/escalations.py`, `repositories/escalations.py`, `lib/escalation-age.ts`, the worklist**
+
+The queue's whole design argument is that the oldest item is the most expensive,
+and it expressed that only as a sort order - which says "older than that one",
+never "this has gone on too long". Separately, a run that failed to reach twenty
+contacts produced twenty items that had to be cleared one at a time.
+
+**Fixed.** `POST /api/v1/escalations/resolve` for a batch, reporting partial
+success honestly ("18 of 20" when a teammate got there first). `urgencyFor()` at
+4h/24h, shown as a word and type weight - **not colour**, because the five lamp
+colours mean call state and an item's age is a different axis (CLAUDE.md #10).
+
+### #194 - a test fixture wrote a run status the application cannot produce
+
+**S4 · FIXED · api · `tests/test_platform_admin.py`**
+
+Found by #186's new check constraint. The fixture inserted `status = 'queued'`,
+which no code path has ever written - it fitted only because the column was
+unconstrained. Changed to `running`; which status it holds is incidental to that
+test.
+
+### #195 - the database suites cannot run against the configured database
+
+**S3 · OPEN · api · environment, not code**
+
+Noted while verifying this iteration, and a restatement of #183 from the other
+side. The repo-root `.env` `DATABASE_URL` points at the shared Supabase project,
+so the whole DB-backed suite either runs against production data or fails - and
+it fails, because that database is behind this branch's migrations.
+
+Everything in this iteration was therefore verified against a **local** Postgres
+(`docker compose up -d db auth storage`, `POSTGRES_PORT` overridden, full chain
+replayed). Two things that were needed and are not written down anywhere:
+`pgcrypto` must be reachable for the `auth.users` fixtures' `gen_salt`, and
+`tests/local_postgres/README.md` points at `scripts/local-db/supabase-shim.sql`,
+**which does not exist in this repo**. Both belong in `DEV_SETUP.md`.
+
+### Not done, and why
+
+- **Retry orchestration.** The `retry` disposition is still produced and still
+  consumed by nothing. It is not a small gap - it is **structurally blocked**:
+  redialling needs a phone number, `call_outcomes` stores only `phone_masked`,
+  and contacts are not persisted anywhere. Storing dialable numbers is a change
+  to the product's privacy model (CLAUDE.md #4), not a Runs feature, and belongs
+  in its own decision. `phone_hash` deliberately does not help here and must not
+  be made to - it is one-way by design.
+- **Calling windows.** Still enforced nowhere, still collected in `localStorage`
+  (`lib/run-settings.ts`). Belongs with the replacement dial-guard layer
+  (`ISSUES.md` #178), not bolted on beside it.
+- **Mid-run credit re-checking.** Unchanged, and still documented in
+  `routes/runs.py`.
+
 ## Template for the next iteration
 
 ```

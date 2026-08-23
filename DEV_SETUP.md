@@ -332,6 +332,33 @@ cannot catch a broken RLS policy. Run them locally before touching any policy.
 
 ---
 
+## A full local copy, taken 2026-08-23
+
+`.env`'s `DATABASE_URL` currently points at a native PostgreSQL 18 instance on
+`localhost:5432` (database `callflow`), not the container stack above. It holds
+a complete `pg_dump`/restore of the shared Supabase project at the time it was
+taken - every table in `public`, `auth` and `storage`, every RLS policy, every
+grant, verified row-for-row and structure-for-structure against the source.
+Migrated to this branch's head afterwards (`npm run db:migrate`).
+
+Roles Supabase provides that a bare PostgreSQL install does not
+(`supabase_auth_admin`, `authenticated`, `service_role`, and the rest) were
+created as `NOLOGIN` so the dump's grants and policies have something to attach
+to; nothing connects as them locally, the same way nothing does against
+Supabase - the app always connects as `postgres` and drops role via
+`set local role` inside `database.as_user()`.
+
+The previous Supabase `DATABASE_URL` is commented out just above the active one,
+and the full original line is also saved in `.env.bak-supabase` (gitignored) -
+restore either to point back at the shared instance.
+
+**This is a one-way copy.** Nothing here writes back to Supabase, and nothing
+should: nudge it in either direction only with the same care §"The one rule"
+below asks for, because a `db:reset` or a migration run against the wrong
+`DATABASE_URL` cannot tell the difference between this copy and the real thing.
+
+---
+
 ## The one rule
 
 **Never point `DATABASE_URL` at a shared Supabase project.** Not to "just check

@@ -9,7 +9,7 @@ from typing import Annotated, Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.auth.dependencies import CurrentUser, RequirePermission
 from app.auth.permissions import Permission
@@ -70,6 +70,21 @@ class EscalationOut(BaseModel):
 
 class AssignIn(BaseModel):
     user_id: str
+
+
+class ResolveManyIn(BaseModel):
+    #: Capped so one request cannot ask for an unbounded update. Well above any
+    #: realistic selection - the worklist pages at 20 - and low enough that the
+    #: statement stays a single indexed update.
+    escalation_ids: list[UUID] = Field(min_length=1, max_length=200)
+
+
+class ResolveManyOut(BaseModel):
+    resolved: list[str]
+    #: Asked for but already resolved by somebody else, or no longer visible.
+    #: Reported rather than hidden: "18 of 20" is the honest answer when two
+    #: people work the same queue, and silently claiming 20 is not.
+    skipped: int
 
 
 class EscalationDirectoryEntryOut(BaseModel):
@@ -200,3 +215,34 @@ async def resolve_escalation(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Escalation not found, or it's already resolved.",
         )
+
+
+@router.post("/resolve", response_model=ResolveManyOut)
+async def resolve_escalations(
+    body: ResolveManyIn,
+    user: Annotated[CurrentUser, Depends(RequirePermission(Permission.ESCALATIONS_RESOLVE))],
+) -> ResolveManyOut:
+    """Resolve several escalations in one action.
+
+    The case this is for is specific and common: a run fails to reach twenty
+    contacts, every one of them lands in the queue as `unreachable`, and
+    clearing them one card at a time is twenty clicks of the same decision. The
+    per-item endpoint stays - it is what a considered, single resolution should
+    use - and this is for the sweep.
+
+    Same permission as resolving one. Doing a thing twenty times is not a
+    different authority from doing it once, and the row-level guard is
+    unchanged: RLS decides which of these the caller can see at all, and
+    `status = 'open'` decides which were still theirs to resolve.
+    """
+    async with database.as_user(user.auth_user_id) as conn:
+        resolved = await escalations_repo.resolve_many(
+            conn,
+            org_id=user.org_id,
+            escalation_ids=body.escalation_ids,
+            resolved_by=user.id,
+        )
+    return ResolveManyOut(
+        resolved=[str(r) for r in resolved],
+        skipped=len(body.escalation_ids) - len(resolved),
+    )

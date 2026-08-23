@@ -221,6 +221,10 @@ export interface StartRunBody {
   allocation_strategy?: 'round_robin' | 'area_affinity';
 }
 
+/** A run's own batch-level status. Mirrors `domain/run_state.RunStatus` and
+ *  `runs.status`'s check constraint - all three move together. */
+export type RunStatus = 'running' | 'completed' | 'failed' | 'stopped';
+
 export interface RunStats {
   completed: number;
   total: number;
@@ -229,18 +233,55 @@ export interface RunStats {
   needs_human_pct: number;
 }
 
+/** One of the lines a run was allowed to dial from. */
+export interface RunNumber {
+  id: string;
+  /** Masked, like every number this product shows. */
+  phone_masked: string;
+  provider: string;
+  label: string | null;
+  /** The number's status *now* - a run from last month may well have been
+   *  placed from a line that has since been retired. */
+  status: string;
+}
+
 export interface Run {
   id: string;
   voice_agent_id: string | null;
   /** Resolved server-side: the client holds no agent list to look it up in. */
   agent_name: string | null;
+  /** The operator's own label for this run, if they gave it one. */
+  name: string | null;
+  /** What was appended to every prompt in this run. Read-only after the fact,
+   *  and the only way to answer "why did this batch say that?". */
+  run_instruction: string | null;
+  allocation_strategy: string;
   total: number;
-  status: 'running' | 'completed' | 'failed';
+  status: RunStatus;
+  /** Somebody pressed Stop and the run has not finished winding down. Derived
+   *  server-side from status + stop_requested_at so every surface agrees. */
+  stopping: boolean;
+  stop_requested_at: string | null;
+  stopped_by: string | null;
+  stopped_by_name: string | null;
   started_at: string;
   finished_at: string | null;
+  /** The lines this run dialled from. */
+  numbers: RunNumber[];
   outcomes: Outcome[];
   error: string | null;
   stats: RunStats;
+}
+
+/** What `stopRun` hands back - enough to update the button immediately. */
+export interface RunStopped {
+  id: string;
+  status: RunStatus;
+  stopping: boolean;
+  stop_requested_at: string | null;
+  /** Contacts with no result yet when the stop landed. Approximate by nature:
+   *  a call already being placed still connects. */
+  not_yet_dialled: number;
 }
 
 /**
@@ -253,7 +294,8 @@ export interface RunSummary {
   agent_name: string | null;
   name: string | null;
   total: number;
-  status: 'running' | 'completed' | 'failed';
+  status: RunStatus;
+  stopping: boolean;
   started_at: string;
   finished_at: string | null;
   error: string | null;
@@ -963,6 +1005,15 @@ export const api = {
     });
   },
   getRun: (id: string) => authReq<Run>(`/api/v1/runs/${id}`),
+  /**
+   * Stop dialling. Calls already in conversation are left to finish.
+   *
+   * Not a cancel: the run keeps going until its live calls report back, then
+   * closes as `stopped`. Everyone not yet reached gets a settled row saying so.
+   * Throws with the reason when the run already ended.
+   */
+  stopRun: (id: string) =>
+    authReq<RunStopped>(`/api/v1/runs/${id}/stop`, { method: 'POST' }),
   teamSummary: () =>
     authReq<TeamMemberSummary[]>('/api/v1/runs/team-summary'),
 
@@ -977,6 +1028,13 @@ export const api = {
     }),
   resolveEscalation: (id: string) =>
     authReq<void>(`/api/v1/escalations/${id}/resolve`, { method: 'POST' }),
+  /** Resolve several at once. Partial success is normal on a shared queue -
+   *  `skipped` counts the ones a teammate had already handled. */
+  resolveEscalations: (ids: string[]) =>
+    authReq<{ resolved: string[]; skipped: number }>(
+      '/api/v1/escalations/resolve',
+      { method: 'POST', body: JSON.stringify({ escalation_ids: ids }) },
+    ),
 
   // --- sharing (Phase 4) - authenticated ------------------------------------
   listShareRequests: () => authReq<ShareRequest[]>('/api/v1/share-requests'),

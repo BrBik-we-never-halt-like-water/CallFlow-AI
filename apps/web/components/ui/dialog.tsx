@@ -72,7 +72,15 @@ export function Dialog({
           className,
         )}
       >
-        <div className="flex items-start justify-between gap-4 border-b border-rule p-5">
+        <div
+          className={cn(
+            'flex items-start justify-between gap-4 border-b border-rule bg-surface-raised p-5',
+            // `full` is the record-inspection size - tall enough that the
+            // title bar (and its close button) must not scroll away with
+            // whatever the record turns out to be long.
+            size === 'full' && 'sticky top-0 z-10',
+          )}
+        >
           <div className="flex flex-col gap-1.5">
             <RadixDialog.Title className="text-[0.8125rem] font-semibold text-text">
               {title}
@@ -93,7 +101,14 @@ export function Dialog({
           ) : null}
         </div>
 
-        {children ? <div className="p-5">{children}</div> : null}
+        {/* `full` is for content that already manages its own internal
+            structure and padding (a record with its own header/sections) -
+            the same reasoning `Sheet`'s children wrapper has no padding of
+            its own. Every other size frames arbitrary content, so it keeps
+            the padding. */}
+        {children ? (
+          <div className={cn(size !== 'full' && 'p-5')}>{children}</div>
+        ) : null}
 
         {footer ? (
           <div className="flex flex-wrap items-center justify-end gap-2 border-t border-rule p-5">

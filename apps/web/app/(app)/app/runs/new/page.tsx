@@ -1,10 +1,11 @@
 'use client';
 
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Suspense, useMemo, useState } from 'react';
+import { Suspense, useMemo, useRef, useState } from 'react';
 import {
   ArrowsClockwiseIcon,
-  CheckCircleIcon,
+  CheckIcon,
+  PhoneIcon,
   WarningCircleIcon,
 } from '@phosphor-icons/react/dist/ssr';
 import { cn } from '@/lib/cn';
@@ -28,12 +29,24 @@ import { useOrgScopedEffect } from '@/lib/hooks/use-org-scoped-effect';
 import { useSession } from '@/lib/hooks/use-session';
 import { PageHeader } from '@/components/app/page-header';
 
+const SECTIONS = ['agent', 'numbers', 'contacts', 'run'] as const;
+type SectionId = (typeof SECTIONS)[number];
+
+const SECTION_LABEL: Record<SectionId, string> = {
+  agent: 'Agent',
+  numbers: 'Call from',
+  contacts: 'Contacts',
+  run: 'Run',
+};
+
 /**
  * The run composer: an agent, the number(s) it calls from, and a sheet.
  *
- * Four stacked steps on one page, not a wizard. Someone starting their fifth run
+ * Four stacked sections on one page, not a wizard. Someone starting their fifth run
  * of the day should be able to see everything at once and change any of it - a
- * wizard makes the second run as slow as the first.
+ * wizard makes the second run as slow as the first. The strip above them is a
+ * progress *summary*, not a gate: every section is always reachable, clicking a
+ * strip segment just scrolls to it.
  *
  * The number is chosen here rather than on the agent, which is what lets any
  * agent run through any connected carrier (ADR-8).
@@ -69,6 +82,8 @@ function RunComposer() {
   const [runName, setRunName] = useState('');
   const [runInstruction, setRunInstruction] = useState('');
   const [starting, setStarting] = useState(false);
+
+  const sectionRefs = useRef<Partial<Record<SectionId, HTMLDivElement | null>>>({});
 
   useOrgScopedEffect(() => {
     api
@@ -127,6 +142,20 @@ function RunComposer() {
   const validRows = useMemo(() => rows.filter((r) => r.valid), [rows]);
   const contacts = useMemo(() => toContactInputs(rows), [rows]);
   const columns = useMemo(() => contextColumns(validRows), [validRows]);
+
+  const done: Record<SectionId, boolean> = {
+    agent: Boolean(agentId),
+    numbers: selectedNumberIds.length > 0,
+    contacts: validRows.length > 0,
+    run: Boolean(agentId) && selectedNumberIds.length > 0 && validRows.length > 0,
+  };
+
+  function scrollToSection(id: SectionId) {
+    sectionRefs.current[id]?.scrollIntoView({
+      behavior: 'smooth',
+      block: 'start',
+    });
+  }
 
   function toggleNumber(id: string) {
     setSelectedNumberIds((prev) =>
@@ -263,11 +292,23 @@ function RunComposer() {
 
       <ConnectionBanner phase={phase} />
 
+      {/* ---- Progress strip ----------------------------------------------
+          A summary of the same four sections below, not a second copy of
+          their content and not a gate - every section stays reachable
+          regardless of order. Clicking a segment scrolls to it, which is the
+          whole reason this is a row of buttons and not a row of labels. */}
+      <ProgressStrip done={done} onSelect={scrollToSection} />
+
       {/* ---- 1 · Agent --------------------------------------------------- */}
-      <Step
+      <Section
+        id="agent"
+        ref={(el) => {
+          sectionRefs.current.agent = el;
+        }}
+        index={1}
         title="Agent"
         detail="Who calls, what they say, and what they have to come back with."
-        done={Boolean(agentId)}
+        done={done.agent}
       >
         {agents.length === 0 ? (
           <div className="flex flex-wrap items-center gap-3">
@@ -292,19 +333,20 @@ function RunComposer() {
             <ul
               role="radiogroup"
               aria-label="Which agent calls"
-              className="dash-scroll-x -mx-1 flex snap-x snap-mandatory gap-2.5 px-1 pb-1"
+              className="dash-scroll-x -mx-1 flex snap-x snap-mandatory gap-3 px-1 pb-1"
             >
               {agents.map((option) => {
                 const chosen = option.id === agentId;
+                const initial = option.name.trim().charAt(0).toUpperCase() || '?';
                 return (
-                  <li key={option.id} className="w-52 shrink-0 snap-start">
+                  <li key={option.id} className="w-56 shrink-0 snap-start">
                     <button
                       type="button"
                       role="radio"
                       aria-checked={chosen}
                       onClick={() => setChosenAgentId(option.id)}
                       className={cn(
-                        'flex h-full w-full flex-col gap-2.5 rounded-xl border px-3.5 py-3 text-left',
+                        'flex h-full w-full flex-col gap-3 rounded-xl border px-4 py-3.5 text-left',
                         'transition-[border-color,box-shadow,transform] duration-(--dur-micro)',
                         'focus-visible:outline-none',
                       )}
@@ -322,12 +364,24 @@ function RunComposer() {
                             }
                       }
                     >
-                      <span
-                        className="truncate text-[0.8125rem] font-semibold"
-                        style={{ color: 'var(--dash-text)' }}
-                      >
-                        {option.name}
-                      </span>
+                      <div className="flex items-center gap-2.5">
+                        <span
+                          aria-hidden
+                          className="flex size-8 shrink-0 items-center justify-center rounded-full text-[0.8125rem] font-semibold"
+                          style={{
+                            background: 'var(--dash-brand-soft)',
+                            color: 'var(--dash-brand-ink)',
+                          }}
+                        >
+                          {initial}
+                        </span>
+                        <span
+                          className="truncate text-[0.8125rem] font-semibold"
+                          style={{ color: 'var(--dash-text)' }}
+                        >
+                          {option.name}
+                        </span>
+                      </div>
                       <span className="flex flex-col gap-0.5">
                         {[
                           option.llm_model,
@@ -339,7 +393,7 @@ function RunComposer() {
                           .map((part) => (
                             <span
                               key={String(part)}
-                              className="truncate text-[0.625rem]"
+                              className="truncate text-[0.6875rem]"
                               style={{ color: 'var(--dash-text-mute)' }}
                             >
                               {part}
@@ -347,13 +401,16 @@ function RunComposer() {
                           ))}
                       </span>
                       <span
-                        className="dash-num mt-auto text-[0.625rem] font-medium"
+                        className="dash-num mt-auto flex items-center gap-1 text-[0.6875rem] font-medium"
                         style={{
                           color: chosen
                             ? 'var(--dash-brand-ink)'
                             : 'var(--dash-text-dim)',
                         }}
                       >
+                        {chosen ? (
+                          <CheckIcon aria-hidden weight="bold" className="size-3" />
+                        ) : null}
                         {option.collect_fields.length}{' '}
                         {option.collect_fields.length === 1 ? 'field' : 'fields'}
                       </span>
@@ -371,13 +428,18 @@ function RunComposer() {
             ) : null}
           </div>
         )}
-      </Step>
+      </Section>
 
       {/* ---- 2 · Numbers ------------------------------------------------- */}
-      <Step
+      <Section
+        id="numbers"
+        ref={(el) => {
+          sectionRefs.current.numbers = el;
+        }}
+        index={2}
         title="Call from"
         detail="Pick one number, some, or all. Calls are spread across whatever you choose."
-        done={selectedNumberIds.length > 0}
+        done={done.numbers}
       >
         <div className="flex flex-col gap-4">
           {loadingNumbers ? (
@@ -442,7 +504,7 @@ function RunComposer() {
                 ))}
               </div>
 
-              <ul className="grid gap-2 sm:grid-cols-2">
+              <ul className="grid gap-2.5 sm:grid-cols-2">
                 {diallable.map((number) => {
                   const picked = selectedNumberIds.includes(number.id);
                   return (
@@ -452,13 +514,28 @@ function RunComposer() {
                         aria-pressed={picked}
                         onClick={() => toggleNumber(number.id)}
                         className={cn(
-                          'flex w-full items-center justify-between gap-3 rounded-xl px-4 py-3 text-left ring-1 transition-colors duration-(--dur-fast)',
+                          'flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left ring-1 transition-colors duration-(--dur-fast)',
                           'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--primary)',
                           picked
                             ? 'bg-surface-raised ring-(--primary)'
                             : 'bg-surface ring-rule hover:ring-rule-strong',
                         )}
                       >
+                        <span
+                          aria-hidden
+                          className={cn(
+                            'flex size-9 shrink-0 items-center justify-center rounded-full transition-colors duration-(--dur-fast)',
+                            picked
+                              ? 'bg-(--primary) text-(--primary-on)'
+                              : 'bg-surface-sunken text-text-mute',
+                          )}
+                        >
+                          {picked ? (
+                            <CheckIcon aria-hidden weight="bold" className="size-4" />
+                          ) : (
+                            <PhoneIcon aria-hidden className="size-4" />
+                          )}
+                        </span>
                         <span className="flex min-w-0 flex-col gap-0.5">
                           <span className="font-mono text-data tabular-nums text-text">
                             {number.phone_masked}
@@ -467,13 +544,6 @@ function RunComposer() {
                             {number.label ?? number.provider}
                           </span>
                         </span>
-                        {picked ? (
-                          <CheckCircleIcon
-                            aria-hidden
-                            weight="fill"
-                            className="size-5 shrink-0 text-(--primary)"
-                          />
-                        ) : null}
                       </button>
                     </li>
                   );
@@ -513,13 +583,18 @@ function RunComposer() {
             </details>
           ) : null}
         </div>
-      </Step>
+      </Section>
 
       {/* ---- 3 · Contacts ------------------------------------------------ */}
-      <Step
+      <Section
+        id="contacts"
+        ref={(el) => {
+          sectionRefs.current.contacts = el;
+        }}
+        index={3}
         title="Contacts"
         detail="Name, phone, and a note. Any other column becomes that person's own context."
-        done={validRows.length > 0}
+        done={done.contacts}
       >
         <div className="flex flex-col gap-3">
           <ContactGrid rows={rows} onChange={setRows} />
@@ -533,17 +608,27 @@ function RunComposer() {
             </p>
           ) : null}
         </div>
-      </Step>
+      </Section>
 
       {/* ---- 4 · Run ----------------------------------------------------- */}
-      <Step
+      <Section
+        id="run"
+        ref={(el) => {
+          sectionRefs.current.run = el;
+        }}
+        index={4}
         title="Run"
         detail="Name it, add anything specific to this run, then start dialling."
-        done={Boolean(agentId) && selectedNumberIds.length > 0 && validRows.length > 0}
+        done={done.run}
         last
       >
-        <div className="flex flex-col gap-4 pl-4 border-l-2 border-l-rule-strong">
-          <div className="grid gap-4 md:grid-cols-2">
+        <div className="flex flex-col gap-5">
+          {/* `items-start`, because a one-line input and a multi-row textarea
+              never have equal natural height - stretching both to the row's
+              tallest child (CSS Grid's default) leaves the shorter field
+              sitting in a box padded with dead space nobody put there on
+              purpose. Each field now only ever takes its own height. */}
+          <div className="grid items-start gap-4 md:grid-cols-2">
             <Field
               label="Name this run"
               hint="Optional. Shows in the runs list instead of the agent's name."
@@ -555,11 +640,17 @@ function RunComposer() {
               />
             </Field>
             <Field
+              // Kept to one line deliberately: this hint sits beside "Name
+              // this run"'s single-line hint, and a wrapped second line here
+              // was what actually broke the alignment - it pushed this
+              // column's own textarea down past where the input beside it
+              // starts, so the two boxes' top edges never lined up despite
+              // their labels doing so.
               label="Just for this run"
-              hint="Optional. Added to every prompt in this run, so a one-off instruction does not mean editing a shared agent."
+              hint="Optional. Appended to every prompt in this run - not saved to the agent."
             >
               <Textarea
-                rows={3}
+                rows={2}
                 value={runInstruction}
                 onChange={(e) => setRunInstruction(e.target.value)}
                 placeholder="Mention that the office is closed on the 25th."
@@ -567,16 +658,19 @@ function RunComposer() {
             </Field>
           </div>
 
-          <dl className="flex flex-wrap gap-x-8 gap-y-2 border-t border-rule pt-4">
-            <Estimate label="Contacts" value={String(validRows.length)} />
+          <dl className="grid grid-cols-3 gap-3 rounded-xl border border-rule bg-surface-sunken p-4">
+            <Estimate label="Contacts" value={validRows.length} />
             <Estimate
-              label="Calling from"
-              value={String(chosenNumbers.length)}
-              detail={chosenNumbers.length === 1 ? 'number' : 'numbers'}
+              label={chosenNumbers.length === 1 ? 'Number' : 'Numbers'}
+              value={chosenNumbers.length}
             />
             <Estimate
-              label="Fields per call"
-              value={String(agent?.collect_fields.length ?? 0)}
+              label={
+                (agent?.collect_fields.length ?? 0) === 1
+                  ? 'Field per call'
+                  : 'Fields per call'
+              }
+              value={agent?.collect_fields.length ?? 0}
             />
           </dl>
 
@@ -601,7 +695,7 @@ function RunComposer() {
             </Button>
           </div>
         </div>
-      </Step>
+      </Section>
     </div>
   );
 }
@@ -624,85 +718,158 @@ function ComposerFallback() {
 }
 
 /**
- * One stage of the run pipeline, drawn as a node on a wired rail.
+ * The four sections, as an always-clickable summary row.
  *
- * The rail is the composer's structure made visible: a run flows agent ->
- * numbers -> contacts -> instruction, and the connecting line says so where
- * the old numbered panels ("01", "02") only implied it. `done` lights the
- * node once the stage has what it needs, so a glance down the rail shows
- * how much of the run is assembled.
+ * Not a wizard's step indicator - nothing here is locked, and the number
+ * beside each label is a count, not a gate. It exists so a glance at the top
+ * of a long page answers "what's left", and a click gets there without a
+ * scroll.
  */
-function Step({
+function ProgressStrip({
+  done,
+  onSelect,
+}: {
+  done: Record<SectionId, boolean>;
+  onSelect: (id: SectionId) => void;
+}) {
+  const doneCount = SECTIONS.filter((id) => done[id]).length;
+
+  return (
+    <Panel className="p-3 sm:p-4" flat>
+      <div className="flex items-center gap-1 sm:gap-2">
+        {SECTIONS.map((id, i) => {
+          const isDone = done[id];
+          const isLast = i === SECTIONS.length - 1;
+          return (
+            <div key={id} className="flex flex-1 items-center gap-1 sm:gap-2">
+              <button
+                type="button"
+                onClick={() => onSelect(id)}
+                className={cn(
+                  'group flex min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-left',
+                  'transition-colors duration-(--dur-micro) hover:bg-surface-hover',
+                )}
+              >
+                <span
+                  aria-hidden
+                  className={cn(
+                    'flex size-6 shrink-0 items-center justify-center rounded-full font-mono text-[0.6875rem] font-semibold transition-colors duration-(--dur-base)',
+                  )}
+                  style={
+                    isDone
+                      ? { background: 'var(--dash-brand)', color: 'var(--dash-brand-on)' }
+                      : {
+                          background: 'var(--dash-neutral-soft)',
+                          color: 'var(--dash-neutral-ink)',
+                        }
+                  }
+                >
+                  {isDone ? (
+                    <CheckIcon aria-hidden weight="bold" className="size-3" />
+                  ) : (
+                    i + 1
+                  )}
+                </span>
+                <span
+                  className="truncate text-small font-medium"
+                  style={{ color: 'var(--dash-text)' }}
+                >
+                  {SECTION_LABEL[id]}
+                </span>
+              </button>
+              {!isLast ? (
+                <span
+                  aria-hidden
+                  className="h-px w-4 shrink-0 sm:w-8"
+                  style={{
+                    background: isDone
+                      ? 'var(--dash-brand)'
+                      : 'var(--dash-border)',
+                  }}
+                />
+              ) : null}
+            </div>
+          );
+        })}
+        <span className="dash-num hidden shrink-0 pl-2 text-small font-medium text-text-mute sm:inline">
+          {doneCount}/{SECTIONS.length}
+        </span>
+      </div>
+    </Panel>
+  );
+}
+
+/**
+ * One section of the run pipeline.
+ *
+ * `id` gives each section a real anchor the progress strip scrolls to.
+ * `done` lights the index badge once the section has what it needs, so a
+ * glance down the page shows how much of the run is assembled without
+ * reading the strip at all.
+ */
+const Section = ({
+  ref,
+  id,
+  index,
   title,
   detail,
   done = false,
   last = false,
   children,
 }: {
+  ref?: React.Ref<HTMLDivElement>;
+  id: SectionId;
+  index: number;
   title: string;
   detail: string;
-  /** The stage has what it needs - its node lights in brand. */
   done?: boolean;
-  /** The last node ends the rail rather than dangling a line into nothing. */
+  /** Kept for API symmetry with the old rail; unused now that sections are
+   *  full-width cards rather than nodes on a line. */
   last?: boolean;
   children: React.ReactNode;
-}) {
+}) => {
+  void last;
   return (
-    <div className="flex gap-3 sm:gap-4">
-      <div className="flex shrink-0 flex-col items-center pt-4">
-        <span
-          aria-hidden
-          className="size-2.5 rounded-full transition-colors duration-(--dur-base)"
-          style={{
-            background: done ? 'var(--dash-brand)' : 'var(--dash-border-strong)',
-            boxShadow: done
-              ? '0 0 0 3px color-mix(in oklab, var(--dash-brand) 22%, transparent)'
-              : 'none',
-          }}
-        />
-        {!last ? (
+    <div ref={ref} id={id} className="panel-enter scroll-mt-4">
+      <Panel className="flex flex-col gap-4 p-4 sm:p-6">
+        <div className="flex items-start gap-3">
           <span
             aria-hidden
-            className="mt-1 w-px flex-1"
-            style={{ background: 'var(--dash-border)' }}
-          />
-        ) : null}
-      </div>
-
-      <Panel className="mb-3 flex min-w-0 flex-1 flex-col gap-4 p-4 sm:p-5">
-        <div className="flex flex-col gap-0.5">
-          <h2
-            className="text-[0.6875rem] font-semibold uppercase tracking-[0.05em]"
-            style={{ color: 'var(--dash-text)' }}
+            className="flex size-7 shrink-0 items-center justify-center rounded-full font-mono text-[0.75rem] font-semibold transition-colors duration-(--dur-base)"
+            style={
+              done
+                ? { background: 'var(--dash-brand)', color: 'var(--dash-brand-on)' }
+                : {
+                    background: 'var(--dash-neutral-soft)',
+                    color: 'var(--dash-neutral-ink)',
+                  }
+            }
           >
-            {title}
-          </h2>
-          <p className="text-small text-text-dim">{detail}</p>
+            {done ? <CheckIcon aria-hidden weight="bold" className="size-3.5" /> : index}
+          </span>
+          <div className="flex flex-col gap-0.5 pt-0.5">
+            <h2
+              className="text-[0.75rem] font-semibold uppercase tracking-[0.05em]"
+              style={{ color: 'var(--dash-text)' }}
+            >
+              {title}
+            </h2>
+            <p className="text-small text-text-dim">{detail}</p>
+          </div>
         </div>
         {children}
       </Panel>
     </div>
   );
-}
+};
 
-function Estimate({
-  label,
-  value,
-  detail,
-}: {
-  label: string;
-  value: string;
-  detail?: string;
-}) {
+function Estimate({ label, value }: { label: string; value: number }) {
   return (
-    <div className="flex flex-col gap-0.5">
-      <dt className="text-small font-bold text-text-mute">{label}</dt>
-      <dd className="font-mono text-data tabular-nums text-text">
+    <div className="flex flex-col items-center gap-0.5 text-center">
+      <dd className="dash-num text-[1.5rem] font-semibold leading-none text-text">
         {value}
-        {detail ? (
-          <span className="ml-1.5 text-text-mute">{detail}</span>
-        ) : null}
       </dd>
+      <dt className="text-small text-text-mute">{label}</dt>
     </div>
   );
 }

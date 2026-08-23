@@ -143,3 +143,38 @@ async def open_counts_by_member(conn: asyncpg.Connection, org_id: UUID) -> list[
         """,
         org_id,
     )
+
+
+async def resolve_many(
+    conn: asyncpg.Connection,
+    *,
+    org_id: UUID,
+    escalation_ids: list[UUID],
+    resolved_by: UUID,
+) -> list[UUID]:
+    """Resolve several at once. Returns the ids that actually changed.
+
+    One statement, not a loop: clearing twenty unreachable calls after a bad run
+    is the case this exists for, and twenty round trips would each be able to
+    fail separately, leaving the caller to explain a half-applied action.
+
+    Partial success is the contract rather than an error. `status = 'open'`
+    filters out anything a teammate resolved a second earlier - a real race on a
+    shared worklist, not an edge case - and the caller reports how many landed.
+    Refusing the whole batch because one item was already handled would be worse
+    for the person clicking it and no safer.
+    """
+    if not escalation_ids:
+        return []
+    rows = await conn.fetch(
+        """
+        update public.escalations
+           set status = 'resolved', resolved_by = $3, resolved_at = now()
+         where org_id = $1 and id = any($2::uuid[]) and status = 'open'
+        returning id
+        """,
+        org_id,
+        escalation_ids,
+        resolved_by,
+    )
+    return [row["id"] for row in rows]
