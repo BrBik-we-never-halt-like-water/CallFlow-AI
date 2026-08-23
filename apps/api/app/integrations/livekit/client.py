@@ -124,18 +124,25 @@ _TWIRP_CODE_ADVICE: dict[str, str] = {
         "the media server has no SIP service on this project. It has to be "
         "enabled there before a number can be pointed at it."
     ),
-    # Reworded from a guess to what LiveKit actually says. The first version
-    # blamed E.164 form or LIVEKIT_SIP_HOST; reproducing the failure gave
+    # Rewritten twice, and both mistakes are worth recording because they are the
+    # same mistake.
+    #
+    # It first blamed E.164 form or LIVEKIT_SIP_HOST. Reproducing the failure gave
     #   Conflicting inbound SIP Trunks: "<new>" and "ST_…", using the same
     #   number(s) ["+1…"] without AllowedNumbers set
-    # so the real cause is a trunk that already carries the number - and
-    # LIVEKIT_SIP_HOST is not even an input to `create_inbound_trunk`. Leading
-    # with the wrong cause sends someone to check an environment variable that
+    # - a trunk already carrying the number, and LIVEKIT_SIP_HOST is not even an
+    # input to `create_inbound_trunk`, so it sent the reader to a variable that
     # cannot be involved.
+    #
+    # It was then reworded to name that trunk conflict - and was immediately shown
+    # verbatim for a *dispatch rule* conflict one step later, because this string
+    # is displayed for whichever step raised. So it now describes the shape of the
+    # failure (something is already there) without asserting which object.
     "invalid_argument": (
-        "the media server already routes this number through a trunk it does not "
-        "recognise as CallFlow's. Retrying adopts that trunk instead of building "
-        "a second one; if it persists, the number may be in the wrong format."
+        "the media server refused something CallFlow tried to create, usually "
+        "because an equivalent is already there from an earlier attempt that was "
+        "not recorded. Retrying adopts what exists rather than duplicating it; if "
+        "it persists, the number may be in the wrong format."
     ),
     "already_exists": (
         "the media server already has a trunk for this number, created by an "
@@ -348,6 +355,23 @@ class LiveKitGateway:
             _vendor_api.CreateSIPOutboundTrunkRequest(trunk=trunk)
         )
         return str(info.sip_trunk_id)
+
+    async def find_dispatch_rule(self, trunk_id: str) -> str | None:
+        """The id of an existing dispatch rule already routing `trunk_id`, if any.
+
+        The companion to `find_inbound_trunk`, and needed for the same reason one
+        step later: adopting the trunk moves the failure to this step, where a
+        rule an earlier attempt created but never recorded blocks it identically.
+        Keyed on the trunk rather than the number - a rule names trunks, and the
+        trunk is the thing this attempt has just established it owns.
+        """
+        existing = await self._sip.list_dispatch_rule(
+            _vendor_api.ListSIPDispatchRuleRequest()
+        )
+        for rule in existing.items:
+            if trunk_id in list(rule.trunk_ids):
+                return str(rule.sip_dispatch_rule_id)
+        return None
 
     async def create_dispatch_rule(
         self, *, name: str, room_prefix: str, trunk_ids: list[str]

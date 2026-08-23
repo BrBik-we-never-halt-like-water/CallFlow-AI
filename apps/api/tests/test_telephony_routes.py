@@ -68,6 +68,9 @@ class StubGateway:
         already-registered case `test_number_provisioning.py` covers."""
         return None
 
+    async def find_dispatch_rule(self, _trunk_id: str) -> str | None:
+        return None
+
     async def create_inbound_trunk(self, **_kw: Any) -> str:
         self.created.append("inbound")
         return "ST_in_1"

@@ -42,13 +42,17 @@ class StubGateway:
     """Counts every LiveKit object it is asked to create."""
 
     def __init__(
-        self, fail_on: str | None = None, existing_inbound: str | None = None
+        self,
+        fail_on: str | None = None,
+        existing_inbound: str | None = None,
+        existing_rule: str | None = None,
     ) -> None:
         self.created: list[str] = []
         self._fail_on = fail_on
-        # A trunk LiveKit already has for this number - the state that made a
-        # dev number permanently unprovisionable (`ISSUES.md` #188).
+        # Objects LiveKit already has - the state that made a dev number
+        # permanently unprovisionable (`ISSUES.md` #188).
         self._existing_inbound = existing_inbound
+        self._existing_rule = existing_rule
 
     async def __aenter__(self) -> Self:
         return self
@@ -62,6 +66,9 @@ class StubGateway:
 
     async def find_inbound_trunk(self, _number: str) -> str | None:
         return self._existing_inbound
+
+    async def find_dispatch_rule(self, _trunk_id: str) -> str | None:
+        return self._existing_rule
 
     async def create_inbound_trunk(self, **_: Any) -> str:
         self._maybe_fail("inbound")
@@ -658,10 +665,13 @@ async def test_the_conflict_code_points_at_the_conflict_not_at_env_vars() -> Non
         Conflicting inbound SIP Trunks: "<new>" and "ST_...", using the same
         number(s) ["+1..."] without AllowedNumbers set
 
-    The first version of this advice blamed E.164 formatting or
-    LIVEKIT_SIP_HOST - and `create_inbound_trunk` never receives
-    LIVEKIT_SIP_HOST at all, so that sent a reader to check a variable which
-    cannot be involved.
+    Two things this pins, both of which were got wrong once:
+
+    - It must not name LIVEKIT_SIP_HOST. `create_inbound_trunk` never receives
+      it, so blaming it sent a reader to a variable that cannot be involved.
+    - It must not name a specific object. This string is shown for whichever
+      step raised, and the version that said "this number ... trunk" was
+      displayed verbatim for a *dispatch rule* conflict one step later.
     """
     from livekit.api import TwirpError
 
@@ -671,7 +681,8 @@ async def test_the_conflict_code_points_at_the_conflict_not_at_env_vars() -> Non
 
     assert explained is not None
     assert "LIVEKIT_SIP_HOST" not in explained
-    assert "already routes this number" in explained
+    assert "already there" in explained
+    assert "trunk" not in explained, "names one object for an any-step message"
 
 
 async def test_an_unmapped_code_still_names_the_code_rather_than_the_class() -> None:
@@ -826,3 +837,37 @@ async def test_nothing_to_adopt_still_creates_one(
 
     assert gateway.created == ["inbound", "dispatch", "outbound"]
     assert row["livekit_inbound_trunk_id"] == "ST_in_1"
+
+
+async def test_an_existing_dispatch_rule_is_adopted_too(
+    db: asyncpg.Connection, agent: Agent
+) -> None:
+    """Adopting the trunk only moved the deadlock one step along.
+
+    With the trunk adopted, `create_dispatch_rule` became the refused call - and
+    on dev LiveKit held `SDR_YyjKgkcZmnAN`, CallFlow's own rule, correctly bound
+    to the adopted trunk and recorded nowhere.
+    """
+    await _discover(db, agent)
+    gateway = StubGateway(
+        existing_inbound="ST_already_there", existing_rule="SDR_already_there"
+    )
+
+    row = await _connect(db, agent, "d1", gateway=gateway)
+
+    assert gateway.created == ["outbound"], f"rebuilt something: {gateway.created}"
+    assert row["livekit_inbound_trunk_id"] == "ST_already_there"
+    assert row["livekit_dispatch_rule_id"] == "SDR_already_there"
+    assert row["status"] == ProvisioningStatus.VERIFIED.value
+
+
+async def test_a_rule_is_created_when_there_is_none_to_adopt(
+    db: asyncpg.Connection, agent: Agent
+) -> None:
+    await _discover(db, agent)
+    gateway = StubGateway(existing_inbound="ST_already_there")
+
+    row = await _connect(db, agent, "d2", gateway=gateway)
+
+    assert gateway.created == ["dispatch", "outbound"]
+    assert row["livekit_dispatch_rule_id"] == "SDR_1"

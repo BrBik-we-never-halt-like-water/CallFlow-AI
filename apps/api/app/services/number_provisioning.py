@@ -444,6 +444,25 @@ async def _run_steps(
             )
 
         if not row["livekit_dispatch_rule_id"]:
+            # Same reconciliation as the trunk above, and needed for the same
+            # reason: adopting the trunk only moves an unrecorded-object deadlock
+            # one step along. Provisioning talks to a system it does not solely
+            # own - an operator can create and delete there directly - so every
+            # step reconciles with what is actually present rather than trusting
+            # this ledger to be the whole truth.
+            adopted_rule = await gateway.find_dispatch_rule(
+                row["livekit_inbound_trunk_id"]
+            )
+            if adopted_rule is not None:
+                log.info("adopting the dispatch rule already routing this trunk")
+                row = _require(
+                    await provisioning_repo.record_livekit_ids(
+                        conn, attempt_id, dispatch_rule_id=adopted_rule
+                    ),
+                    attempt_id,
+                )
+
+        if not row["livekit_dispatch_rule_id"]:
             rule_id = await gateway.create_dispatch_rule(
                 name=f"CallFlow {label}",
                 room_prefix=f"call-{label}",
