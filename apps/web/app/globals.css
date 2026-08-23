@@ -3384,3 +3384,142 @@ button[data-menu][data-state='open']:focus-visible {
     opacity: 0.75;
   }
 }
+
+/* --------------------------------------------------------------------------
+   Marketing hero portrait.
+
+   The mask is the point. A photograph in a rectangle on a single-ground page
+   (DESIGN_NOTES §27) reintroduces exactly the band that section removed - so the
+   image is feathered into the ground instead of framed against it. Two masks,
+   because the geometry differs: stacked on mobile it fades from the bottom, and
+   side-by-side on desktop it fades from the left edge into the text column.
+
+   `mask-image` rather than a gradient overlay: an overlay has to know the
+   background colour to blend with, which is the assumption that breaks the
+   moment the theme flips.
+   -------------------------------------------------------------------------- */
+
+.hero-portrait-mask {
+  --feather: 22%;
+  -webkit-mask-image: linear-gradient(
+    to top,
+    transparent 0%,
+    #000 var(--feather),
+    #000 100%
+  );
+  mask-image: linear-gradient(
+    to top,
+    transparent 0%,
+    #000 var(--feather),
+    #000 100%
+  );
+}
+
+@media (min-width: 1024px) {
+  .hero-portrait-mask {
+    /* Two gradients intersected, so the photo has no hard edge on any side: it
+       feathers left into the text column and top-and-bottom into the ground,
+       and runs off the right of the viewport where there is no edge to hide.
+       A single gradient only ever softens one axis, which is how the first
+       version left three visible rectangle edges. */
+    -webkit-mask-image:
+      linear-gradient(to right, transparent 0%, #000 38%, #000 100%),
+      linear-gradient(
+        to bottom,
+        transparent 0%,
+        #000 14%,
+        #000 78%,
+        transparent 100%
+      );
+    -webkit-mask-composite: source-in;
+    mask-image:
+      linear-gradient(to right, transparent 0%, #000 38%, #000 100%),
+      linear-gradient(
+        to bottom,
+        transparent 0%,
+        #000 14%,
+        #000 78%,
+        transparent 100%
+      );
+    mask-composite: intersect;
+  }
+}
+
+/* Five bars, the only colour on the card. `jade` is the person and `--primary`
+   the agent - which of the two is talking is the one thing a glance should get.
+   Animated in CSS: a per-frame React update for decoration is the cheapest
+   thing to get wrong at this size. */
+.turn-bars {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 1.25rem;
+  flex: none;
+}
+
+.turn-bars i {
+  width: 2px;
+  border-radius: 1px;
+  height: 35%;
+  background: currentColor;
+  transform-origin: center;
+}
+
+.turn-bars-agent {
+  color: var(--primary);
+}
+
+.turn-bars-caller {
+  color: var(--lamp-jade);
+}
+
+/* Only the live card moves. A card that is not this turn's speaker showing
+   animated bars would say the wrong thing. */
+.turn-bars[data-live] i {
+  animation: turn-bar 900ms ease-in-out infinite;
+}
+
+.turn-bars[data-live] i:nth-child(2) { animation-delay: 120ms; }
+.turn-bars[data-live] i:nth-child(3) { animation-delay: 240ms; }
+.turn-bars[data-live] i:nth-child(4) { animation-delay: 360ms; }
+.turn-bars[data-live] i:nth-child(5) { animation-delay: 480ms; }
+
+@keyframes turn-bar {
+  0%, 100% { transform: scaleY(0.4); }
+  50%      { transform: scaleY(1.6); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .turn-bars[data-live] i {
+    animation: none;
+    height: 60%;
+  }
+}
+
+/* The hero's mask, one section on. Same reasoning (DESIGN_NOTES §27: a
+   rectangle of photograph on a single-ground page reintroduces the band that
+   section removed) with a gentler left feather, because here the photo sits
+   *behind* a card stack rather than beside a headline - it has to stay quiet
+   enough for the cards to read against it. */
+.section-photo-mask {
+  -webkit-mask-image:
+    linear-gradient(to right, transparent 0%, #000 46%, #000 100%),
+    linear-gradient(
+      to bottom,
+      transparent 0%,
+      #000 22%,
+      #000 74%,
+      transparent 100%
+    );
+  -webkit-mask-composite: source-in;
+  mask-image:
+    linear-gradient(to right, transparent 0%, #000 46%, #000 100%),
+    linear-gradient(
+      to bottom,
+      transparent 0%,
+      #000 22%,
+      #000 74%,
+      transparent 100%
+    );
+  mask-composite: intersect;
+}

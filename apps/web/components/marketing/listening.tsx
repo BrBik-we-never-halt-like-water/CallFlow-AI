@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Image from "next/image";
+
 import { cn } from "@/lib/cn";
 import { useCanvasAnimation } from "@/lib/hooks/use-canvas-animation";
 import { usePrefersReducedMotion } from "@/lib/hooks/use-external-store";
@@ -182,7 +184,31 @@ export function Listening({ className }: { className?: string }) {
         {/* Scales with the viewport for the same reason the morph card does:
             this sits inside a one-screen-tall section, so a flat rem height is
             a promise the short viewports can't keep. */}
-        <div className="relative h-[clamp(15rem,32vh,22rem)]">
+        {/* `isolate` is load-bearing: the photo below sits at `-z-10`, and
+            without a stacking context here that z-index escapes to the page root
+            and lands behind the page's own background, which paints over it. The
+            image renders and is simply never visible - the same trap the Agents
+            and Integrations pages both carry a comment about. */}
+        <div className="relative isolate h-[clamp(15rem,32vh,22rem)]">
+          {/* The person on the other end of the queue, behind it.
+              Same treatment as the hero: bled to the viewport edge and
+              feathered on every visible side, so it joins the single page
+              ground (DESIGN_NOTES §27) instead of sitting in a rectangle on it.
+              Behind the cards rather than beside them, because the point is
+              that these results came off *that* call. */}
+          <div
+            aria-hidden
+            className="section-photo-mask absolute -inset-y-16 left-0 -z-10 right-[calc(50%-50vw)] hidden lg:block"
+          >
+            <Image
+              src="/marketing/agent-headset.webp"
+              alt=""
+              fill
+              sizes="55vw"
+              className="object-cover object-[42%_38%] opacity-70"
+            />
+          </div>
+
           {RESULTS.map((r, idx) => {
             // Distance behind the front card, wrapped so the stack is a loop.
             const depth = (idx - i + RESULTS.length * 100) % RESULTS.length;
