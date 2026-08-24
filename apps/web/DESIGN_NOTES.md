@@ -1493,3 +1493,64 @@ consistent and was left alone.
 
 Recording the non-findings because the next person asked to "fix the UI" will
 re-run the same two greps and reach the same two false positives.
+
+---
+
+## 28. The hero shows a run, not a call (2026-08-24)
+
+The home page opened with a card that typed one spoken line into four fields.
+Two screens later `LiveExtraction` did the same thing with a without/with
+comparison, spoken-phrase provenance, lamp tones and four rotating scenarios. In
+between, `Listening` showed settled calls with their typed fields. **Three
+tellings of one idea, in ascending order of quality.**
+
+That is why the hero read as empty, and it is worth naming the mistake precisely:
+the emptiness was diagnosed as a decoration problem twice, and answered twice
+with a photograph. A photograph does not fix a redundant screen - it decorates
+one. So does a more elaborate animation of the same claim, which is the trap the
+obvious next idea walks into: a scrubbed waveform resolving into schema rows
+would have been a *fourth* telling, and the most expensive one.
+
+**What the page had no screen for was volume.** Every proof on the site explained
+one call. Nothing showed a list going out, most of it closing itself, and a
+handful of rows going red - which is the thing an operator is buying, and the one
+claim a section explaining a single call structurally cannot make.
+
+So the hero is now `CallBoard`: nine rows of a run in progress, lamps settling, a
+counter climbing. It differentiates from `LiveExtraction` on a real axis - scale
+here, depth there - which is what lets both keep their screen. `Listening` had no
+axis of its own and went.
+
+**Built from what was already here, which is the point.** The board is `Lamp`,
+`lampForDisposition`'s vocabulary, `countLamps`, `formatDuration`, monospace
+tabular figures. No new visual language, no photography, nothing a competitor can
+copy - the five-lamp system is the product's own and a wall of it lit is a picture
+only this product can take. `Listening` had been drawing lamps as hand-rolled
+`bg-lamp-*` divs, which is the kind of drift that makes a system stop paying off.
+
+**Three things a screenshot would not have caught.**
+
+1. **Every row read `in conversation`.** `talk` was 19-88 seconds against a `hold`
+   of 7-13, so a row spent ~80% of its cycle live. The average was fine; the
+   board was wrong at any given moment, and the footer said `0 closing
+   themselves`. **A result has to sit still long enough to be read - a call in
+   progress is the transition between two of them,** so `hold` is now ~3× `talk`.
+2. **Nine periodic rows drift in and out of step.** Even at 20% live on average,
+   hand-picked offsets let five or six calls come off mute in the same second
+   every few minutes. The offsets are now solved for minimum peak, not chosen:
+   six rows are settled 83% of the time. **Changing any `lead`/`talk`/`hold`
+   invalidates them - re-solve rather than nudging one.**
+3. **A live row must not pulse.** `lampForDisposition` reserves the pulse for
+   `retry` and `countLamps` reads pulsing brass as a retry, so a pulsing live call
+   is miscounted and misread aloud. The lamp vocabulary is load-bearing in both
+   directions: borrow a lamp's *look* and you have claimed its *meaning*.
+
+`scripts/check-board.mjs` guards all of it, because none of it is visible in a
+screenshot taken at the wrong second - which is exactly how the first version
+passed review by eye.
+
+**Colour discipline held.** The board uses the five lamps for call state and
+nothing else; the brand indigo appears only on the CTA. Per §2 and CLAUDE.md §10
+that line is absolute, and a board of nine lamps is the surface where breaking it
+would be most tempting and most damaging.
+

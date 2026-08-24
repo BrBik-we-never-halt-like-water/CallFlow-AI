@@ -8,8 +8,8 @@ import { cn } from '@/lib/cn';
  * mark is a miniature of the product's one idea: three calls, three different
  * things that happened, visible at a glance.
  *
- * At favicon size the lamps merge into a readable tri-colour bar; `public/
- * favicon.svg` carries a version with the geometry thickened for 16px.
+ * At favicon size the lamps merge into a readable tri-colour bar; `app/
+ * icon.svg` carries a version with the geometry thickened for 16px.
  */
 export function Mark({
   className,

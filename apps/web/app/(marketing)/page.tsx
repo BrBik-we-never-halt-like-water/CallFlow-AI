@@ -1,7 +1,6 @@
 import { CapabilityGrid } from "@/components/marketing/capability-grid";
 import { FinalCta } from "@/components/marketing/final-cta";
 import { Hero } from "@/components/marketing/hero";
-import { Listening } from "@/components/marketing/listening";
 import { PricingPreview } from "@/components/marketing/pricing-preview";
 import { ProblemCompare } from "@/components/marketing/problem-compare";
 import { SafetySection } from "@/components/marketing/safety-section";
@@ -17,21 +16,21 @@ import { DeckSection, SectionDeck } from "@/components/marketing/section-deck";
  * moving through a stack rather than past a list, which means the page is
  * understood one argument at a time.
  *
- * Order carries that argument: show the product working, show it still working
- * while you read, explain why a call log is not enough, show the four steps,
- * list what you get, name who it is for, prove the guards, price it, close.
+ * Order carries that argument, and it moves from scale to detail: a whole list
+ * going out (the hero's board), then why a completed call tells you nothing and
+ * what one call actually returns, then the four steps, what you get, who it is
+ * for, the guards, the price, the close.
  *
- * Pricing is back in that order, between the guards and the close, after being
- * removed for rendering `TODO` chips where the prices belonged. It reads last
- * before the close on purpose: the cost of something is a fair question only once
- * a visitor knows what it does, and the guards are the argument that most needs
- * to land before a number does.
+ * That first move used to be three moves. The hero, `Listening` and
+ * `LiveExtraction` all said *voice becomes typed data*, in ascending order of
+ * quality, so the strongest telling arrived third to a reader who had already
+ * seen the idea twice. `Listening` is gone and the hero now shows the one thing
+ * none of them did - a list of calls at once - which is what lets the section
+ * below it go deep on a single call without repeating anything.
  *
- * Ground alternates so no two adjacent sections share a surface. At this size a
- * repeated ground makes two sections read as one - which is why pricing takes no
- * `ground` prop: `safety` above it is `sand`, and `FinalCta` below sits on the
- * base ground, so the plain surface between them is the one that keeps all three
- * distinct.
+ * Pricing reads last before the close on purpose: the cost of something is a
+ * fair question only once a visitor knows what it does, and the guards are the
+ * argument that most needs to land before a number does.
  */
 export default function HomePage() {
   return (
@@ -39,12 +38,6 @@ export default function HomePage() {
       <Hero />
 
       <SectionDeck>
-        <DeckSection id="listening">
-          <div className="mx-auto max-w-(--container-marketing) px-4 sm:px-6">
-            <Listening />
-          </div>
-        </DeckSection>
-
         {/* The ids here are the *public* anchor names — the ones the header's
             Product menu, the footer and any external link point at. They used to
             be split: the deck section carried a short internal name (`how`,

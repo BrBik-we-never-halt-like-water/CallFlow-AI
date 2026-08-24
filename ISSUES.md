@@ -6809,6 +6809,176 @@ properly and wants its own migration.
 two-session path - it needs two authenticated sessions, so the Realtime wiring is
 verified by compile and by the indicator rendering, not by two people typing.
 
+## Iteration 51 - 2026-08-24 · the home page said one thing three times
+
+Asked to innovate on the marketing site rather than trace the supplied mockup,
+after a photo-led hero was rejected. Reading the code first turned a visual
+complaint into a structural one: the hero was not under-decorated, it was the
+third and weakest telling of a single idea, and filling it with a photograph was
+treating a redundancy as a decoration problem. Four defects followed from
+looking, plus one pre-existing dev-only failure found while verifying locally.
+
+### #186 - the first three screens were three tellings of the same idea
+
+**S3 · FIXED · web · `components/marketing/hero.tsx`, `listening.tsx` (deleted), `call-board.tsx` (new), `app/(marketing)/page.tsx`**
+
+Screen one (hero) typed one spoken line into four fields. Screen two
+(`Listening`) showed settled calls with their typed fields, and carried a
+`QUEUE` of contacts with lamp states - hand-rolled `bg-lamp-*` divs rather than
+the `Lamp` component. Screen three (`ProblemCompare` → `LiveExtraction`, 649
+lines) showed one spoken line becoming typed fields *with* a without/with
+comparison, spoken-phrase provenance (`from:`), lamp tones and four rotating
+scenarios.
+
+So the strongest version of the argument arrived third, to a reader who had
+already seen the idea twice, and the two weaker versions had no job the third did
+not do better. Nothing on the page showed volume - a list going out, most of it
+closing itself, a handful needing a person - which is the thing an operator is
+actually buying and the one claim `LiveExtraction` cannot make while explaining a
+single call.
+
+**Impact.** The hero read as empty, which is what invited a decorative photograph
+into it twice. The photo hero (`8a1ebe5`, reverted in `4da2fb4`) also shipped a
+horizontal scrollbar on every marketing page: images bled to the viewport edge
+with `right: calc(50% - 50vw)` and no ancestor clipped them, so an absolutely
+positioned box wider than the viewport widened the document.
+
+**Fix.** `Listening` deleted (255 lines). The hero's right column is now
+`CallBoard`: nine rows of a live run, lamps settling, a run counter, built from
+`Lamp` and `lampForDisposition`'s own vocabulary. Scale in the hero, one call in
+depth below it, and neither repeats the other. `speech-wave.tsx`,
+`voice-wave.tsx` and `step-flow.tsx` went with it - 317 lines with zero importers.
+
+Three bugs in the new board, each caught by a check rather than by looking:
+
+- **Every row read `in conversation`.** `talk` (19-88s) dwarfed `hold` (7-13s), so
+  ~80% of each row's cycle was live and the footer read `0 closing themselves`.
+  A screenshot at the wrong second would have looked fine; `hold` is now ~3× `talk`.
+- **Live rows pulsed brass.** `lampForDisposition` reserves the pulse for `retry`,
+  and `countLamps` reads a pulsing brass lamp as a retry - so live calls were
+  counted, and would have been read out, as retries.
+- **The accessible summary named four of five buckets.** `counts.retry` was
+  missing, so the sentence accounted for eight of the nine rows on screen.
+
+`scripts/check-board.mjs` (new, in `npm run lint`) replays the schedule over an
+hour and fails on any of these: too many rows live at once, an escalation rarely
+on screen, too few clean closes, or a row phase the summary cannot name. It reads
+the constants out of the component rather than restating them, and it was
+negative-tested against the original schedule.
+
+**Depends on / Blocks:** -
+
+### #187 - every shared link and app icon showed a retired palette
+
+**S3 · FIXED · web · `app/icon.svg`, `apple-icon.tsx`, `opengraph-image.tsx`, `manifest.ts`, `lib/brand-assets.ts` (new), `scripts/check-tokens.mjs`**
+
+`components/brand/mark.tsx` fills its lamps with `var(--lamp-*)`, so the logo
+follows the theme. Four assets cannot read CSS - a static SVG favicon, two
+`next/og` images, and a JSON manifest - and each held its own copy of the
+palette. All four copies were pre-dark-pivot: jade `#3E9E7A` against a current
+`--dark-lamp-jade` of `#4b9073`, brass `#D69B2D` against `#a47f47`, flare
+`#DC4B34` against `#c15f4d`, on a plate `#0B0F12` that matches no surface token
+in the file. `apple-icon.tsx` meanwhile stated in its own docstring that there
+was "exactly one definition of what the logo is".
+
+**Impact.** Every social preview, every browser tab and every home-screen icon
+rendered three colours the product had stopped using. Invisible by construction:
+nobody looks at their own favicon.
+
+Found alongside it: **the social card's caption disagreed with its own strip.**
+The caption read `9 closed · 1 retry · 1 needs a person` while the strip rendered
+six jade, one brass, one flare, one ice and three unlit - so the number was
+wrong, the three queued lamps sitting beside the words went unmentioned, and
+`ice` appeared on a card at all.
+
+**Fix.** One mirror, `lib/brand-assets.ts`, restating the `--dark-*` values with
+the reason hex is unavoidable; the three code assets import it and the favicon's
+literals are checked against it. The caption is now counted from the strip with
+`countLamps`, so it cannot disagree. `check-tokens.mjs` gained a fourth check
+covering nine tokens plus the favicon, negative-tested in both directions.
+
+**Depends on / Blocks:** #184 introduced the palette these assets were left behind by.
+
+### #188 - `ice` was used for a settled outcome, and its comment named the wrong lamp
+
+**S4 · FIXED · web · `components/marketing/live-extraction.tsx`, `lib/lamp.ts`**
+
+`ice` has had no assigned disposition since dry_run was removed (#184, CLAUDE.md
+§10, `docs/triage-rules`: "Reserved, currently unassigned"). `LiveExtraction`
+used it for a *settled* call - `disposition: { state: "ice", label: "Closed — no
+action" }`, plus `outcome: not interested` and `next step: closed` - and for
+`sentiment: neutral`, which is not a call state at all.
+
+In `lib/lamp.ts` the comment explaining that reservation sat one line high,
+against `off` - which *is* assigned, by `skipped` and by the fallback. The one
+label meaning nothing yet read as the one label that was load-bearing.
+
+**Fix.** A call that closed with nothing to do is `auto_closed`, so those fields
+are jade; `sentiment: neutral` takes no lamp. The comment moved onto `ice`.
+`LiveExtraction` also carried a private `fmt()` producing `2:41` while
+`lib/format/index.ts` exports `formatDuration` and its docstring forbids exactly
+that ("a duration that reads `2m 14s` on one screen and `134s` on another is how a
+product starts to feel like several products") - now the shared one.
+
+**Depends on / Blocks:** -
+
+### #189 - three surfaces bypassed the shared heading and type scale
+
+**S4 · FIXED · web · `components/marketing/problem-compare.tsx`, `final-cta.tsx`, `app/(app)/app/agentic/page.tsx`**
+
+- `ProblemCompare` hand-rolled the eyebrow and `<h2>` that the other six sections
+  get from `SectionHeading`, so it alone rendered without the `WaveLine` beside
+  its eyebrow - the detail that makes the sections read as a set. Its body gap
+  was `mt-12` where the others use `mt-(--deck-gap)`.
+- `FinalCta`'s headline was `text-4xl sm:text-5xl lg:text-7xl`: three jumps where
+  every other headline clamps fluidly, and a top step of 4.5rem against the
+  hero's 5.25rem - the closing note nearly out-sizing the opening claim. Now
+  `text-display-l`. The headline also read "Handover the list", a noun where the
+  verb belongs.
+- `app/agentic`'s permission-denied branch titled itself with a bare
+  `<p className="text-2xl font-bold">` - the only page title in the dashboard
+  neither on the type scale nor a heading element, shown only to the people who
+  could not get past it. It now uses the same `PageHeader` the permitted branch
+  twenty lines below already renders.
+
+A sweep for raw Tailwind type steps across `app/` and `components/` returns none
+after this.
+
+**Depends on / Blocks:** -
+
+### #190 - every MDX docs page 500s in local dev, and poisons the whole dev server
+
+**S3 · OPEN · web · `app/(marketing)/docs/*/page.mdx`, `mdx-components.tsx`**
+
+All eight `page.mdx` docs pages fail to build under `next dev` (16.2.12):
+`You are attempting to export "metadata" from a component marked with "use
+client"`, pointing at the page's own `export const metadata`. The MDX sources
+contain no `'use client'` and no imports.
+
+Worse than a broken page: Next latches the first build error and then returns 500
+for **every** route, so one visit to `/docs/webhooks` takes the entire local site
+down until the container is restarted. That is what made `/solutions/[vertical]`
+look broken too - it returns 200 on a clean server.
+
+**Impact.** `DEV_SETUP.md` tells people to verify locally before pushing, and
+this makes local verification unreliable in a way that looks like their own
+change broke the site. Production is unaffected: all eight pages prerender to
+static HTML, confirmed in `.next/server/app/docs/`.
+
+Pre-existing, and verified so - the same two URLs 500 with this iteration's
+changes stashed. Three hypotheses ruled out, each on a freshly restarted server
+because a latched error invalidates the test: the `'use client'` `CodeBlock`
+import in `mdx-components.tsx` (removing it does not help), the `useMDXComponents`
+hook name (renaming to `getMDXComponents` does not help), and a stray directive
+in the MDX (there is none).
+
+**Fix.** Not attempted - the evidence points upstream rather than at our code, and
+nothing ships broken. Worth a minimal reproduction against Next 16.2.x and an
+issue, or a version bump, before spending more on it. Until then: restart
+`callflow-web` after touching a docs page.
+
+**Depends on / Blocks:** -
+
 ## Template for the next iteration
 
 ```

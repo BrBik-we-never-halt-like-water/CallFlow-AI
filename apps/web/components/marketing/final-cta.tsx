@@ -19,9 +19,9 @@ const STRIP: LampSpec[] = [
 /**
  * The closing note.
  *
- * A raised card rather than an inverted band - the page is light throughout, and the
- * emphasis comes from elevation and the grid behind it rather than from flipping the
- * surface.
+ * A raised card rather than an inverted band. The page holds one ground the whole way
+ * down, so the emphasis comes from elevation and the waves behind it rather than from
+ * flipping the surface out from under the reader at the last section.
  */
 export function FinalCta() {
   return (
@@ -37,8 +37,12 @@ export function FinalCta() {
           </div>
 
           <div className="relative flex flex-col items-center gap-6 px-6 py-(--space-section) text-center">
-            <h2 className="measure-display font-display text-text text-4xl sm:text-5xl lg:text-7xl">
-              Handover the list and let CallFlow do the rest.
+            {/* `text-display-l`, not `text-4xl sm:text-5xl lg:text-7xl`. Those three
+                steps jumped where every other headline on the site scales fluidly, and
+                the top step (4.5rem) came within half a rem of the hero's - the closing
+                note reading larger than the opening claim. */}
+            <h2 className="measure-display font-display text-display-l text-text">
+              Hand over the list and let CallFlow do the rest.
             </h2>
 
             <p className="measure text-body-l text-text-dim">

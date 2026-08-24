@@ -31,9 +31,12 @@ export interface LampSpec {
 }
 
 export const LAMP_LABELS: Record<LampState, string> = {
-  // Not currently assigned by any disposition - reserved for a future
-  // "scheduled, not yet dialling" state rather than retired outright.
   off: 'Queued',
+  // Not currently assigned by any disposition - reserved for a future
+  // "scheduled, not yet dialling" state rather than retired outright. The
+  // comment used to sit a line higher, against `off`, which *is* assigned
+  // (`skipped`, and the fallback): the one label here that means nothing yet
+  // read as the one label that was load-bearing.
   ice: 'Scheduled',
   brass: 'In conversation',
   jade: 'Closed',
