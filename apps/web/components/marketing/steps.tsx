@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { useEffect, useRef, useState } from "react";
+import { AnimatePresence, motion, useInView, useReducedMotion } from "framer-motion";
 import { cn } from "@/lib/cn";
 import { LiveLamp } from "./live-lamp";
 import { Eyebrow, SectionHeading } from "@/components/ui/panel";
@@ -43,29 +43,69 @@ const STEPS = [
 ];
 
 /** How long each stage holds before the demo morphs to the next. */
-const STEP_MS = 3400;
+const STEP_MS = 4200;
 
+/**
+ * The pipeline plays itself, the way the hero's board does.
+ *
+ * A scroll-scrubbed version of this section was tried and reverted: it made
+ * the reader drive the demo, and the product owner's review said exactly the
+ * opposite - the sections should move on their own. So the demo advances on a
+ * timer while it is on screen, holds while it is not (nothing advances
+ * unseen), and clicking a stage jumps there and restarts its clock.
+ */
 export function Steps() {
   const reduced = !!useReducedMotion();
+  const rootRef = useRef<HTMLDivElement>(null);
+  const inView = useInView(rootRef, { amount: 0.35 });
+
   const [step, setStep] = useState(0);
+  // Bumped on a manual jump so the effect restarts its interval - a clicked
+  // stage gets its full hold rather than whatever was left of the last one.
+  const [epoch, setEpoch] = useState(0);
 
   useEffect(() => {
-    if (reduced) return;
+    if (reduced || !inView) return;
     const id = setInterval(() => setStep((s) => (s + 1) % STEPS.length), STEP_MS);
     return () => clearInterval(id);
-  }, [reduced]);
+  }, [reduced, inView, epoch]);
+
+  const select = (i: number) => {
+    setStep(i);
+    setEpoch((e) => e + 1);
+  };
 
   return (
-    <section className="mx-auto max-w-(--container-marketing) px-4 sm:px-6">
+    <div ref={rootRef}>
+      <StepsLayout step={step} onSelect={select} reduced={reduced} />
+    </div>
+  );
+}
+
+/** The section itself. Identical in both modes - only `step`'s driver differs. */
+function StepsLayout({
+  step,
+  onSelect,
+  reduced,
+}: {
+  step: number;
+  onSelect: (i: number) => void;
+  reduced: boolean;
+}) {
+  return (
+    <section className="mx-auto w-full max-w-(--container-marketing) px-4 sm:px-6">
       <Reveal>
+        {/* The sub-line used to spend 34 words describing what the animation
+            was about to show. If the demo needs narrating it is not working;
+            what survives is the only part the demo cannot say about itself. */}
         <SectionHeading
           title="Watch one contact become a triaged result."
-          sub="One row, four forms — her validated row, the agent that calls her, her live call, and the typed result your team actually reads. Every frame is the real product UI."
+          sub="Every frame is the real product UI."
         />
       </Reveal>
 
       <div className="mt-(--deck-gap) grid items-start gap-10 lg:grid-cols-[minmax(0,320px)_minmax(0,1fr)] lg:gap-16">
-        <StepTracker step={step} onSelect={setStep} />
+        <StepTracker step={step} onSelect={onSelect} />
         <Reveal delayMs={80}>
           <MorphCard step={step} reduced={reduced} />
         </Reveal>

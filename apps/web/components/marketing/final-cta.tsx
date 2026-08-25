@@ -46,8 +46,8 @@ export function FinalCta() {
             </h2>
 
             <p className="measure text-body-l text-text-dim">
-              Load your contacts, write a goal, and let CallFlow dial. Every run
-              is validated and guarded before it places a single call.
+              Brief an agent, load your list, and let it dial. Every run passes
+              the gates before it places a single call.
             </p>
 
             <LampStrip

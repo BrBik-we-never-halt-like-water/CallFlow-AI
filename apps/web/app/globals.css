@@ -252,6 +252,14 @@
   --w-app-sidebar-collapsed: 68px;
   --h-site-header: 68px;
   --h-app-topbar: 60px;
+
+  /* ---- The stage ---------------------------------------------------------
+     One perspective for every marketing 3D scene, so depth reads consistently
+     across the page: a layer at the same translateZ looks the same distance
+     away in the hero and in an act further down. Long (1400px) on purpose -
+     these are instrument panels being glanced at, not objects being tumbled,
+     and a short focal length would shear the board's monospace columns. */
+  --stage-perspective: 1400px;
 }
 
 /* --------------------------------------------------------------------------
@@ -3407,5 +3415,85 @@ button[data-menu][data-state='open']:focus-visible {
   .typing-dots i {
     animation: none;
     opacity: 0.75;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   The stage - CSS-perspective 3D for the marketing scenes.
+
+   `components/marketing/stage.tsx` renders through these. `.stage` is the
+   camera (perspective on the parent, per the CSS transform model), and
+   `.stage-object` is the thing posed inside it, preserving 3D so its child
+   layers can sit at different depths via translateZ.
+
+   Everything animated here is transform/opacity only. The rest pose (a static
+   tilt) survives `prefers-reduced-motion` on purpose - a still photograph at
+   an angle is not motion - while the float loop and pointer tilt, which are,
+   are gated in JS and in the media query below.
+   -------------------------------------------------------------------------- */
+
+.stage {
+  perspective: var(--stage-perspective);
+}
+
+.stage-object {
+  transform-style: preserve-3d;
+}
+
+/* An atmosphere plate behind a staged object: the primary at low opacity,
+   radial, so the object reads as lit rather than outlined. Built from a
+   color-mix of the token so both themes resolve it correctly - the dark
+   theme's own `--primary` is the lighter indigo chosen for dark surfaces. */
+.stage-glow {
+  background: radial-gradient(
+    ellipse 62% 56% at 50% 42%,
+    color-mix(in oklab, var(--primary) 16%, transparent) 0%,
+    transparent 72%
+  );
+}
+
+/* The slow float for orbiting chips. On its own wrapper *inside* the layer
+   that carries translateZ - an animation's transform would otherwise
+   overwrite the depth transform on the same element. */
+.stage-float {
+  animation: stage-float 9s var(--ease-inout) infinite alternate;
+}
+
+.stage-float-late {
+  animation-delay: -4.5s;
+}
+
+@keyframes stage-float {
+  from {
+    transform: translateY(-5px);
+  }
+  to {
+    transform: translateY(5px);
+  }
+}
+
+/* The run-floor act's word lighting: each word starts as ink at low opacity
+   and lights on its own once the section is in view. Opacity, not colour -
+   dimming the page's own text colour keeps AA contrast a property of the lit
+   state only, and the lit state is plain `--text`. */
+.floor-word {
+  opacity: 0.22;
+  transition: opacity 260ms var(--ease-out);
+}
+
+.floor-word[data-lit] {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stage-float {
+    animation: none;
+  }
+
+  /* The lighting timer never runs under reduced motion, so every word
+     renders lit. */
+  .floor-word {
+    opacity: 1;
+    transition: none;
   }
 }

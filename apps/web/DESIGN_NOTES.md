@@ -1554,3 +1554,64 @@ nothing else; the brand indigo appears only on the CTA. Per §2 and CLAUDE.md §
 that line is absolute, and a board of nine lamps is the surface where breaking it
 would be most tempting and most damaging.
 
+
+## 29. The rebuild: the site tells the agent story, and every scene plays itself (2026-08-25)
+
+A ground-up home-page rebuild, preceded by a three-track audit (backend contract,
+frontend contract, product truth - findings in `ISSUES.md` it-25). Two ideas govern
+everything below.
+
+**The site now tells the story the product actually became.** ADR-8 made the voice
+agent the core object - a brief, three provider legs, typed fields - and the marketing
+site never followed; it still sold the pre-pivot "write a goal" loop and never said the
+word "agent". The page is now the run's own loop in order: hero (a run mid-flight,
+staged in depth) → problem → **the agent assembling** (`agent-forge.tsx`, the section
+the pivot earned) → one contact through the real UI (`steps.tsx`) → the volume claim
+(`run-floor.tsx`) → the escalation queue (`needs-person.tsx`) → the provider wall
+(`provider-orbit.tsx`) → verticals → guards → pricing → close.
+
+**Every scene plays itself; scroll only moves between scenes.** A scroll-scrubbed
+version was built first - three pinned tracks driving typing, legs and word-lighting
+from travel - and reverted the same day on the product owner's direct review: *"these
+sections are not moving/animating by their own, i have to scroll to move them."* The
+uncommitted scrub patch this repo carried (DeckSection `scrub` prop, `use-scroll-depth`
+exclusion, pinned `Steps`) went with it; the pre-rebuild working tree is preserved as a
+patch in the session scratchpad. What replaced it: wall-clock timers gated to the
+viewport (`useInView`), so a demo advances at the right pace on any timer resolution
+(browsers throttle intervals well past their nominal rate - counting ticks played the
+forge in slow motion on a busy tab), holds while unseen, and replays on return. This is
+the board's own pure-function-of-a-counter reasoning extended to the whole page.
+`prefers-reduced-motion` renders every scene assembled and still.
+
+**The stage.** One perspective for all marketing 3D: `--stage-perspective` (1400px,
+deliberately long - instrument panels glanced at, not objects tumbled), `.stage` /
+`.stage-object` / `.stage-glow` in `globals.css`, composed by
+`components/marketing/stage.tsx`. The hero poses the board at rest (rotateX 5°,
+rotateY −8°) with a typed-result chip and an escalation chip floating off its plane;
+fine pointers get a ±3.5° spring lean, everyone else gets the still pose - a static
+tilt is a photograph, not motion, so it survives reduced motion. Depth levels map to
+fixed translateZ so equal depth reads as equal distance page-wide.
+
+**Honesty was half the rebuild** (`ISSUES.md` #203). The safety section now lists only
+code-enforced guards and quotes the product's real refusal strings verbatim
+(`spreadsheet.py`, `safety.py`, `run_dispatch.py`) - its suppression example runs a
+reserved fictional number (+1 555 0142) through the real `mask()`. `capability-grid.tsx`
+was deleted rather than reworded (its true halves live in `agent`, `floor` and
+`safety`). The footer band's "Sentiment on every call" became "Masked numbers
+everywhere". The board counts to 500, not 10,000 - the real runaway ceiling. The
+provider wall renders only drivable providers (`public/brands/`, §23's plates);
+storage/automation keys that merely save are deliberately absent, and the counts (4
+carriers, 10 transcribers, 11 voice providers, 40+ models) are the picker's, not the
+worker's larger driveable set.
+
+**Colour discipline held.** Lamps appear only where call state is depicted (board,
+queue rows, hero chips); `--leg-*` colours the forge's pipeline legs - which part,
+never how a call went; the field stays `--field-ink` because ten thousand
+lamp-coloured dots would claim states the simulation doesn't have. `check-tokens.mjs`
+and `check-board.mjs` pass unchanged.
+
+**Known limits, recorded:** the docs pages still overclaim (safety-configuration,
+webhooks, getting-started §4 - flagged in #203, content pass needed, out of this
+scope); Higgsfield MCP is installed but unauthenticated, so the imagery slots
+(hero atmosphere, vertical cards) stay code-drawn until `/mcp` auth happens;
+`/#agent`-era nav anchors replaced `/#capabilities` in the header and footer.

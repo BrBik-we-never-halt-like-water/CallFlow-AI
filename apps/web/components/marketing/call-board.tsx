@@ -94,10 +94,15 @@ const SLOTS = [
   { lead: 12, talk: 26, hold: 92, offset: 68 },
 ];
 
-const DIALLED_AT_MOUNT = 1842;
-const RUN_TOTAL = 10000;
+/* Sized to what a run can really be. The runaway ceiling is 500 calls a day
+   (`domain/entitlements.py`), so a board proudly mid-way through 10,000 was a
+   claim the product would refuse to honour. The rate follows: a handful of
+   parallel lines at a minute-or-two per conversation settles a few rows a
+   minute, not one and a half a second. */
+const DIALLED_AT_MOUNT = 231;
+const RUN_TOTAL = 500;
 /** Calls per second across the whole run, not just the nine rows on screen. */
-const DIAL_RATE = 1.4;
+const DIAL_RATE = 0.125;
 
 /** A tick where every slot happens to be busy - what a still frame should show. */
 const STILL_TICK = 230;

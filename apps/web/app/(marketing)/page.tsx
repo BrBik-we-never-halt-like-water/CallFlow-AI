@@ -1,36 +1,39 @@
-import { CapabilityGrid } from "@/components/marketing/capability-grid";
+import { AgentForge } from "@/components/marketing/agent-forge";
 import { FinalCta } from "@/components/marketing/final-cta";
 import { Hero } from "@/components/marketing/hero";
+import { NeedsPerson } from "@/components/marketing/needs-person";
 import { PricingPreview } from "@/components/marketing/pricing-preview";
 import { ProblemCompare } from "@/components/marketing/problem-compare";
+import { ProviderOrbit } from "@/components/marketing/provider-orbit";
+import { RunFloor } from "@/components/marketing/run-floor";
 import { SafetySection } from "@/components/marketing/safety-section";
 import { Steps } from "@/components/marketing/steps";
 import { VerticalStrip } from "@/components/marketing/vertical-strip";
 import { DeckSection, SectionDeck } from "@/components/marketing/section-deck";
 
 /**
- * The home page, as a deck.
+ * The home page is one run, told in order.
  *
- * Each section fills the screen and depth carries the transition: the one being
- * read sits forward, the ones around it scale back and take a veil. It reads as
- * moving through a stack rather than past a list, which means the page is
- * understood one argument at a time.
+ * The page walks the loop the product runs: the hero shows a run mid-flight
+ * (staged in depth, the board tilted toward the reader), then why a completed
+ * call tells you nothing, the agent being briefed, one contact travelling
+ * through the real UI, the whole list at volume, the rows that need a person,
+ * the providers it runs on, who it's for, the guards, the price, the close.
  *
- * Order carries that argument, and it moves from scale to detail: a whole list
- * going out (the hero's board), then why a completed call tells you nothing and
- * what one call actually returns, then the four steps, what you get, who it is
- * for, the guards, the price, the close.
+ * **Every scene plays itself.** The board ticks, the agent assembles on a
+ * loop, the steps advance, the sentence lights - all on timers gated to the
+ * viewport, none of it driven by scroll. A scroll-scrubbed version was built
+ * and reverted on the product owner's review: the reader should watch the
+ * product run, not crank it. Scrolling only moves between sections, which the
+ * deck's snap and depth transition already make feel deliberate. Under
+ * reduced motion every scene renders assembled and still.
  *
- * That first move used to be three moves. The hero, `Listening` and
- * `LiveExtraction` all said *voice becomes typed data*, in ascending order of
- * quality, so the strongest telling arrived third to a reader who had already
- * seen the idea twice. `Listening` is gone and the hero now shows the one thing
- * none of them did - a list of calls at once - which is what lets the section
- * below it go deep on a single call without repeating anything.
- *
- * Pricing reads last before the close on purpose: the cost of something is a
- * fair question only once a visitor knows what it does, and the guards are the
- * argument that most needs to land before a number does.
+ * The rebuild also retired every claim the code does not keep: the capability
+ * grid (allowlist / ceiling / rate-limit / retry / sentiment - see ISSUES.md)
+ * is gone rather than reworded, its true halves absorbed by `agent`, `floor`
+ * and `safety`. The ids here are the public anchor names the header's Product
+ * menu and the footer point at - one id per section, on the section that owns
+ * the screen.
  */
 export default function HomePage() {
   return (
@@ -38,30 +41,34 @@ export default function HomePage() {
       <Hero />
 
       <SectionDeck>
-        {/* The ids here are the *public* anchor names — the ones the header's
-            Product menu, the footer and any external link point at. They used to
-            be split: the deck section carried a short internal name (`how`,
-            `guards`) while the component inside it carried the public one
-            (`how-it-works`, `safety`), so `/#how-it-works` scrolled to the inner
-            element and landed 226px above where the deck section centres its
-            content — while `/#capabilities` happened to land correctly, because
-            that name existed *twice* and the deck section won on document order.
-            One id per section, on the section that owns the screen. */}
-        {/* `ProblemCompare` (with `LiveExtraction`) was built, complete, and
-            never mounted anywhere — 649 lines of the sharpest argument on the
-            site sitting unused. It earns its screen: the same call resolving
-            two ways, live, which is exactly the "why not just read the log"
-            objection this page otherwise only asserts an answer to. */}
+        {/* The argument: the same call resolving two ways, live. Scale is the
+            hero's claim; depth on a single call is this one's. */}
         <DeckSection id="problem">
           <ProblemCompare />
         </DeckSection>
 
+        {/* The product's core object, assembling itself on a loop: brief →
+            legs → fields → ready. */}
+        <DeckSection id="agent">
+          <AgentForge />
+        </DeckSection>
+
+        {/* One contact through the real product UI, advancing on its own. */}
         <DeckSection id="how-it-works">
           <Steps />
         </DeckSection>
 
-        <DeckSection id="capabilities">
-          <CapabilityGrid />
+        {/* The volume claim, lighting word by word over the field. */}
+        <DeckSection id="floor">
+          <RunFloor />
+        </DeckSection>
+
+        <DeckSection id="escalations">
+          <NeedsPerson />
+        </DeckSection>
+
+        <DeckSection id="providers">
+          <ProviderOrbit />
         </DeckSection>
 
         <DeckSection id="verticals">

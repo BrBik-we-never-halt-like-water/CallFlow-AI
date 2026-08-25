@@ -12,10 +12,11 @@ import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 
 const PRODUCT_LINKS = [
+  { label: "Build an agent", href: "/#agent", hint: "A brief, three legs, typed fields" },
   { label: "How it works", href: "/#how-it-works", hint: "Four steps, spreadsheet to queue" },
-  { label: "Typed results", href: "/#capabilities", hint: "Schema-validated, not transcripts" },
-  { label: "Safety guards", href: "/#safety", hint: "Every guard fails closed" },
-  { label: "Docs", href: "/docs", hint: "Goals, schemas, webhooks" },
+  { label: "Typed results", href: "/#problem", hint: "Schema-validated, not transcripts" },
+  { label: "Safety guards", href: "/#safety", hint: "Only the ones the code enforces" },
+  { label: "Docs", href: "/docs", hint: "Goals, schemas, triage rules" },
   { label: "Changelog", href: "/docs/changelog", hint: "What shipped, when" },
 ];
 
