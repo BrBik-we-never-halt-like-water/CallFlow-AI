@@ -6,9 +6,10 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint && node scripts/check-tokens.mjs",
+    "lint": "eslint && node scripts/check-tokens.mjs && node scripts/check-board.mjs",
     "type-check": "tsc --noEmit",
-    "check:tokens": "node scripts/check-tokens.mjs"
+    "check:tokens": "node scripts/check-tokens.mjs",
+    "check:board": "node scripts/check-board.mjs"
   },
   "dependencies": {
     "@mdx-js/loader": "^3.1.1",

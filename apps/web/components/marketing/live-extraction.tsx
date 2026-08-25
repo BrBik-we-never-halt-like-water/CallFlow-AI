@@ -7,6 +7,7 @@ import { WaveCanvas } from "@/components/brand/wave-canvas";
 import { Lamp } from "@/components/brand/lamp";
 import { Eyebrow } from "@/components/ui/panel";
 import { useTypewriter } from "@/lib/hooks/use-typewriter";
+import { formatDuration } from "@/lib/format";
 import type { LampState } from "@/lib/lamp";
 
 /**
@@ -90,7 +91,7 @@ const SCENARIOS: Scenario[] = [
     questions: ["Did we connect?", "Try again — when?", "Still a lead?", "Auto or manual?"],
     fields: [
       { k: "outcome", v: "reschedule", tone: "brass", from: "try me again" },
-      { k: "sentiment", v: "neutral", tone: "ice" },
+      { k: "sentiment", v: "neutral" },
       { k: "intent", v: "bad timing", from: "driving right now" },
       { k: "retry at", v: "Today, 6:00 PM", from: "this evening" },
       { k: "next step", v: "queued for retry", tone: "brass" },
@@ -104,13 +105,13 @@ const SCENARIOS: Scenario[] = [
     seed: 3.1,
     questions: ["Interested at all?", "Worth chasing?", "Send anything?", "Close or keep?"],
     fields: [
-      { k: "outcome", v: "not interested", tone: "ice", from: "nothing right now" },
-      { k: "sentiment", v: "neutral", tone: "ice" },
+      { k: "outcome", v: "not interested", tone: "jade", from: "nothing right now" },
+      { k: "sentiment", v: "neutral" },
       { k: "intent", v: "information only", from: "thanks for the details" },
       { k: "follow-up", v: "none", from: "I'll think it over" },
-      { k: "next step", v: "closed", tone: "ice" },
+      { k: "next step", v: "closed", tone: "jade" },
     ],
-    disposition: { state: "ice", label: "Closed — no action" },
+    disposition: { state: "jade", label: "Auto-closed — no action needed" },
   },
 ];
 
@@ -129,10 +130,6 @@ const DURATION: Record<Phase, number> = {
 
 /** Deterministic scatter so the "confusion" notes look hand-pinned, not gridded. */
 const SCATTER = [-2.5, 2, -1.5, 3, -2, 1.5];
-
-function fmt(s: number): string {
-  return `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
-}
 
 /** The one clock that drives both sections. Extracted so the component body reads
     as layout, not timing. */
@@ -314,7 +311,7 @@ function CallCard({
           <span className={cn("text-label", onCall ? "text-lamp-flare-text" : "text-text-mute")}>
             {connecting ? "CONNECTING" : onCall ? "LIVE" : "ENDED"}
           </span>
-          {fmt(shownSec)}
+          {formatDuration(shownSec)}
         </span>
       </div>
 
@@ -371,7 +368,7 @@ function ConfusionOutput({ scenario, idx, reduced }: { scenario: Scenario; idx: 
           style={{ background: "var(--surface-raised)" }}
         >
           <span className="size-1.5 rounded-full" style={{ background: "var(--lamp-off)" }} />
-          <span className="font-mono text-data text-text-mute">completed · {fmt(scenario.sec)}</span>
+          <span className="font-mono text-data text-text-mute">completed · {formatDuration(scenario.sec)}</span>
         </span>
 
         {/* Everything else is a question. */}

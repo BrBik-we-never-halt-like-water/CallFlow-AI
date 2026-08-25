@@ -126,13 +126,76 @@ for (const accentToken of ['--primary', '--dash-brand', '--dash-figure']) {
   }
 }
 
+// --- 4. the brand-asset mirror still matches its tokens ----------------------
+// The favicon, the Apple icon, the social card and the manifest cannot read CSS,
+// so `lib/brand-assets.ts` restates the `--dark-*` palette as literal hex and
+// `app/icon.svg` restates it again. Nobody looks at their own favicon or their
+// own OG card, so drift here is invisible for as long as it likes: all four were
+// three versions behind before this check existed.
+const MIRROR = 'lib/brand-assets.ts';
+const FAVICON = 'app/icon.svg';
+
+const mirrorSrc = await readFile(MIRROR, 'utf8');
+const mirror = new Map(
+  [...mirrorSrc.matchAll(/(\w+):\s*'(#[0-9a-fA-F]{6})'/g)].map(([, k, v]) => [
+    k,
+    v.toLowerCase(),
+  ]),
+);
+
+/** Mirror key -> the token it claims to copy. `rule`/`ruleStrong` are omitted:
+ *  they flatten a `color-mix` alpha over the plate, so there is no literal token
+ *  to compare them against. */
+const MIRRORED = {
+  plate: '--dark-surface',
+  off: '--dark-lamp-off',
+  ice: '--dark-lamp-ice',
+  brass: '--dark-lamp-brass',
+  jade: '--dark-lamp-jade',
+  flare: '--dark-lamp-flare',
+  text: '--dark-text',
+  textDim: '--dark-text-dim',
+  textMute: '--dark-text-mute',
+};
+
+for (const [key, token] of Object.entries(MIRRORED)) {
+  const mirrored = mirror.get(key);
+  if (!mirrored) {
+    failures.push(`${MIRROR} no longer declares \`${key}\`, which mirrored ${token}.`);
+    continue;
+  }
+  // A token declared in several scopes offers several values; matching any one
+  // of them is the mirror being in step with the palette.
+  const declared = hexes(token).map((h) => h.toLowerCase());
+  if (declared.length === 0) {
+    failures.push(`${token} has no literal value in ${CSS}, so ${MIRROR}.${key} cannot be checked.`);
+  } else if (!declared.includes(mirrored)) {
+    failures.push(
+      `${MIRROR} has ${key} = ${mirrored}, but ${token} is ${declared.join(' / ')}. ` +
+        `Every shared link and home-screen icon renders the stale value.`,
+    );
+  }
+}
+
+const allowed = new Set([...mirror.values()]);
+const faviconSrc = await readFile(FAVICON, 'utf8');
+for (const [, found] of faviconSrc.matchAll(/(?:fill|stroke)="(#[0-9a-fA-F]{6})"/g)) {
+  if (!allowed.has(found.toLowerCase())) {
+    failures.push(
+      `${FAVICON} paints ${found}, which is not a value in ${MIRROR}. ` +
+        `The favicon is the one asset nobody notices going stale.`,
+    );
+  }
+}
+
 if (failures.length) {
-  console.error(`\ncheck-tokens: ${failures.length} problem(s) in ${CSS}\n`);
+  console.error(`\ncheck-tokens: ${failures.length} problem(s)\n`);
   for (const f of failures) console.error(`  - ${f}\n`);
   process.exit(1);
 }
 
 console.log(
   `check-tokens: ok - no cycle, one accent (${brands.join(' / ')}), ` +
-    `all accents >=${MIN_HUE_SEPARATION}° from every lamp and status hue.`,
+    `all accents >=${MIN_HUE_SEPARATION}° from every lamp and status hue, ` +
+    `brand-asset mirror in step with ${Object.keys(MIRRORED).length} tokens.`,
 );
