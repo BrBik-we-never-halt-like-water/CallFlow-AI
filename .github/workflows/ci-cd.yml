@@ -181,6 +181,7 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm run type-check
+      - run: npm run test
       - run: npm run build
         env:
           # Only has to be a valid absolute URL: this job proves the build

@@ -37,7 +37,7 @@ exist in this repo**; `SYSTEM.md` §12 is the closest real gap map until it's wr
 | [#7](#7--escalation-resolution-is-component-state)                                                                                | S3  | Escalation resolution is component state                                                                              | web            | it-1  | **FIXED**        |
 | [#8](#8--stats-mixes-denominators)                                                                                                | S3  | `stats` mixes denominators                                                                                            | backend        | it-1  | OPEN             |
 | [#9](#9--renderyaml-contradicts-the-real-deployment)                                                                              | S3  | `render.yaml` contradicts the real deployment                                                                         | infra          | it-1  | **FIXED**        |
-| [#10](#10--no-frontend-tests)                                                                                                     | S3  | No frontend tests                                                                                                     | web            | it-1  | OPEN             |
+| [#10](#10--no-frontend-tests)                                                                                                     | S3  | No frontend tests                                                                                                     | web            | it-1  | **FIXED**        |
 | [#11](#11--escalate_on_negative-is-misnamed)                                                                                      | S4  | `escalate_on_negative` is misnamed                                                                                    | backend        | it-1  | OPEN             |
 | [#12](#12--whatsapp-env-vars-are-read-but-unused)                                                                                 | S4  | WhatsApp env vars read but unused                                                                                     | backend        | it-1  | OPEN             |
 | [#13](#13--the-last-owner-guard-blocked-every-cascading-delete)                                                                   | S1  | Last-owner guard blocked every cascading delete                                                                       | database       | it-2  | **FIXED**        |
@@ -386,7 +386,7 @@ behind `callflow-ai.brbik.com`.
 
 ### #10 - No frontend tests
 
-**S3 · OPEN · web**
+**S3 · FIXED · web**
 
 84 backend tests; zero on the frontend.
 
@@ -395,6 +395,15 @@ guarantee), `lib/lamp.ts` (disposition → lamp mapping), `lib/contacts.ts` (row
 `lib/campaign-fields.ts` (the 5→4 type mapping).
 
 **Fix.** Vitest on those four modules first. They are pure functions, so this is cheap.
+
+**Resolution (Y2).** `lib/campaign-fields.ts` had already been renamed to
+`lib/collect-fields.ts` by the time this landed - tested under its current name. Vitest +
+Testing Library wired up (`vitest.config.ts`, `vitest.setup.ts`), with unit tests for all
+four modules the impact note names, plus three component smoke tests (login page, the
+`AppTabBar` nav, and the run composer's empty-form rejection). `npm run test` runs in CI
+(`.github/workflows/ci-cd.yml`) as a blocking step before `build`. Playwright is scaffolded
+(`playwright.config.ts`) but not yet wired into CI - there is no real end-to-end journey to
+run until `/app/leads` and `/app/reports` exist; that lands with Y8.
 
 ---
 
