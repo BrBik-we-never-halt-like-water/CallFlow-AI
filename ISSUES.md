@@ -7333,8 +7333,17 @@ status tracking:
 
 - PE registration: NOT STARTED (blocked on M10 entity incorporation)
 - Header registration: NOT STARTED
-- Twilio/Plivo account: H1 IN PROGRESS (KYC, billing)
-- Test number provisioned: NOT STARTED
+
+**H1 - Twilio Account Progress:**
+- Account created: [DATE - fill in after creating]
+- Upgraded to paid: [DATE - fill in after upgrading]
+- KYC submitted: [DATE - fill in after submitting]
+- KYC approved: PENDING (check daily)
+- Number provisioned: PENDING
+- Test call succeeded: PENDING
+
+Check status daily at: https://console.twilio.com/ → Regulatory Compliance
+
 - DLT reference number: NONE YET
 
 **H4 Status:** ✅ EXISTING PROJECT VERIFIED (13 Sep 2026)
