@@ -7340,6 +7340,12 @@ status tracking:
 - Trial number: +17372212163 (US number)
 - Verified number: +918153083020 (your mobile)
 - **Test call: ✅ SUCCESS!** (curl from console, phone rang)
+- **Script test: ✅ SUCCESS!** (probe-dial.py fixed for trial, phone rang)
+- **Trial restrictions learned:**
+  - ❌ Inline TwiML blocked (must use `Url=...` not `Twiml=...`)
+  - ❌ Premium voices blocked (Polly.Aditi, etc.)
+  - ✅ International calls work (US → India to verified number)
+  - ✅ Twilio-hosted template URLs work
 - Integration status: Ready to test full stack
 - Upgraded to paid: [TODO - after trial proves it works]
 - KYC submitted: [TODO - after upgrade]
