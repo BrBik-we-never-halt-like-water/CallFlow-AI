@@ -7344,22 +7344,36 @@ status tracking:
 - **Trial restrictions learned:**
   - ❌ Inline TwiML blocked (must use `Url=...` not `Twiml=...`)
   - ❌ Premium voices blocked (Polly.Aditi, etc.)
+  - ❌ Inbound webhook config blocked (but NOT needed for CallFlow - outbound only!)
   - ✅ International calls work (US → India to verified number)
   - ✅ Twilio-hosted template URLs work
-- Integration status: Ready to test full stack
-- Upgraded to paid: [TODO - after trial proves it works]
+  - ✅ Outbound SIP trunk connections work
+- **H1 Status: ✅ COMPLETE** - Trial account fully validated for outbound calls
+- Upgraded to paid: [TODO - after team approval]
 - KYC submitted: [TODO - after upgrade]
 
 Check status daily at: https://console.twilio.com/ → Regulatory Compliance
 
 - DLT reference number: NONE YET
 
-**H4 Status:** ✅ EXISTING PROJECT VERIFIED (13 Sep 2026)
-- LiveKit project: calllflowai-q2rm1vod
-- SIP host: yl7hjpxqwno.sip.livekit.cloud
-- Host reachable: verified
-- Credentials in .env: verified
-- Next: Verify SIP trunk exists in LiveKit dashboard
+**H4 Status:** ✅ COMPLETE (13 Sep 2026)
+- LiveKit project: callflow-dev-odwy9nv9
+- SIP host: callflow-dev-odwy9nv9.sip.livekit.cloud
+- **SIP Trunk: ✅ CREATED** - ST_Wp3ppL7yv8Zd
+- Trunk configuration:
+  - Host: AC[ACCOUNT_SID].pstn.twilio.com
+  - Transport: UDP, Port: 5060
+  - Number: +1737...
+  - Auth: Configured with Twilio credentials
+- Credentials in .env: ✅ verified
+- Trunk ID in .env: ✅ configured
+
+**H1+H4 Integration: ✅ READY FOR TESTING**
+- Twilio → LiveKit trunk: configured
+- LiveKit → Twilio SIP: authenticated
+- Outbound calls: proven working (trial)
+- Voice worker: exists at apps/voice-runtime/app/worker.py
+- Next: Full stack test (API + Voice Worker + Dashboard)
 
 Update this entry when reference number exists, entity is incorporated, or any
 blocker appears. Gate: H1 passes with a working Indian-mobile dial before P1.
