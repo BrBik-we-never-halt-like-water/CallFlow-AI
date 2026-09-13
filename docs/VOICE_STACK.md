@@ -148,9 +148,48 @@ which fields each clip contains.
 > (`+1 555 0100-0199`, `CLAUDE.md` §7). Keep it out of git; store it where the team can reach it and
 > note the location in `ISSUES.md`.
 
-### 4.2 Score each candidate
+### 4.1b Lay the corpus out so the scorer can read it
 
-For every STT candidate, over all twenty clips:
+`scripts/score_stt.py` computes §5's numbers. It scores *transcripts*, so a
+candidate needs no API key and no SDK - a vendor that only offers a web console
+can still be measured. Layout:
+
+```
+corpus/
+  clip01.txt              the hand transcript - ground truth
+  clip01.fields.json      the phrases from GRADING.md §3 present in this clip
+  candidates/
+    sarvam/clip01.txt     what that vendor returned
+    deepgram/clip01.txt
+```
+
+A `.fields.json` is a flat object mapping each field to **the phrase as spoken**,
+not the parsed value - this measures the transcript, not the extractor:
+
+```json
+{"work_experience_years": "five years",
+ "budget_amount_paise": "12 lakh",
+ "do_not_contact": "mujhe call mat karo"}
+```
+
+`do_not_contact` is the key the opt-out check looks for, so the two refusal clips
+from §4.1 must carry it.
+
+Then:
+
+```
+python scripts/score_stt.py corpus/
+```
+
+It prints §5's table ready to paste, and **exits non-zero when every candidate is
+disqualified** - so it can gate the decision rather than only inform it.
+
+### 4.2 What each number means
+
+
+
+The scorer computes all of these. They are spelled out because a number nobody
+can explain is a number nobody should act on:
 
 1. **WER** against the hand transcript.
 2. **FER** - for each extraction field genuinely present in the audio: correct, wrong, or missing.
@@ -183,8 +222,12 @@ tuning problem, and it does not get better in P4 (roadmap R3).
 
 ## 5. Scoring sheet - fill this in
 
-**Nothing below is measured yet.** Replace every dash with a real figure and commit the result; that
-commit closes `A2`.
+**Nothing below is measured yet.** Run `python scripts/score_stt.py corpus/`, paste its table over
+the STT rows, fill the TTS and LLM rows by hand, and commit the result. That commit closes `A2`.
+
+A missing transcript is scored as total loss rather than skipped, and a candidate that loses a single
+opt-out is marked DISQUALIFIED and sorted last however good its FER - §6.3's kill criteria are
+enforced by the tool, not left to whoever reads the table.
 
 ### STT
 
