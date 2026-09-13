@@ -102,6 +102,64 @@ dashboard - expected on dev, and the reason production should not be on Free.
 
 ---
 
+## 2b. LiveKit Cloud and SIP trunk
+
+**H4 from P0.** The voice runtime needs a LiveKit Cloud project (not self-hosted - see
+§7 for why 4 GB VMs cannot hold an SFU plus SIP plus workers) and an inbound/outbound
+SIP trunk wired to the telephony provider's number.
+
+### Create the LiveKit Cloud project
+
+1. Sign up at [livekit.io](https://cloud.livekit.io/)
+2. Create a new project - note the project URL, API key and API secret
+3. The project URL will be `wss://<project-id>.livekit.cloud` - this becomes
+   `LIVEKIT_URL` in both the API and voice-runtime `.env` files
+
+### Provision the SIP trunk
+
+From the LiveKit Cloud console:
+
+1. Navigate to **SIP → Trunks** and create a new trunk
+2. **Outbound trunk** (CallFlow → PSTN): requires a SIP carrier account (Twilio or
+   Plivo). Provide:
+   - Trunk name (e.g. `callflow-twilio-out`)
+   - The carrier's SIP endpoint (Twilio: `<ACCOUNT_SID>.pstn.twilio.com` on port 5060)
+   - Authentication: username = Twilio ACCOUNT_SID, password = AUTH_TOKEN
+3. **Inbound trunk** (PSTN → CallFlow): wire the carrier's number to the trunk
+   - In Twilio: Phone Numbers → Active Numbers → select the number → Voice & Fax
+     → Configure With: SIP → SIP Domain: `<YOUR_PROJECT>.sip.livekit.cloud`
+   - In Plivo: Phone Numbers → Your Numbers → select the number → Application Type:
+     XML → Answer URL: `https://<YOUR_PROJECT>.sip.livekit.cloud/sip/inbound`
+4. Note the SIP host: `<YOUR_PROJECT>.sip.livekit.cloud` - this becomes
+   `LIVEKIT_SIP_HOST` in the API's `.env`
+
+### Required environment variables
+
+After provisioning, set these in both the API and voice-runtime `.env` files (the
+values must match byte-for-byte between the two VMs, or dispatches go unanswered):
+
+```bash
+# API .env (and voice-runtime .env, identical)
+LIVEKIT_URL=wss://<project-id>.livekit.cloud
+LIVEKIT_API_KEY=<your-api-key>
+LIVEKIT_API_SECRET=<your-api-secret>
+LIVEKIT_AGENT_NAME=callflow-voice        # must match on both VMs
+
+# API .env only
+LIVEKIT_SIP_HOST=<project-id>.sip.livekit.cloud
+```
+
+**Dev vs production:** use separate LiveKit projects for dev and production. The SIP
+host is how `check_dial_allowed` knows whether a deployment can dial (§2 explains the
+dev allowlist).
+
+**Verification:** H4 is done when trunk and project IDs are recorded here, credentials
+are in the deployed `.env` on both VMs, and H6 can connect a test call. Do not wait
+for H1's number to exist before creating the project - the trunk can be wired to a
+placeholder and updated later.
+
+---
+
 ## 3. Configure the GitHub Environment
 
 **Settings → Environments**, one per branch, named `main` and `dev`. This is the only
