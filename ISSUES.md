@@ -1,4 +1,4 @@
-# Issues and bugs
+﻿# Issues and bugs
 
 A living log. Every audit or iteration appends findings here; nothing is deleted, only
 re-statused, so we keep the history of what was wrong and when we knew.
@@ -2805,6 +2805,9 @@ work above, with the same key formula. See `campaign_runner.py`'s own merge comm
 which implementation the merged code actually keeps.
 
 ### #74 - `POST /runs` had no idempotency key - a retried request could start a second real run
+
+> **Regressed (it-25).** The ADR-8 run-path rebuild dropped this fix and its tests;
+> the column and index survive with no reader or writer. Tracked as #201, S1 OPEN.
 
 **S2 · FIXED · backend + web · `app/api/v1/routes/runs.py`, `app/database/repositories/runs.py`, `apps/web/lib/api.ts`, `apps/web/app/(app)/app/runs/new/page.tsx`**
 
@@ -7213,3 +7216,126 @@ issue, or a version bump, before spending more on it. Until then: restart
 
 **Depends on / Blocks:** <ids>
 ```
+
+## Iteration 25 - 2026-08-25 - full-stack audit, and the marketing site rebuilt as the honest one
+
+A three-track audit (backend contract, frontend contract, product truth) ran ahead of a
+ground-up marketing rebuild. The rebuild itself fixed the worst web findings (#203); the
+backend findings are recorded here and left for their owners. Already-known items
+(#31's direct fetch, #152's mid-run overspend, #183/#195's unrunnable RLS suites) were
+re-confirmed and are not re-logged.
+
+### #201 - `POST /runs` lost its idempotency handling - #74's regression shipped silently
+
+**S1 · OPEN · api · `apps/api/app/api/v1/routes/runs.py`, `apps/api/app/database/repositories/runs.py`**
+
+`start_run` mints `run_id = uuid.uuid4().hex[:12]` per request, reads no
+`Idempotency-Key` header, and `create_run` never touches `runs.idempotency_key` - the
+column and its partial unique index (migration `202608091800`) still exist, orphaned.
+#74 fixed exactly this and is still recorded as FIXED; the ADR-8 rebuild of the run
+path did not carry the fix across, and the tests died with the old code.
+
+**Impact.** A network retry or double-submit of the same start request dials the same
+contacts twice, spending real credit and placing real calls - non-negotiable #6, on
+the most consequential mutating endpoint in the product.
+
+**Fix.** Not attempted here (backend owner's call): re-read the header, write the
+column, and let the existing partial unique index refuse the second insert; return the
+first run on conflict. Re-add a test so it cannot die quietly again.
+
+**Depends on / Blocks:** regression of #74.
+
+### #202 - decrypted vendor API keys ride in LiveKit dispatch metadata
+
+**S2 · OPEN · api · `apps/api/app/services/run_dispatch.py`, `apps/api/app/services/run_dialer.py`**
+
+`RunPlan.voice_agent` holds decrypted provider keys and is serialised verbatim into
+the dispatch metadata. The adjacent comment excludes the *phone number* from that same
+dict because participant metadata "reaches LiveKit's logs and webhooks, outside
+CallFlow's own redaction" - the secrets get weaker treatment than the number.
+
+**Impact.** Org vendor keys transit and potentially persist in third-party
+logs/webhooks outside the redaction boundary (non-negotiable #5's spirit).
+
+**Fix direction.** Hand the worker a reference (or short-lived token) it exchanges
+against the internal API for the keys, rather than the keys themselves.
+
+### #203 - the marketing site claimed guards, detection and retries the product does not have
+
+**S2 · FIXED (it-25 marketing rebuild, this working tree) · web · `apps/web/components/marketing/*`, `apps/web/components/layout/site-footer.tsx`**
+
+The live site rendered the allowlist, per-run ceiling and rate limit as *live values*
+("Allowlist 1 number", "25 / run", "2 / hour") - guards deliberately deleted at the
+product owner's direction (#178, `domain/safety.py`) - plus "Anyone who opts out is
+added automatically" (the trigger never fires: the worker sends `extracted: {}`),
+"Sentiment on every call" in the footer band, a `sentiment: positive` proof chip, and
+"queued for a polite retry" as if retries were orchestrated (they are produced and
+consumed by nothing, F24). Non-negotiable #9, on the most public surface the product has.
+
+**Fix.** The rebuild replaced the safety section with only code-enforced guards
+(suppression, row validation, the fail-closed run gate, both credit checks, masking,
+RLS) quoting the product's real refusal strings verbatim; deleted `capability-grid.tsx`
+outright rather than rewording it; and swapped the footer's sentiment line for
+"Masked numbers everywhere". The board's counter also dropped 10,000 -> 500 to sit
+inside the real runaway ceiling. Still overclaiming and NOT fixed here: the docs pages
+(`/docs/safety-configuration` describes deleted guards, `/docs/webhooks` describes an
+unbuilt feature, getting-started §4 says "set your guards"), and #148's pricing rows.
+
+### #204 - forgot-password shows "Reset link sent" even when the request failed
+
+**S2 · OPEN · web · `apps/web/app/(auth)/forgot-password/page.tsx`**
+
+Only errors whose message contains `'emails have been sent'` are surfaced; every other
+failure - service unreachable, 429 rate-limit, invalid address - falls through to
+`setSent(true)` and the success toast. Enumeration defence justifies hiding *account
+existence*, not service failure. Non-negotiable #9.
+
+### #205 - the password-strength meter colours itself in lamps
+
+**S3 · OPEN · web · `apps/web/components/ui/password-strength.tsx`**
+
+Flare/brass/jade `Lamp` dots and `text-lamp-jade-text` for met requirements, on auth
+pages. Not one of DESIGN_NOTES §2's three exceptions, and `meter.tsx:8` states the
+rule it breaks. Same class as #198. (Related, S4: `Button`'s loading indicator is three
+pulsing brass lamps - the reserved retry vocabulary - and `MinLengthCounter`, dead
+code, uses brass text.)
+
+### #206 - raw SQL in a request handler, outside the repository boundary
+
+**S3 · OPEN · api · `apps/api/app/api/v1/routes/internal.py`, `apps/api/app/auth/dependencies.py`, `apps/api/app/auth/platform.py`**
+
+`_settle_usage_credit` runs `select plan_id from public.organisations where id = $1`
+inline in the completion handler; the auth layer carries identity/capability lookups
+the same way. CLAUDE.md §2 says repositories only.
+
+### #207 - `force row level security` is missing on most tenant tables
+
+**S3 · OPEN · database · `apps/api/alembic/versions/*`**
+
+Only six tables FORCE it; every other tenant table ENABLEs only. Practically neutral
+today (the owner role's BYPASSRLS wins over FORCE anyway, §4b), but CLAUDE.md §4b/§5
+mandate both, and the convention exists so a future non-BYPASSRLS owner is safe.
+
+### #208 - three run endpoints return bare dicts
+
+**S4 · OPEN · api · `apps/api/app/api/v1/routes/runs.py`, `apps/api/app/main.py`**
+
+`start_run`, `list_runs`, `get_run` return `dict[str, Any]` against the declared-
+Pydantic-model rule (§3-I); `/` and `/api/health` likewise. 63 other routes conform.
+
+### #209 - DLT / TRAI registration application pending
+
+**S2 · IN PROGRESS · compliance · H2 from P0**
+
+Started 12 Sep 2026. `docs/TELEPHONY_COMPLIANCE.md` documents the full requirement
+for our own PE registration and the customer-account checklist (D6). Application 
+status tracking:
+
+- PE registration: NOT STARTED (blocked on M10 entity incorporation)
+- Header registration: NOT STARTED
+- Twilio/Plivo account: H1 IN PROGRESS (KYC, billing)
+- Test number provisioned: NOT STARTED
+- DLT reference number: NONE YET
+
+Update this entry when reference number exists, entity is incorporated, or any
+blocker appears. Gate: H1 passes with a working Indian-mobile dial before P1.
