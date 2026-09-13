@@ -7335,10 +7335,11 @@ status tracking:
 - Header registration: NOT STARTED
 
 **H1 - Twilio Account Progress:**
-- Account created: [DATE - fill in after creating]
-- Upgraded to paid: [DATE - fill in after upgrading]
-- KYC submitted: [DATE - fill in after submitting]
-- KYC approved: PENDING (check daily)
+- Account created: ✅ 2026-09-13
+- Account SID: AC...fb2 (stored locally, not committed)
+- Upgraded to paid: [TODO - upgrade now]
+- KYC submitted: [TODO - submit now]
+- KYC approved: PENDING (check daily after submission)
 - Number provisioned: PENDING
 - Test call succeeded: PENDING
 
