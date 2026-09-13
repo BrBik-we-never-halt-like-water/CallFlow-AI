@@ -133,10 +133,23 @@ base64 -w0 .env                    # macOS: base64 -i .env
 base64 -w0 apps/web/.env.local
 ```
 
-Paste each single line in as its secret. Every deploy rewrites the VM's copy, so the
-files on the machine are copies of something GitHub holds rather than something someone
-edited in place and cannot reproduce. Change a value by updating the secret and re-running
-the job - never by editing the file on the VM, which the next deploy overwrites.
+Paste each single line in as its secret. **The secret is a seed, not the source of
+truth** (changed 2026-08-25, at the operator's direction): `bootstrap.sh` writes the
+file from it only when the file does not exist - a bare machine, a first deploy - and
+never rewrites an existing one. Day-to-day env changes are made **on the VM**: edit the
+file in place, then `pm2 restart callflow-api[-dev] --update-env` (web `NEXT_PUBLIC_*`
+values are baked in at build time and need a redeploy, not a restart).
+
+The trade: a lost VM comes back with whatever the seed last held. So after editing on
+the VM, capture the live file back into the secret - one command, no manual encoding:
+
+```bash
+ssh <VM_USER>@<VM_HOST> "cat <APP_DIR>/.env" | base64 -w0 | gh secret set ENV_FILE_B64 --env dev
+```
+
+The deploy prints a `NOTE: .env differs from ENV_FILE_B64` line whenever the seed has
+drifted from the machine - that line appearing in a provision log is the reminder to
+run the capture-back.
 
 **They are two files because they are two different sets of names**, not a subset of one
 another. `apps/web/.env.local` is the one that bites: three of its four variables are
@@ -354,11 +367,11 @@ deploy ships a half-updated VM; a wasted minute costs a minute.
 **`api`** / **`web`** → lint, type-check, test. Each runs only if its half changed.
 
 **`provision`** → `scripts/bootstrap.sh`. Clones if absent, pins the checkout to the
-branch being deployed, creates `.venv`, installs the API, writes `.env` and
-`apps/web/.env.local` from their secrets, renders the nginx site, requests a
-certificate, installs the pm2
-systemd unit. Idempotent: every step checks the desired state first, so it is a no-op
-on the deploys where nothing changed.
+branch being deployed, creates `.venv`, installs the API, seeds `.env` and
+`apps/web/.env.local` from their secrets **only if missing** (an existing file is the
+VM's own and never rewritten - §3), renders the nginx site, requests a certificate,
+installs the pm2 systemd unit. Idempotent: every step checks the desired state first,
+so it is a no-op on the deploys where nothing changed.
 
 **Shared, and first, on purpose.** Both halves deploy out of one checkout on one VM, and
 `provision` is what puts the right commit there - two `git checkout -B` against the same

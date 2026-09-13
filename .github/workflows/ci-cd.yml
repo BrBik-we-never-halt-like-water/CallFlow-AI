@@ -18,10 +18,9 @@ jobs:
   #
   # The api and web halves are deployed independently below, so most pushes only
   # need one of them. A web-only change should not pay for `alembic upgrade head`
-  # against a real database, and an api-only change should not pay for the web
-  # build twice (once here, once on the VM) - that pair is where the wall-clock
-  # actually goes: web checks are ~66s and the VM's own `npm ci && npm run build`
-  # is most of the deploy's ~60s.
+  # against a real database. The Next.js *compile* check lives in the `web` job
+  # (dummy URL, no secrets). The artefact that actually serves is built later,
+  # still on the GitHub runner, in `deploy-web` — never on the 4 GB VM (H5).
   #
   # Fail-OPEN, deliberately, and the opposite of how the product's own safety
   # gates work: when this cannot tell what changed - a new branch with no `before`
@@ -190,13 +189,16 @@ jobs:
           NEXT_PUBLIC_API_URL: https://calllflow.com
 
   # ---------------------------------------------------------------------------
-  # Deployment: one shared provision, then two independent chains.
+  # Deployment: one shared provision, then two independent chains, plus a
+  # third chain on a different VM for the voice runtime.
   #
   #   provision ─┬─ migrate ─ deploy-api      (schema, then the FastAPI process)
-  #              └─ deploy-web                (the Next build + its own process)
+  #              └─ deploy-web                (CI-built Next artefact + process)
   #
-  # The two chains are genuinely independent past provision and run in parallel:
-  # the web build no longer waits behind `alembic upgrade head`, and the API
+  #   voice ─ provision-voice ─ deploy-voice  (VM2; never restarts VM1)
+  #
+  # The two VM1 chains are independent past provision and run in parallel:
+  # the web artefact no longer waits behind `alembic upgrade head`, and the API
   # restart no longer waits behind a Next build it has nothing to do with.
   # `provision` stays shared and stays first because both halves deploy out of
   # ONE checkout on ONE VM - it is what puts the right commit there, and running
@@ -277,10 +279,11 @@ jobs:
             # keeping between runs, so discard local state rather than
             # letting build output veto a deploy.
             git reset --hard HEAD
-            # `-e` exclusions are belt-and-braces: bootstrap.sh rewrites both
-            # env files from secrets after this runs, so cleaning them would
-            # recover - but a deploy should not depend on that ordering to
-            # avoid blowing away the running config.
+            # The env-file `-e` exclusions are load-bearing, not belt-and-braces:
+            # bootstrap.sh only SEEDS a missing env file from its secret and
+            # never rewrites an existing one (the VM's file is the source of
+            # truth since 2026-08-25), so cleaning them here would replace
+            # hand-maintained config with a possibly stale seed.
             git clean -fd -e node_modules -e .venv -e .next -e .env -e apps/web/.env.local
             # checkout -B rather than `git pull`: pins the checkout to the branch
             # being deployed instead of trusting whatever it was left on.
@@ -393,9 +396,13 @@ jobs:
 
   # ---- Web chain -------------------------------------------------------------
   #
-  # Depends on `provision` only, never on `migrate` - a Next build has no
+  # Depends on `provision` only, never on `migrate` - a Next artefact has no
   # relationship to the database schema, and waiting behind it was pure serial
   # time. Runs concurrently with the whole API chain above.
+  #
+  # H5: `next build` runs here, on the GitHub runner. The 4 GB application VM
+  # only installs production deps and unpacks `.next`. Building on the box is
+  # how deploys OOM; do not put `npm run build` back in the SSH script.
 
   deploy-web:
     name: Deploy web ${{ github.ref_name }}
@@ -411,14 +418,72 @@ jobs:
       APP_DIR: ${{ vars.APP_DIR }}
       PUBLIC_URL: ${{ vars.PUBLIC_URL }}
     steps:
-      - name: Build and restart the web process
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+
+      - name: Seed the web env the build inlines
+        env:
+          WEB_ENV_FILE_B64: ${{ secrets.WEB_ENV_FILE_B64 }}
+        run: |
+          set -euo pipefail
+          test -n "$PUBLIC_URL" || { echo "PUBLIC_URL is not set for environment '$BRANCH'"; exit 1; }
+          test -n "$WEB_ENV_FILE_B64" || { echo "WEB_ENV_FILE_B64 is not set for environment '$BRANCH'"; exit 1; }
+          printf '%s' "$WEB_ENV_FILE_B64" | base64 -d > apps/web/.env.local
+          python3 - <<'PY'
+          from pathlib import Path
+          required = (
+              "NEXT_PUBLIC_SUPABASE_URL",
+              "NEXT_PUBLIC_SUPABASE_ANON_KEY",
+              "NEXT_PUBLIC_SITE_URL",
+          )
+          values = {}
+          for line in Path("apps/web/.env.local").read_text(encoding="utf-8").splitlines():
+              if not line or line.lstrip().startswith("#") or "=" not in line:
+                  continue
+              key, _, value = line.partition("=")
+              values[key.strip()] = value.strip()
+          missing = [name for name in required if not values.get(name)]
+          if missing:
+              raise SystemExit(
+                  "FATAL: apps/web/.env.local is missing " + ", ".join(missing)
+                  + ". Those values are inlined at build time; an empty one ships "
+                  "the dashboard with authentication disabled."
+              )
+          PY
+
+      - name: Build the artefact (not on the VM)
+        working-directory: apps/web
+        env:
+          NEXT_PUBLIC_API_URL: ${{ vars.PUBLIC_URL }}
+          NODE_OPTIONS: --max-old-space-size=4096
+        run: |
+          npm ci
+          npm run build
+          tar -czf "$GITHUB_WORKSPACE/web-next.tgz" .next
+
+      - name: Ship .next to the VM
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ vars.VM_HOST }}
+          username: ${{ vars.VM_USER }}
+          key: ${{ secrets.VM_SSH_KEY }}
+          source: web-next.tgz
+          target: /tmp
+          overwrite: true
+
+      - name: Install production deps, unpack, restart
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ vars.VM_HOST }}
           username: ${{ vars.VM_USER }}
           key: ${{ secrets.VM_SSH_KEY }}
-          command_timeout: 20m
-          envs: BRANCH,APP_DIR,PUBLIC_URL
+          command_timeout: 15m
+          envs: BRANCH,APP_DIR
           script: |
             set -euo pipefail
             cd "$APP_DIR/apps/web"
@@ -426,8 +491,17 @@ jobs:
             if [ "$BRANCH" = "main" ]; then SUFFIX=""; else SUFFIX="-dev"; fi
             if [ "$BRANCH" = "main" ]; then export CALLFLOW_ENV=production; else export CALLFLOW_ENV=dev; fi
 
-            NEXT_PUBLIC_API_URL="$PUBLIC_URL" npm ci
-            NEXT_PUBLIC_API_URL="$PUBLIC_URL" npm run build
+            test -f /tmp/web-next.tgz || { echo "FATAL: /tmp/web-next.tgz was not uploaded."; exit 1; }
+
+            # Production deps only. `next` is a runtime dependency; the compile
+            # already happened on the runner. Do not add `npm run build` here.
+            npm ci --omit=dev
+
+            rm -rf .next
+            tar -xzf /tmp/web-next.tgz
+            rm -f /tmp/web-next.tgz
+            test -f .next/BUILD_ID || { echo "FATAL: unpacked artefact has no BUILD_ID."; exit 1; }
+
             pm2 startOrRestart "$APP_DIR/ecosystem.config.js" \
               --only "callflow-web$SUFFIX" --update-env
 
