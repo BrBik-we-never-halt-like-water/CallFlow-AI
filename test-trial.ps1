@@ -6,7 +6,7 @@ $env:TWILIO_ACCOUNT_SID = "AC..."  # Your Account SID
 $env:TWILIO_AUTH_TOKEN = "..."     # Your Auth Token
 
 # Your Twilio trial number (US number works for testing)
-$env:TWILIO_NUMBER = "+17372212163"
+$env:TWILIO_NUMBER = "+1737..."    # Your trial number
 
 Write-Host "Testing Twilio → Your Verified Number" -ForegroundColor Cyan
 Write-Host ""

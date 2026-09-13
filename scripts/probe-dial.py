@@ -88,15 +88,14 @@ def _post(
 
 def twilio_call(*, sid: str, token: str, from_number: str, to: str) -> int:
     url = f"https://api.twilio.com/2010-04-01/Accounts/{sid}/Calls.json"
-    twiml = (
-        "<Response><Say voice='Polly.Aditi' language='en-IN'>"
-        "This is a CallFlow probe. You can hang up."
-        "</Say><Pause length='2'/><Hangup/></Response>"
-    )
+    # Trial-compatible: Use Twilio-hosted TwiML URL
+    # Trial accounts block inline TwiML (Twiml parameter), must use Url instead
+    # This template is a simple "please leave a message" prompt
+    twiml_url = "https://webhooks.twilio.com/v1/Voice/Template/voice_speech_recognition"
     status, body = _post(
         url,
         auth=_basic(sid, token),
-        fields={"To": to, "From": from_number, "Twiml": twiml},
+        fields={"To": to, "From": from_number, "Url": twiml_url},
     )
     call_sid = body.get("sid") or body.get("code") or "(none)"
     if status >= 300:
