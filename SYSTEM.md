@@ -1290,6 +1290,15 @@ runtime already has an `AgentSpec` for the provider half.
 | `attempts`           | `list[AttemptSummary]` | `[]`  | Every dial CALL-E made for this recipient (a recipient can be redialled) - `status`/`started_at`/`completed_at`/`had_transcript` per attempt, not just the one `_final_attempt()` picks for the transcript above                                                                                                                                                    |
 | `disposition`        | `Disposition`    | `skipped`   | Set by `triage()`                                                                                                                                                                                                                                                                                                                                                     |
 | `disposition_reason` | `str \| None`    | `None`      | Human sentence - what the UI's reasoning chain displays                                                                                                                                                                                                                                                                                                               |
+| `result`             | `CallResult \| None` | `None`  | Reachability. Backfilled from `status`; **nothing writes it during a run yet**                                                                                                                                                                                                                                                                                        |
+| `grade`              | `LeadGrade \| None`  | `None`  | Qualification. Null unless `result = spoke`, enforced by a check constraint                                                                                                                                                                                                                                                                                           |
+| `grade_reason`       | `str \| None`    | `None`      | Prose a rep reads in one line - never a rule id                                                                                                                                                                                                                                                                                                                       |
+| `next_action`        | `NextAction \| None` | `None`  | What a human does with the row. Set even when there is no grade                                                                                                                                                                                                                                                                                                       |
+| `callback_at`        | `datetime \| None` | `None`    | When they asked to be called. Drives `call_at`                                                                                                                                                                                                                                                                                                                        |
+| `decline_reason`     | `DeclineReason \| None` | `None` | The decline report's aggregation key                                                                                                                                                                                                                                                                                                                                |
+| `decline_note`       | `str \| None`    | `None`      | Their own words. Where next quarter's enum values come from                                                                                                                                                                                                                                                                                                           |
+| `handoff_brief`      | `str \| None`    | `None`      | Two lines for the worklist: what they said, what to open with. No writer yet                                                                                                                                                                                                                                                                                          |
+| `human_verdict`      | `bool \| None`   | `None`      | A rep's thumbs up/down on a handed-over lead - the accept-rate metric                                                                                                                                                                                                                                                                                                 |
 | `error`              | `str \| None`    | `None`      | `"ExcType: message"` on failure                                                                                                                                                                                                                                                                                                                                       |
 | `duration_seconds`   | `float \| None`  | `None`      | From the engine payload                                                                                                                                                                                                                                                                                                                                               |
 | `created_at`         | `datetime`       | now (UTC)   |                                                                                                                                                                                                                                                                                                                                                                       |
@@ -1373,6 +1382,53 @@ into `provider_unavailable` would tell an operator CallFlow broke when the perso
 on another call. Stored as plain text, so extending it needs no migration.
 `ProvisioningStatus` (`domain/provisioning.py`): `pending`, `provisioning`, `verified`,
 `failed` - one-way, no edge out of a terminal state
+
+### The graded-lead model (`domain/entities.py`, `domain/grading.py`)
+
+Four enums and one pure function, specified in full by `docs/GRADING.md` - that document
+is the source of truth, and code disagreeing with it is a bug in the code. Added beside
+`Disposition`, not in place of it: `Disposition` answers "does this call need a human?"
+and this answers "is this lead worth a human?", which is the thing CallFlow actually
+sells and could not previously be selected from the database.
+
+`CallResult`: `in_flight`, `spoke`, `no_answer`, `busy`, `voicemail`, `invalid_number`,
+`failed`, `suppressed` - reachability, always meaningful
+`LeadGrade`: `hot`, `warm`, `cold`, `refused`, `wrong_person`, `ungraded` - qualification,
+**only** meaningful when `result = spoke`, and enforced as such by a check constraint
+(`call_outcomes_grade_requires_spoke`). An extraction failure grades `ungraded`, never a
+silent `cold`: a fabricated rejection poisons the decline report.
+`NextAction`: `call_now`, `call_at`, `nurture`, `drop`, `suppress`, `fix_data` - always
+set, graded or not
+`DeclineReason`: ten values plus a free-text `decline_note`; the enum aggregates for the
+report, the note is where next quarter's values come from
+
+`grade_lead(result, fields, config)` (`domain/grading.py`) is pure - no I/O, no vendor, no
+database, the same standard `safety.py` and `triage.py` hold. Precedence is top-to-bottom
+and the order is load-bearing: a hard opt-out or hostility (rule 1) outranks a failed
+extraction (rule 4), so an opt-out captured live survives a parsing gap. A hostile contact
+who also stated a budget is `refused`, not `hot`.
+
+New `call_outcomes` columns (migration `a1c4e8b73f29`, additive - `disposition` is still
+written and still read): `result`, `grade`, `grade_reason`, `next_action`, `callback_at`,
+`decline_reason`, `decline_note`, `handoff_brief`, `human_verdict`. Indexed on
+`(org_id, grade)`, `(org_id, decline_reason)`, `(org_id, result)`. The backfill infers
+`result` from the provider `status` the row already carries and sets `grade = ungraded`
+for rows that spoke - it invents no grades, because historical rows were produced by a
+rule answering a different question.
+
+`public.org_grading_config` holds the per-organisation thresholds (`budget_floor_paise`
+as BIGINT paise, `required_fields`, `enabled_decline_reasons`, `intake_horizon_months`,
+`emi_qualifies_alone`) so January's corrections are configuration rather than a deploy.
+Reads need membership; writes need owner/admin, since these settings decide what a
+customer is billed for as a qualified lead. `intent` cannot be removed from
+`required_fields` - a check constraint enforces the floor in the database, and
+`GradingConfig` enforces it again in Python.
+
+**Not yet wired:** nothing writes these columns during a run - `grade_lead()` exists and
+is tested, but the completion path (`routes/internal.py`) still writes only
+`disposition`. The triage rewrite that inverts escalation (interested → a human, declined
+→ closed with a reason) is a separate task and has not landed. Per-config write auditing
+(`docs/GRADING.md` §7 constraint 3) is also outstanding.
 
 ### Disposition → lamp (`web/lib/lamp.ts`)
 
