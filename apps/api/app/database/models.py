@@ -26,7 +26,7 @@ from sqlalchemy import (
     func,
     text,
 )
-from sqlalchemy.dialects.postgresql import CITEXT, JSONB, UUID
+from sqlalchemy.dialects.postgresql import ARRAY, CITEXT, JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -210,6 +210,57 @@ class Suppression(Base):
     suppressed_at: Mapped[datetime] = mapped_column(nullable=False, server_default=func.now())
 
     organisation: Mapped[Organisation] = relationship(back_populates="suppressions")
+
+
+class OrgGradingConfig(Base):
+    """Per-organisation grading thresholds - `docs/GRADING.md` §7.
+
+    The parts of the grading rule we expect to be wrong about in January, kept
+    as configuration so being wrong costs an update rather than a deploy. The
+    precedence order, the grade values and the meaning of `ungraded` are code,
+    not settings.
+
+    `required_fields` carries a floor rather than just a default: `intent`
+    cannot be removed, enforced by a check constraint here and again in
+    `domain/grading.py`. Without it rule 4 stops firing and every unreadable
+    call falls through the bottom of the table.
+    """
+
+    __tablename__ = "org_grading_config"
+    __table_args__ = (
+        CheckConstraint("'intent' = any(required_fields)", name="org_grading_config_intent_required"),
+        CheckConstraint(
+            "budget_floor_paise is null or budget_floor_paise > 0",
+            name="org_grading_config_budget_floor_positive",
+        ),
+        CheckConstraint("intake_horizon_months > 0", name="org_grading_config_horizon_positive"),
+        Index("org_grading_config_org_idx", "org_id"),
+    )
+
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organisations.id", ondelete="CASCADE"), primary_key=True
+    )
+    #: Paise, BIGINT, never a float (CLAUDE.md §4.3). Null means any stated
+    #: budget qualifies.
+    budget_floor_paise: Mapped[int | None] = mapped_column(BigInteger)
+    required_fields: Mapped[list[str]] = mapped_column(
+        ARRAY(Text),
+        nullable=False,
+        server_default=text("'{intent,is_decision_maker,identity_confirmed}'::text[]"),
+    )
+    enabled_decline_reasons: Mapped[list[str]] = mapped_column(
+        ARRAY(Text),
+        nullable=False,
+        server_default=text(
+            "'{already_enrolled_elsewhere,price_or_emi,degree_validity_doubt,"
+            "wrong_programme,no_time,employer_wont_sponsor,still_deciding,"
+            "language_barrier,do_not_contact,other}'::text[]"
+        ),
+    )
+    intake_horizon_months: Mapped[int] = mapped_column(nullable=False, server_default=text("12"))
+    emi_qualifies_alone: Mapped[bool] = mapped_column(nullable=False, server_default=text("true"))
+    created_at: Mapped[datetime] = mapped_column(nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(nullable=False, server_default=func.now())
 
 
 class ApiKey(Base):

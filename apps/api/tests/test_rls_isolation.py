@@ -4197,3 +4197,138 @@ async def test_ai_provider_credentials_are_admin_or_owner_only_even_for_read(
         [admin.auth_user_id, operator.auth_user_id],
     )
     await db.execute("delete from public.organisations where deleted_at is not null")
+
+
+# ---------------------------------------------------------------------------
+# Graded-lead model (`docs/GRADING.md`, migration a1c4e8b73f29).
+# ---------------------------------------------------------------------------
+
+
+async def test_grading_config_is_invisible_across_tenants(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    a, b = tenants
+
+    await _as_postgres(db)
+    await db.execute(
+        "insert into public.org_grading_config (org_id, budget_floor_paise) values ($1, $2)",
+        a.org_id,
+        1_200_000,
+    )
+
+    try:
+        async with db.transaction():
+            await _as_user(db, b.auth_user_id)
+            visible = await db.fetch("select org_id from public.org_grading_config")
+        ids = {row["org_id"] for row in visible}
+        assert a.org_id not in ids, "tenant B can read tenant A's grading thresholds"
+
+        async with db.transaction():
+            await _as_user(db, a.auth_user_id)
+            own = await db.fetch("select org_id from public.org_grading_config")
+        assert {row["org_id"] for row in own} == {a.org_id}, "tenant A cannot read its own config"
+    finally:
+        await _as_postgres(db)
+        await db.execute("delete from public.org_grading_config where org_id = $1", a.org_id)
+
+
+async def test_grading_config_cannot_be_written_for_another_tenant(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    a, b = tenants
+
+    with pytest.raises(asyncpg.exceptions.InsufficientPrivilegeError):
+        async with db.transaction():
+            await _as_user(db, b.auth_user_id)
+            await db.execute(
+                "insert into public.org_grading_config (org_id) values ($1)", a.org_id
+            )
+
+
+async def test_grading_config_keeps_intent_required(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    # `docs/GRADING.md` §7 constraint 1 - a settings change must not be able to
+    # switch off the rule that makes an unreadable call visible as one.
+    a, _ = tenants
+    await _as_postgres(db)
+    with pytest.raises(asyncpg.exceptions.CheckViolationError):
+        await db.execute(
+            "insert into public.org_grading_config (org_id, required_fields) values ($1, $2)",
+            a.org_id,
+            ["is_decision_maker"],
+        )
+
+
+async def test_a_grade_cannot_be_recorded_without_having_spoken(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    # §1: an unreachable row carries no grade. Enforced in the database, not
+    # only in the rule, so a future writer cannot quietly reintroduce the
+    # "unreachable looks like a rejection" bug the whole model exists to fix.
+    a, _ = tenants
+    run_id = f"run-{uuid.uuid4().hex[:12]}"
+
+    await _as_postgres(db)
+    await db.execute(
+        "insert into public.runs (id, org_id, total, status) values ($1, $2, 1, 'completed')",
+        run_id,
+        a.org_id,
+    )
+    try:
+        with pytest.raises(asyncpg.exceptions.CheckViolationError):
+            await db.execute(
+                """
+                insert into public.call_outcomes
+                    (run_id, org_id, contact_name, phone_masked, result, grade)
+                values ($1, $2, 'Aditi', '+91*****210', 'no_answer', 'cold')
+                """,
+                run_id,
+                a.org_id,
+            )
+    finally:
+        await _as_postgres(db)
+        await db.execute("delete from public.call_outcomes where run_id = $1", run_id)
+        await db.execute("delete from public.runs where id = $1", run_id)
+
+
+async def test_graded_outcomes_are_invisible_across_tenants(
+    db: asyncpg.Connection, tenants: tuple[Tenant, Tenant]
+) -> None:
+    a, b = tenants
+    run_id = f"run-{uuid.uuid4().hex[:12]}"
+
+    await _as_postgres(db)
+    await db.execute(
+        "insert into public.runs (id, org_id, total, status) values ($1, $2, 1, 'completed')",
+        run_id,
+        a.org_id,
+    )
+    await db.execute(
+        """
+        insert into public.call_outcomes
+            (run_id, org_id, contact_name, phone_masked, status,
+             result, grade, grade_reason, next_action, decline_reason, human_verdict)
+        values ($1, $2, 'Aditi', '+91*****210', 'COMPLETED',
+                'spoke', 'hot', 'Said yes, wants the March intake.', 'call_now', null, true)
+        """,
+        run_id,
+        a.org_id,
+    )
+
+    try:
+        async with db.transaction():
+            await _as_user(db, b.auth_user_id)
+            leaked = await db.fetch(
+                "select grade, grade_reason, human_verdict from public.call_outcomes"
+            )
+        assert leaked == [], "tenant B can read tenant A's graded leads"
+
+        async with db.transaction():
+            await _as_user(db, a.auth_user_id)
+            own = await db.fetch("select grade from public.call_outcomes where run_id = $1", run_id)
+        assert [row["grade"] for row in own] == ["hot"], "tenant A cannot read its own graded lead"
+    finally:
+        await _as_postgres(db)
+        await db.execute("delete from public.call_outcomes where run_id = $1", run_id)
+        await db.execute("delete from public.runs where id = $1", run_id)

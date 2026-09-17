@@ -84,6 +84,68 @@ class Disposition(str, Enum):
 NEEDS_A_PERSON_DISPOSITIONS = frozenset({Disposition.ESCALATED, Disposition.UNREACHABLE})
 
 
+class CallResult(str, Enum):
+    """Axis 1 of the graded-lead model: did a conversation happen at all?
+
+    `docs/GRADING.md` §1-2.1 is the source of truth for this enum and for
+    `LeadGrade`/`NextAction`/`DeclineReason` below - read it before changing
+    any of the four. `Disposition` above answers "does this call need a
+    human?"; this answers "did we speak to them?", which is a different
+    question `Disposition` cannot express (`GRADING.md` intro).
+    """
+
+    IN_FLIGHT = "in_flight"
+    SPOKE = "spoke"
+    NO_ANSWER = "no_answer"
+    BUSY = "busy"
+    VOICEMAIL = "voicemail"
+    INVALID_NUMBER = "invalid_number"
+    FAILED = "failed"
+    SUPPRESSED = "suppressed"
+
+
+class LeadGrade(str, Enum):
+    """Axis 2: is this lead worth a human's time? Only meaningful when
+    `CallResult.SPOKE` - see `GRADING.md` §1, §2.2."""
+
+    HOT = "hot"
+    WARM = "warm"
+    COLD = "cold"
+    REFUSED = "refused"
+    WRONG_PERSON = "wrong_person"
+    # Extraction failed, or came back unusable. Never a silent COLD - a
+    # fabricated rejection poisons the decline report (`GRADING.md` §2.2).
+    UNGRADED = "ungraded"
+
+
+class NextAction(str, Enum):
+    """Axis 3: what a human does with the row. Always set, graded or not
+    (`GRADING.md` §2.3, §4.1a)."""
+
+    CALL_NOW = "call_now"
+    CALL_AT = "call_at"
+    NURTURE = "nurture"
+    DROP = "drop"
+    SUPPRESS = "suppress"
+    FIX_DATA = "fix_data"
+
+
+class DeclineReason(str, Enum):
+    """Why a lead said no. Aggregates for the decline report; `decline_note`
+    carries what the enum cannot (`GRADING.md` §2.4)."""
+
+    ALREADY_ENROLLED_ELSEWHERE = "already_enrolled_elsewhere"
+    PRICE_OR_EMI = "price_or_emi"
+    DEGREE_VALIDITY_DOUBT = "degree_validity_doubt"
+    WRONG_PROGRAMME = "wrong_programme"
+    NO_TIME = "no_time"
+    EMPLOYER_WONT_SPONSOR = "employer_wont_sponsor"
+    STILL_DECIDING = "still_deciding"
+    LANGUAGE_BARRIER = "language_barrier"
+    DO_NOT_CONTACT = "do_not_contact"
+    OTHER = "other"
+
+
 class Contact(BaseModel):
     name: str
     phone: str
@@ -253,6 +315,27 @@ class CallOutcome(BaseModel):
 
     disposition: Disposition = Disposition.SKIPPED
     disposition_reason: str | None = None
+
+    #: The graded-lead model (`docs/GRADING.md`). Additive beside `disposition`
+    #: - nothing drops that column until every reader has moved across
+    #: (`GRADING.md` §8). `grade` is null whenever `result` is not `SPOKE`;
+    #: never inferred as `COLD` for an unreachable call.
+    result: CallResult | None = None
+    grade: LeadGrade | None = None
+    #: Prose a rep can read in one line - never a rule id (`GRADING.md` §4.3).
+    grade_reason: str | None = None
+    next_action: NextAction | None = None
+    callback_at: datetime | None = None
+    decline_reason: DeclineReason | None = None
+    decline_note: str | None = None
+    #: Two lines for the handoff queue: what they said, what to open with.
+    #: Populated by a later task (`GRADING.md` §6, task A10) - present on the
+    #: model now so the column exists ahead of the writer.
+    handoff_brief: str | None = None
+    #: A rep's thumbs-up/down on a handed-over lead. Null until reviewed.
+    #: The accept-rate metric - "is this working" made measurable rather than
+    #: an opinion (`GRADING.md` §6).
+    human_verdict: bool | None = None
 
     error: str | None = None
     duration_seconds: float | None = None
