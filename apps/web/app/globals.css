@@ -252,6 +252,14 @@
   --w-app-sidebar-collapsed: 68px;
   --h-site-header: 68px;
   --h-app-topbar: 60px;
+
+  /* ---- The stage ---------------------------------------------------------
+     One perspective for every marketing 3D scene, so depth reads consistently
+     across the page: a layer at the same translateZ looks the same distance
+     away in the hero and in an act further down. Long (1400px) on purpose -
+     these are instrument panels being glanced at, not objects being tumbled,
+     and a short focal length would shear the board's monospace columns. */
+  --stage-perspective: 1400px;
 }
 
 /* --------------------------------------------------------------------------
@@ -3411,140 +3419,81 @@ button[data-menu][data-state='open']:focus-visible {
 }
 
 /* --------------------------------------------------------------------------
-   Marketing hero portrait.
+   The stage - CSS-perspective 3D for the marketing scenes.
 
-   The mask is the point. A photograph in a rectangle on a single-ground page
-   (DESIGN_NOTES §27) reintroduces exactly the band that section removed - so the
-   image is feathered into the ground instead of framed against it. Two masks,
-   because the geometry differs: stacked on mobile it fades from the bottom, and
-   side-by-side on desktop it fades from the left edge into the text column.
+   `components/marketing/stage.tsx` renders through these. `.stage` is the
+   camera (perspective on the parent, per the CSS transform model), and
+   `.stage-object` is the thing posed inside it, preserving 3D so its child
+   layers can sit at different depths via translateZ.
 
-   `mask-image` rather than a gradient overlay: an overlay has to know the
-   background colour to blend with, which is the assumption that breaks the
-   moment the theme flips.
+   Everything animated here is transform/opacity only. The rest pose (a static
+   tilt) survives `prefers-reduced-motion` on purpose - a still photograph at
+   an angle is not motion - while the float loop and pointer tilt, which are,
+   are gated in JS and in the media query below.
    -------------------------------------------------------------------------- */
 
-.hero-portrait-mask {
-  --feather: 22%;
-  -webkit-mask-image: linear-gradient(
-    to top,
-    transparent 0%,
-    #000 var(--feather),
-    #000 100%
-  );
-  mask-image: linear-gradient(
-    to top,
-    transparent 0%,
-    #000 var(--feather),
-    #000 100%
+.stage {
+  perspective: var(--stage-perspective);
+}
+
+.stage-object {
+  transform-style: preserve-3d;
+}
+
+/* An atmosphere plate behind a staged object: the primary at low opacity,
+   radial, so the object reads as lit rather than outlined. Built from a
+   color-mix of the token so both themes resolve it correctly - the dark
+   theme's own `--primary` is the lighter indigo chosen for dark surfaces. */
+.stage-glow {
+  background: radial-gradient(
+    ellipse 62% 56% at 50% 42%,
+    color-mix(in oklab, var(--primary) 16%, transparent) 0%,
+    transparent 72%
   );
 }
 
-@media (min-width: 1024px) {
-  .hero-portrait-mask {
-    /* Two gradients intersected, so the photo has no hard edge on any side: it
-       feathers left into the text column and top-and-bottom into the ground,
-       and runs off the right of the viewport where there is no edge to hide.
-       A single gradient only ever softens one axis, which is how the first
-       version left three visible rectangle edges. */
-    -webkit-mask-image:
-      linear-gradient(to right, transparent 0%, #000 38%, #000 100%),
-      linear-gradient(
-        to bottom,
-        transparent 0%,
-        #000 14%,
-        #000 78%,
-        transparent 100%
-      );
-    -webkit-mask-composite: source-in;
-    mask-image:
-      linear-gradient(to right, transparent 0%, #000 38%, #000 100%),
-      linear-gradient(
-        to bottom,
-        transparent 0%,
-        #000 14%,
-        #000 78%,
-        transparent 100%
-      );
-    mask-composite: intersect;
+/* The slow float for orbiting chips. On its own wrapper *inside* the layer
+   that carries translateZ - an animation's transform would otherwise
+   overwrite the depth transform on the same element. */
+.stage-float {
+  animation: stage-float 9s var(--ease-inout) infinite alternate;
+}
+
+.stage-float-late {
+  animation-delay: -4.5s;
+}
+
+@keyframes stage-float {
+  from {
+    transform: translateY(-5px);
+  }
+  to {
+    transform: translateY(5px);
   }
 }
 
-/* Five bars, the only colour on the card. `jade` is the person and `--primary`
-   the agent - which of the two is talking is the one thing a glance should get.
-   Animated in CSS: a per-frame React update for decoration is the cheapest
-   thing to get wrong at this size. */
-.turn-bars {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  height: 1.25rem;
-  flex: none;
+/* The run-floor act's word lighting: each word starts as ink at low opacity
+   and lights on its own once the section is in view. Opacity, not colour -
+   dimming the page's own text colour keeps AA contrast a property of the lit
+   state only, and the lit state is plain `--text`. */
+.floor-word {
+  opacity: 0.22;
+  transition: opacity 260ms var(--ease-out);
 }
 
-.turn-bars i {
-  width: 2px;
-  border-radius: 1px;
-  height: 35%;
-  background: currentColor;
-  transform-origin: center;
-}
-
-.turn-bars-agent {
-  color: var(--primary);
-}
-
-.turn-bars-caller {
-  color: var(--lamp-jade);
-}
-
-/* Only the live card moves. A card that is not this turn's speaker showing
-   animated bars would say the wrong thing. */
-.turn-bars[data-live] i {
-  animation: turn-bar 900ms ease-in-out infinite;
-}
-
-.turn-bars[data-live] i:nth-child(2) { animation-delay: 120ms; }
-.turn-bars[data-live] i:nth-child(3) { animation-delay: 240ms; }
-.turn-bars[data-live] i:nth-child(4) { animation-delay: 360ms; }
-.turn-bars[data-live] i:nth-child(5) { animation-delay: 480ms; }
-
-@keyframes turn-bar {
-  0%, 100% { transform: scaleY(0.4); }
-  50%      { transform: scaleY(1.6); }
+.floor-word[data-lit] {
+  opacity: 1;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .turn-bars[data-live] i {
+  .stage-float {
     animation: none;
-    height: 60%;
   }
-}
 
-/* The hero's mask, one section on. Same reasoning (DESIGN_NOTES §27: a
-   rectangle of photograph on a single-ground page reintroduces the band that
-   section removed) with a gentler left feather, because here the photo sits
-   *behind* a card stack rather than beside a headline - it has to stay quiet
-   enough for the cards to read against it. */
-.section-photo-mask {
-  -webkit-mask-image:
-    linear-gradient(to right, transparent 0%, #000 46%, #000 100%),
-    linear-gradient(
-      to bottom,
-      transparent 0%,
-      #000 22%,
-      #000 74%,
-      transparent 100%
-    );
-  -webkit-mask-composite: source-in;
-  mask-image:
-    linear-gradient(to right, transparent 0%, #000 46%, #000 100%),
-    linear-gradient(
-      to bottom,
-      transparent 0%,
-      #000 22%,
-      #000 74%,
-      transparent 100%
-    );
-  mask-composite: intersect;
+  /* The lighting timer never runs under reduced motion, so every word
+     renders lit. */
+  .floor-word {
+    opacity: 1;
+    transition: none;
+  }
 }

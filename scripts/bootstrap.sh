@@ -13,8 +13,9 @@
 #
 #   CALLFLOW_ENV       production | dev  - picks the process names and ports
 #   PUBLIC_URL         https://dev.calllflow.com
-#   ENV_FILE_B64       base64 of the API .env this environment should run with
-#   WEB_ENV_FILE_B64   base64 of apps/web/.env.local
+#   ENV_FILE_B64       base64 seed for the API .env - used only when the file
+#                      does not exist yet; an existing file is never rewritten
+#   WEB_ENV_FILE_B64   base64 seed for apps/web/.env.local, same rule
 #
 # Optional:
 #
@@ -65,30 +66,41 @@ log "installing the API"
 .venv/bin/pip install --quiet -e ./apps/api
 
 # --------------------------------------------------------------- env files
-# Written from GitHub Environment secrets, so the files on the VM are copies of
-# something GitHub holds rather than something a person edited in place two
-# months ago and cannot reproduce. base64 because the values are multi-line and
+# Seeded from a GitHub Environment secret on FIRST provision only. After that
+# the file on the VM is the source of truth: values are added and changed by
+# editing it in place and restarting the process, and a deploy never touches
+# it again. This inverts the original design - every deploy used to rewrite
+# the file from the secret - at the operator's direction (2026-08-25): env
+# changes are made on the machine, not by re-encoding a secret in GitHub.
+#
+# The trade, stated plainly: a lost VM now comes back with whatever the seed
+# last held, not what the machine held. After editing on the VM, capture the
+# live file back into the secret (DEPLOYMENT.md §3 has the one-liner) and a
+# rebuild is current again. The drift note below is the standing reminder
+# that the seed has gone stale. base64 because the values are multi-line and
 # would not survive being passed through a shell variable intact.
 write_env() {
   local path="$1" encoded="$2" secret_name="$3"
 
-  if [ -z "$encoded" ]; then
-    if [ -f "$path" ]; then
-      return 0
+  if [ -f "$path" ]; then
+    # Never rewritten - but say so when the seed no longer matches, or the
+    # first anyone learns the secret is stale is a rebuilt VM running on it.
+    if [ -n "$encoded" ] && ! printf '%s' "$encoded" | base64 -d | cmp -s - "$path"; then
+      log "NOTE: $path differs from $secret_name - the file on this VM wins."
+      log "      Refresh the seed when convenient:  base64 -w0 $path -> $secret_name"
     fi
+    return 0
+  fi
+
+  if [ -z "$encoded" ]; then
     echo "FATAL: $path is missing and $secret_name is not set for '$CALLFLOW_ENV'." >&2
     echo "       Set it with:  base64 -w0 $path" >&2
     exit 1
   fi
 
   umask 077
-  printf '%s' "$encoded" | base64 -d > "$path.next"
-  if cmp -s "$path.next" "$path" 2>/dev/null; then
-    rm -f "$path.next"
-  else
-    mv "$path.next" "$path"
-    log "$path updated from the GitHub Environment"
-  fi
+  printf '%s' "$encoded" | base64 -d > "$path"
+  log "$path seeded from $secret_name (first provision only - never rewritten)"
 }
 
 write_env .env "${ENV_FILE_B64:-}" ENV_FILE_B64

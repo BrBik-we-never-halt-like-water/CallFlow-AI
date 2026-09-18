@@ -102,6 +102,64 @@ dashboard - expected on dev, and the reason production should not be on Free.
 
 ---
 
+## 2b. LiveKit Cloud and SIP trunk
+
+**H4 from P0.** The voice runtime needs a LiveKit Cloud project (not self-hosted - see
+§7 for why 4 GB VMs cannot hold an SFU plus SIP plus workers) and an inbound/outbound
+SIP trunk wired to the telephony provider's number.
+
+### Create the LiveKit Cloud project
+
+1. Sign up at [livekit.io](https://cloud.livekit.io/)
+2. Create a new project - note the project URL, API key and API secret
+3. The project URL will be `wss://<project-id>.livekit.cloud` - this becomes
+   `LIVEKIT_URL` in both the API and voice-runtime `.env` files
+
+### Provision the SIP trunk
+
+From the LiveKit Cloud console:
+
+1. Navigate to **SIP → Trunks** and create a new trunk
+2. **Outbound trunk** (CallFlow → PSTN): requires a SIP carrier account (Twilio or
+   Plivo). Provide:
+   - Trunk name (e.g. `callflow-twilio-out`)
+   - The carrier's SIP endpoint (Twilio: `<ACCOUNT_SID>.pstn.twilio.com` on port 5060)
+   - Authentication: username = Twilio ACCOUNT_SID, password = AUTH_TOKEN
+3. **Inbound trunk** (PSTN → CallFlow): wire the carrier's number to the trunk
+   - In Twilio: Phone Numbers → Active Numbers → select the number → Voice & Fax
+     → Configure With: SIP → SIP Domain: `<YOUR_PROJECT>.sip.livekit.cloud`
+   - In Plivo: Phone Numbers → Your Numbers → select the number → Application Type:
+     XML → Answer URL: `https://<YOUR_PROJECT>.sip.livekit.cloud/sip/inbound`
+4. Note the SIP host: `<YOUR_PROJECT>.sip.livekit.cloud` - this becomes
+   `LIVEKIT_SIP_HOST` in the API's `.env`
+
+### Required environment variables
+
+After provisioning, set these in both the API and voice-runtime `.env` files (the
+values must match byte-for-byte between the two VMs, or dispatches go unanswered):
+
+```bash
+# API .env (and voice-runtime .env, identical)
+LIVEKIT_URL=wss://<project-id>.livekit.cloud
+LIVEKIT_API_KEY=<your-api-key>
+LIVEKIT_API_SECRET=<your-api-secret>
+LIVEKIT_AGENT_NAME=callflow-voice        # must match on both VMs
+
+# API .env only
+LIVEKIT_SIP_HOST=<project-id>.sip.livekit.cloud
+```
+
+**Dev vs production:** use separate LiveKit projects for dev and production. The SIP
+host is how `check_dial_allowed` knows whether a deployment can dial (§2 explains the
+dev allowlist).
+
+**Verification:** H4 is done when trunk and project IDs are recorded here, credentials
+are in the deployed `.env` on both VMs, and H6 can connect a test call. Do not wait
+for H1's number to exist before creating the project - the trunk can be wired to a
+placeholder and updated later.
+
+---
+
 ## 3. Configure the GitHub Environment
 
 **Settings → Environments**, one per branch, named `main` and `dev`. This is the only
@@ -133,10 +191,23 @@ base64 -w0 .env                    # macOS: base64 -i .env
 base64 -w0 apps/web/.env.local
 ```
 
-Paste each single line in as its secret. Every deploy rewrites the VM's copy, so the
-files on the machine are copies of something GitHub holds rather than something someone
-edited in place and cannot reproduce. Change a value by updating the secret and re-running
-the job - never by editing the file on the VM, which the next deploy overwrites.
+Paste each single line in as its secret. **The secret is a seed, not the source of
+truth** (changed 2026-08-25, at the operator's direction): `bootstrap.sh` writes the
+file from it only when the file does not exist - a bare machine, a first deploy - and
+never rewrites an existing one. Day-to-day env changes are made **on the VM**: edit the
+file in place, then `pm2 restart callflow-api[-dev] --update-env` (web `NEXT_PUBLIC_*`
+values are baked in at build time and need a redeploy, not a restart).
+
+The trade: a lost VM comes back with whatever the seed last held. So after editing on
+the VM, capture the live file back into the secret - one command, no manual encoding:
+
+```bash
+ssh <VM_USER>@<VM_HOST> "cat <APP_DIR>/.env" | base64 -w0 | gh secret set ENV_FILE_B64 --env dev
+```
+
+The deploy prints a `NOTE: .env differs from ENV_FILE_B64` line whenever the seed has
+drifted from the machine - that line appearing in a provision log is the reminder to
+run the capture-back.
 
 **They are two files because they are two different sets of names**, not a subset of one
 another. `apps/web/.env.local` is the one that bites: three of its four variables are
@@ -354,11 +425,11 @@ deploy ships a half-updated VM; a wasted minute costs a minute.
 **`api`** / **`web`** → lint, type-check, test. Each runs only if its half changed.
 
 **`provision`** → `scripts/bootstrap.sh`. Clones if absent, pins the checkout to the
-branch being deployed, creates `.venv`, installs the API, writes `.env` and
-`apps/web/.env.local` from their secrets, renders the nginx site, requests a
-certificate, installs the pm2
-systemd unit. Idempotent: every step checks the desired state first, so it is a no-op
-on the deploys where nothing changed.
+branch being deployed, creates `.venv`, installs the API, seeds `.env` and
+`apps/web/.env.local` from their secrets **only if missing** (an existing file is the
+VM's own and never rewritten - §3), renders the nginx site, requests a certificate,
+installs the pm2 systemd unit. Idempotent: every step checks the desired state first,
+so it is a no-op on the deploys where nothing changed.
 
 **Shared, and first, on purpose.** Both halves deploy out of one checkout on one VM, and
 `provision` is what puts the right commit there - two `git checkout -B` against the same

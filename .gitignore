@@ -2,6 +2,10 @@
 .env
 .env.*
 !.env.example
+!.env.voice.template
+
+# Temporary credential files - DELETE after setup
+temp-*.txt
 
 # deps
 node_modules/

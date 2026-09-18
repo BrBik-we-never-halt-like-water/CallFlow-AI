@@ -1,4 +1,5 @@
 import type { MetadataRoute } from "next";
+import { BRAND } from "@/lib/brand-assets";
 
 /**
  * Web app manifest. Vendor-neutral throughout, and the icons are generated from the
@@ -13,8 +14,8 @@ export default function manifest(): MetadataRoute.Manifest {
     start_url: "/app",
     display: "standalone",
     // Panel, because the app the manifest launches is the dashboard.
-    background_color: "#0B0F12",
-    theme_color: "#0B0F12",
+    background_color: BRAND.plate,
+    theme_color: BRAND.plate,
     icons: [
       { src: "/icon.svg", sizes: "any", type: "image/svg+xml" },
       { src: "/apple-icon", sizes: "180x180", type: "image/png" },

@@ -251,7 +251,11 @@ function AgenticContent({ profile }: { profile: SessionProfile }) {
   if (!canRead) {
     return (
       <div className="flex flex-col gap-6">
-        <p className="text-2xl font-bold text-text">Agents</p>
+        {/* The same `PageHeader` the permitted branch below renders. This was a
+            bare `<p>` at a raw `text-2xl font-bold` - the only page title in the
+            dashboard that was neither on the type scale nor a heading element,
+            and it showed only to the people who could not get past it. */}
+        <PageHeader title="Agents" />
         <NotWiredNotice>
           Agents aren&apos;t visible to your role. Ask an owner or admin in
           your organisation if you need one built.

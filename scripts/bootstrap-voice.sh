@@ -16,7 +16,9 @@
 # already cloned or updated the checkout. Required in the environment:
 #
 #   CALLFLOW_ENV        production | dev  - picks the pm2 process name
-#   VOICE_ENV_FILE_B64  base64 of the worker's own .env - see the key list below
+#   VOICE_ENV_FILE_B64  base64 seed for the worker's own .env - used only when
+#                       the file does not exist yet; never rewrites an existing
+#                       one. See the key list below
 #
 # Optional:
 #
@@ -173,27 +175,31 @@ log "installing the voice runtime with extras: $VOICE_EXTRAS"
 .venv/bin/pip install --quiet -e "./apps/voice-runtime[$VOICE_EXTRAS]"
 
 # --------------------------------------------------------------- env file
-# The twin of bootstrap.sh's function of the same name - see the header.
+# The twin of bootstrap.sh's function of the same name - see the header there
+# for the full policy. Seed-on-first-provision only: an existing .env on this
+# VM is the source of truth and is never rewritten; the secret exists to boot
+# a bare machine and as the disaster-recovery copy, refreshed by the operator
+# after in-place edits (DEPLOYMENT.md §3).
 write_env() {
   local path="$1" encoded="$2" secret_name="$3"
 
-  if [ -z "$encoded" ]; then
-    if [ -f "$path" ]; then
-      return 0
+  if [ -f "$path" ]; then
+    if [ -n "$encoded" ] && ! printf '%s' "$encoded" | base64 -d | cmp -s - "$path"; then
+      log "NOTE: $path differs from $secret_name - the file on this VM wins."
+      log "      Refresh the seed when convenient:  base64 -w0 $path -> $secret_name"
     fi
+    return 0
+  fi
+
+  if [ -z "$encoded" ]; then
     echo "FATAL: $path is missing and $secret_name is not set for '$CALLFLOW_ENV'." >&2
     echo "       Set it with:  base64 -w0 $path" >&2
     exit 1
   fi
 
   umask 077
-  printf '%s' "$encoded" | base64 -d > "$path.next"
-  if cmp -s "$path.next" "$path" 2> /dev/null; then
-    rm -f "$path.next"
-  else
-    mv "$path.next" "$path"
-    log "$path updated from the GitHub Environment"
-  fi
+  printf '%s' "$encoded" | base64 -d > "$path"
+  log "$path seeded from $secret_name (first provision only - never rewritten)"
 }
 
 # The repo root, because app/config.py resolves `.env` from its own location

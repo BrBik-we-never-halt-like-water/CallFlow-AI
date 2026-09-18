@@ -1,4 +1,4 @@
-# Issues and bugs
+﻿# Issues and bugs
 
 A living log. Every audit or iteration appends findings here; nothing is deleted, only
 re-statused, so we keep the history of what was wrong and when we knew.
@@ -2814,6 +2814,9 @@ work above, with the same key formula. See `campaign_runner.py`'s own merge comm
 which implementation the merged code actually keeps.
 
 ### #74 - `POST /runs` had no idempotency key - a retried request could start a second real run
+
+> **Regressed (it-25).** The ADR-8 run-path rebuild dropped this fix and its tests;
+> the column and index survive with no reader or writer. Tracked as #201, S1 OPEN.
 
 **S2 · FIXED · backend + web · `app/api/v1/routes/runs.py`, `app/database/repositories/runs.py`, `apps/web/lib/api.ts`, `apps/web/app/(app)/app/runs/new/page.tsx`**
 
@@ -7031,6 +7034,180 @@ replayed). Two things that were needed and are not written down anywhere:
   (`ISSUES.md` #178), not bolted on beside it.
 - **Mid-run credit re-checking.** Unchanged, and still documented in
   `routes/runs.py`.
+## Iteration 52 - 2026-08-24 · the home page said one thing three times
+
+**Renumbered on merge.** This was written as iteration 51 with #186-#190 against
+`8a1ebe5`, and moved to 52 with #196-#200 when merging `dev` - iteration 51 and
+#186-#195 were already taken by the run-control work (`248298e`). The commit
+message on `6f8e18a` still names the old numbers.
+
+Asked to innovate on the marketing site rather than trace the supplied mockup,
+after a photo-led hero was rejected. Reading the code first turned a visual
+complaint into a structural one: the hero was not under-decorated, it was the
+third and weakest telling of a single idea, and filling it with a photograph was
+treating a redundancy as a decoration problem. Four defects followed from
+looking, plus one pre-existing dev-only failure found while verifying locally.
+
+### #196 - the first three screens were three tellings of the same idea
+
+**S3 · FIXED · web · `components/marketing/hero.tsx`, `listening.tsx` (deleted), `call-board.tsx` (new), `app/(marketing)/page.tsx`**
+
+Screen one (hero) typed one spoken line into four fields. Screen two
+(`Listening`) showed settled calls with their typed fields, and carried a
+`QUEUE` of contacts with lamp states - hand-rolled `bg-lamp-*` divs rather than
+the `Lamp` component. Screen three (`ProblemCompare` → `LiveExtraction`, 649
+lines) showed one spoken line becoming typed fields *with* a without/with
+comparison, spoken-phrase provenance (`from:`), lamp tones and four rotating
+scenarios.
+
+So the strongest version of the argument arrived third, to a reader who had
+already seen the idea twice, and the two weaker versions had no job the third did
+not do better. Nothing on the page showed volume - a list going out, most of it
+closing itself, a handful needing a person - which is the thing an operator is
+actually buying and the one claim `LiveExtraction` cannot make while explaining a
+single call.
+
+**Impact.** The hero read as empty, which is what invited a decorative photograph
+into it twice. The photo hero (`8a1ebe5`, reverted in `4da2fb4`) also shipped a
+horizontal scrollbar on every marketing page: images bled to the viewport edge
+with `right: calc(50% - 50vw)` and no ancestor clipped them, so an absolutely
+positioned box wider than the viewport widened the document.
+
+**Fix.** `Listening` deleted (255 lines). The hero's right column is now
+`CallBoard`: nine rows of a live run, lamps settling, a run counter, built from
+`Lamp` and `lampForDisposition`'s own vocabulary. Scale in the hero, one call in
+depth below it, and neither repeats the other. `speech-wave.tsx`,
+`voice-wave.tsx` and `step-flow.tsx` went with it - 317 lines with zero importers.
+
+Three bugs in the new board, each caught by a check rather than by looking:
+
+- **Every row read `in conversation`.** `talk` (19-88s) dwarfed `hold` (7-13s), so
+  ~80% of each row's cycle was live and the footer read `0 closing themselves`.
+  A screenshot at the wrong second would have looked fine; `hold` is now ~3× `talk`.
+- **Live rows pulsed brass.** `lampForDisposition` reserves the pulse for `retry`,
+  and `countLamps` reads a pulsing brass lamp as a retry - so live calls were
+  counted, and would have been read out, as retries.
+- **The accessible summary named four of five buckets.** `counts.retry` was
+  missing, so the sentence accounted for eight of the nine rows on screen.
+
+`scripts/check-board.mjs` (new, in `npm run lint`) replays the schedule over an
+hour and fails on any of these: too many rows live at once, an escalation rarely
+on screen, too few clean closes, or a row phase the summary cannot name. It reads
+the constants out of the component rather than restating them, and it was
+negative-tested against the original schedule.
+
+**Depends on / Blocks:** -
+
+### #197 - every shared link and app icon showed a retired palette
+
+**S3 · FIXED · web · `app/icon.svg`, `apple-icon.tsx`, `opengraph-image.tsx`, `manifest.ts`, `lib/brand-assets.ts` (new), `scripts/check-tokens.mjs`**
+
+`components/brand/mark.tsx` fills its lamps with `var(--lamp-*)`, so the logo
+follows the theme. Four assets cannot read CSS - a static SVG favicon, two
+`next/og` images, and a JSON manifest - and each held its own copy of the
+palette. All four copies were pre-dark-pivot: jade `#3E9E7A` against a current
+`--dark-lamp-jade` of `#4b9073`, brass `#D69B2D` against `#a47f47`, flare
+`#DC4B34` against `#c15f4d`, on a plate `#0B0F12` that matches no surface token
+in the file. `apple-icon.tsx` meanwhile stated in its own docstring that there
+was "exactly one definition of what the logo is".
+
+**Impact.** Every social preview, every browser tab and every home-screen icon
+rendered three colours the product had stopped using. Invisible by construction:
+nobody looks at their own favicon.
+
+Found alongside it: **the social card's caption disagreed with its own strip.**
+The caption read `9 closed · 1 retry · 1 needs a person` while the strip rendered
+six jade, one brass, one flare, one ice and three unlit - so the number was
+wrong, the three queued lamps sitting beside the words went unmentioned, and
+`ice` appeared on a card at all.
+
+**Fix.** One mirror, `lib/brand-assets.ts`, restating the `--dark-*` values with
+the reason hex is unavoidable; the three code assets import it and the favicon's
+literals are checked against it. The caption is now counted from the strip with
+`countLamps`, so it cannot disagree. `check-tokens.mjs` gained a fourth check
+covering nine tokens plus the favicon, negative-tested in both directions.
+
+**Depends on / Blocks:** #184 introduced the palette these assets were left behind by.
+
+### #198 - `ice` was used for a settled outcome, and its comment named the wrong lamp
+
+**S4 · FIXED · web · `components/marketing/live-extraction.tsx`, `lib/lamp.ts`**
+
+`ice` has had no assigned disposition since dry_run was removed (#184, CLAUDE.md
+§10, `docs/triage-rules`: "Reserved, currently unassigned"). `LiveExtraction`
+used it for a *settled* call - `disposition: { state: "ice", label: "Closed — no
+action" }`, plus `outcome: not interested` and `next step: closed` - and for
+`sentiment: neutral`, which is not a call state at all.
+
+In `lib/lamp.ts` the comment explaining that reservation sat one line high,
+against `off` - which *is* assigned, by `skipped` and by the fallback. The one
+label meaning nothing yet read as the one label that was load-bearing.
+
+**Fix.** A call that closed with nothing to do is `auto_closed`, so those fields
+are jade; `sentiment: neutral` takes no lamp. The comment moved onto `ice`.
+`LiveExtraction` also carried a private `fmt()` producing `2:41` while
+`lib/format/index.ts` exports `formatDuration` and its docstring forbids exactly
+that ("a duration that reads `2m 14s` on one screen and `134s` on another is how a
+product starts to feel like several products") - now the shared one.
+
+**Depends on / Blocks:** -
+
+### #199 - three surfaces bypassed the shared heading and type scale
+
+**S4 · FIXED · web · `components/marketing/problem-compare.tsx`, `final-cta.tsx`, `app/(app)/app/agentic/page.tsx`**
+
+- `ProblemCompare` hand-rolled the eyebrow and `<h2>` that the other six sections
+  get from `SectionHeading`, so it alone rendered without the `WaveLine` beside
+  its eyebrow - the detail that makes the sections read as a set. Its body gap
+  was `mt-12` where the others use `mt-(--deck-gap)`.
+- `FinalCta`'s headline was `text-4xl sm:text-5xl lg:text-7xl`: three jumps where
+  every other headline clamps fluidly, and a top step of 4.5rem against the
+  hero's 5.25rem - the closing note nearly out-sizing the opening claim. Now
+  `text-display-l`. The headline also read "Handover the list", a noun where the
+  verb belongs.
+- `app/agentic`'s permission-denied branch titled itself with a bare
+  `<p className="text-2xl font-bold">` - the only page title in the dashboard
+  neither on the type scale nor a heading element, shown only to the people who
+  could not get past it. It now uses the same `PageHeader` the permitted branch
+  twenty lines below already renders.
+
+A sweep for raw Tailwind type steps across `app/` and `components/` returns none
+after this.
+
+**Depends on / Blocks:** -
+
+### #200 - every MDX docs page 500s in local dev, and poisons the whole dev server
+
+**S3 · OPEN · web · `app/(marketing)/docs/*/page.mdx`, `mdx-components.tsx`**
+
+All eight `page.mdx` docs pages fail to build under `next dev` (16.2.12):
+`You are attempting to export "metadata" from a component marked with "use
+client"`, pointing at the page's own `export const metadata`. The MDX sources
+contain no `'use client'` and no imports.
+
+Worse than a broken page: Next latches the first build error and then returns 500
+for **every** route, so one visit to `/docs/webhooks` takes the entire local site
+down until the container is restarted. That is what made `/solutions/[vertical]`
+look broken too - it returns 200 on a clean server.
+
+**Impact.** `DEV_SETUP.md` tells people to verify locally before pushing, and
+this makes local verification unreliable in a way that looks like their own
+change broke the site. Production is unaffected: all eight pages prerender to
+static HTML, confirmed in `.next/server/app/docs/`.
+
+Pre-existing, and verified so - the same two URLs 500 with this iteration's
+changes stashed. Three hypotheses ruled out, each on a freshly restarted server
+because a latched error invalidates the test: the `'use client'` `CodeBlock`
+import in `mdx-components.tsx` (removing it does not help), the `useMDXComponents`
+hook name (renaming to `getMDXComponents` does not help), and a stray directive
+in the MDX (there is none).
+
+**Fix.** Not attempted - the evidence points upstream rather than at our code, and
+nothing ships broken. Worth a minimal reproduction against Next 16.2.x and an
+issue, or a version bump, before spending more on it. Until then: restart
+`callflow-web` after touching a docs page.
+
+**Depends on / Blocks:** -
 
 ## Template for the next iteration
 
@@ -7048,3 +7225,164 @@ replayed). Two things that were needed and are not written down anywhere:
 
 **Depends on / Blocks:** <ids>
 ```
+
+## Iteration 25 - 2026-08-25 - full-stack audit, and the marketing site rebuilt as the honest one
+
+A three-track audit (backend contract, frontend contract, product truth) ran ahead of a
+ground-up marketing rebuild. The rebuild itself fixed the worst web findings (#203); the
+backend findings are recorded here and left for their owners. Already-known items
+(#31's direct fetch, #152's mid-run overspend, #183/#195's unrunnable RLS suites) were
+re-confirmed and are not re-logged.
+
+### #201 - `POST /runs` lost its idempotency handling - #74's regression shipped silently
+
+**S1 · OPEN · api · `apps/api/app/api/v1/routes/runs.py`, `apps/api/app/database/repositories/runs.py`**
+
+`start_run` mints `run_id = uuid.uuid4().hex[:12]` per request, reads no
+`Idempotency-Key` header, and `create_run` never touches `runs.idempotency_key` - the
+column and its partial unique index (migration `202608091800`) still exist, orphaned.
+#74 fixed exactly this and is still recorded as FIXED; the ADR-8 rebuild of the run
+path did not carry the fix across, and the tests died with the old code.
+
+**Impact.** A network retry or double-submit of the same start request dials the same
+contacts twice, spending real credit and placing real calls - non-negotiable #6, on
+the most consequential mutating endpoint in the product.
+
+**Fix.** Not attempted here (backend owner's call): re-read the header, write the
+column, and let the existing partial unique index refuse the second insert; return the
+first run on conflict. Re-add a test so it cannot die quietly again.
+
+**Depends on / Blocks:** regression of #74.
+
+### #202 - decrypted vendor API keys ride in LiveKit dispatch metadata
+
+**S2 · OPEN · api · `apps/api/app/services/run_dispatch.py`, `apps/api/app/services/run_dialer.py`**
+
+`RunPlan.voice_agent` holds decrypted provider keys and is serialised verbatim into
+the dispatch metadata. The adjacent comment excludes the *phone number* from that same
+dict because participant metadata "reaches LiveKit's logs and webhooks, outside
+CallFlow's own redaction" - the secrets get weaker treatment than the number.
+
+**Impact.** Org vendor keys transit and potentially persist in third-party
+logs/webhooks outside the redaction boundary (non-negotiable #5's spirit).
+
+**Fix direction.** Hand the worker a reference (or short-lived token) it exchanges
+against the internal API for the keys, rather than the keys themselves.
+
+### #203 - the marketing site claimed guards, detection and retries the product does not have
+
+**S2 · FIXED (it-25 marketing rebuild, this working tree) · web · `apps/web/components/marketing/*`, `apps/web/components/layout/site-footer.tsx`**
+
+The live site rendered the allowlist, per-run ceiling and rate limit as *live values*
+("Allowlist 1 number", "25 / run", "2 / hour") - guards deliberately deleted at the
+product owner's direction (#178, `domain/safety.py`) - plus "Anyone who opts out is
+added automatically" (the trigger never fires: the worker sends `extracted: {}`),
+"Sentiment on every call" in the footer band, a `sentiment: positive` proof chip, and
+"queued for a polite retry" as if retries were orchestrated (they are produced and
+consumed by nothing, F24). Non-negotiable #9, on the most public surface the product has.
+
+**Fix.** The rebuild replaced the safety section with only code-enforced guards
+(suppression, row validation, the fail-closed run gate, both credit checks, masking,
+RLS) quoting the product's real refusal strings verbatim; deleted `capability-grid.tsx`
+outright rather than rewording it; and swapped the footer's sentiment line for
+"Masked numbers everywhere". The board's counter also dropped 10,000 -> 500 to sit
+inside the real runaway ceiling. Still overclaiming and NOT fixed here: the docs pages
+(`/docs/safety-configuration` describes deleted guards, `/docs/webhooks` describes an
+unbuilt feature, getting-started §4 says "set your guards"), and #148's pricing rows.
+
+### #204 - forgot-password shows "Reset link sent" even when the request failed
+
+**S2 · OPEN · web · `apps/web/app/(auth)/forgot-password/page.tsx`**
+
+Only errors whose message contains `'emails have been sent'` are surfaced; every other
+failure - service unreachable, 429 rate-limit, invalid address - falls through to
+`setSent(true)` and the success toast. Enumeration defence justifies hiding *account
+existence*, not service failure. Non-negotiable #9.
+
+### #205 - the password-strength meter colours itself in lamps
+
+**S3 · OPEN · web · `apps/web/components/ui/password-strength.tsx`**
+
+Flare/brass/jade `Lamp` dots and `text-lamp-jade-text` for met requirements, on auth
+pages. Not one of DESIGN_NOTES §2's three exceptions, and `meter.tsx:8` states the
+rule it breaks. Same class as #198. (Related, S4: `Button`'s loading indicator is three
+pulsing brass lamps - the reserved retry vocabulary - and `MinLengthCounter`, dead
+code, uses brass text.)
+
+### #206 - raw SQL in a request handler, outside the repository boundary
+
+**S3 · OPEN · api · `apps/api/app/api/v1/routes/internal.py`, `apps/api/app/auth/dependencies.py`, `apps/api/app/auth/platform.py`**
+
+`_settle_usage_credit` runs `select plan_id from public.organisations where id = $1`
+inline in the completion handler; the auth layer carries identity/capability lookups
+the same way. CLAUDE.md §2 says repositories only.
+
+### #207 - `force row level security` is missing on most tenant tables
+
+**S3 · OPEN · database · `apps/api/alembic/versions/*`**
+
+Only six tables FORCE it; every other tenant table ENABLEs only. Practically neutral
+today (the owner role's BYPASSRLS wins over FORCE anyway, §4b), but CLAUDE.md §4b/§5
+mandate both, and the convention exists so a future non-BYPASSRLS owner is safe.
+
+### #208 - three run endpoints return bare dicts
+
+**S4 · OPEN · api · `apps/api/app/api/v1/routes/runs.py`, `apps/api/app/main.py`**
+
+`start_run`, `list_runs`, `get_run` return `dict[str, Any]` against the declared-
+Pydantic-model rule (§3-I); `/` and `/api/health` likewise. 63 other routes conform.
+
+### #209 - DLT / TRAI registration application pending
+
+**S2 · IN PROGRESS · compliance · H2 from P0**
+
+Started 12 Sep 2026. `docs/TELEPHONY_COMPLIANCE.md` documents the full requirement
+for our own PE registration and the customer-account checklist (D6). Application 
+status tracking:
+
+- PE registration: NOT STARTED (blocked on M10 entity incorporation)
+- Header registration: NOT STARTED
+
+**H1 - Twilio Account Progress:**
+- Account created: ✅ 2026-09-13
+- Account SID: AC...fb2 (stored locally, not committed)
+- Trial number: +17372212163 (US number)
+- Verified number: +918153083020 (your mobile)
+- **Test call: ✅ SUCCESS!** (curl from console, phone rang)
+- **Script test: ✅ SUCCESS!** (probe-dial.py fixed for trial, phone rang)
+- **Trial restrictions learned:**
+  - ❌ Inline TwiML blocked (must use `Url=...` not `Twiml=...`)
+  - ❌ Premium voices blocked (Polly.Aditi, etc.)
+  - ❌ Inbound webhook config blocked (but NOT needed for CallFlow - outbound only!)
+  - ✅ International calls work (US → India to verified number)
+  - ✅ Twilio-hosted template URLs work
+  - ✅ Outbound SIP trunk connections work
+- **H1 Status: ✅ COMPLETE** - Trial account fully validated for outbound calls
+- Upgraded to paid: [TODO - after team approval]
+- KYC submitted: [TODO - after upgrade]
+
+Check status daily at: https://console.twilio.com/ → Regulatory Compliance
+
+- DLT reference number: NONE YET
+
+**H4 Status:** ✅ COMPLETE (13 Sep 2026)
+- LiveKit project: callflow-dev-odwy9nv9
+- SIP host: callflow-dev-odwy9nv9.sip.livekit.cloud
+- **SIP Trunk: ✅ CREATED** - ST_Wp3ppL7yv8Zd
+- Trunk configuration:
+  - Host: AC[ACCOUNT_SID].pstn.twilio.com
+  - Transport: UDP, Port: 5060
+  - Number: +1737...
+  - Auth: Configured with Twilio credentials
+- Credentials in .env: ✅ verified
+- Trunk ID in .env: ✅ configured
+
+**H1+H4 Integration: ✅ READY FOR TESTING**
+- Twilio → LiveKit trunk: configured
+- LiveKit → Twilio SIP: authenticated
+- Outbound calls: proven working (trial)
+- Voice worker: exists at apps/voice-runtime/app/worker.py
+- Next: Full stack test (API + Voice Worker + Dashboard)
+
+Update this entry when reference number exists, entity is incorporated, or any
+blocker appears. Gate: H1 passes with a working Indian-mobile dial before P1.

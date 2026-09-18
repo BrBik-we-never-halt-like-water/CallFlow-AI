@@ -6,7 +6,7 @@ const COLUMNS = [
   {
     heading: 'Product',
     links: [
-      { label: 'Features', href: '/#capabilities' },
+      { label: 'The agent', href: '/#agent' },
       { label: 'How it works', href: '/#how-it-works' },
       { label: 'Pricing', href: '/#pricing' },
       { label: 'Docs', href: '/docs' },
@@ -54,11 +54,16 @@ const COLUMNS = [
  * It deliberately does not scroll: a static rule of words reads as intentional, a
  * marquee reads as a template.
  */
+/* "Sentiment on every call" used to sit in this list. The detection code
+   exists and is tested, but the voice worker deliberately sends it nothing
+   yet (`worker.py` sends `extracted: {}`), so the words were a claim the
+   product does not currently keep. Masked numbers, by contrast, are a
+   guarantee with one shared formatter behind them. */
 const CAPABILITIES = [
   'Always on',
   'Adaptive conversations',
   'Typed results',
-  'Sentiment on every call',
+  'Masked numbers everywhere',
   'Human handoff when needed',
 ];
 
@@ -95,9 +100,9 @@ export function SiteFooter() {
               <span className="sr-only">CallFlow AI home</span>
             </Link>
             <p className="max-w-xs text-small text-text-dim">
-              An operations layer for outbound phone calls. Load a list, write a
-              goal, and get typed results back - with only the calls that need a
-              person reaching one.
+              An operations layer for outbound phone calls. Brief a voice agent,
+              load a list, and get typed results back - with only the calls that
+              need a person reaching one.
             </p>
           </div>
 
